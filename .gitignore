@@ -1,0 +1,25 @@
+# ── Secrets (NEVER commit) ─────────────────────────────
+# Local code-signing identity: private keys + PKCS#12 bundle.
+# Regenerate with `sudo ./setup-signing.sh`.
+StealthApp/.signing/
+*.p12
+*.pem
+*.key
+
+# ── Xcode / build artifacts ────────────────────────────
+build/
+DerivedData/
+*.xcodeproj          # generated from project.yml by xcodegen
+xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# ── macOS ──────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# ── Editors ────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
