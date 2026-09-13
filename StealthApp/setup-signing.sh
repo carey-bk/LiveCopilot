@@ -28,7 +28,7 @@ distinguished_name = dn
 prompt = no
 x509_extensions = v3_ext
 [ dn ]
-CN = Stealth Local Signing
+CN = LiveCopilot Local Signing
 [ v3_ext ]
 basicConstraints = critical,CA:false
 keyUsage = critical,digitalSignature
@@ -39,7 +39,7 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
   -days 3650 -nodes -config cert.conf >/dev/null 2>&1
 
 openssl pkcs12 -export -inkey key.pem -in cert.pem \
-  -out signing.p12 -passout pass:stealth -name "Stealth Local Signing" \
+  -out signing.p12 -passout pass:stealth -name "LiveCopilot Local Signing" \
   -legacy -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 >/dev/null 2>&1
 
 echo "==> Importing into $REAL_USER login keychain…"
@@ -54,9 +54,9 @@ security add-trusted-cert -d -r trustRoot \
   -p codeSign -k /Library/Keychains/System.keychain cert.pem
 
 echo "==> Verifying identity is available…"
-if sudo -u "$REAL_USER" security find-identity -v -p codesigning | grep -q "Stealth Local Signing"; then
+if sudo -u "$REAL_USER" security find-identity -v -p codesigning | grep -q "LiveCopilot Local Signing"; then
   echo "✅ Signing identity ready. Now run:  ./run.sh"
 else
-  echo "⚠️  Identity not found after import. Check Keychain Access for 'Stealth Local Signing'."
+  echo "⚠️  Identity not found after import. Check Keychain Access for 'LiveCopilot Local Signing'."
   exit 1
 fi

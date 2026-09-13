@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Stealth</string>
+	<string>LiveCopilot</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,11 +13,11 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Stealth</string>
+	<string>LiveCopilot</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
 	<string>20260630.2353</string>
 	<key>LSMinimumSystemVersion</key>
@@ -27,8 +27,8 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Stealth transcribes your microphone so your own words appear in the meeting transcript. Audio is processed in real time and never stored.</string>
+	<string>LiveCopilot transcribes your microphone so your own words appear in the meeting transcript. Audio is sent to OpenAI while listening. Transcript history is stored locally.</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>Stealth listens to your meeting's system audio to transcribe it and suggest replies. Audio is processed in real time and never stored.</string>
+	<string>LiveCopilot listens to your meeting's system audio to transcribe it and suggest replies. Audio is sent to OpenAI while listening. Transcript history is stored locally.</string>
 </dict>
 </plist>

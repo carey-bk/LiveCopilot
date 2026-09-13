@@ -12,6 +12,7 @@ import Carbon.HIToolbox
 ///   ⌥H     → show / hide the overlay (fixed)
 @MainActor
 final class HotkeyManager {
+    var onError: ((String) -> Void)?
     private var refs: [EventHotKeyRef?] = []
     private var handlers: [UInt32: () -> Void] = [:]
     private var eventHandler: EventHandlerRef?
@@ -91,6 +92,10 @@ final class HotkeyManager {
             GetApplicationEventTarget(), 0, &ref
         )
         if status == noErr { refs.append(ref) }
+        else {
+            DebugLog.log("hotkey.registration_failed status=\(status) id=\(id)")
+            onError?("A global shortcut is already in use or unavailable. Choose another in Settings → Shortcuts.")
+        }
     }
 
     private func installDispatcher() {

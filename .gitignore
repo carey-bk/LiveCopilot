@@ -23,3 +23,19 @@ Icon?
 .idea/
 .vscode/
 *.swp
+
+# LiveCopilot local data, private documents and secrets
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-*
+*.db
+*.xcresult/
+private/
+local-data/
+.signing/
+.build/
+
+# Preserve the supplied reference document locally, outside source delivery.
+docs/LiveCopilot_Codex_Goal_V1.docx

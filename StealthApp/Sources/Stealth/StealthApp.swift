@@ -2,12 +2,12 @@ import SwiftUI
 import AppKit
 
 @main
-struct StealthApp: App {
+struct LiveCopilotApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         // Menu-bar only — no dock icon (LSUIElement in Info.plist).
-        MenuBarExtra("Stealth", systemImage: appDelegate.coordinator.isRunning ? "waveform" : "waveform.slash") {
+        MenuBarExtra("LiveCopilot", systemImage: appDelegate.coordinator.isRunning ? "waveform" : "waveform.slash") {
             MenuContent(coordinator: appDelegate.coordinator,
                         openSettings: appDelegate.openSettings,
                         openHistory: appDelegate.openHistory,
@@ -35,7 +35,7 @@ private struct MenuContent: View {
         Button("Suggest Reply (\(coordinator.hotkeys.combo(for: .reply).display))") {
             coordinator.requestSuggestion(mode: .reply)
         }
-        .disabled(!coordinator.isRunning)
+        .disabled(coordinator.transcript.lines.isEmpty)
 
         Button(coordinator.micEnabled ? "Mute Mic (You)" : "Unmute Mic (You)") {
             coordinator.toggleMic()
@@ -47,7 +47,7 @@ private struct MenuContent: View {
 
         Button("History…") { openHistory() }
         Button("Settings…") { openSettings() }
-        Button("Quit Stealth") { NSApp.terminate(nil) }
+        Button("Quit LiveCopilot") { NSApp.terminate(nil) }
 
         Divider()
 
@@ -64,14 +64,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: OverlayWindow?
     private var settingsWindow: NSWindow?
     private var historyWindow: NSWindow?
+    private var terminationSignal: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        signal(SIGTERM, SIG_IGN)
+        terminationSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        terminationSignal?.setEventHandler { NSApp.terminate(nil) }
+        terminationSignal?.resume()
         NSApp.setActivationPolicy(.accessory) // belt-and-braces: no dock icon
 
         let overlay = OverlayWindow(rootView: OverlayView(coordinator: coordinator))
         overlay.orderFrontRegardless()
         self.overlay = overlay
+        coordinator.onOpenSettings = { [weak self] in self?.openSettings() }
+        coordinator.onShowOverlay = { [weak self] in self?.overlay?.orderFrontRegardless() }
 
+        hotkeys.onError = { [weak self] message in self?.coordinator.statusMessage = message }
         hotkeys.register(
             store: coordinator.hotkeys,
             onSuggest: { [weak self] mode in self?.coordinator.requestSuggestion(mode: mode) },
@@ -84,9 +92,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !coordinator.hasAPIKey { openSettings() }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Task {
+            while coordinator.isTransitioning { try? await Task.sleep(nanoseconds: 50_000_000) }
+            coordinator.cancelAnswer()
+            await coordinator.stop()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         hotkeys.unregisterAll()
-        Task { await coordinator.stop() }
+        coordinator.saveSession()
     }
 
     func toggleOverlay() {
@@ -101,7 +119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let hosting = NSHostingController(rootView: SettingsView(coordinator: coordinator))
         let window = NSWindow(contentViewController: hosting)
-        window.title = "Stealth"
+        window.title = "LiveCopilot Settings"
+        window.sharingType = .none
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.center()
@@ -118,7 +137,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let hosting = NSHostingController(rootView: HistoryView(store: coordinator.sessions))
         let window = NSWindow(contentViewController: hosting)
-        window.title = "Stealth — History"
+        window.title = "LiveCopilot — History"
+        window.sharingType = .none
         window.styleMask = [.titled, .closable, .resizable]
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 720, height: 460))

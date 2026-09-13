@@ -23,7 +23,7 @@ struct SessionLine: Codable, Identifiable, Equatable {
 }
 
 // `Speaker` is a raw-value enum → free `Codable` conformance.
-extension Speaker: Codable {}
+
 
 /// One saved listening session: its time bounds and full transcript.
 struct SessionRecord: Codable, Identifiable, Equatable {
@@ -31,6 +31,7 @@ struct SessionRecord: Codable, Identifiable, Equatable {
     let startedAt: Date
     let endedAt: Date
     let lines: [SessionLine]
+    var fragments: [TranscriptFragment]? = nil
 
     init(id: UUID = UUID(), startedAt: Date, endedAt: Date, lines: [SessionLine]) {
         self.id = id

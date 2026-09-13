@@ -1,229 +1,73 @@
-<div align="center">
+# LiveCopilot
 
-# Stealth — an open-source macOS meeting copilot (Cluely-style)
+基于 [vortechron/stealth](https://github.com/vortechron/stealth) 的原生 macOS 个人 AI 助手，面向面试、会议和学术答辩。保留 Swift/SwiftUI、ScreenCaptureKit 系统音频、AVAudioEngine 麦克风、菜单栏、悬浮窗、全局快捷键和本地历史。
 
-**Real-time meeting transcription + AI reply suggestions, in a screen-share-invisible overlay. Native Swift/SwiftUI, no Electron, no backend.**
+V1 使用 OpenAI Live 理解实时对话，通过独立的 OpenAI Responses 推理与本机知识库生成文字建议。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue)](https://www.apple.com/macos/)
-[![Language](https://img.shields.io/badge/Swift-5.0-orange)](https://swift.org)
-[![UI](https://img.shields.io/badge/UI-SwiftUI-brightgreen)](https://developer.apple.com/xcode/swiftui/)
-[![AI](https://img.shields.io/badge/OpenAI-Realtime%20API-black)](https://platform.openai.com/docs/guides/realtime)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
-[![Status](https://img.shields.io/badge/status-MVP%20working-success)](#status)
+## 本机首次使用
 
-</div>
+1. 安装并首次打开 **Xcode**，完成组件安装与许可；最低运行系统 macOS 14。
+2. 安装 XcodeGen：`brew install xcodegen`。本次开发也支持官方发行版安装到 `~/.local/bin/xcodegen`。
+3. 在项目根目录执行 `./StealthApp/run.sh`。编译 Release，签名并安装到 `~/Applications/LiveCopilot.app`，启动菜单栏应用。重装时保留旧 app 备份。
+4. 点击悬浮窗齿轮打开设置。API key 使用 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴；系统询问时允许 LiveCopilot 读取。开发回退是 `OPENAI_API_KEY`，不需要配置 `.env`。
+5. 默认 Live `gpt-live-1`、推理 `gpt-5.6-sol`（low effort）、向量 `text-embedding-3-small`，均可修改。实际可用模型取决于 OpenAI 项目权限。
+6. 设置 → Knowledge → Import documents，导入 PDF、Markdown、TXT 或 DOCX，等待 `Ready`。扫描 PDF 需预先 OCR。首次索引会向 OpenAI 发送提取文本。
+7. 选择 Interview、Meeting 或 Academic Defense，以及 Remote Meeting / In-Person 模式。
+8. 点击播放开始监听，按系统提示允许所需音频权限。远程模式使用系统音频 `Them` 和麦克风 `You`；现场模式仅使用麦克风，标为 `Room`，不承诺说话人分离。
+9. 自动建议只响应 Live 判断完成的问题；`⌥Space` 可随时基于已有对话请求帮助，`⌥R` 总结，`⌥F` 追问，`⌥H` 显示/隐藏悬浮窗。
+10. 直接在下方文本框输入问题，点击 **Ask** 或按 Return。可勾选是否附加近期对话；不要求正在监听。回答流式展示，`[S1]` 等对应可展开的本地来源。
 
----
+没有 Dock 图标是正常行为；菜单栏波形图标可打开设置和历史。悬浮窗可拖动和调整大小。
 
-Stealth is a **native macOS meeting assistant** ("AI meeting copilot") that listens to both sides of a live call, **live-transcribes** the conversation, and — on a hotkey — suggests a **natural-English reply** you can say out loud. The floating overlay is **invisible to screen recording and screen sharing** (that's the "stealth"), so it never shows up when you share your screen on Zoom, Google Meet, Microsoft Teams, or a native call.
-
-It was built for a **non-native English speaker** taking calls with native Australian/US speakers — but it's useful for anyone who wants a **real-time transcript** and **AI-suggested responses** during meetings, interviews, or sales calls.
-
-> **Comparable to:** Cluely, Otter.ai, Granola, Fireflies.ai — but **open source**, **native (no Electron)**, and **local-first** (audio is streamed straight to OpenAI, never stored on any server).
-
-<!--
-Keywords: macOS meeting copilot, Cluely clone, Cluely alternative, open source meeting assistant,
-real-time meeting transcription, AI reply suggestions, live transcription macOS, ScreenCaptureKit,
-OpenAI Realtime API, gpt-realtime, screen-share invisible overlay, undetectable overlay,
-Swift SwiftUI menu bar app, Zoom Google Meet Teams transcription, interview copilot, sales call assistant.
--->
-
-## Table of contents
-
-- [Features](#features)
-- [How it works](#how-it-works)
-- [Requirements](#requirements)
-- [Quick start](#quick-start)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Project layout](#project-layout)
-- [Troubleshooting](#troubleshooting)
-- [Security & privacy](#security--privacy)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [FAQ](#faq)
-- [License](#license)
-
-## Features
-
-- 🎙️ **Two-sided live transcription** — your microphone ("You", blue) and the meeting's system audio ("Them", green), each timestamped, in one scrollable transcript.
-- 💬 **AI reply suggestions on a hotkey** — press `⌥Space` and Stealth drafts a short, natural spoken reply to the last thing the other person said.
-- 🧠 **Recap & follow-up modes** — beyond replies, get a quick catch-up summary or a smart follow-up question to ask.
-- 🕶️ **Invisible to screen sharing** — the overlay is an `NSPanel` with `sharingType = .none`, so it's excluded from screen capture/recording. Share your screen freely.
-- 🎧 **Acoustic echo cancellation** — speaker audio bleeding into your mic isn't mislabeled as "You".
-- 📌 **Menu-bar agent** — no dock icon; a waveform icon lives in your menu bar. Floating overlay works across all Spaces, is draggable and resizable.
-- ⌨️ **Global hotkeys** — `⌥Space` to suggest, `⌥H` to show/hide the overlay.
-- 🔐 **Key stays in the Keychain** — your OpenAI API key is stored in the macOS Keychain, never on disk or in the repo.
-- 🗂️ **Session history** — past meeting transcripts are kept locally so you can review them.
-- ⚡ **Native performance** — Swift/SwiftUI + ScreenCaptureKit + AVAudioEngine. No browser, no Electron, no Node.
-
-## How it works
-
-Stealth runs **two independent audio pipelines**, each with its own OpenAI Realtime transcription session, feeding one speaker-labelled transcript:
-
-```
-System audio (ScreenCaptureKit)  → RealtimeClient(speaker: .them) ─┐
-Microphone   (AVAudioEngine+AEC)  → RealtimeClient(speaker: .you)  ─┤
-                                                                    ├→ TranscriptStore (speaker-labelled, timestamped)
-[⌥Space hotkey] → systemRealtime.requestSuggestion(context) ───────┴→ SuggestionStore → OverlayView card
-```
-
-- Both audio sources are downsampled to **24 kHz mono PCM16** and streamed over WebSocket to the **OpenAI Realtime API** (model `gpt-realtime`, transcription `gpt-4o-transcribe`).
-- Only the `.them` client generates **reply suggestions** — it gets a rolling transcript window as context when you press the hotkey.
-- The overlay renders the live transcript plus the latest suggestion card.
-
-See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** for the full technical reference, data flow, and the hard-won gotchas from live bring-up.
-
-## Requirements
-
-| Requirement | Details |
-|---|---|
-| **macOS** | 14.0 (Sonoma) or newer |
-| **Xcode** | 15+ (Swift 5, command-line tools installed) |
-| **xcodegen** | `brew install xcodegen` — generates the Xcode project from `project.yml` |
-| **OpenAI API key** | With access to the **Realtime API** (`gpt-realtime`) — [platform.openai.com](https://platform.openai.com/api-keys) |
-| **Permissions** | Screen & System Audio Recording + Microphone (granted once, on first launch) |
-
-## Quick start
+## 验证与开发
 
 ```bash
-# 1. Clone
-git clone https://github.com/vortechron/stealth.git
-cd stealth/StealthApp
+# 不使用 Key、不调用 API 的确定性检查
+./StealthApp/scripts/test-core.sh
 
-# 2. Install the project generator (once)
-brew install xcodegen
+# 原生 Release 编译
+./StealthApp/scripts/build.sh
 
-# 3. (Recommended, once) create a stable local signing identity so macOS keeps
-#    your Screen Recording / Microphone permission grants across rebuilds.
-sudo ./setup-signing.sh
+# Xcode XCTest（scheme 自动使用隔离的 Mock 模式）
+xcodebuild -project StealthApp/LiveCopilot.xcodeproj -scheme LiveCopilot \
+  -configuration Debug -derivedDataPath StealthApp/build \
+  -destination 'platform=macOS,arch=arm64' CODE_SIGNING_ALLOWED=NO test
 
-# 4. Build, sign, install to /Applications, and launch
-./run.sh
+# 可实际操作的 Mock 应用；无需音频权限或 Key
+./StealthApp/run.sh --mock
+
+# 以下均为明确选择运行的真实 API 联调；前一条只检查 Keychain
+./StealthApp/scripts/integration.sh --keychain-check
+./StealthApp/scripts/integration.sh
+./StealthApp/scripts/integration.sh --live
 ```
 
-Then:
+真实联调使用临时生成的合成文档，验证 embeddings → 本地混合检索 → Responses 流式答案和引用。`--live` 额外测试 Live 启动、短暂静音输入及正常关闭，会产生少量 API 费用。不要把真实 Key 放进命令行参数、源码、日志或聊天。
 
-1. Look for the **waveform icon** in your menu bar (top-right — there's **no dock icon** by design).
-2. Open **Settings** from the menu and paste your **OpenAI API key** (it's saved to the Keychain).
-3. Click **Start Listening**. macOS will prompt for **Screen Recording** and **Microphone** — grant both. (If a grant seems ignored, quit and relaunch — TCC sometimes needs an app restart.)
-4. Join a call and start talking. See [Usage](#usage).
+如果确实需要环境变量，在本机 zsh 中使用隐藏输入，然后从**同一终端直接运行二进制**：
 
-> **Why `setup-signing.sh`?** macOS ties permission grants to an app's code signature. Ad-hoc re-signing changes the signature every build, so grants get orphaned and macOS re-prompts forever. A stable self-signed cert fixes this — grant permissions **once** and they stick across rebuilds. Skip it and the app still runs; you'll just re-approve permissions after each code change.
-
-## Usage
-
-| Action | How |
-|---|---|
-| **Start / stop listening** | Menu bar → **Start Listening** (prompts for permissions the first time) |
-| **Suggest a reply** | `⌥Space` (Option + Space) — drafts a reply to the last thing "Them" said |
-| **Show / hide overlay** | `⌥H` (Option + H) |
-| **Switch mode** | In the overlay card: **Reply**, **Recap**, or **Follow-up** |
-| **Change tone** | Settings → **Professional** / **Casual** |
-| **Move / resize overlay** | Drag anywhere; resize from the bottom-right handle |
-| **Review past sessions** | Settings → **History** |
-
-The transcript shows **You** (blue) and **Them** (green), each line timestamped `HH:mm`. Transcription is **sentence-chunked**, not word-by-word (that's `gpt-4o-transcribe` behavior).
-
-## Configuration
-
-All tuning knobs live in **[`StealthApp/Sources/Stealth/Support/Config.swift`](StealthApp/Sources/Stealth/Support/Config.swift)**:
-
-| Setting | Default | What it does |
-|---|---|---|
-| `realtimeModel` | `gpt-realtime` | OpenAI Realtime model (GA — **not** `gpt-4o-realtime-preview`). |
-| `realtimeSampleRate` | `24000` | Input audio sample rate (PCM16 mono). |
-| `suggestionContextWindow` | `60` s | Rolling transcript window sent as context for a suggestion. |
-| `transcriptLineLimit` | `200` | Max transcript lines kept in memory / shown. |
-| `micEchoCancellation` | `false` | Apple AEC on the mic. On = less speaker bleed, but can over-suppress a quiet voice. |
-| `vadSilenceMs` | `700` | Silence (ms) before a turn is committed → transcribed. Lower fragments speech and clips words. |
-| `vadThreshold(for:)` | `.you 0.25` / `.them 0.5` | Voice-activity sensitivity per speaker. **Must be multiples of 0.25/0.5** — the Realtime API rejects floats with >16 decimal places (e.g. `0.3` serializes badly). |
-| `suggestionInstructions(...)` | — | The system prompts for Reply / Recap / Follow-up modes. |
-
-After editing, re-run `./run.sh` and confirm the **build number** (shown in the menu bar / overlay footer / settings) matches your latest build.
-
-## Project layout
-
-```
-Stealth/
-├── README.md                 ← you are here
-├── CLAUDE.md                 ← agent/dev context for the codebase
-├── docs/ARCHITECTURE.md      ← full technical reference
-├── tasks/                    ← working notes (todo, lessons)
-└── StealthApp/
-    ├── project.yml           ← xcodegen spec (source of truth for the Xcode project)
-    ├── run.sh                ← build + sign + install to /Applications + launch
-    ├── setup-signing.sh      ← one-time stable signing identity
-    ├── Resources/            ← Info.plist, entitlements
-    └── Sources/Stealth/
-        ├── StealthApp.swift        ← @main, MenuBarExtra + AppDelegate
-        ├── Audio/                  ← ScreenCaptureKit + mic capture
-        ├── Realtime/               ← OpenAI Realtime WebSocket client
-        ├── Stores/                 ← AppCoordinator + transcript/suggestion/session state
-        ├── Overlay/                ← the stealth NSPanel + SwiftUI overlay
-        ├── Hotkeys/                ← global Carbon hotkeys
-        ├── Settings/               ← API key entry, tone, history
-        └── Support/                ← Config, Keychain, DebugLog, AppInfo
+```zsh
+read -s 'OPENAI_API_KEY?OpenAI API key: '; echo
+export OPENAI_API_KEY
+"$HOME/Applications/LiveCopilot.app/Contents/MacOS/LiveCopilot"
+unset OPENAI_API_KEY
 ```
 
-## Troubleshooting
+通过 Finder / `open` 启动的 GUI 应用不保证继承当前终端环境变量，通常使用 Keychain 即可。优先级：指定的 Keychain 项 → 当前进程 `OPENAI_API_KEY`。
 
-- **Debug log:** `~/Library/Logs/Stealth/stealth.log` — the single most useful diagnostic. `DebugLog` writes here (OSLog wasn't surfacing reliably).
-- **Permissions ignored / re-prompting every build:** run `sudo ./setup-signing.sh` once (see [Quick start](#quick-start)), then grant permissions again. After that they stick.
-- **"You" side never appears in the transcript:** mic AEC/noise-suppression can over-suppress a quiet voice so VAD never fires. Lower `vadThreshold(.you)` or set `micEchoCancellation = false` in `Config.swift`.
-- **Words clipped / dropped mid-sentence:** `vadSilenceMs` too low — raise it (700 ms is the tuned default).
-- **Realtime API rejects the session:** don't use floats like `0.3` for VAD thresholds; stick to `0.25`/`0.5` (see the note in `Config.swift`).
-- **Build number in the UI doesn't match your changes:** the running app is stale — re-run `./run.sh` and check the footer.
+## 边界与限制
 
-More detail and the full list of first-bring-up gotchas are in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+- Live 使用当前官方 `/v1/live/sessions` 和 client delegation，未以旧 Realtime 更换模型名代替。无端点自动降级。
+- 本地索引保存来源、文本和向量；查询向量仍需请求 Embeddings API。检索排名在本机计算；embedding 请求失败时使用本地关键词检索。
+- 回答结合文档证据和模型常识；来源列表是检索出的证据，不代表每条都被引用。应核对关键数字和结论。
+- 远程模式最多同时使用两个 Live 会话，现场模式一个；Live 按时长计费，结束使用时停止监听或退出。
+- 共享麦克风不提供可靠 diarization；耳机可减少 `Them` 音频漏入 `You`。自动识别是保守的，并保留手动触发。
+- 悬浮窗保留 `NSWindow.sharingType = .none`。实际屏幕共享排除效果取决于 macOS 和会议软件，必须用实际共享画面验证，不能仅凭该属性视为已验证。
+- 默认使用 ad-hoc 本机签名，重建后系统可能再次询问权限。可使用自己的签名身份，或参阅可选 `setup-signing.sh` 的原生证书流程。
+- 索引限制单文件 50 MB、4,000 chunks；不提供 OCR、复杂 DOCX 排版还原或云备份。
 
-## Security & privacy
+详见 [架构与协议](docs/ARCHITECTURE.md)、[隐私边界](docs/PRIVACY.md)、[实测清单与故障排查](docs/VERIFICATION.md)、[开发计划和证据](docs/IMPLEMENTATION_PLAN.md)。最终验收依据为用户提供的 [开发需求](docs/livecopilot_goal.md)。
 
-- 🔑 **Your OpenAI API key is stored in the macOS Keychain**, never written to disk or committed. The repo's `.gitignore` also blocks the local signing key material (`.signing/`, `*.p12`, `*.pem`).
-- 📡 **No backend, no server storage.** Audio is streamed directly from your Mac to OpenAI's Realtime API for real-time transcription and is **not stored** by this app. Review [OpenAI's API data-usage policy](https://openai.com/policies/) for how they handle streamed data.
-- 🚫 **This is a personal build — do not distribute the built app.** It calls OpenAI directly with your key, so a shared binary would leak it. Hiding the key behind a backend (ephemeral tokens) is [Phase 2](#roadmap).
-- ⚖️ **Recording consent:** transcribing a call may require the other participants' consent depending on your jurisdiction. You are responsible for using Stealth lawfully.
+## 来源与许可
 
-## Roadmap
-
-- [ ] **Phase 2 — Laravel backend**: ephemeral OpenAI tokens (hide the API key), auth, meeting history → enables safe distribution.
-- [ ] **Auto question-detection** (currently a manual `⌥Space` hotkey).
-- [ ] **Live word-by-word transcription** (needs a streaming model; current output is sentence-chunked).
-- [ ] **Comprehension layer** — "what are they actually asking?" (currently reply-only).
-- [ ] Multi-language support (currently English only, Phase 1).
-
-## Contributing
-
-Contributions welcome. This is currently a **personal MVP**, so please:
-
-1. Open an issue describing the change before large PRs.
-2. Read **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** and the **critical gotchas** — several settings look wrong but are deliberate (VAD timing, float precision, Release-only signing).
-3. Keep the "locked design decisions" intact unless you're proposing to change one: native Swift (not Electron), direct OpenAI connection for the MVP, Keychain-stored key, manual suggestion hotkey.
-4. Build and verify with `./run.sh`; confirm the build number in the UI reflects your change.
-
-## FAQ
-
-**Is Stealth really invisible during screen sharing?**
-The overlay uses `NSWindow.sharingType = .none`, which excludes it from ScreenCaptureKit-based capture (Zoom, Meet, Teams, QuickTime, macOS screen recording). Your transcript and suggestions stay private on your screen.
-
-**Does it work with Zoom / Google Meet / Microsoft Teams?**
-Yes — it captures **system audio** via ScreenCaptureKit, so it transcribes whatever is playing through your speakers, regardless of the meeting app. Your side comes from the microphone.
-
-**Do I need an OpenAI account?**
-Yes. Stealth uses the OpenAI Realtime API and needs your own API key with Realtime access.
-
-**Is there a Windows or web version?**
-No. Stealth is macOS-native by design — ScreenCaptureKit and the screen-share-invisible overlay are hard to replicate in web/Electron stacks.
-
-**Why isn't there a signed, downloadable release?**
-Because the app talks to OpenAI directly with your key — a distributed binary would leak it. Distribution is gated on the Phase 2 backend.
-
-## License
-
-[MIT](LICENSE) © [vortechron](https://github.com/vortechron)
-
----
-
-<div align="center">
-<sub>Stealth — open-source, native macOS AI meeting copilot. If this helped, ⭐ the repo.</sub>
-</div>
+派生于 Stealth commit `02b78cc82195a1711e3de11adfaed26011635dae`，原作者 vortechron，MIT 许可保持不变。上游为 `upstream`，个人 fork 为 `origin`。本机开发改动没有自动发布到远程仓库。

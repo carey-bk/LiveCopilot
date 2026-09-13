@@ -1,34 +1,53 @@
-name: Stealth
+name: LiveCopilot
 options:
-  bundleIdPrefix: com.stealth
+  bundleIdPrefix: com.livecopilot
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
-
 settings:
   base:
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "-"
     ENABLE_HARDENED_RUNTIME: NO
-
+    ENABLE_TESTABILITY: YES
+    ENABLE_DEBUG_DYLIB: NO
 targets:
-  Stealth:
+  LiveCopilot:
     type: application
     platform: macOS
     sources:
       - path: Sources
-      - path: Resources/Info.plist
-        buildPhase: none
-      - path: Resources/Stealth.entitlements
-        buildPhase: none
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.stealth.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.livecopilot.app
         INFOPLIST_FILE: Resources/Info.plist
-        CODE_SIGN_ENTITLEMENTS: Resources/Stealth.entitlements
+        CODE_SIGN_ENTITLEMENTS: Resources/LiveCopilot.entitlements
         GENERATE_INFOPLIST_FILE: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
+  LiveCopilotTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/CoreChecks.swift
+      - path: Tests/NativeTests.swift
+    dependencies:
+      - target: LiveCopilot
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: XCODE_TESTS
+schemes:
+  LiveCopilot:
+    build:
+      targets:
+        LiveCopilot: all
+        LiveCopilotTests: [test]
+    test:
+      environmentVariables:
+        LIVECOPILOT_MOCK: "1"
+      targets:
+        - LiveCopilotTests

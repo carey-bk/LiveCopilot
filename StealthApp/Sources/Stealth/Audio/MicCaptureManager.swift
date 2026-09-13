@@ -14,21 +14,27 @@ final class MicCaptureManager: ObservableObject {
     /// Called on the audio thread with PCM16 mono 24kHz chunks.
     var onPCM16: ((Data) -> Void)?
 
-    private let log = Logger(subsystem: "com.stealth.app", category: "mic")
+    private let log = Logger(subsystem: "com.livecopilot.app", category: "mic")
     private let engine = AVAudioEngine()
-    private var converter: AVAudioConverter?
-    private var bufferCount = 0
+    private let pcmConverter = PCMConverter()
+    private var configurationObserver: NSObjectProtocol?
 
-    private lazy var targetFormat: AVAudioFormat = {
-        AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: Config.realtimeSampleRate,
-            channels: 1,
-            interleaved: true
-        )!
-    }()
+    init() {
+        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isCapturing else { return }
+                self.stop()
+                self.lastError = "Microphone device configuration changed. Stop/start listening to use the current device."
+            }
+        }
+    }
+    deinit { if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) } }
 
-    func start() {
+    func start() async {
+        guard await AVCaptureDevice.requestAccess(for: .audio) else {
+            lastError = "Microphone permission denied. Enable LiveCopilot in System Settings → Privacy & Security → Microphone."
+            return
+        }
         guard !isCapturing else { return }
         lastError = nil
 
@@ -51,16 +57,15 @@ final class MicCaptureManager: ObservableObject {
         }
 
         let inputFormat = input.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0 else {
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             lastError = "No microphone input available."
             DebugLog.log("MIC no input format")
             return
         }
 
-        converter = AVAudioConverter(from: inputFormat, to: targetFormat)
-
-        input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [weak self] buffer, _ in
-            self?.convertAndEmit(buffer, from: inputFormat)
+        let worker = pcmConverter, emit = onPCM16
+        input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { buffer, _ in
+            if let data = worker.convert(buffer) { emit?(data) }
         }
 
         do {
@@ -79,45 +84,9 @@ final class MicCaptureManager: ObservableObject {
         guard isCapturing else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
-        converter = nil
+        pcmConverter.reset()
         isCapturing = false
         DebugLog.log("MIC capture stopped")
     }
 
-    private func convertAndEmit(_ buffer: AVAudioPCMBuffer, from inputFormat: AVAudioFormat) {
-        guard let converter else { return }
-        let ratio = targetFormat.sampleRate / inputFormat.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1024)
-        guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
-
-        var fed = false
-        var err: NSError?
-        converter.convert(to: out, error: &err) { _, status in
-            if fed { status.pointee = .noDataNow; return nil }
-            fed = true
-            status.pointee = .haveData
-            return buffer
-        }
-        guard err == nil, out.frameLength > 0, let ch = out.int16ChannelData else { return }
-
-        let frames = Int(out.frameLength)
-        let bytes = frames * MemoryLayout<Int16>.size
-        let data = Data(bytes: ch[0], count: bytes)
-        bufferCount += 1
-        if bufferCount % 25 == 1 {
-            // Audio level (RMS + peak) so we can tell silence/over-suppression
-            // (near 0) from a healthy signal that simply isn't tripping VAD.
-            var sumSq = 0.0
-            var peak: Int16 = 0
-            for i in 0..<frames {
-                let s = ch[0][i]
-                sumSq += Double(s) * Double(s)
-                let a = s == Int16.min ? Int16.max : abs(s)
-                if a > peak { peak = a }
-            }
-            let rms = frames > 0 ? Int(sqrt(sumSq / Double(frames))) : 0
-            DebugLog.log("MIC pcm #\(bufferCount) — \(bytes)B rms=\(rms) peak=\(peak) (max 32767)")
-        }
-        onPCM16?(data)
-    }
 }

@@ -15,20 +15,11 @@ final class AudioCaptureManager: NSObject, ObservableObject {
     /// Called on a background queue with PCM16 mono 24kHz audio chunks.
     var onPCM16: ((Data) -> Void)?
 
-    private let log = Logger(subsystem: "com.stealth.app", category: "audio")
+    private let log = Logger(subsystem: "com.livecopilot.app", category: "audio")
     private var stream: SCStream?
-    private var converter: AVAudioConverter?
+    private var output: AudioStreamOutput?
     private var pcmBufferCount = 0
-    private let outputQueue = DispatchQueue(label: "com.stealth.audio.output")
-
-    private lazy var targetFormat: AVAudioFormat = {
-        AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: Config.realtimeSampleRate,
-            channels: 1,
-            interleaved: true
-        )!
-    }()
+    private let outputQueue = DispatchQueue(label: "com.livecopilot.audio.output")
 
     func start() async {
         guard !isCapturing else { return }
@@ -57,7 +48,9 @@ final class AudioCaptureManager: NSObject, ObservableObject {
             cfg.queueDepth = 6
 
             let stream = SCStream(filter: filter, configuration: cfg, delegate: self)
-            try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: outputQueue)
+            let output = AudioStreamOutput(emit: onPCM16)
+            try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: outputQueue)
+            self.output = output
             try await stream.startCapture()
 
             self.stream = stream
@@ -77,62 +70,15 @@ final class AudioCaptureManager: NSObject, ObservableObject {
             log.error("Stop failed: \(error.localizedDescription, privacy: .public)")
         }
         self.stream = nil
-        self.converter = nil
+        self.output = nil
         self.isCapturing = false
         log.info("System audio capture stopped")
-    }
-
-    // MARK: - Conversion
-
-    /// Convert an incoming sample buffer (Float32, device-rate) to 24kHz mono PCM16.
-    fileprivate func handleAudio(_ sampleBuffer: CMSampleBuffer) {
-        guard let pcmBuffer = sampleBuffer.toPCMBuffer() else { return }
-
-        // Build / reuse a converter matching the actual input format.
-        if converter == nil || converter?.inputFormat != pcmBuffer.format {
-            converter = AVAudioConverter(from: pcmBuffer.format, to: targetFormat)
-        }
-        guard let converter else { return }
-
-        let ratio = targetFormat.sampleRate / pcmBuffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(pcmBuffer.frameLength) * ratio + 1024)
-        guard let outBuffer = AVAudioPCMBuffer(
-            pcmFormat: targetFormat, frameCapacity: capacity
-        ) else { return }
-
-        var fed = false
-        var convError: NSError?
-        let status = converter.convert(to: outBuffer, error: &convError) { _, outStatus in
-            if fed {
-                outStatus.pointee = .noDataNow
-                return nil
-            }
-            fed = true
-            outStatus.pointee = .haveData
-            return pcmBuffer
-        }
-
-        if status == .error || convError != nil {
-            log.error("Audio convert error: \(convError?.localizedDescription ?? "?", privacy: .public)")
-            return
-        }
-        guard outBuffer.frameLength > 0,
-              let channel = outBuffer.int16ChannelData
-        else { return }
-
-        let byteCount = Int(outBuffer.frameLength) * MemoryLayout<Int16>.size
-        let data = Data(bytes: channel[0], count: byteCount)
-        pcmBufferCount += 1
-        if pcmBufferCount % 100 == 1 {
-            DebugLog.log("AUDIO pcm buffer #\(pcmBufferCount) — \(byteCount) bytes @ \(targetFormat.sampleRate)Hz")
-        }
-        onPCM16?(data)
     }
 
     private func humanReadable(_ error: Error) -> String {
         let ns = error as NSError
         if ns.domain == SCStreamError.errorDomain {
-            return "Screen Recording permission is required. Grant it in System Settings → Privacy & Security → Screen Recording, then reopen Stealth."
+            return "Screen Recording permission is required. Grant it in System Settings → Privacy & Security → Screen Recording, then reopen LiveCopilot."
         }
         return error.localizedDescription
     }
@@ -151,14 +97,14 @@ extension AudioCaptureManager: SCStreamDelegate {
     }
 }
 
-extension AudioCaptureManager: SCStreamOutput {
-    nonisolated func stream(
-        _ stream: SCStream,
-        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
-        of type: SCStreamOutputType
-    ) {
-        guard type == .audio, sampleBuffer.isValid else { return }
-        Task { @MainActor in self.handleAudio(sampleBuffer) }
+private final class AudioStreamOutput: NSObject, SCStreamOutput {
+    private let converter = PCMConverter()
+    private let emit: ((Data) -> Void)?
+    init(emit: ((Data) -> Void)?) { self.emit = emit }
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .audio, sampleBuffer.isValid, let buffer = sampleBuffer.toPCMBuffer(),
+              let data = converter.convert(buffer) else { return }
+        emit?(data)
     }
 }
 

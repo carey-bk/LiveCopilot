@@ -10,14 +10,14 @@ import SwiftUI
 final class OverlayWindow: NSPanel {
     init<Content: View>(rootView: Content) {
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 640),
             styleMask: [.nonactivatingPanel, .fullSizeContentView, .borderless, .resizable],
             backing: .buffered,
             defer: false
         )
 
         // Resize bounds.
-        minSize = NSSize(width: 320, height: 240)
+        minSize = NSSize(width: 400, height: 440)
         maxSize = NSSize(width: 700, height: 1000)
 
         // --- Stealth: stay out of screen capture ---

@@ -1,15 +1,12 @@
 import Foundation
 import Combine
 
-/// Who said a given line.
-enum Speaker: String {
-    case them = "Them"
-    case you = "You"
-}
-
 /// One finished transcript line, with speaker + timestamp.
 struct TranscriptLine: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
+    init(id: UUID = UUID(), speaker: Speaker, at: Date, content: String) {
+        self.id = id; self.speaker = speaker; self.at = at; self.content = content
+    }
     let speaker: Speaker
     let at: Date
     let content: String
@@ -32,7 +29,7 @@ final class TranscriptStore: ObservableObject {
 
     func appendDelta(_ delta: String, speaker: Speaker) {
         switch speaker {
-        case .them: partialThem += delta
+        case .them, .room: partialThem += delta
         case .you: partialYou += delta
         }
     }
@@ -40,7 +37,7 @@ final class TranscriptStore: ObservableObject {
     /// Discard the in-progress partial for a speaker without committing it.
     func clearPartial(_ speaker: Speaker) {
         switch speaker {
-        case .them: partialThem = ""
+        case .them, .room: partialThem = ""
         case .you: partialYou = ""
         }
     }
@@ -49,7 +46,7 @@ final class TranscriptStore: ObservableObject {
     func commitPartial(_ speaker: Speaker, now: Date = Date()) {
         let text: String
         switch speaker {
-        case .them: text = partialThem; partialThem = ""
+        case .them, .room: text = partialThem; partialThem = ""
         case .you: text = partialYou; partialYou = ""
         }
         commit(text, speaker: speaker, now: now)
@@ -74,7 +71,20 @@ final class TranscriptStore: ObservableObject {
         return chosen.map { "\($0.speaker.rawValue): \($0.content)" }.joined(separator: "\n")
     }
 
+    private var lastFragmentEnd: [Speaker: Int] = [:]
+    func ingest(_ fragment: TranscriptFragment) {
+        if let last = lines.last, last.speaker == fragment.speaker,
+           let end = lastFragmentEnd[fragment.speaker], fragment.startMS >= end,
+           fragment.startMS - end < 1600, last.content.count < 1800 {
+            lines = Array(lines.dropLast()) + [TranscriptLine(id: last.id, speaker: last.speaker, at: last.at, content: last.content + fragment.text)]
+        } else {
+            lines = Array((lines + [TranscriptLine(speaker: fragment.speaker, at: fragment.receivedAt, content: fragment.text)]).suffix(Config.transcriptLineLimit))
+        }
+        lastFragmentEnd[fragment.speaker] = fragment.endMS
+    }
+
     func clear() {
+        lastFragmentEnd = [:]
         lines = []
         partialThem = ""
         partialYou = ""

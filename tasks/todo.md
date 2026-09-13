@@ -1,3 +1,5 @@
+> Historical Stealth checklist retained for reference. Current LiveCopilot scope/progress is in [IMPLEMENTATION_PLAN](../docs/IMPLEMENTATION_PLAN.md); this list is not the V1 acceptance authority.
+
 # Stealth — 4 features
 
 ## 1. Fix: "You" (mic) transcript not appearing
