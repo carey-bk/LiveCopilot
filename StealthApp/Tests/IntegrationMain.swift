@@ -4,16 +4,10 @@ import AVFoundation
 /// Opt-in, synthetic-data integration. Never prints credentials, authorization headers or request bodies.
 @main struct IntegrationMain {
     @MainActor static func main() async {
-        let keyTimeout = DispatchWorkItem {
-            print("INTEGRATION FAILED: Keychain access did not complete within 15 seconds. Unlock the Mac/login Keychain and authorize the installed app; no API request was sent.")
-            exit(75)
-        }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: keyTimeout)
         do {
             guard let key = try integrationCredential(), !key.isEmpty else {
                 throw CopilotError.message("No credential available. Add LiveCopilot-OpenAI/current-user in Keychain or export OPENAI_API_KEY in this shell.")
             }
-            keyTimeout.cancel()
             print("PASS credential available (value never displayed)")
             if CommandLine.arguments.contains("--keychain-check") { return }
             let settings = AppSettings.load()
@@ -58,9 +52,19 @@ import AVFoundation
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         try process.run()
+        // Allow time for the user's system authorization prompt, then terminate
+        // the child too. Exiting only the parent leaves an orphaned prompt.
+        let timeout = DispatchWorkItem {
+            if process.isRunning { process.terminate() }
+        }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 60, execute: timeout)
+        defer { timeout.cancel() }
         let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         if process.terminationStatus == 0, let value = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty { return value }
+        if process.terminationReason == .uncaughtSignal {
+            throw CopilotError.message("Keychain read was cancelled or timed out. Allow access locally and retry; no API request was sent.")
+        }
         return ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
     }
     @MainActor static func verifyLive(key: String, settings: AppSettings) async throws {

@@ -1,10 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// A floating, always-on-top panel that is INVISIBLE to screen capture / screen sharing.
+/// A floating, always-on-top panel that requests exclusion from screen capture.
 ///
 /// The stealth properties:
-///  - `sharingType = .none`  → excluded from screen recordings & shares (Meet/Zoom/Teams).
+///  - `sharingType = .none` requests exclusion; verify in the actual sharing app.
 ///  - `.floating` level + joins all Spaces → stays above fullscreen calls.
 ///  - non-activating panel → clicking it never steals focus from the meeting.
 final class OverlayWindow: NSPanel {

@@ -80,7 +80,7 @@ final class HotkeyStore: ObservableObject {
     /// Fixed (non-adjustable) overlay show/hide hotkey: ⌥H.
     let toggleOverlay = HotkeyCombo(keyCode: UInt32(kVK_ANSI_H), modifiers: UInt32(optionKey))
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private static let storageKey = "hotkeyCombos.v1"
 
     static let defaultCombos: [SuggestionMode: HotkeyCombo] = [
@@ -89,7 +89,8 @@ final class HotkeyStore: ObservableObject {
         .followUp: HotkeyCombo(keyCode: UInt32(kVK_ANSI_F), modifiers: UInt32(optionKey)),
     ]
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         if let data = defaults.data(forKey: Self.storageKey),
            let decoded = try? JSONDecoder().decode([String: HotkeyCombo].self, from: data) {
             var map: [SuggestionMode: HotkeyCombo] = [:]

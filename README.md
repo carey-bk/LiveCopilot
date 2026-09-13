@@ -10,6 +10,8 @@ V1 使用 OpenAI Live 理解实时对话，通过独立的 OpenAI Responses 推�
 2. 安装 XcodeGen：`brew install xcodegen`。本次开发也支持官方发行版安装到 `~/.local/bin/xcodegen`。
 3. 在项目根目录执行 `./StealthApp/run.sh`。编译 Release，签名并安装到 `~/Applications/LiveCopilot.app`，启动菜单栏应用。重装时保留旧 app 备份。
 4. 点击悬浮窗齿轮打开设置。API key 使用 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴；系统询问时允许 LiveCopilot 读取。开发回退是 `OPENAI_API_KEY`，不需要配置 `.env`。
+
+   如果显示 `Checking Keychain…`，请在本机完成 macOS 的访问提示；密码只输入系统窗口。读取权限与 Key 是否有效是两项独立检查。重新打开已启动的 LiveCopilot 会恢复悬浮窗；`⌥H` 可隐藏它。
 5. 默认 Live `gpt-live-1`、推理 `gpt-5.6-sol`（low effort）、向量 `text-embedding-3-small`，均可修改。实际可用模型取决于 OpenAI 项目权限。
 6. 设置 → Knowledge → Import documents，导入 PDF、Markdown、TXT 或 DOCX，等待 `Ready`。扫描 PDF 需预先 OCR。首次索引会向 OpenAI 发送提取文本。
 7. 选择 Interview、Meeting 或 Academic Defense，以及 Remote Meeting / In-Person 模式。

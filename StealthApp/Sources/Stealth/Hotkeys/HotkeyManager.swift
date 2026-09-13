@@ -16,6 +16,7 @@ final class HotkeyManager {
     private var refs: [EventHotKeyRef?] = []
     private var handlers: [UInt32: () -> Void] = [:]
     private var eventHandler: EventHandlerRef?
+    private var localMonitor: Any?
 
     // Stable hotkey IDs.
     private enum ID {
@@ -75,9 +76,28 @@ final class HotkeyManager {
             keyCode: store.toggleOverlay.keyCode,
             modifiers: store.toggleOverlay.modifiers,
             action: onToggleOverlay)
+        // App-targeted key events can reach a focused nonactivating panel without
+        // passing through Carbon's system dispatcher. Consume matching shortcuts
+        // here so Option+Space does not insert a nonbreaking space into the query.
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.window is OverlayWindow || NSApp.keyWindow is OverlayWindow else { return event }
+            return self?.handleOverlayKey(event) == true ? nil : event
+        }
+    }
+
+    func handleOverlayKey(_ event: NSEvent) -> Bool {
+        guard let store, event.type == .keyDown else { return false }
+        let combo = HotkeyCombo(keyCode: UInt32(event.keyCode), modifiers: HotkeyCombo.carbonModifiers(from: event.modifierFlags))
+        let matchedID = combo == store.toggleOverlay ? ID.toggleOverlay
+            : SuggestionMode.allCases.first(where: { store.combo(for: $0) == combo }).map { id(for: $0) }
+        guard let matchedID, let action = handlers[matchedID] else { return false }
+        if !event.isARepeat { action() }
+        return true
     }
 
     func unregisterAll() {
+        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
+        localMonitor = nil
         for ref in refs { if let ref { UnregisterEventHotKey(ref) } }
         refs.removeAll()
         handlers.removeAll()

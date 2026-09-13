@@ -6,7 +6,7 @@ final class AppCoordinator: ObservableObject {
     let transcript = TranscriptStore()
     let suggestion = SuggestionStore()
     let sessions = SessionStore()
-    let hotkeys = HotkeyStore()
+    let hotkeys: HotkeyStore
     let systemAudio = AudioCaptureManager()
     let mic = MicCaptureManager()
     let isMock: Bool
@@ -20,6 +20,7 @@ final class AppCoordinator: ObservableObject {
     private var requestID = UUID()
     private var credentialRevision = UUID()
     private var cachedKey: String?
+    private var isShuttingDown = false
     private var sessionStartedAt: Date?
     private var liveEpoch = UUID()
     private var activeDelegations = Set<String>()
@@ -31,6 +32,8 @@ final class AppCoordinator: ObservableObject {
     @Published var isRunning = false
     @Published var isTransitioning = false
     @Published var hasAPIKey = false
+    @Published var isCheckingKey = false
+    @Published var keyStatus = "No credential available."
     @Published var statusMessage = "Ready — type a question or start listening"
     @Published var questionState = QuestionPhase.listening.rawValue
     @Published var knowledgeDocuments: [KnowledgeDocument] = []
@@ -46,10 +49,11 @@ final class AppCoordinator: ObservableObject {
     init(mock: Bool = ProcessInfo.processInfo.arguments.contains("--mock") || ProcessInfo.processInfo.environment["LIVECOPILOT_MOCK"] == "1") {
         isMock = mock
         settingsDefaults = mock ? UserDefaults(suiteName: "com.livecopilot.mock")! : .standard
+        hotkeys = HotkeyStore(defaults: settingsDefaults)
         settings = AppSettings.load(defaults: settingsDefaults)
         do { knowledge = try KnowledgeIndex(directory: AppPaths.dataDirectory(mock: mock).appendingPathComponent("knowledge")) }
         catch { knowledgeMessage = error.localizedDescription }
-        if mock { hasAPIKey = true; statusMessage = "MOCK MODE — no API calls" }
+        if mock { hasAPIKey = true; keyStatus = "Mock providers — no credential needed."; statusMessage = "MOCK MODE — no API calls" }
         else { refreshKeyState() }
         systemAudio.onPCM16 = { [weak self] data in Task { @MainActor in self?.systemLive?.sendAudio(data) } }
         mic.onPCM16 = { [weak self] data in Task { @MainActor in self?.micLive?.sendAudio(data) } }
@@ -74,17 +78,24 @@ final class AppCoordinator: ObservableObject {
     func resetHotkey(_ mode: SuggestionMode) { hotkeys.reset(mode); onHotkeysChanged?() }
     func refreshKeyState() {
         if isMock { hasAPIKey = true; return }
+        guard !isCheckingKey else { return }
+        isCheckingKey = true
+        cachedKey = nil; hasAPIKey = false
+        keyStatus = "Checking Keychain… Complete any macOS access prompt locally."
         let revision = UUID(); credentialRevision = revision
         Task {
+            defer { if credentialRevision == revision { isCheckingKey = false } }
             do {
                 // A locked Keychain or its access prompt must never freeze the native UI.
                 let key = try await Task.detached(priority: .userInitiated) { try KeychainStore.resolve() }.value
                 guard credentialRevision == revision else { return }
                 cachedKey = key; hasAPIKey = key != nil
+                keyStatus = key == nil ? "No credential available." : "Credential available. No API request made."
                 if key == nil { statusMessage = "No key available — open Settings to configure Keychain." }
             } catch {
                 guard credentialRevision == revision else { return }
                 cachedKey = nil; hasAPIKey = false; statusMessage = error.localizedDescription
+                keyStatus = error.localizedDescription
             }
         }
     }
@@ -98,18 +109,19 @@ final class AppCoordinator: ObservableObject {
         isMock ? MockEmbeddingProvider() : OpenAIEmbeddingProvider(key: key, model: settings.embeddingModel)
     }
     func start() async {
-        guard !isRunning, !isTransitioning else { return }
+        guard !isRunning, !isTransitioning, !isShuttingDown else { return }
         isTransitioning = true; defer { isTransitioning = false }
         let epoch = UUID(); liveEpoch = epoch
         conversation.reset(); transcript.clear(); activeDelegations = []
         sessionStartedAt = Date()
         if isMock {
             isRunning = true; statusMessage = "MOCK listening — sample conversation"
+            let speaker: Speaker = settings.mode == .inPerson ? .room : .them
             mockTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 guard !Task.isCancelled, let self else { return }
-                self.receive(.transcript(.init(id: UUID().uuidString, speaker: .them, text: "What is the latency of method B?", startMS: 0, endMS: 1800, receivedAt: Date())), speaker: .them, epoch: epoch)
-                self.receive(.delegation(id: "mock-delegation", offsetMS: 1800), speaker: .them, epoch: epoch)
+                self.receive(.transcript(.init(id: UUID().uuidString, speaker: speaker, text: "What is the latency of method B?", startMS: 0, endMS: 1800, receivedAt: Date())), speaker: speaker, epoch: epoch)
+                self.receive(.delegation(id: "mock-delegation", offsetMS: 1800), speaker: speaker, epoch: epoch)
             }
             return
         }
@@ -118,7 +130,9 @@ final class AppCoordinator: ObservableObject {
             statusMessage = "Starting audio capture…"
             // Acquire permissions/capture first; never leave paid sockets open after a capture failure.
             if settings.mode == .remote { await systemAudio.start() }
+            guard liveEpoch == epoch else { return }
             if micEnabled || settings.mode == .inPerson { await mic.start() }
+            guard liveEpoch == epoch else { return }
             guard systemAudio.isCapturing || mic.isCapturing else {
                 statusMessage = mic.lastError ?? systemAudio.lastError ?? "No audio capture source available."
                 sessionStartedAt = nil; return
@@ -176,8 +190,13 @@ final class AppCoordinator: ObservableObject {
             self.request(query: question, mode: .reply, speaker: pending.speaker, delegationID: pending.id)
         }
     }
-    func stop() async {
-        guard !isTransitioning else { return }
+    func shutdown() async {
+        isShuttingDown = true
+        cancelAnswer()
+        await stop(force: true)
+    }
+    func stop(force: Bool = false) async {
+        guard force || !isTransitioning else { return }
         isTransitioning = true; defer { isTransitioning = false }
         liveEpoch = UUID(); isRunning = false
         questionTask?.cancel(); pendingAutomatic = nil; mockTask?.cancel()
@@ -197,14 +216,16 @@ final class AppCoordinator: ObservableObject {
     }
     func toggle() async { if isRunning { await stop() } else { await start() } }
     func toggleMic() {
+        guard !isShuttingDown else { return }
         guard settings.mode == .remote else { statusMessage = "Room mode uses the microphone. Stop listening to disable it."; return }
         micEnabled.toggle()
         guard isRunning, !isMock else { return }
+        let epoch = liveEpoch
         Task {
             if micEnabled {
                 do {
                     let key = try credential(); await mic.start()
-                    guard mic.isCapturing else { return }
+                    guard mic.isCapturing, liveEpoch == epoch, isRunning, !isShuttingDown, micEnabled else { return }
                     micLive = makeLive(key: key, speaker: .you, epoch: liveEpoch); micLive?.connect(context: conversation.context())
                 } catch { statusMessage = error.localizedDescription }
             } else { mic.stop(); await micLive?.disconnect(); micLive = nil }

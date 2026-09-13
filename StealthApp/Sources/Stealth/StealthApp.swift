@@ -65,6 +65,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var historyWindow: NSWindow?
     private var terminationSignal: DispatchSourceSignal?
+    private var terminationInProgress = false
+    private var readyToTerminate = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGTERM, SIG_IGN)
@@ -93,13 +95,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if readyToTerminate { return .terminateNow }
+        guard !terminationInProgress else { return .terminateCancel }
+        terminationInProgress = true
         Task {
-            while coordinator.isTransitioning { try? await Task.sleep(nanoseconds: 50_000_000) }
-            coordinator.cancelAnswer()
-            await coordinator.stop()
-            sender.reply(toApplicationShouldTerminate: true)
+            await coordinator.shutdown()
+            readyToTerminate = true
+            sender.terminate(nil)
         }
-        return .terminateLater
+        // Keep the normal event loop running while asynchronous Live close events
+        // arrive. AppKit's terminateLater loop can starve MainActor cleanup tasks.
+        return .terminateCancel
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -107,8 +113,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.saveSession()
     }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        overlay?.orderFrontRegardless()
+        return true
+    }
+
     func toggleOverlay() {
         overlay?.toggleVisibility()
+        DebugLog.log("overlay.visibility visible=\(overlay?.isVisible == true)")
     }
 
     func openSettings() {

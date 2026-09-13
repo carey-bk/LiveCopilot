@@ -3,7 +3,7 @@ import AVFoundation
 import OSLog
 
 /// Captures YOUR microphone and delivers 24 kHz mono PCM16 chunks,
-/// matching the format the Realtime API expects (same as system audio).
+/// matching the format the Live API expects (same as system audio).
 ///
 /// Uses AVAudioEngine's input node tap → AVAudioConverter to the target format.
 @MainActor
@@ -18,6 +18,7 @@ final class MicCaptureManager: ObservableObject {
     private let engine = AVAudioEngine()
     private let pcmConverter = PCMConverter()
     private var configurationObserver: NSObjectProtocol?
+    private var captureRevision = UUID()
 
     init() {
         configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
@@ -31,7 +32,10 @@ final class MicCaptureManager: ObservableObject {
     deinit { if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) } }
 
     func start() async {
-        guard await AVCaptureDevice.requestAccess(for: .audio) else {
+        let revision = UUID(); captureRevision = revision
+        let granted = await AVCaptureDevice.requestAccess(for: .audio)
+        guard captureRevision == revision else { return }
+        guard granted else {
             lastError = "Microphone permission denied. Enable LiveCopilot in System Settings → Privacy & Security → Microphone."
             return
         }
@@ -81,6 +85,7 @@ final class MicCaptureManager: ObservableObject {
     }
 
     func stop() {
+        captureRevision = UUID()
         guard isCapturing else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()

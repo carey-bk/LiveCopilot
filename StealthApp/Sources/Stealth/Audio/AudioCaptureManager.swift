@@ -6,7 +6,7 @@ import OSLog
 /// Captures SYSTEM audio (everyone else on the call — browser Meet, Zoom, Teams, anything)
 /// via ScreenCaptureKit, with no microphone and no virtual audio device.
 ///
-/// Output is delivered as 24 kHz mono PCM16 little-endian `Data`, ready for the Realtime API.
+/// Output is delivered as 24 kHz mono PCM16 little-endian `Data`, ready for the Live API.
 @MainActor
 final class AudioCaptureManager: NSObject, ObservableObject {
     @Published private(set) var isCapturing = false
@@ -18,11 +18,13 @@ final class AudioCaptureManager: NSObject, ObservableObject {
     private let log = Logger(subsystem: "com.livecopilot.app", category: "audio")
     private var stream: SCStream?
     private var output: AudioStreamOutput?
+    private var captureRevision = UUID()
     private var pcmBufferCount = 0
     private let outputQueue = DispatchQueue(label: "com.livecopilot.audio.output")
 
     func start() async {
         guard !isCapturing else { return }
+        let revision = UUID(); captureRevision = revision
         lastError = nil
         do {
             // Pick the main display as the capture surface. We discard video frames;
@@ -30,6 +32,7 @@ final class AudioCaptureManager: NSObject, ObservableObject {
             let content = try await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: false
             )
+            guard captureRevision == revision else { return }
             guard let display = content.displays.first else {
                 throw CaptureError.noDisplay
             }
@@ -52,12 +55,17 @@ final class AudioCaptureManager: NSObject, ObservableObject {
             try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: outputQueue)
             self.output = output
             try await stream.startCapture()
+            guard captureRevision == revision else {
+                try? await stream.stopCapture()
+                return
+            }
 
             self.stream = stream
             self.isCapturing = true
             log.info("System audio capture started")
             DebugLog.log("AUDIO capture started OK")
         } catch {
+            guard captureRevision == revision else { return }
             lastError = humanReadable(error)
             log.error("Capture start failed: \(error.localizedDescription, privacy: .public)")
             DebugLog.log("AUDIO capture FAILED: \(error.localizedDescription)")
@@ -65,13 +73,14 @@ final class AudioCaptureManager: NSObject, ObservableObject {
     }
 
     func stop() async {
+        captureRevision = UUID()
         guard let stream else { return }
-        do { try await stream.stopCapture() } catch {
-            log.error("Stop failed: \(error.localizedDescription, privacy: .public)")
-        }
         self.stream = nil
         self.output = nil
         self.isCapturing = false
+        do { try await stream.stopCapture() } catch {
+            log.error("Stop failed: \(error.localizedDescription, privacy: .public)")
+        }
         log.info("System audio capture stopped")
     }
 
@@ -91,6 +100,7 @@ final class AudioCaptureManager: NSObject, ObservableObject {
 extension AudioCaptureManager: SCStreamDelegate {
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         Task { @MainActor in
+            guard self.stream === stream else { return }
             self.lastError = self.humanReadable(error)
             self.isCapturing = false
         }

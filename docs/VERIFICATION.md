@@ -8,7 +8,7 @@ The latest exact results are maintained in `IMPLEMENTATION_PLAN.md`. Distinguish
 
 `./StealthApp/scripts/test-core.sh` compiles and runs core checks against temporary synthetic files and mocked HTTP providers. Coverage includes Unicode chunking, page/source tracking, cosine edge cases, FTS5/BM25 and CJK search, query escaping, fusion, persistence, deletion, re-index failure/atomic replacement, embedding compatibility, question state, incomplete questions, duplicate/answered suppression, follow-ups, Live event contracts, SSE completion/error handling and structured source parsing.
 
-Xcode `test` additionally verifies typed queries with listening disabled, superseding/cancelling answers, concurrent listening/assistance, stable transcript rows and native Keychain create/read/update/delete using an isolated dummy item. It never changes the user's real API key.
+Xcode `test` additionally verifies typed queries with listening disabled, superseding/cancelling answers, concurrent listening/assistance, stable transcript rows, shutdown cancellation, focused-overlay shortcut handling and native Keychain create/read/update/delete using an isolated dummy item. It never changes the user's real API key.
 
 ## Real APIs (opt-in, synthetic material)
 
@@ -64,8 +64,12 @@ The tool sends PCM at real playback pace and waits for transcript/delegation eve
 
 Do not treat logs from macOS `com.apple.linkd.autoShortcut` or the build-time AppIntents metadata extractor as application test failures when the actual compiler/tests succeed; investigate application errors separately.
 
-## Current real-API result (2026-09-14)
+## Real-API and native UI status (2026-09-14, resumed acceptance)
 
-The configured Keychain item was successfully read through the system `security` CLI, with its value kept private. OpenAI returned HTTP 401 for the first real Embeddings request. Independent `/v1/models` authentication diagnostics confirmed `invalid_api_key`. The user has been asked to replace the value locally in the same Keychain item. No successful live or reasoning API result has been claimed.
+The **previous credential** returned HTTP 401 / `invalid_api_key`. The user subsequently confirmed that the Mac was unlocked and the Keychain value updated. The updated credential's authentication status is **unknown**: the resumed CLI read timed out before any API request, and the installed production app currently displays `Checking Keychain…`. Complete the system access prompt locally. The automation tool explicitly disallows control of macOS authentication windows; no password or API key should be sent in chat.
 
-The separately compiled Swift integration helper initially could not access the item through the Security framework while the desktop was locked; the CLI integration therefore captures the already-authorized system CLI's output in memory. The native app uses the Security framework in the background and may require its own standard Keychain access prompt once the desktop is unlocked.
+The CLI helper now allows 60 seconds for local authorization and terminates its child process on timeout. Its output is captured privately in memory. The native app uses the Security framework asynchronously and reports pending/read-success/error state separately from API authentication.
+
+Native UI checks with isolated Mock providers passed: app/settings open, Ask and Return while listening is off, automatic simulated question, Option+Space with the input focused, mode/profile selection, TXT/Markdown/PDF/DOCX import, retrieval/source expansion including PDF page 2, and persistence after restarting the app. These checks made no API calls. Physical global shortcuts while another app is focused, audio permissions/devices, real streaming, and meeting-app sharing exclusion still need interactive acceptance.
+
+Acceptance found and fixed a termination hang, focused-input shortcut characters, and synchronous modal file selection. The installed app now quits gracefully and can reopen its overlay. Release build and **8 native XCTest cases (including all 32 core checks)** pass. Exact package identity and remaining criteria are recorded in `IMPLEMENTATION_PLAN.md`.

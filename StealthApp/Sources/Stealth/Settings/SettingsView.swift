@@ -31,13 +31,14 @@ struct SettingsView: View {
                     do { try KeychainStore.save(apiKeyField); apiKeyField = ""; coordinator.refreshKeyState(); keyMessage = "Saved in macOS Keychain." }
                     catch { keyMessage = error.localizedDescription }
                 }.disabled(apiKeyField.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || coordinator.isMock)
-                Button("Check Keychain") { coordinator.refreshKeyState(); keyMessage = coordinator.hasAPIKey ? "Credential available. No API request made." : coordinator.statusMessage }
+                Button("Check Keychain") { keyMessage = ""; coordinator.refreshKeyState() }.disabled(coordinator.isCheckingKey)
                 Button("Remove saved key", role: .destructive) {
                     do { try KeychainStore.clear(); coordinator.refreshKeyState(); keyMessage = "Saved key removed." }
                     catch { keyMessage = error.localizedDescription }
                 }.disabled(coordinator.isMock)
             }
-            Text(keyMessage.isEmpty ? (coordinator.hasAPIKey ? "Credential available." : "No credential available.") : keyMessage).font(.caption).textSelection(.enabled)
+            if !keyMessage.isEmpty { Text(keyMessage).font(.caption).textSelection(.enabled) }
+            Text(coordinator.keyStatus).font(.caption).textSelection(.enabled)
             Text("Keychain: LiveCopilot-OpenAI / current macOS user. OPENAI_API_KEY is the development fallback.").font(.caption).foregroundStyle(.secondary)
             Divider()
             Group {
@@ -87,8 +88,8 @@ struct SettingsView: View {
                             Button("Show local copy") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: document.localPath)]) }
                             Spacer()
                             Button("Delete", role: .destructive) { coordinator.deleteDocument(document) }
-                        }.disabled(coordinator.isIndexing)
-                    }.padding(.vertical, 5)
+                        }.buttonStyle(.borderless).disabled(coordinator.isIndexing)
+                    }.padding(.vertical, 5).accessibilityElement(children: .contain)
                 }
             }
             if coordinator.knowledgeDocuments.isEmpty { Text("Import a document to ground answers in your own evidence.").foregroundStyle(.secondary) }
@@ -98,7 +99,9 @@ struct SettingsView: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = DocumentParser.supportedExtensions.compactMap { UTType(filenameExtension: $0) }
         panel.allowsMultipleSelection = true; panel.canChooseDirectories = false
-        if panel.runModal() == .OK { coordinator.importDocuments(panel.urls) }
+        panel.begin { response in
+            if response == .OK { coordinator.importDocuments(panel.urls) }
+        }
     }
     private var shortcuts: some View {
         VStack(alignment: .leading, spacing: 14) {

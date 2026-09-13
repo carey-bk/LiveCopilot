@@ -19,7 +19,7 @@ Source of truth: `livecopilot_goal.md`. Started 2026-09-13.
 2. [done] Provider-independent domain: profiles, conversation fragments/state, duplicate/follow-up handling, retrieval query, structured suggestion parsing.
 3. [done] Local SQLite/FTS5 store; PDF/Markdown/text import; chunk/source metadata; embeddings; atomic reindex/delete; hybrid retrieval.
 4. [done; real API pending valid credential] OpenAI Embeddings + streamed Responses + official Live WebSocket/client delegation; bounded reconnects and clear failure states.
-5. [done; interactive QA pending unlock] Wire native capture, operating modes, auto/manual triggers, text input, settings, knowledge management, history and Keychain.
+5. [done; basic native UI QA passed; hardware pending] Wire native capture, operating modes, auto/manual triggers, text input, settings, knowledge management, history and Keychain.
 6. [in progress; deterministic/native tests passed] Deterministic test suite including provider failures, native builds, app UI smoke verification and opt-in real API path.
 7. [docs done; final interactive/API audit remains open] README/setup/architecture/privacy/troubleshooting and criterion-by-criterion final audit.
 
@@ -37,12 +37,12 @@ Source of truth: `livecopilot_goal.md`. Started 2026-09-13.
 
 | Evidence | Status |
 |---|---|
-| Original `xcodebuild` | Environment blocked: full Xcode absent |
-| Original direct Swift compile | Environment blocked: SwiftUIMacros missing |
-| Core deterministic tests | Pending |
-| LiveCopilot native build/test | Pending |
-| UI launch/hotkeys/Keychain | Pending |
-| Real API manual query/indexing | Pending user local key configuration after Mock tests |
+| Original `xcodebuild` | Passed after Xcode installation; initial CLT-only failure retained below as history |
+| Original direct Swift compile | Initial CLT-only failure; superseded by successful native Xcode build |
+| Core deterministic tests | 32 passed |
+| LiveCopilot native build/test | Release passed; 8 XCTest cases passed |
+| UI launch/hotkeys/Keychain | Basic Mock UI and focused shortcuts passed; actual Keychain read awaits local system authorization |
+| Real API manual query/indexing | Old key failed authentication; updated key not yet readable in this run |
 | Real audio/permissions/share exclusion | Pending interactive verification |
 
 This plan remains open until every required acceptance criterion has evidence or an explicitly documented external prerequisite. Missing external prerequisites do not stop independent implementation.
@@ -107,3 +107,17 @@ The goal remains active. Implemented and Mock-tested features are not represente
 - Added automatic closure of the corresponding Live connection when a capture device stops, microphone configuration-change handling, recovery of interrupted initial indexing, and explicit hotkey-registration failures. Full hardware behavior still needs interactive verification.
 - Source secret-literal scan and `git diff --check` passed. No private documents, transcripts, runtime databases or credentials are staged. The supplied DOCX remains local/ignored; the source requirements Markdown was not modified.
 - **External prerequisites now block further meaningful acceptance verification:** update the invalid OpenAI key in the specified Keychain item and unlock the Mac for UI/hardware checks. No further API retries should be made until the credential is updated. Keep the Goal active/incomplete; do not claim final delivery acceptance.
+
+### Resumed acceptance — 2026-09-14 03:53 (Asia/Shanghai)
+
+- User confirmed unlock and Keychain update. Native UI is now accessible. The earlier `invalid_api_key` result belongs to the previous credential; **do not describe the new key as invalid** without an API result.
+- The initial resumed helper read timed out after 15 seconds, before sending any API request. Fixed its orphaned child-process behavior: allow 60 seconds for authorization and terminate the child on timeout. The old orphan was cancelled. The installed production app now clearly displays `Checking Keychain…`; local system authorization is still pending. The computer-use tool refuses access to SecurityAgent, so the user must handle that system prompt locally.
+- Diagnosed an actual quit hang: `terminateLater` changes AppKit's run-loop mode, while cleanup awaits MainActor work. Return `terminateCancel`, finish asynchronous cleanup on the normal loop, then terminate. Added capture generation guards and shutdown gating so late permission/capture completions cannot start a Live session after quitting. Graceful SIGTERM quit and repeated installation/relaunch now passed; no force kill was needed after the fix.
+- Added focused-overlay shortcut handling alongside Carbon registration. CUA's app-targeted Option+Space originally inserted a nonbreaking space; after the fix it triggered manual conversation assistance and left the query field unchanged. Physical system-wide keypresses with another foreground app remain on the hardware checklist.
+- Changed file import to asynchronous `NSOpenPanel.begin`, preserving the running application event loop. Improved per-document button styling/accessibility. Mock shortcut preferences now use the same isolated suite as other Mock settings.
+- Actual Mock UI checks passed: native overlay/settings, manual Return and Ask with listening off, simulated automatic assistance, focused Option+Space, Remote/In-Person and all three scenario choices, separate Mock preference persistence, four-format document import, source disclosure with PDF page number and exact excerpt, and knowledge persistence after restarting.
+- Synthetic local fixtures: `benchmark.txt` (1 chunk), `experiment.md` (1), `method-notes.docx` (1), `study.pdf` (2 pages/chunks). All reached Ready using `mock-embedding-v1`; the query returned sources across the files and exposed `study.pdf · p.2` with the test latency of 42 ms. Fixtures were imported only into `LiveCopilot/Mock`, and no private user documents were accessed or sent.
+- Latest native XCTest run: **8 cases, zero failures**, including the **32 core checks**, plus new shortcut consumption/repeat suppression and shutdown/restart prevention checks. Release build succeeded; final UI-only styling change also compiled successfully.
+- Installed build **20260914.035208**, executable SHA-256 **95c0a79528130c101db9a6952243a163f90f215d6b90b6210a860b9a026c656c**; built/installed hashes match and strict codesign verification passes. App has been switched back to production mode and is open at Settings for local Keychain authorization.
+- Still unverified: updated-key authentication, real Embeddings/Responses/Live, physical microphone/system-audio flow, background global shortcuts, actual sharing exclusion, and complete visual/resize checks. Core re-index/delete tests pass; those controls were not exercised through UI automation. The blank private-window capture from the UI tool is not evidence for Zoom/Teams/Meet exclusion.
+- Task remains incomplete pending the local credential access step, followed by real API acceptance and the documented hardware checklist.
