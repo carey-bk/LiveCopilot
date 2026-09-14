@@ -4,20 +4,27 @@
 
 V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本机知识库生成文字建议。分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
-## 本机首次使用
+## 下载与安装
 
-1. 安装并首次打开 **Xcode**，完成组件安装与许可；最低运行系统 macOS 14。
-2. 安装 XcodeGen：`brew install xcodegen`。本次开发也支持官方发行版安装到 `~/.local/bin/xcodegen`。
-3. 在项目根目录执行 `./StealthApp/run.sh`。编译 Release，签名并安装到 `~/Applications/LiveCopilot.app`，启动菜单栏应用。重装时保留旧 app 备份。
-4. 点击悬浮窗齿轮，进入 **服务 → 实时服务**。API Key 使用 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴；系统询问时允许 LiveCopilot 读取。开发回退是 `OPENAI_API_KEY`，不需要配置 `.env`。
+从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/latest) 下载 **LiveCopilot-1.1.0-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**，直接安装无需 Xcode。
+
+1. 打开 DMG，将 `LiveCopilot.app` 拖到 `Applications`，然后从应用程序文件夹启动。没有管理员权限时可复制到 `~/Applications`。
+2. 当前版本为 **ad-hoc 签名，未经 Apple 公证**。如果 macOS 无法验证开发者，确认来源与 Release 中的 SHA-256 后，可按照 [Apple 官方说明](https://support.apple.com/en-us/102445)，在尝试打开后到“系统设置 → 隐私与安全性 → 仍要打开”允许该应用。
+3. 应用位于菜单栏，没有 Dock 图标；点击波形图标打开设置，`⌥H` 显示或隐藏悬浮窗。
+
+安装包不含 API Key、个人文档、会话历史或知识库。已有用户升级前先退出旧版，替换应用不会自动删除本地数据；macOS 可能重新询问权限。完整说明见 [安装说明](docs/INSTALL.txt)。
+
+## 首次配置与使用
+
+1. 点击悬浮窗齿轮，进入 **服务 → 实时服务**，配置自己的 OpenAI API Key。密钥保存在 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴；系统询问时允许 LiveCopilot 读取。开发回退是 `OPENAI_API_KEY`，不需要配置 `.env`。
 
    如果显示 `Checking Keychain…`，请在本机完成 macOS 的访问提示；密码只输入系统窗口。读取权限与 Key 是否有效是两项独立检查。重新打开已启动的 LiveCopilot 会恢复悬浮窗；`⌥H` 可隐藏它。
-5. 默认 Live `gpt-live-1`、分析 `gpt-5.6-sol`（low effort）、向量 `text-embedding-3-small`。在 **服务 → 分析服务** 可沿用实时服务的 OpenAI Key、使用独立 OpenAI Key，或选择 DeepSeek／OpenAI 兼容服务并单独配置密钥。实时音频与向量服务保持 OpenAI。
-6. 设置 → 知识库 → 导入文档，导入 PDF、Markdown、TXT 或 DOCX，等待 `Ready`。扫描 PDF 需预先 OCR。首次索引会向 OpenAI 发送提取文本。
-7. 选择 Interview、Meeting 或 Academic Defense，以及 Remote Meeting / In-Person 模式。
-8. 点击播放开始监听，按系统提示允许所需音频权限。远程模式使用系统音频 `Them` 和麦克风 `You`；现场模式仅使用麦克风，标为 `Room`，不承诺说话人分离。
-9. 自动建议只响应 Live 判断完成的问题；`⌥Space` 可随时基于已有对话请求帮助，`⌥R` 总结，`⌥F` 追问，`⌥H` 显示/隐藏悬浮窗。
-10. 直接在下方文本框输入问题，点击 **Ask** 或按 Return。可勾选是否附加近期对话；不要求正在监听。回答流式展示，`[S1]` 等对应可展开的本地来源。
+2. 默认 Live `gpt-live-1`、分析 `gpt-5.6-sol`（low effort）、向量 `text-embedding-3-small`。在 **服务 → 分析服务** 可沿用实时服务的 OpenAI Key、使用独立 OpenAI Key，或选择 DeepSeek／OpenAI 兼容服务并单独配置密钥。实时音频与向量服务保持 OpenAI。需要自己的账户具备所选模型权限，API 费用由该账户承担。
+3. 设置 → 知识库 → 导入文档，导入 PDF、Markdown、TXT 或 DOCX，等待 `Ready`。扫描 PDF 需预先 OCR。首次索引会向 OpenAI 发送提取文本。
+4. 选择 Interview、Meeting 或 Academic Defense，以及 Remote Meeting / In-Person 模式。
+5. 点击播放开始监听，按系统提示允许所需音频权限。远程模式使用系统音频 `Them` 和麦克风 `You`；现场模式仅使用麦克风，标为 `Room`，不承诺说话人分离。
+6. 自动建议只响应 Live 判断完成的问题；`⌥Space` 可随时基于已有对话请求帮助，`⌥R` 总结，`⌥F` 追问，`⌥H` 显示/隐藏悬浮窗。
+7. 直接在下方文本框输入问题，点击 **Ask** 或按 Return。可勾选是否附加近期对话；不要求正在监听。回答流式展示，`[S1]` 等对应可展开的本地来源。
 
 没有 Dock 图标是正常行为；菜单栏波形图标可打开设置和历史。悬浮窗可拖动和调整大小。
 
@@ -35,11 +42,13 @@ V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本�
 
 ## V1 交付记录（2026-09-14，后续已升级）
 
-初始 V1 交付为 **1.0.0 / 20260914.075740**，现有 Keychain 已可读取，无需重新配置 Key。原生 Release 编译、34 项核心检查和 9 个 XCTest 用例通过；真实 Embeddings、带 `[S1]` 引用的流式 Responses、官方 Live 的合成语音转写/委派/关闭均已验证。验收用合成文档已从正式知识库清理。
+初始 V1 交付为 **1.0.0 / 20260914.075740**。原生 Release 编译、34 项核心检查和 9 个 XCTest 用例通过；开发机上完成真实 Embeddings、带 `[S1]` 引用的流式 Responses、官方 Live 的合成语音转写/委派/关闭验证。V1.1 增加到 43 项核心检查和 12 个 XCTest 用例；第三方服务仍仅完成 Mock 协议与原生 UI 验证。
 
 实际麦克风/系统音频、其他应用前台时的快捷键和会议软件共享排除效果仍需按[首次体验清单](docs/VERIFICATION.md)操作核对；不将合成音频联调视为硬件验证。
 
 ## 验证与开发
+
+源码构建需要安装并首次打开完整 **Xcode**、完成组件安装，再安装 XcodeGen（`brew install xcodegen`，或设置 `XCODEGEN_BIN`）。执行 `./StealthApp/run.sh` 会编译、签名并安装到 `~/Applications/LiveCopilot.app`；旧应用会备份。
 
 ```bash
 # 不使用 Key、不调用 API 的确定性检查
@@ -47,6 +56,9 @@ V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本�
 
 # 原生 Release 编译
 ./StealthApp/scripts/build.sh
+
+# 从干净且已提交的源码构建 Universal DMG，输出到 dist/
+./StealthApp/scripts/package-dmg.sh
 
 # Xcode XCTest（scheme 自动使用隔离的 Mock 模式）
 xcodebuild -project StealthApp/LiveCopilot.xcodeproj -scheme LiveCopilot \
@@ -90,4 +102,4 @@ unset OPENAI_API_KEY
 
 ## 来源与许可
 
-派生于 Stealth commit `02b78cc82195a1711e3de11adfaed26011635dae`，原作者 vortechron，MIT 许可保持不变。上游为 `upstream`，个人 fork 为 `origin`。本机开发改动没有自动发布到远程仓库。
+派生于 Stealth commit `02b78cc82195a1711e3de11adfaed26011635dae`，原作者 vortechron，MIT 许可保持不变，并保留原始 Git 历史。LiveCopilot 独立发布于 [carey-bk/LiveCopilot](https://github.com/carey-bk/LiveCopilot)；原始项目见 [vortechron/stealth](https://github.com/vortechron/stealth)。打包与发布流程见 [发布说明](docs/RELEASING.md)。

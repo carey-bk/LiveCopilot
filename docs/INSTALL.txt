@@ -1,0 +1,49 @@
+LiveCopilot 1.1 — 安装 / Installation
+
+系统要求：macOS 14 或更新版本；支持 Apple Silicon 和 Intel。
+使用 DMG 安装无需 Xcode、Homebrew 或 XcodeGen。
+
+1. 退出正在运行的 LiveCopilot，再把 LiveCopilot.app 拖到 Applications。
+   如果没有管理员权限，可把应用复制到自己的 ~/Applications 文件夹。
+   从应用程序文件夹启动后，可推出此磁盘映像。
+2. 这是 ad-hoc 签名、未经 Apple 公证的社区发行版。
+   如果 macOS 提示无法验证开发者，先核对下载来源和 SHA256SUMS.txt。
+   确认信任此版本后，可在尝试打开后进入“系统设置 → 隐私与安全性”，
+   使用“仍要打开”单独允许此应用。无需全局关闭 Gatekeeper。
+   Apple 官方说明：https://support.apple.com/en-us/102445
+3. 应用运行在菜单栏，没有 Dock 图标。点击波形图标打开设置；
+   Option+H 显示或隐藏悬浮窗。
+4. 设置 → 通用：选择简体中文、English 或跟随系统，以及毛玻璃或纯白底色。
+5. 设置 → 服务 → 实时服务：配置自己的 OpenAI API Key。
+   密钥保存在 macOS Keychain；Service 为 LiveCopilot-OpenAI，
+   Account 为当前 macOS 用户名。已有凭据时，按系统提示允许应用读取。
+   本安装包不包含 API Key、聊天记录、个人文档或知识库。
+6. 设置 → 服务 → 分析服务：沿用 OpenAI，或配置独立 OpenAI、
+   DeepSeek、OpenAI 兼容服务。其他服务需要自己的 Key、模型和兼容接口。
+   实时转写和向量化仍使用 OpenAI；模型权限和 API 费用由自己的账户承担。
+7. 需要监听时点击播放，按系统提示授予所需音频权限。
+   不开启监听也可以直接输入问题。首次导入知识文档会向 OpenAI 发送提取文本；
+   分析请求会向所选服务发送问题、选中的对话上下文和检索证据。
+
+窗口默认请求从截图和屏幕共享中排除，实际效果取决于 macOS 和捕获软件。
+安装和升级不会自动删除 Keychain 凭据、设置或本地知识库；
+新签名或安装位置可能导致 macOS 重新询问访问权限。
+
+English
+
+Requires macOS 14+, Apple Silicon or Intel. No development tools are needed.
+Quit LiveCopilot, drag the app into Applications (or ~/Applications), then launch it.
+This is an ad-hoc signed, non-notarized community build. Verify the source and the
+published checksums. If blocked, follow Apple's per-app Open Anyway guidance:
+https://support.apple.com/en-us/102445
+
+The app lives in the menu bar, with no Dock icon. Option+H toggles the overlay.
+Choose your language/background in Settings > General. Configure your own OpenAI
+key in Services > Live service; analysis can reuse that key or use a separate
+OpenAI, DeepSeek or OpenAI-compatible service. Live and embeddings remain OpenAI.
+Keys stay in Keychain. Audio/document content is sent only as described above.
+Grant the required audio permissions when starting listening. You can type a
+question without listening. API access and charges belong to your own account.
+
+This package contains no credentials, personal documents, histories or indexes.
+See the repository README, PRIVACY.md and LICENSE for details and attribution.

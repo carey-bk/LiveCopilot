@@ -36,6 +36,8 @@ private/
 local-data/
 .signing/
 .build/
+dist/
+*.dmg
 
 # Preserve the supplied reference document locally, outside source delivery.
 docs/LiveCopilot_Codex_Goal_V1.docx

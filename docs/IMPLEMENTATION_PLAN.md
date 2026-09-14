@@ -6,14 +6,14 @@ Source of truth: `livecopilot_goal.md`. Development: 2026-09-13–14. Final loca
 
 ## Delivery status
 
-V1 implementation is complete and installed at `/Users/careyzhang/Applications/LiveCopilot.app`, version **1.0.0**, build **20260914.075740**. The installed application has passed real OpenAI Embeddings, Responses and official Live checks. It has been restarted normally, reads the existing Keychain credential, and is left ready with listening off. The synthetic acceptance document has been removed from the production knowledge base; only the exact disposable fixture was deleted.
+V1 implementation is complete and installed at `~/Applications/LiveCopilot.app`, version **1.0.0**, build **20260914.075740**. The installed application has passed real OpenAI Embeddings, Responses and official Live checks. It has been restarted normally, reads the existing Keychain credential, and is left ready with listening off. The synthetic acceptance document has been removed from the production knowledge base; only the exact disposable fixture was deleted.
 
 Physical microphone/system-audio behavior, background global keypresses, complete visual/resize inspection, permission denial/network interruption, and actual meeting-app screen-share exclusion have an explicit interactive checklist in `VERIFICATION.md`. These are **not represented as passed hardware tests**. The supplied requirements explicitly allow a manual checklist for audio behavior requiring user participation. No further development or API-credential prerequisite is outstanding.
 
 ## Baseline audit and scope
 
 - The workspace initially contained the supplied requirements documents, without a Git repository. Imported upstream history from `vortechron/stealth`, baseline `02b78cc82195a1711e3de11adfaed26011635dae`. The original checkout is preserved at `/tmp/livecopilot-stealth-baseline-20260913`.
-- Created personal fork `carey-bk/stealth`, configured `origin` and retained `upstream`. Work is on local branch `livecopilot-v1`; development changes have not been pushed.
+- At V1 acceptance, created personal fork `carey-bk/stealth`, configured `origin` and retained `upstream`. Work was local on `livecopilot-v1`. Subsequent public releases use the independent `carey-bk/LiveCopilot` repository; see `docs/RELEASING.md`.
 - Original Stealth and V1 both passed native Release builds after the user installed full Xcode. Initial CLT-only failure was an environment prerequisite, resolved with Xcode 26.6 (17F113), selected at `/Applications/Xcode.app/Contents/Developer`.
 - Target Mac: arm64, macOS 26.6.2. Installed application: universal arm64/x86_64. XcodeGen 2.46.0 is installed with official presets at `~/.local/share/livecopilot-tools/XcodeGen-2.46.0`, wrapper `~/.local/bin/xcodegen`.
 - Reused Swift/SwiftUI, ScreenCaptureKit, AVAudioEngine, PCM conversion, NSPanel, menu bar, Carbon shortcuts, local history and Keychain. Kept native build/signing, original MIT license and the source directory layout.
@@ -85,7 +85,7 @@ Physical microphone/system-audio behavior, background global keypresses, complet
 
 ## Installed artifact and repository
 
-- Installed path: `/Users/careyzhang/Applications/LiveCopilot.app`.
+- Installed path: `~/Applications/LiveCopilot.app`.
 - Version/build: **1.0.0 / 20260914.075740**.
 - Installed executable SHA-256: `bd8f79d03933f1606c37108c0d0fb42b239895ba6ed254ea34456a744962aa9c`.
 - `codesign --verify --deep --strict` passes. The installed, real-API-tested signature was preserved during final source compilation to avoid unnecessary Keychain reauthorization. Unsigned build products are separate from this installed artifact.

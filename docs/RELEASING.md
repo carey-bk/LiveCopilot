@@ -1,0 +1,41 @@
+# Packaging and publishing LiveCopilot
+
+The public source repository is `carey-bk/LiveCopilot`. Preserve the upstream Stealth history and MIT license. Release assets belong in GitHub Releases; `dist/` is ignored by Git. No runtime data or credentials are copied into the app or disk image.
+
+## Build a new DMG
+
+Install full Xcode and XcodeGen, complete the relevant tests, then commit the release source and documentation. From a clean checkout:
+
+```bash
+./StealthApp/scripts/package-dmg.sh
+```
+
+The script builds Release, copies the bundle to a temporary staging directory, assigns a UTC build number, ad-hoc signs only that copy, verifies its signature and both architectures, and creates a compressed read-only DMG. It never installs over the running app, reads Keychain, or calls model APIs. An existing output DMG is never overwritten.
+
+The image contains `LiveCopilot.app`, an `/Applications` symlink, bilingual installation instructions, the MIT license and `ReleaseInfo.txt`. The `dist/` directory also contains a release-information file and `SHA256SUMS.txt`.
+
+## Preserve an already validated application
+
+For the first public 1.1.0 release, reuse the exact previously validated application so its signature and build identifier stay unchanged:
+
+```bash
+./StealthApp/scripts/package-dmg.sh \
+  --app "$HOME/Applications/LiveCopilot.app" \
+  --app-source-ref 0c263bf
+```
+
+The script rejects this mode if source, resources or project settings differ from the supplied application commit. `--app-source-ref` identifies the caller's validated binary; this is a provenance record, not a reproducible-build attestation. The manifest records both that application commit and the release checkout commit, plus the executable SHA-256, architecture, minimum OS, version and build. Packaging/documentation-only changes are permitted.
+
+## Validate before publishing
+
+- Run `hdiutil verify` and mount the image read-only without launching the app.
+- Confirm the app, Applications link, installation instructions, license and manifest are present. Verify the mounted app with `codesign --verify --deep --strict` and compare its executable SHA-256 with the input application.
+- Copy the app from the image into a temporary installation directory, verify the copied app, then detach the image. Keep the user's installed app and private data untouched.
+- Review the source and reachable Git history for credentials/private files before pushing. Publish a version tag such as `v1.1.0` on the intended release commit.
+- Create a draft GitHub Release, upload the DMG, manifest and checksums, download the assets to a fresh directory and verify them. Publish the draft after verification. GitHub provides source archives for the same tag.
+
+## Signing boundary
+
+Version 1.1.0 is an ad-hoc signed community build, not Developer ID signed or Apple notarized. Passing `codesign --verify` confirms bundle integrity; it does not make the app trusted by Gatekeeper. Installation guidance links to [Apple's per-app opening instructions](https://support.apple.com/en-us/102445), without recommending a global Gatekeeper change.
+
+A future notarized release needs the maintainer's Developer ID Application identity, a suitable hardened-runtime build and an Apple notarization submission. No signing private key, account password or API key belongs in Git or release assets.
