@@ -1,5 +1,7 @@
 # Verification and troubleshooting
 
+For the latest language, background and analysis-service update, see `V1_1_UPDATE.md`. The V1 real-API evidence below is historical; it is not a claim of a real DeepSeek call.
+
 ## Evidence recorded during development
 
 The latest exact results are maintained in `IMPLEMENTATION_PLAN.md`. Distinguish source implementation, deterministic mocks, native build/test, real API checks, and interactive hardware/UI checks. An API session starting is not proof of successful capture or question detection; setting capture exclusion is not proof of exclusion in a specific meeting app.

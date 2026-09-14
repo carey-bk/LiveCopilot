@@ -32,6 +32,41 @@ struct AppSettings: Codable, Equatable {
     var automaticSuggestions = true
     var includeConversation = true
     var retrievalCount = 6
+    var language = AppLanguage.system
+    var background = AppBackground.glass
+    var reasoningService = ReasoningService.sharedOpenAI
+    var deepSeekModel = "deepseek-v4-pro"
+    var deepSeekEffort = "low"
+    var compatibleBaseURL = ""
+    var compatiblePath = "chat/completions"
+    var compatibleModel = ""
+
+    init() {}
+    private enum CodingKeys: String, CodingKey {
+        case liveModel, reasoningModel, embeddingModel, reasoningEffort, mode, scenario, automaticSuggestions, includeConversation, retrievalCount, language, background, reasoningService, deepSeekModel, deepSeekEffort, compatibleBaseURL, compatiblePath, compatibleModel
+    }
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        liveModel = try c.decodeIfPresent(String.self, forKey: .liveModel) ?? liveModel
+        reasoningModel = try c.decodeIfPresent(String.self, forKey: .reasoningModel) ?? reasoningModel
+        embeddingModel = try c.decodeIfPresent(String.self, forKey: .embeddingModel) ?? embeddingModel
+        reasoningEffort = try c.decodeIfPresent(String.self, forKey: .reasoningEffort) ?? reasoningEffort
+        mode = try c.decodeIfPresent(OperatingMode.self, forKey: .mode) ?? mode
+        scenario = try c.decodeIfPresent(ScenarioProfile.self, forKey: .scenario) ?? scenario
+        automaticSuggestions = try c.decodeIfPresent(Bool.self, forKey: .automaticSuggestions) ?? automaticSuggestions
+        includeConversation = try c.decodeIfPresent(Bool.self, forKey: .includeConversation) ?? includeConversation
+        retrievalCount = try c.decodeIfPresent(Int.self, forKey: .retrievalCount) ?? retrievalCount
+        language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? language
+        background = try c.decodeIfPresent(AppBackground.self, forKey: .background) ?? background
+        reasoningService = try c.decodeIfPresent(ReasoningService.self, forKey: .reasoningService) ?? reasoningService
+        deepSeekModel = try c.decodeIfPresent(String.self, forKey: .deepSeekModel) ?? deepSeekModel
+        deepSeekEffort = try c.decodeIfPresent(String.self, forKey: .deepSeekEffort) ?? deepSeekEffort
+        compatibleBaseURL = try c.decodeIfPresent(String.self, forKey: .compatibleBaseURL) ?? compatibleBaseURL
+        compatiblePath = try c.decodeIfPresent(String.self, forKey: .compatiblePath) ?? compatiblePath
+        compatibleModel = try c.decodeIfPresent(String.self, forKey: .compatibleModel) ?? compatibleModel
+        retrievalCount = min(8, max(3, retrievalCount))
+    }
 
     static func load(defaults: UserDefaults = .standard) -> Self {
         guard let data = defaults.data(forKey: "livecopilot.settings"),

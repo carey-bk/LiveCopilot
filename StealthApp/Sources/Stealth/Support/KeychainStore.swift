@@ -58,6 +58,6 @@ enum KeychainStore {
         guard status == errSecSuccess || status == errSecItemNotFound else { throw keychainError(status) }
     }
     private static func keychainError(_ status: OSStatus) -> Error {
-        CopilotError.message("Keychain access failed (\(status)). Unlock your login Keychain and allow LiveCopilot access to service LiveCopilot-OpenAI, account \(account).")
+        CopilotError.message("Keychain access failed (\(status)). Unlock your login Keychain and allow LiveCopilot access to the selected service credential.")
     }
 }

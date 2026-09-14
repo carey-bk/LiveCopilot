@@ -49,11 +49,11 @@ enum OpenAIHTTP {
         guard (200..<300).contains(status) else {
             let message: String
             switch status {
-            case 401, 403: message = "OpenAI authentication/access failed (\(status)). Check the API key and model access in Settings."
-            case 429: message = "OpenAI rate or credit limit reached. Check API billing/limits and retry later."
-            case 400, 404, 422: message = "OpenAI rejected the request (\(status)). Check model name and supported configuration."
-            case 500...599: message = "OpenAI is temporarily unavailable (\(status)). Retry shortly."
-            default: message = "OpenAI request failed (HTTP \(status)). Check the network and retry."
+            case 401, 403: message = "Service authentication/access failed (\(status)). Check the API key and model access in Services."
+            case 429: message = "Service rate or credit limit reached. Check API billing/limits and retry later."
+            case 400, 404, 422: message = "Service rejected the request (\(status)). Check model name and supported configuration."
+            case 500...599: message = "Service is temporarily unavailable (\(status)). Retry shortly."
+            default: message = "Service request failed (HTTP \(status)). Check the network and retry."
             }
             throw CopilotError.message(message)
         }

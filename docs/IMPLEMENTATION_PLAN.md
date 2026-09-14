@@ -1,5 +1,7 @@
 # LiveCopilot V1 implementation and acceptance
 
+This is the historical V1 acceptance ledger. The user subsequently authorized V1.1 language, appearance and analysis-provider changes; see `V1_1_UPDATE.md` for current delivery.
+
 Source of truth: `livecopilot_goal.md`. Development: 2026-09-13–14. Final local delivery: 2026-09-14 (Asia/Shanghai).
 
 ## Delivery status

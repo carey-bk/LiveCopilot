@@ -1,4 +1,4 @@
-# LiveCopilot V1 architecture
+# LiveCopilot architecture (V1.1)
 
 The product requirements are `livecopilot_goal.md`. This is an incremental native evolution of Stealth; upstream source and history remain available through Git.
 
@@ -22,7 +22,7 @@ AVAudioEngine (You/Room) ─ PCMConverter ── OpenAILiveProvider ├─ times
                                             local KnowledgeIndex actor
                                    SQLite FTS5/BM25 + cosine + rank fusion
                                                            │
-                                     OpenAIReasoningProvider / Responses SSE
+                                     ReasoningProviderFactory → Responses / Chat Completions SSE
                                                            │
                                       SuggestionStore → native OverlayView
 ```
@@ -67,7 +67,11 @@ The transport frames raw UTF-8 bytes with a bounded buffer and preserves blank L
 
 Evidence has per-request `[S1]` IDs tied to local chunk metadata. Prompts distinguish local evidence from model reasoning and treat documents/transcripts as untrusted reference data. The tolerant Markdown section parser permits plain or partial output. The UI includes the question, compact sections, source excerpts, stage timing, cancel/copy, and optional conversation context for typed queries.
 
-`LiveProvider`, `EmbeddingProvider`, and `ReasoningProvider` define the boundaries. V1 only implements OpenAI and deterministic mocks. No alternate production providers or distributed infrastructure are included.
+`LiveProvider`, `EmbeddingProvider`, and `ReasoningProvider` define the boundaries. V1.1 adds `ReasoningProviderFactory` to select OpenAI Responses (shared or separate Key), DeepSeek Chat Completions, or a custom compatible Chat Completions endpoint. Live and Embeddings remain OpenAI. Vendor-specific thinking options are emitted only for DeepSeek. Only `delta.content` is displayed; `reasoning_content` is ignored. Error bodies are not echoed.
+
+`AppSettings` decodes older V1 records field by field, defaulting only new preferences. `AppLanguage` and `L10n` translate application chrome/status messages without translating user documents or transcripts; model answers still follow the question language. Pure-white windows use an opaque white SwiftUI surface and Aqua appearance; glass mode uses native material. Window capture exclusion remains independent of appearance.
+
+Credentials stay outside Codable settings. Existing Live identity is preserved. Separate OpenAI and DeepSeek identities cannot fall back to the Live key. Compatible credentials are additionally scoped to their canonical endpoint. Changing a selected service invalidates the cached analysis credential; revision IDs discard delayed reads from a previous selection. Requests snapshot the selected provider and credential before streaming. Missing OpenAI embeddings can degrade to lexical retrieval while a separately configured analysis provider remains usable.
 
 ## Files and builds
 

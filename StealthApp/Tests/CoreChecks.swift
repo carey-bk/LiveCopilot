@@ -203,6 +203,76 @@ enum CoreChecks {
         let afterFailure = try await index.allChunks(), failedDocs = try await index.documents()
         try expect(afterFailure.isEmpty && failedDocs.first?.status == "Failed", "partial index became searchable")
         passed.append("mid-batch indexing failure leaves retryable metadata and no partial vectors")
+        try check("V1 settings migrate without resetting existing models or behavior") {
+            let legacy = Data(#"{"liveModel":"existing-live","reasoningModel":"existing-reasoning","embeddingModel":"existing-embedding","reasoningEffort":"high","mode":"In-Person / Defense","scenario":"Academic Defense","automaticSuggestions":false,"includeConversation":false,"retrievalCount":8}"#.utf8)
+            let restored = try JSONDecoder().decode(AppSettings.self, from: legacy)
+            try expect(restored.liveModel == "existing-live" && restored.reasoningModel == "existing-reasoning" && restored.embeddingModel == "existing-embedding", "migration reset models")
+            try expect(restored.mode == .inPerson && restored.scenario == .defense && !restored.automaticSuggestions && restored.retrievalCount == 8, "migration reset behavior")
+            try expect(restored.reasoningService == .sharedOpenAI && restored.language == .system && restored.background == .glass, "unsafe migration defaults")
+            var updated = restored; updated.language = .simplifiedChinese; updated.background = .white; updated.reasoningService = .deepSeek
+            let encoded = try JSONEncoder().encode(updated)
+            let roundTrip = try JSONDecoder().decode(AppSettings.self, from: encoded)
+            try expect(roundTrip == updated, "preferences fail round trip")
+        }
+        try check("UI translations preserve source content and source identity") {
+            try expect(L10n.text("API key configured", language: .simplifiedChinese) == "API Key 已配置", "credential status not translated")
+            try expect(L10n.text("API key configured", language: .english) == "API key configured", "English not selectable")
+            try expect(chunks[0].displayLabel(language: .simplifiedChinese).contains("第 3 页"), "source page lost")
+            try expect(chunks[0].text.contains("128"), "source content altered")
+        }
+        try check("custom endpoint rejects credential URLs and binds keys to destinations") {
+            for bad in ["http://example.com", "https://user:password@example.com", "https://example.com?api_key=fixture", "https://example.com#fragment"] {
+                do { _ = try ServiceEndpoint.make(baseURL: bad, path: "chat/completions"); throw CheckError(description: "unsafe endpoint accepted") }
+                catch is CopilotError { }
+            }
+            let endpoint = try ServiceEndpoint.make(baseURL: "https://EXAMPLE.com:443/v1/", path: "/chat/completions")
+            try expect(endpoint.absoluteString == "https://example.com/v1/chat/completions", "incorrect endpoint join")
+            var one = AppSettings(); one.reasoningService = .compatible; one.compatibleBaseURL = "https://one.example/v1"
+            var two = one; two.compatibleBaseURL = "https://two.example/v1"
+            let a = try one.analysisCredentialReference(), b = try two.analysisCredentialReference()
+            try expect(a != b && a != .live && a != .deepSeek, "credential identities overlap")
+        }
+        let chatEvents = [
+            #"data: {"choices":[{"index":0,"delta":{"reasoning_content":"private-reasoning-fixture"},"finish_reason":null}]}"#, "",
+            #"data: {"choices":[{"index":0,"delta":{"content":"42 毫秒 [S1]"},"finish_reason":null}]}"#, "",
+            #"data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#, "", "data: [DONE]", ""
+        ]
+        for service in ReasoningService.allCases {
+            var settings = AppSettings(); settings.reasoningService = service
+            settings.compatibleBaseURL = "https://analysis.example/v1"; settings.compatibleModel = "fixture-model"
+            let wire = service == .sharedOpenAI || service == .separateOpenAI ? events : chatEvents
+            let recorder = RecordingTransport(events: wire)
+            let provider = try ReasoningProviderFactory.make(settings: settings, liveKey: "live-fixture-only", analysisKey: "analysis-fixture-only", transport: recorder)
+            var output = ""
+            for try await delta in provider.stream(answer) { output += delta }
+            let request = recorder.requests[0]
+            let expectedKey = service == .sharedOpenAI ? "live-fixture-only" : "analysis-fixture-only"
+            try expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer " + expectedKey, "service received wrong credential")
+            let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+            try expect(body["stream"] as? Bool == true, "stream disabled")
+            if service == .deepSeek || service == .compatible {
+                try expect(output == "42 毫秒 [S1]" && !output.contains("private-reasoning"), "final text/source corrupted or reasoning leaked")
+                try expect((body["messages"] as? [[String: String]])?.last?["content"]?.contains("[S1]") == true, "evidence omitted")
+                try expect((body["thinking"] != nil) == (service == .deepSeek), "vendor options leaked to custom service")
+            } else { try expect(body["store"] as? Bool == false, "OpenAI storage contract changed") }
+            passed.append("analysis routing and credential isolation: " + service.rawValue)
+        }
+        try check("external analysis cannot silently fall back to the Live credential") {
+            var settings = AppSettings(); settings.reasoningService = .deepSeek
+            do { _ = try ReasoningProviderFactory.make(settings: settings, liveKey: "live-fixture-only", analysisKey: nil); throw CheckError(description: "Live key leaked as fallback") }
+            catch is CopilotError { }
+        }
+        for broken in [
+            Array(chatEvents.prefix(4)),
+            [#"data: {"choices":[{"delta":{"content":"partial"},"finish_reason":"length"}]}"#, ""],
+            [#"data: {"error":{"message":"must-not-echo-private-server-text"}}"#, ""],
+            ["data: malformed", ""], ["data: [DONE]", ""]
+        ] {
+            let provider = ChatCompletionsProvider(key: "fixture", model: "fixture", endpoint: URL(string: "https://fixture.example/chat/completions")!, transport: FixtureTransport(body: Data(), status: 200, events: broken))
+            do { for try await _ in provider.stream(answer) {}; throw CheckError(description: "bad Chat Completion accepted") }
+            catch let error as CopilotError { try expect(!error.localizedDescription.contains("must-not-echo"), "raw server error leaked") }
+        }
+        passed.append("Chat Completions truncated, empty, malformed and error streams fail safely")
         return passed
     }
 }
@@ -243,5 +313,18 @@ actor FailAfterFirstBatch: EmbeddingProvider {
         calls += 1
         if calls > 1 { throw CopilotError.message("Synthetic second batch failure") }
         return Array(repeating: [1, 0], count: texts.count)
+    }
+}
+
+final class RecordingTransport: HTTPTransport, @unchecked Sendable {
+    let events: [String]
+    private let lock = NSLock()
+    private var captured: [URLRequest] = []
+    var requests: [URLRequest] { lock.withLock { captured } }
+    init(events: [String]) { self.events = events }
+    func data(for request: URLRequest) async throws -> (Data, Int) { throw CoreChecks.CheckError(description: "unexpected data request") }
+    func lines(for request: URLRequest) -> AsyncThrowingStream<String, Error> {
+        lock.withLock { captured.append(request) }
+        return AsyncThrowingStream { c in events.forEach { c.yield($0) }; c.finish() }
     }
 }

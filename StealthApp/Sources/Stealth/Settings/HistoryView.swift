@@ -4,12 +4,15 @@ import AppKit
 /// Browse past sessions saved when you stop listening: a master list of sessions
 /// on the left, the full speaker-labelled transcript on the right.
 struct HistoryView: View {
+    @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var sessions: SessionStore
     @State private var selectedID: SessionRecord.ID?
 
-    init(store: SessionStore) {
-        self.sessions = store
+    init(coordinator: AppCoordinator) {
+        self.coordinator = coordinator
+        self.sessions = coordinator.sessions
     }
+    private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
 
     private var selected: SessionRecord? {
         sessions.sessions.first { $0.id == selectedID }
@@ -21,6 +24,9 @@ struct HistoryView: View {
             Divider()
             detail
         }
+        .background(coordinator.settings.background == .white ? Color.white : Color(nsColor: .windowBackgroundColor))
+        .preferredColorScheme(coordinator.settings.background == .white ? .light : nil)
+        .environment(\.locale, coordinator.settings.language.locale)
         .frame(minWidth: 620, minHeight: 420)
         .onAppear {
             if selectedID == nil { selectedID = sessions.sessions.first?.id }
@@ -29,11 +35,11 @@ struct HistoryView: View {
 
     private var sessionList: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Sessions")
+            Text(t("Sessions"))
                 .font(.headline)
                 .padding(12)
             if sessions.sessions.isEmpty {
-                Text("No saved sessions yet.\nStop a listening session to save it here.")
+                Text(t("No saved sessions yet.\nStop a listening session to save it here."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(12)
@@ -44,7 +50,7 @@ struct HistoryView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(session.title)
                                 .font(.system(size: 13, weight: .medium))
-                            Text("\(session.lineCount) lines · \(session.durationLabel)")
+                            Text("\(session.lineCount) \(t("lines")) · \(session.durationLabel)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -64,20 +70,20 @@ struct HistoryView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(session.title).font(.headline)
-                        Text("\(session.lineCount) lines · \(session.durationLabel)")
+                        Text("\(session.lineCount) \(t("lines")) · \(session.durationLabel)")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     Button {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(session.plainText, forType: .string)
-                    } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    } label: { Label(t("Copy"), systemImage: "doc.on.doc") }
                     Button(role: .destructive) {
                         let toDelete = session
                         selectedID = nil
                         sessions.delete(toDelete)
                         selectedID = sessions.sessions.first?.id
-                    } label: { Label("Delete", systemImage: "trash") }
+                    } label: { Label(t("Delete"), systemImage: "trash") }
                 }
                 .padding(12)
                 Divider()
@@ -86,7 +92,7 @@ struct HistoryView: View {
                         ForEach(session.lines) { line in
                             VStack(alignment: .leading, spacing: 1) {
                                 HStack(spacing: 6) {
-                                    Text(line.speaker.rawValue)
+                                    Text(t(line.speaker.rawValue))
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundStyle(line.speaker == .you ? .blue : .green)
                                     Text(line.clock)
@@ -106,7 +112,7 @@ struct HistoryView: View {
         } else {
             VStack {
                 Spacer()
-                Text("Select a session").foregroundStyle(.secondary)
+                Text(t("Select a session")).foregroundStyle(.secondary)
                 Spacer()
             }
             .frame(maxWidth: .infinity)

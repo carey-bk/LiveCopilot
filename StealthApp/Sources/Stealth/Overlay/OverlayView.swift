@@ -11,59 +11,65 @@ struct OverlayView: View {
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator; transcript = coordinator.transcript; suggestion = coordinator.suggestion
     }
+    private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            Text(coordinator.statusMessage).font(.caption).foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
+            Text(t(coordinator.statusMessage)).font(.caption).foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
             if coordinator.isRunning {
                 HStack {
-                    Text(coordinator.questionState).font(.caption2).foregroundStyle(.secondary)
+                    Text(t(coordinator.questionState)).font(.caption2).foregroundStyle(.secondary)
                     Spacer()
-                    Toggle("Auto", isOn: $coordinator.settings.automaticSuggestions).toggleStyle(.switch).controlSize(.mini)
+                    Toggle(t("Auto"), isOn: $coordinator.settings.automaticSuggestions).toggleStyle(.switch).controlSize(.mini)
                 }
             }
             if showTranscript { transcriptView.frame(minHeight: 65, maxHeight: 145) }
             HStack(spacing: 6) {
                 ForEach(SuggestionMode.allCases) { mode in
-                    Button { coordinator.requestSuggestion(mode: mode) } label: { Label(mode.label, systemImage: mode.systemImage).font(.caption) }
+                    Button { coordinator.requestSuggestion(mode: mode) } label: { Label(t(mode.label), systemImage: mode.systemImage).font(.caption) }
                         .help(coordinator.hotkeys.combo(for: mode).display)
                 }
                 Spacer()
-                Button { showTranscript.toggle() } label: { Image(systemName: "text.bubble") }.help("Show/hide conversation")
+                Button { showTranscript.toggle() } label: { Image(systemName: "text.bubble") }.help(t("Show/hide conversation"))
             }
             Divider()
             answer
             HStack(alignment: .center) {
-                TextField("Ask anything — listening can be off", text: $query, axis: .vertical)
+                TextField(t("Ask anything — listening can be off"), text: $query, axis: .vertical)
                     .textFieldStyle(.roundedBorder).lineLimit(1...3)
                     .onSubmit { submit() }.accessibilityIdentifier("manual-query")
-                Button("Ask") { submit() }.disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Button(t("Ask")) { submit() }.disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             HStack {
-                Toggle("Use recent conversation", isOn: $coordinator.includeConversation).font(.caption2).toggleStyle(.checkbox)
+                Toggle(t("Use recent conversation"), isOn: $coordinator.includeConversation).font(.caption2).toggleStyle(.checkbox)
                 Spacer()
-                if suggestion.isLoading { Button("Cancel") { coordinator.cancelAnswer() }.font(.caption) }
+                if suggestion.isLoading { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption) }
             }
             footer
         }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .background {
+                if coordinator.settings.background == .white { RoundedRectangle(cornerRadius: 16).fill(Color.white) }
+                else { RoundedRectangle(cornerRadius: 16).fill(.regularMaterial) }
+            }
+            .preferredColorScheme(coordinator.settings.background == .white ? .light : nil)
+            .environment(\.locale, coordinator.settings.language.locale)
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.12)))
             .overlay(alignment: .bottomTrailing) { resizeHandle }
     }
     private func submit() { let value = query; query = ""; coordinator.askText(value) }
     private var header: some View {
         HStack {
-            Text("LiveCopilot").font(.headline)
-            if coordinator.isMock { Text("MOCK").font(.caption2.bold()).foregroundStyle(.orange) }
+            Text(t("LiveCopilot")).font(.headline)
+            if coordinator.isMock { Text(t("MOCK")).font(.caption2.bold()).foregroundStyle(.orange) }
             Spacer()
             Button { Task { await coordinator.toggle() } } label: {
                 Image(systemName: coordinator.isRunning ? "stop.circle.fill" : "play.circle.fill")
                     .foregroundStyle(coordinator.isRunning ? Color.red : .green)
-            }.disabled(coordinator.isTransitioning).help(coordinator.isRunning ? "Stop listening" : "Start listening")
+            }.disabled(coordinator.isTransitioning).help(t(coordinator.isRunning ? "Stop listening" : "Start listening"))
             Button { coordinator.toggleMic() } label: { Image(systemName: coordinator.micEnabled ? "mic.fill" : "mic.slash") }
-                .help("Toggle your microphone in Remote Meeting mode")
-            Button { coordinator.onOpenSettings?() } label: { Image(systemName: "gearshape") }.help("Settings and knowledge base")
-            Button { NSApp.windows.first(where: { $0 is OverlayWindow })?.orderOut(nil) } label: { Image(systemName: "minus") }.help("Hide (⌥H)")
+                .help(t("Toggle your microphone in Remote Meeting mode"))
+            Button { coordinator.onOpenSettings?() } label: { Image(systemName: "gearshape") }.help(t("Settings and knowledge base"))
+            Button { NSApp.windows.first(where: { $0 is OverlayWindow })?.orderOut(nil) } label: { Image(systemName: "minus") }.help(t("Hide (⌥H)"))
         }.buttonStyle(.borderless)
     }
     private var transcriptView: some View {
@@ -71,17 +77,17 @@ struct OverlayView: View {
             VStack(spacing: 2) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
-                        if transcript.lines.isEmpty { Text("Conversation appears here when listening.").font(.caption).foregroundStyle(.secondary) }
+                        if transcript.lines.isEmpty { Text(t("Conversation appears here when listening.")).font(.caption).foregroundStyle(.secondary) }
                         ForEach(transcript.lines) { line in
                             HStack(alignment: .top, spacing: 6) {
-                                Text(line.speaker.rawValue).font(.caption2.bold()).foregroundStyle(line.speaker == .you ? Color.blue : .green).frame(width: 35, alignment: .leading)
+                                Text(t(line.speaker.rawValue)).font(.caption2.bold()).foregroundStyle(line.speaker == .you ? Color.blue : .green).frame(width: 35, alignment: .leading)
                                 Text(line.content).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                         Color.clear.frame(height: 1).id("latest")
                     }
                 }.onChange(of: transcript.lines) { _, _ in if followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
-                Toggle("Follow transcript", isOn: $followTranscript).font(.caption2).toggleStyle(.checkbox).frame(maxWidth: .infinity, alignment: .trailing)
+                Toggle(t("Follow transcript"), isOn: $followTranscript).font(.caption2).toggleStyle(.checkbox).frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
@@ -89,25 +95,25 @@ struct OverlayView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 9) {
                 if !suggestion.question.isEmpty { Text(suggestion.question).font(.subheadline.bold()).textSelection(.enabled) }
-                if let warning = suggestion.warning { Text(warning).font(.caption).foregroundStyle(.orange) }
+                if let warning = suggestion.warning { Text(t(warning)).font(.caption).foregroundStyle(.orange) }
                 if suggestion.isLoading && suggestion.text.isEmpty {
-                    HStack { ProgressView().controlSize(.small); Text("Retrieving evidence and thinking…").font(.caption) }
+                    HStack { ProgressView().controlSize(.small); Text(t("Retrieving evidence and thinking…")).font(.caption) }
                 }
                 if suggestion.text.isEmpty && !suggestion.isLoading && suggestion.error == nil {
-                    Text("Ask a question below, or use ⌥Space for help with the conversation.").font(.subheadline).foregroundStyle(.secondary)
+                    Text(t("Ask a question below, or use ⌥Space for help with the conversation.")).font(.subheadline).foregroundStyle(.secondary)
                 }
                 ForEach(Array(SuggestionParser.sections(suggestion.text).enumerated()), id: \.offset) { _, section in
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(section.title).font(.caption.bold()).foregroundStyle(.secondary)
+                        Text(t(section.title)).font(.caption.bold()).foregroundStyle(.secondary)
                         Text(.init(section.content)).font(.system(size: 14)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                if let error = suggestion.error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                if let error = suggestion.error { Text(t(error)).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
                 if !suggestion.sources.isEmpty {
                     Divider()
-                    Text("Sources · retrieved local evidence").font(.caption.bold())
+                    Text(t("Sources · retrieved local evidence")).font(.caption.bold())
                     ForEach(Array(suggestion.sources.enumerated()), id: \.element.id) { i, source in
-                        DisclosureGroup("[S\(i + 1)] \(source.chunk.sourceLabel)") {
+                        DisclosureGroup("[S\(i + 1)] \(source.chunk.displayLabel(language: coordinator.settings.language))") {
                             Text(source.chunk.text).font(.caption).textSelection(.enabled)
                         }.font(.caption2)
                     }
@@ -117,13 +123,13 @@ struct OverlayView: View {
     }
     private var footer: some View {
         HStack {
-            Text(coordinator.settings.scenario.rawValue).font(.caption2).foregroundStyle(.secondary)
+            Text(t(coordinator.settings.scenario.rawValue)).font(.caption2).foregroundStyle(.secondary)
             Spacer()
-            if let ms = suggestion.firstTextMS { Text("First text \(Double(ms) / 1000, specifier: "%.1f")s").font(.caption2).foregroundStyle(.secondary) }
+            if let ms = suggestion.firstTextMS { Text("\(t("First text")) \(Double(ms) / 1000, specifier: "%.1f")s").font(.caption2).foregroundStyle(.secondary) }
             if !suggestion.text.isEmpty {
-                Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(suggestion.text, forType: .string) }.font(.caption2)
+                Button(t("Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(suggestion.text, forType: .string) }.font(.caption2)
             }
-            Text("⌥H").font(.caption2).foregroundStyle(.tertiary)
+            Text(t("⌥H")).font(.caption2).foregroundStyle(.tertiary)
         }
     }
     private var resizeHandle: some View {

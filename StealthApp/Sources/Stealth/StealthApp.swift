@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 @main
 struct LiveCopilotApp: App {
@@ -23,31 +24,32 @@ private struct MenuContent: View {
     let openHistory: () -> Void
     let toggleOverlay: () -> Void
 
+    private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     var body: some View {
-        Text(coordinator.statusMessage)
+        Text(t(coordinator.statusMessage))
             .font(.caption)
 
-        Button(coordinator.isRunning ? "Stop Listening" : "Start Listening") {
+        Button(t(coordinator.isRunning ? "Stop Listening" : "Start Listening")) {
             Task { await coordinator.toggle() }
         }
         .disabled(!coordinator.hasAPIKey)
 
-        Button("Suggest Reply (\(coordinator.hotkeys.combo(for: .reply).display))") {
+        Button("\(t("Suggest Reply")) (\(coordinator.hotkeys.combo(for: .reply).display))") {
             coordinator.requestSuggestion(mode: .reply)
         }
         .disabled(coordinator.transcript.lines.isEmpty)
 
-        Button(coordinator.micEnabled ? "Mute Mic (You)" : "Unmute Mic (You)") {
+        Button(t(coordinator.micEnabled ? "Mute Mic (You)" : "Unmute Mic (You)")) {
             coordinator.toggleMic()
         }
 
-        Button("Show / Hide Overlay (⌥H)") { toggleOverlay() }
+        Button(t("Show / Hide Overlay (⌥H)")) { toggleOverlay() }
 
         Divider()
 
-        Button("History…") { openHistory() }
-        Button("Settings…") { openSettings() }
-        Button("Quit LiveCopilot") { NSApp.terminate(nil) }
+        Button(t("History…")) { openHistory() }
+        Button(t("Settings…")) { openSettings() }
+        Button(t("Quit LiveCopilot")) { NSApp.terminate(nil) }
 
         Divider()
 
@@ -67,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationSignal: DispatchSourceSignal?
     private var terminationInProgress = false
     private var readyToTerminate = false
+    private var settingsObservation: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGTERM, SIG_IGN)
@@ -78,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let overlay = OverlayWindow(rootView: OverlayView(coordinator: coordinator))
         overlay.orderFrontRegardless()
         self.overlay = overlay
+        settingsObservation = coordinator.$settings.sink { [weak self] settings in self?.applyPreferences(settings) }
         coordinator.onOpenSettings = { [weak self] in self?.openSettings() }
         coordinator.onShowOverlay = { [weak self] in self?.overlay?.orderFrontRegardless() }
 
@@ -92,6 +96,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // If there's no key yet, surface settings so the user can paste one.
         if !coordinator.hasAPIKey { openSettings() }
+    }
+
+    // Preview is restricted to isolated Mock data and never changes production capture policy.
+    private var previewSharingType: NSWindow.SharingType {
+        coordinator.isMock && ProcessInfo.processInfo.arguments.contains("--ui-preview") ? .readOnly : .none
+    }
+    private func applyPreferences(_ settings: AppSettings) {
+        for window in [overlay, settingsWindow, historyWindow].compactMap({ $0 }) {
+            window.appearance = settings.background == .white ? NSAppearance(named: .aqua) : nil
+            window.sharingType = previewSharingType
+        }
+        if let menu = NSApp.mainMenu { localizeMenu(menu, language: settings.language) }
+        settingsWindow?.title = L10n.text("LiveCopilot Settings", language: settings.language)
+        historyWindow?.title = L10n.text("LiveCopilot — History", language: settings.language)
+    }
+
+    private func localizeMenu(_ menu: NSMenu, language: AppLanguage) {
+        for item in menu.items {
+            let standard = ["Edit", "View", "Window", "Help", "Undo", "Redo", "Cut", "Copy", "Paste", "Select All", "Close Window", "Minimize", "Zoom", "Bring All to Front", "Hide LiveCopilot", "Hide Others", "Show All", "About LiveCopilot"]
+            if let original = standard.first(where: { item.title == $0 || item.title == L10n.chinese[$0] }) {
+                item.title = L10n.text(original, language: language)
+            }
+            if let submenu = item.submenu { localizeMenu(submenu, language: language) }
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -131,9 +159,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let hosting = NSHostingController(rootView: SettingsView(coordinator: coordinator))
         let window = NSWindow(contentViewController: hosting)
-        window.title = "LiveCopilot Settings"
-        window.sharingType = .none
-        window.styleMask = [.titled, .closable]
+        window.title = L10n.text("LiveCopilot Settings", language: coordinator.settings.language)
+        window.sharingType = previewSharingType
+        window.appearance = coordinator.settings.background == .white ? NSAppearance(named: .aqua) : nil
+        window.styleMask = [.titled, .closable, .resizable]
+        window.minSize = NSSize(width: 820, height: 640)
+        window.setContentSize(NSSize(width: 860, height: 680))
         window.isReleasedWhenClosed = false
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -147,10 +178,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let hosting = NSHostingController(rootView: HistoryView(store: coordinator.sessions))
+        let hosting = NSHostingController(rootView: HistoryView(coordinator: coordinator))
         let window = NSWindow(contentViewController: hosting)
-        window.title = "LiveCopilot — History"
-        window.sharingType = .none
+        window.title = L10n.text("LiveCopilot — History", language: coordinator.settings.language)
+        window.sharingType = previewSharingType
+        window.appearance = coordinator.settings.background == .white ? NSAppearance(named: .aqua) : nil
         window.styleMask = [.titled, .closable, .resizable]
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 720, height: 460))

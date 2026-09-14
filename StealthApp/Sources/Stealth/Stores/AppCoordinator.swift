@@ -20,6 +20,9 @@ final class AppCoordinator: ObservableObject {
     private var requestID = UUID()
     private var credentialRevision = UUID()
     private var cachedKey: String?
+    private var cachedAnalysisKey: String?
+    private var analysisCredentialRevision = UUID()
+    private var analysisCredentialReference: CredentialReference?
     private var isShuttingDown = false
     private var startupCheckStarted = false
     private var startupCheckTask: Task<Void, Never>?
@@ -30,11 +33,22 @@ final class AppCoordinator: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var mockTask: Task<Void, Never>?
 
-    @Published var settings = AppSettings() { didSet { settings.save(defaults: settingsDefaults) } }
+    @Published var settings = AppSettings() {
+        didSet {
+            settings.save(defaults: settingsDefaults)
+            if oldValue.reasoningService != settings.reasoningService ||
+                oldValue.compatibleBaseURL != settings.compatibleBaseURL || oldValue.compatiblePath != settings.compatiblePath {
+                refreshAnalysisKeyState()
+            }
+        }
+    }
     @Published var isRunning = false
     @Published var isTransitioning = false
     @Published var hasAPIKey = false
     @Published var isCheckingKey = false
+    @Published var hasAnalysisKey = false
+    @Published var isCheckingAnalysisKey = false
+    @Published var analysisKeyStatus = "No credential available."
     @Published var keyStatus = "No credential available."
     @Published var statusMessage = "Ready — type a question or start listening"
     @Published var questionState = QuestionPhase.listening.rawValue
@@ -57,6 +71,7 @@ final class AppCoordinator: ObservableObject {
         catch { knowledgeMessage = error.localizedDescription }
         if mock { hasAPIKey = true; keyStatus = "Mock providers — no credential needed."; statusMessage = "MOCK MODE — no API calls" }
         else { refreshKeyState() }
+        refreshAnalysisKeyState()
         systemAudio.onPCM16 = { [weak self] data in Task { @MainActor in self?.systemLive?.sendAudio(data) } }
         mic.onPCM16 = { [weak self] data in Task { @MainActor in self?.micLive?.sendAudio(data) } }
         systemAudio.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
@@ -92,6 +107,7 @@ final class AppCoordinator: ObservableObject {
                 let key = try await Task.detached(priority: .userInitiated) { try KeychainStore.resolve() }.value
                 guard credentialRevision == revision else { return }
                 cachedKey = key; hasAPIKey = key != nil
+                DebugLog.log("credential.ready role=live available=\(hasAPIKey)")
                 keyStatus = key == nil ? "No credential available." : "Credential available. No API request made."
                 if key == nil { statusMessage = "No key available — open Settings to configure Keychain." }
                 if let key { runStartupCheckIfRequested(key: key) }
@@ -101,6 +117,57 @@ final class AppCoordinator: ObservableObject {
                 keyStatus = error.localizedDescription
             }
         }
+    }
+    func refreshAnalysisKeyState() {
+        let revision = UUID(); analysisCredentialRevision = revision
+        cachedAnalysisKey = nil; hasAnalysisKey = false; isCheckingAnalysisKey = false
+        guard settings.reasoningService != .sharedOpenAI else { analysisKeyStatus = "Using the Live service credential."; return }
+        guard !isMock else { hasAnalysisKey = true; analysisKeyStatus = "Mock providers — no credential needed."; return }
+        do {
+            let reference = try settings.analysisCredentialReference()
+            analysisCredentialReference = reference
+            isCheckingAnalysisKey = true
+            analysisKeyStatus = "Checking Keychain… Complete any macOS access prompt locally."
+            Task {
+                defer { if analysisCredentialRevision == revision { isCheckingAnalysisKey = false } }
+                do {
+                    let key = try await Task.detached(priority: .userInitiated) {
+                        try KeychainStore.read(service: reference.service, account: reference.account)
+                    }.value
+                    guard analysisCredentialRevision == revision else { return }
+                    cachedAnalysisKey = key; hasAnalysisKey = key != nil
+                    DebugLog.log("credential.ready role=analysis available=\(hasAnalysisKey)")
+                    analysisKeyStatus = key == nil ? "No credential available." : "Credential available. No API request made."
+                } catch {
+                    guard analysisCredentialRevision == revision else { return }
+                    analysisKeyStatus = error.localizedDescription
+                }
+            }
+        } catch { analysisKeyStatus = error.localizedDescription }
+    }
+    func saveCredential(_ value: String, analysis: Bool) async throws {
+        guard !isMock else { return }
+        let reference = analysis ? try settings.analysisCredentialReference() : .live
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await Task.detached(priority: .userInitiated) {
+            try KeychainStore.save(value, service: reference.service, account: reference.account)
+        }.value
+        if reference == .live {
+            credentialRevision = UUID(); isCheckingKey = false
+            cachedKey = value; hasAPIKey = true; keyStatus = "Saved in macOS Keychain."
+        } else if (try? settings.analysisCredentialReference()) == reference {
+            analysisCredentialRevision = UUID(); isCheckingAnalysisKey = false
+            cachedAnalysisKey = value; hasAnalysisKey = true; analysisKeyStatus = "Saved in macOS Keychain."
+        }
+    }
+    func removeCredential(analysis: Bool) async throws {
+        guard !isMock else { return }
+        let reference = analysis ? try settings.analysisCredentialReference() : .live
+        try await Task.detached(priority: .userInitiated) {
+            try KeychainStore.clear(service: reference.service, account: reference.account)
+        }.value
+        if reference == .live { credentialRevision = UUID(); isCheckingKey = false; refreshKeyState() }
+        else if (try? settings.analysisCredentialReference()) == reference { refreshAnalysisKeyState() }
     }
     private func runStartupCheckIfRequested(key: String) {
         let arguments = ProcessInfo.processInfo.arguments
@@ -282,9 +349,11 @@ final class AppCoordinator: ObservableObject {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
         guard query.count <= 8000 else { suggestion.fail("Keep a manual question under 8,000 characters."); return }
-        let key: String
-        do { key = isMock ? "" : try credential() }
-        catch { suggestion.fail(error.localizedDescription); return }
+        let reasoning: any ReasoningProvider
+        do {
+            reasoning = isMock ? MockReasoningProvider() : try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
+        } catch { suggestion.fail(error.localizedDescription); onShowOverlay?(); return }
+        let embedding = embeddingProvider(key: cachedKey ?? "")
         if delegationID == nil { pendingAutomatic = nil; questionTask?.cancel() }
         answerTask?.cancel()
         let id = UUID(); requestID = id
@@ -296,8 +365,6 @@ final class AppCoordinator: ObservableObject {
         suggestion.begin(mode: mode, question: query)
         onShowOverlay?()
         let settings = settings, epoch = liveEpoch, started = Date()
-        let embedding = embeddingProvider(key: key)
-        let reasoning: any ReasoningProvider = isMock ? MockReasoningProvider() : OpenAIReasoningProvider(key: key, model: settings.reasoningModel, effort: settings.reasoningEffort)
         answerTask = Task { [weak self] in
             guard let self else { return }
             do {

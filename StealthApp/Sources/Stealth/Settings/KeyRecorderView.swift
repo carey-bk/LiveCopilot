@@ -6,16 +6,19 @@ import Carbon.HIToolbox
 /// (with at least one modifier) is captured as a `HotkeyCombo`.
 struct KeyRecorderView: NSViewRepresentable {
     let combo: HotkeyCombo
+    var language: AppLanguage = .system
     let onRecorded: (HotkeyCombo) -> Void
 
     func makeNSView(context: Context) -> RecorderButton {
         let view = RecorderButton()
+        view.language = language
         view.onRecorded = onRecorded
         view.combo = combo
         return view
     }
 
     func updateNSView(_ nsView: RecorderButton, context: Context) {
+        nsView.language = language
         nsView.onRecorded = onRecorded
         if !nsView.isRecording { nsView.combo = combo }
     }
@@ -25,6 +28,7 @@ struct KeyRecorderView: NSViewRepresentable {
 /// next modified key press as the new shortcut.
 final class RecorderButton: NSButton {
     var onRecorded: ((HotkeyCombo) -> Void)?
+    var language = AppLanguage.system { didSet { refreshTitle() } }
     var combo: HotkeyCombo? { didSet { refreshTitle() } }
     private(set) var isRecording = false {
         didSet { refreshTitle() }
@@ -79,7 +83,7 @@ final class RecorderButton: NSButton {
     }
 
     private func refreshTitle() {
-        title = isRecording ? "Press keys…" : (combo?.display ?? "Record")
+        title = isRecording ? L10n.text("Press keys…", language: language) : (combo?.display ?? L10n.text("Record", language: language))
     }
 
     deinit {

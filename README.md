@@ -2,18 +2,18 @@
 
 基于 [vortechron/stealth](https://github.com/vortechron/stealth) 的原生 macOS 个人 AI 助手，面向面试、会议和学术答辩。保留 Swift/SwiftUI、ScreenCaptureKit 系统音频、AVAudioEngine 麦克风、菜单栏、悬浮窗、全局快捷键和本地历史。
 
-V1 使用 OpenAI Live 理解实时对话，通过独立的 OpenAI Responses 推理与本机知识库生成文字建议。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
+V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本机知识库生成文字建议。分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
 ## 本机首次使用
 
 1. 安装并首次打开 **Xcode**，完成组件安装与许可；最低运行系统 macOS 14。
 2. 安装 XcodeGen：`brew install xcodegen`。本次开发也支持官方发行版安装到 `~/.local/bin/xcodegen`。
 3. 在项目根目录执行 `./StealthApp/run.sh`。编译 Release，签名并安装到 `~/Applications/LiveCopilot.app`，启动菜单栏应用。重装时保留旧 app 备份。
-4. 点击悬浮窗齿轮打开设置。API key 使用 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴；系统询问时允许 LiveCopilot 读取。开发回退是 `OPENAI_API_KEY`，不需要配置 `.env`。
+4. 点击悬浮窗齿轮，进入 **服务 → 实时服务**。API Key 使用 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴；系统询问时允许 LiveCopilot 读取。开发回退是 `OPENAI_API_KEY`，不需要配置 `.env`。
 
    如果显示 `Checking Keychain…`，请在本机完成 macOS 的访问提示；密码只输入系统窗口。读取权限与 Key 是否有效是两项独立检查。重新打开已启动的 LiveCopilot 会恢复悬浮窗；`⌥H` 可隐藏它。
-5. 默认 Live `gpt-live-1`、推理 `gpt-5.6-sol`（low effort）、向量 `text-embedding-3-small`，均可修改。实际可用模型取决于 OpenAI 项目权限。
-6. 设置 → Knowledge → Import documents，导入 PDF、Markdown、TXT 或 DOCX，等待 `Ready`。扫描 PDF 需预先 OCR。首次索引会向 OpenAI 发送提取文本。
+5. 默认 Live `gpt-live-1`、分析 `gpt-5.6-sol`（low effort）、向量 `text-embedding-3-small`。在 **服务 → 分析服务** 可沿用实时服务的 OpenAI Key、使用独立 OpenAI Key，或选择 DeepSeek／OpenAI 兼容服务并单独配置密钥。实时音频与向量服务保持 OpenAI。
+6. 设置 → 知识库 → 导入文档，导入 PDF、Markdown、TXT 或 DOCX，等待 `Ready`。扫描 PDF 需预先 OCR。首次索引会向 OpenAI 发送提取文本。
 7. 选择 Interview、Meeting 或 Academic Defense，以及 Remote Meeting / In-Person 模式。
 8. 点击播放开始监听，按系统提示允许所需音频权限。远程模式使用系统音频 `Them` 和麦克风 `You`；现场模式仅使用麦克风，标为 `Room`，不承诺说话人分离。
 9. 自动建议只响应 Live 判断完成的问题；`⌥Space` 可随时基于已有对话请求帮助，`⌥R` 总结，`⌥F` 追问，`⌥H` 显示/隐藏悬浮窗。
@@ -21,9 +21,21 @@ V1 使用 OpenAI Live 理解实时对话，通过独立的 OpenAI Responses 推�
 
 没有 Dock 图标是正常行为；菜单栏波形图标可打开设置和历史。悬浮窗可拖动和调整大小。
 
-## 本次交付状态（2026-09-14）
+## 语言、底色和服务配置
 
-本机已安装 **1.0.0 / 20260914.075740**，现有 Keychain 已可读取，无需重新配置 Key。原生 Release 编译、34 项核心检查和 9 个 XCTest 用例通过；真实 Embeddings、带 `[S1]` 引用的流式 Responses、官方 Live 的合成语音转写/委派/关闭均已验证。验收用合成文档已从正式知识库清理。
+- **通用 → 界面语言**：跟随系统、English、简体中文，立即生效。回答跟随提问语言。
+- **通用 → 窗口底色**：半透明毛玻璃／纯白底色。白底使用浅色控件与深色文字。
+- **服务 → 实时服务**：OpenAI Live 和 Embeddings 共用现有 Key；配置成功显示“API Key 已配置”和固定掩码，点击“更换密钥”才打开输入框。界面不会回填真实 Key。
+- **服务 → 分析服务**：选择分析供应商。默认沿用实时服务的 OpenAI；DeepSeek 使用独立 Key，默认模型 `deepseek-v4-pro`，可修改。兼容服务填写 HTTPS Base URL、Chat Completions 路径和模型，先保存连接，再配置该地址的 Key。
+- 更换分析模型不需要重建知识库。自定义 API 地址改变后不会沿用旧地址的密钥。
+
+窗口在截图中消失源于原生 `NSWindow.sharingType = .none` 请求捕获排除；悬浮窗、设置和历史都保留此行为。底色选择不改变捕获策略。实际共享排除效果仍依赖 macOS 和具体会议软件。
+
+详见 [V1.1 更新与验证](docs/V1_1_UPDATE.md)。
+
+## V1 交付记录（2026-09-14，后续已升级）
+
+初始 V1 交付为 **1.0.0 / 20260914.075740**，现有 Keychain 已可读取，无需重新配置 Key。原生 Release 编译、34 项核心检查和 9 个 XCTest 用例通过；真实 Embeddings、带 `[S1]` 引用的流式 Responses、官方 Live 的合成语音转写/委派/关闭均已验证。验收用合成文档已从正式知识库清理。
 
 实际麦克风/系统音频、其他应用前台时的快捷键和会议软件共享排除效果仍需按[首次体验清单](docs/VERIFICATION.md)操作核对；不将合成音频联调视为硬件验证。
 

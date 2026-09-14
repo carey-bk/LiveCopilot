@@ -114,6 +114,44 @@ final class NativeTests: XCTestCase {
         try KeychainStore.clear(service: service, account: "test")
         XCTAssertNil(try KeychainStore.read(service: service, account: "test"))
     }
+    func testChatCompletionsThroughURLSession() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SyntheticSSEProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let provider = ChatCompletionsProvider(key: "test-only", model: "fixture", endpoint: URL(string: "https://fixture.example/chat/completions")!, transport: URLSessionTransport(session: session))
+        let answer = AnswerRequest(query: .formulate(question: "Synthetic latency?", context: ""), conversation: "", scenario: .meeting, sources: [])
+        var text = ""
+        for try await delta in provider.stream(answer) { text += delta }
+        XCTAssertEqual(text, "延迟 42 毫秒 [S1]")
+    }
+    func testChatCompletionCancellationClosesTransport() async throws {
+        let first = expectation(description: "first useful text arrived")
+        let closed = expectation(description: "underlying stream cancelled")
+        let transport = GatedChatTransport(onClose: { closed.fulfill() })
+        let provider = ChatCompletionsProvider(key: "test-only", model: "fixture", endpoint: URL(string: "https://fixture.example/chat/completions")!, transport: transport)
+        let answer = AnswerRequest(query: .formulate(question: "Cancel this synthetic stream", context: ""), conversation: "", scenario: .meeting, sources: [])
+        let task = Task {
+            do { for try await delta in provider.stream(answer) { if delta == "partial" { first.fulfill() } } }
+            catch { }
+        }
+        await fulfillment(of: [first], timeout: 3)
+        task.cancel()
+        await fulfillment(of: [closed], timeout: 3)
+        await task.value
+    }
+    func testSeparateCredentialDeletionPreservesLiveCredential() throws {
+        let service = "LiveCopilot-Test-Isolation-" + UUID().uuidString
+        defer {
+            try? KeychainStore.clear(service: service, account: "live")
+            try? KeychainStore.clear(service: service, account: "analysis")
+        }
+        try KeychainStore.save("live-fixture", service: service, account: "live")
+        try KeychainStore.save("analysis-fixture", service: service, account: "analysis")
+        try KeychainStore.clear(service: service, account: "analysis")
+        XCTAssertEqual(try KeychainStore.read(service: service, account: "live"), "live-fixture")
+        XCTAssertNil(try KeychainStore.read(service: service, account: "analysis"))
+    }
     func testResponsesThroughURLSessionPreservesSSEBoundaries() async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [SyntheticSSEProtocol.self]
@@ -136,9 +174,24 @@ private final class SyntheticSSEProtocol: URLProtocol {
     override func startLoading() {
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/event-stream"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        let wire = "event: response.output_text.delta\r\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"延迟 42 毫秒 🧪\"}\r\n\r\nevent: response.completed\r\ndata: {\"type\":\"response.completed\"}\r\n\r\n"
+        let responses = "event: response.output_text.delta\r\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"延迟 42 毫秒 🧪\"}\r\n\r\nevent: response.completed\r\ndata: {\"type\":\"response.completed\"}\r\n\r\n"
+        let chat = "data: {\"choices\":[{\"index\":0,\"delta\":{\"reasoning_content\":\"hidden\"},\"finish_reason\":null}]}\r\n\r\ndata: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"延迟 42 毫秒 [S1]\"},\"finish_reason\":\"stop\"}]}\r\n\r\ndata: [DONE]\r\n\r\n"
+        let wire = request.url!.path.hasSuffix("chat/completions") ? chat : responses
         for byte in wire.utf8 { client?.urlProtocol(self, didLoad: Data([byte])) }
         client?.urlProtocolDidFinishLoading(self)
     }
     override func stopLoading() {}
+}
+
+private final class GatedChatTransport: HTTPTransport, @unchecked Sendable {
+    let onClose: @Sendable () -> Void
+    init(onClose: @escaping @Sendable () -> Void) { self.onClose = onClose }
+    func data(for request: URLRequest) async throws -> (Data, Int) { throw CancellationError() }
+    func lines(for request: URLRequest) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { c in
+            c.onTermination = { [onClose] _ in onClose() }
+            c.yield(#"data: {"choices":[{"delta":{"content":"partial"}}]}"#)
+            c.yield("")
+        }
+    }
 }
