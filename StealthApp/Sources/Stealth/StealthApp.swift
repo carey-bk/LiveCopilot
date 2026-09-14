@@ -100,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyPreferences(_ settings: AppSettings) {
         for window in [overlay, settingsWindow, historyWindow].compactMap({ $0 }) {
-            window.appearance = settings.background == .white ? NSAppearance(named: .aqua) : nil
+            applyAppearance(to: window, background: settings.background)
             if !(window is OverlayWindow) { window.sharingType = .readOnly }
         }
         let preview = coordinator.isMock && ProcessInfo.processInfo.arguments.contains("--ui-preview")
@@ -108,6 +108,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let menu = NSApp.mainMenu { localizeMenu(menu, language: settings.language) }
         settingsWindow?.title = L10n.text("LiveCopilot Settings", language: settings.language)
         historyWindow?.title = L10n.text("LiveCopilot — History", language: settings.language)
+    }
+
+    private func applyAppearance(to window: NSWindow, background: AppBackground) {
+        window.appearance = background.usesLightAppearance ? NSAppearance(named: .aqua) : nil
+        if !(window is OverlayWindow) {
+            window.isOpaque = background != .frosted
+            window.backgroundColor = background == .frosted ? .clear : .windowBackgroundColor
+        }
     }
 
     private func localizeMenu(_ menu: NSMenu, language: AppLanguage) {
@@ -160,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = NSWindow(contentViewController: hosting)
         window.title = L10n.text("LiveCopilot Settings", language: coordinator.settings.language)
         window.sharingType = .readOnly
-        window.appearance = coordinator.settings.background == .white ? NSAppearance(named: .aqua) : nil
+        applyAppearance(to: window, background: coordinator.settings.background)
         window.styleMask = [.titled, .closable, .resizable]
         window.minSize = NSSize(width: 820, height: 640)
         window.setContentSize(NSSize(width: 860, height: 680))
@@ -181,7 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = NSWindow(contentViewController: hosting)
         window.title = L10n.text("LiveCopilot — History", language: coordinator.settings.language)
         window.sharingType = .readOnly
-        window.appearance = coordinator.settings.background == .white ? NSAppearance(named: .aqua) : nil
+        applyAppearance(to: window, background: coordinator.settings.background)
         window.styleMask = [.titled, .closable, .resizable]
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 720, height: 460))

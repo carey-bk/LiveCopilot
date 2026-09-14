@@ -8,6 +8,14 @@ The latest exact results are maintained in `IMPLEMENTATION_PLAN.md`. Distinguish
 
 ## Deterministic checks (no API calls)
 
+### 2026-09-14 — soft frosted background
+
+Added the `frosted` preference between existing `glass` and `white`, with English/Chinese labels and selection-specific help. A shared material plus light-gradient surface covers overlay, settings and history; frosted keeps dark text and a subtle cool tint. Prior stored selections retain their values and the default remains glass.
+
+Universal Release build passed, 43 core checks passed, and 14 native XCTest cases passed with 0 failures at 20:11:32. Mock UI inspection verified all three settings options fit, their help text follows selection, and glass/frosted/white can be selected. The frosted overlay was inspected with synthetic transcript text and the blue automatic-suggestions switch. No real capture or model API was needed for this appearance change.
+
+After quitting and relaunching the Mock app, Settings still selected frosted. The final build was installed at `~/Applications/LiveCopilot.app` as 1.1.1 / `20260914.201514`, and frosted was selected in the installed General settings. Strict signature verification and staging/installed executable hashes matched. The prior app is retained as `LiveCopilot.app.previous.20260914201514`. Live capture and renewed credential access are separate from this appearance verification; signing remains ad-hoc.
+
 ### 2026-09-14 — automatic-suggestions switch appearance
 
 The native SwiftUI switch displayed a gray track even with accessibility value `on` in the nonactivating overlay. An explicit tint/active-appearance override did not fix the observed native rendering. `OverlaySwitchStyle` now draws a blue on-track, gray off-track and positional thumb while preserving the shared settings binding and native Toggle accessibility representation. The panel remains nonactivating.

@@ -14,8 +14,23 @@ enum AppLanguage: String, Codable, CaseIterable, Identifiable {
 }
 
 enum AppBackground: String, Codable, CaseIterable, Identifiable {
-    case glass, white
+    case glass, frosted, white
     var id: String { rawValue }
+    var usesLightAppearance: Bool { self != .glass }
+    var label: String {
+        switch self {
+        case .glass: return "Translucent glass"
+        case .frosted: return "Soft frosted"
+        case .white: return "Solid white"
+        }
+    }
+    var detail: String {
+        switch self {
+        case .glass: return "Translucent glass lets more of your desktop show through."
+        case .frosted: return "Soft frosted keeps a hint of the background with a light veil for clearer text."
+        case .white: return "Solid white keeps dark text readable over any wallpaper."
+        }
+    }
 }
 
 enum ReasoningService: String, Codable, CaseIterable, Identifiable {

@@ -49,10 +49,10 @@ struct OverlayView: View {
             footer.padding(.trailing, 20)
         }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background {
-                if coordinator.settings.background == .white { RoundedRectangle(cornerRadius: 16).fill(Color.white) }
-                else { RoundedRectangle(cornerRadius: 16).fill(.regularMaterial) }
+                WindowBackgroundView(style: coordinator.settings.background, isOverlay: true)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
             }
-            .preferredColorScheme(coordinator.settings.background == .white ? .light : nil)
+            .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
             .environment(\.locale, coordinator.settings.language.locale)
             .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.12)))
             .overlay(alignment: .bottomTrailing) { resizeHandle }

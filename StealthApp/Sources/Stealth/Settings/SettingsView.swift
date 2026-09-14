@@ -45,8 +45,8 @@ struct SettingsView: View {
             }.padding(26).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 820, idealWidth: 860, minHeight: 610, idealHeight: 680)
-        .background(coordinator.settings.background == .white ? Color.white : Color(nsColor: .windowBackgroundColor))
-        .preferredColorScheme(coordinator.settings.background == .white ? .light : nil)
+        .background { WindowBackgroundView(style: coordinator.settings.background) }
+        .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
         .environment(\.locale, coordinator.settings.language.locale)
         .onAppear { loadCustomDraft() }
     }
@@ -62,10 +62,11 @@ struct SettingsView: View {
                     Text(t("Changes apply immediately. Answers follow the language of your question.")).font(.caption).foregroundStyle(.secondary)
                     Divider()
                     Picker(t("Window background"), selection: $coordinator.settings.background) {
-                        Text(t("Translucent glass")).tag(AppBackground.glass)
-                        Text(t("Solid white")).tag(AppBackground.white)
+                        ForEach(AppBackground.allCases) { background in
+                            Text(t(background.label)).tag(background)
+                        }
                     }.pickerStyle(.segmented).accessibilityIdentifier("window-background")
-                    Text(t("Solid white keeps dark text readable over any wallpaper.")).font(.caption).foregroundStyle(.secondary)
+                    Text(t(coordinator.settings.background.detail)).font(.caption).foregroundStyle(.secondary)
                 }.padding(10)
             } label: { Label(t("Language & appearance"), systemImage: "textformat") }
             SettingsSection {

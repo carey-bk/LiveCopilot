@@ -24,8 +24,8 @@ struct HistoryView: View {
             Divider()
             detail
         }
-        .background(coordinator.settings.background == .white ? Color.white : Color(nsColor: .windowBackgroundColor))
-        .preferredColorScheme(coordinator.settings.background == .white ? .light : nil)
+        .background { WindowBackgroundView(style: coordinator.settings.background) }
+        .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
         .environment(\.locale, coordinator.settings.language.locale)
         .frame(minWidth: 620, minHeight: 420)
         .onAppear {
