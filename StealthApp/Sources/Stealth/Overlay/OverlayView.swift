@@ -19,7 +19,9 @@ struct OverlayView: View {
                 HStack {
                     Text(t(coordinator.questionState)).font(.caption2).foregroundStyle(.secondary)
                     Spacer()
-                    Toggle(t("Auto"), isOn: $coordinator.settings.automaticSuggestions).toggleStyle(.switch).controlSize(.mini)
+                    Toggle(t("Auto"), isOn: $coordinator.settings.automaticSuggestions)
+                        .toggleStyle(OverlaySwitchStyle())
+                        .accessibilityIdentifier("automatic-suggestions")
                 }
             }
             if showTranscript { transcriptView.frame(minHeight: 65, maxHeight: 145) }
@@ -137,5 +139,36 @@ struct OverlayView: View {
             .frame(width: 28, height: 28)
             .help(t("Drag any edge or corner to resize"))
             .allowsHitTesting(false) // The native border owns all eight resize directions.
+    }
+}
+
+/// Native switches lose their on-state color when this nonactivating panel is in the background.
+/// Draw the state explicitly while retaining Toggle's accessibility and Button's keyboard behavior.
+private struct OverlaySwitchStyle: ToggleStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 8) {
+                configuration.label
+                Capsule()
+                    .fill(configuration.isOn ? Color.blue : Color.primary.opacity(0.18))
+                    .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+                        Circle().fill(.white)
+                            .shadow(color: .black.opacity(0.18), radius: 1, y: 1)
+                            .frame(width: 14, height: 14).padding(2)
+                    }
+                    .frame(width: 32, height: 18)
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.45)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.12), value: configuration.isOn)
+        .accessibilityRepresentation {
+            Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.switch)
+        }
     }
 }

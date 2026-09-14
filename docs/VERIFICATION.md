@@ -8,6 +8,18 @@ The latest exact results are maintained in `IMPLEMENTATION_PLAN.md`. Distinguish
 
 ## Deterministic checks (no API calls)
 
+### 2026-09-14 — automatic-suggestions switch appearance
+
+The native SwiftUI switch displayed a gray track even with accessibility value `on` in the nonactivating overlay. An explicit tint/active-appearance override did not fix the observed native rendering. `OverlaySwitchStyle` now draws a blue on-track, gray off-track and positional thumb while preserving the shared settings binding and native Toggle accessibility representation. The panel remains nonactivating.
+
+The final universal Release build and 14 native XCTest cases passed (0 failures, 20:02:09); the core suite reported 43 deterministic checks. In an isolated Mock preview, UI clicks verified on/blue and off/gray, Settings reflected the overlay value, and a Settings change updated the overlay. White and glass backgrounds were inspected; the blue on-state remained visible after interacting with Finder. No real audio capture or model API was used for this visual fix. These checks do not establish VoiceOver speech output or physical keyboard navigation on every macOS version.
+
+The current button/task and shared system prompts are documented verbatim in `ASSISTANCE_PROMPTS.md`; this change does not modify them.
+
+Installed as `~/Applications/LiveCopilot.app`, version 1.1.1 / build `20260914.200605`. Strict signature verification passed; both existing Live and analysis credentials became available at 20:06:18 without changing keys. The previous installed app is retained as `LiveCopilot.app.previous.20260914200605`. Signing remains ad-hoc; the new build's ScreenCapture authorization was not exercised by this UI-only verification.
+
+### Suite coverage
+
 `./StealthApp/scripts/test-core.sh` compiles and runs core checks against temporary synthetic files and mocked HTTP providers. Coverage includes Unicode chunking, page/source tracking, cosine edge cases, FTS5/BM25 and CJK search, query escaping, fusion, persistence, deletion, re-index failure/atomic replacement, embedding compatibility, question state, incomplete questions, duplicate/answered suppression, follow-ups, Live event contracts, SSE completion/error handling and structured source parsing.
 
 Xcode `test` additionally verifies typed queries with listening disabled, superseding/cancelling answers, concurrent listening/assistance, stable transcript rows, shutdown cancellation, focused-overlay shortcut handling and native Keychain create/read/update/delete using an isolated dummy item. It never changes the user's real API key.
