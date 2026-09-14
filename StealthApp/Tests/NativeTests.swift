@@ -114,4 +114,31 @@ final class NativeTests: XCTestCase {
         try KeychainStore.clear(service: service, account: "test")
         XCTAssertNil(try KeychainStore.read(service: service, account: "test"))
     }
+    func testResponsesThroughURLSessionPreservesSSEBoundaries() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SyntheticSSEProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let provider = OpenAIReasoningProvider(key: "test-only", model: "fixture", transport: URLSessionTransport(session: session))
+        let answer = AnswerRequest(query: .formulate(question: "Synthetic latency?", context: ""), conversation: "", scenario: .meeting, sources: [])
+        var text = ""
+        for try await delta in provider.stream(answer) { text += delta }
+        XCTAssertEqual(text, "延迟 42 毫秒 🧪")
+    }
+
+}
+
+/// Exercise the actual URLSession AsyncBytes transport without sending a request
+/// to the network. Deliberately split UTF-8 and CRLF across separate byte loads.
+private final class SyntheticSSEProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/event-stream"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        let wire = "event: response.output_text.delta\r\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"延迟 42 毫秒 🧪\"}\r\n\r\nevent: response.completed\r\ndata: {\"type\":\"response.completed\"}\r\n\r\n"
+        for byte in wire.utf8 { client?.urlProtocol(self, didLoad: Data([byte])) }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

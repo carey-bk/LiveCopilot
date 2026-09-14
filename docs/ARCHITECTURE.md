@@ -36,6 +36,7 @@ Listening runs independently of retrieval/reasoning. Manual requests cancel obso
 - The NSPanel remains floating across Spaces, resizable, nonactivating and configured with `sharingType = .none`; it can become key for typed input. Capture exclusion still requires real software validation.
 - Carbon global hotkeys and settings key recorder remain. Local JSON history retains speaker labels plus raw Live transcript fragments/timestamps. History lives under Application Support/LiveCopilot.
 - Keychain is the existing native Security framework flow, hardened to report errors and update without deleting a valid old key first. Service/account follow the user's explicit convention.
+- Shutdown completes asynchronous capture/session cleanup on the normal AppKit run loop before terminating. Capture generation checks prevent a late permission or device callback from restarting a session after stop/quit. Focused-overlay shortcut handling complements Carbon registration.
 
 ## Official Live contract
 
@@ -62,6 +63,8 @@ Retrieval combines up to 24 lexical hits and 24 semantic hits with reciprocal ra
 
 The [Responses API stream](https://developers.openai.com/api/docs/guides/streaming-responses) uses the configurable reasoning model, effort, `store: false` and bounded output. The application parses SSE incrementally and displays text immediately; absence of a completion event, malformed events, API errors and incomplete output fail visibly without hiding partial text.
 
+The transport frames raw UTF-8 bytes with a bounded buffer and preserves blank LF/CRLF/CR lines as SSE event boundaries. It deliberately avoids Foundation `AsyncBytes.lines`, which omitted empty separators during native acceptance. A URLSession/URLProtocol regression test covers split Unicode bytes and CRLF without making a network request.
+
 Evidence has per-request `[S1]` IDs tied to local chunk metadata. Prompts distinguish local evidence from model reasoning and treat documents/transcripts as untrusted reference data. The tolerant Markdown section parser permits plain or partial output. The UI includes the question, compact sections, source excerpts, stage timing, cancel/copy, and optional conversation context for typed queries.
 
 `LiveProvider`, `EmbeddingProvider`, and `ReasoningProvider` define the boundaries. V1 only implements OpenAI and deterministic mocks. No alternate production providers or distributed infrastructure are included.
@@ -76,5 +79,6 @@ Evidence has per-request `[S1]` IDs tied to local chunk metadata. Prompts distin
 - `project.yml`: source of truth for generated Xcode project, Release app and XCTest target.
 - `scripts/test-core.sh`: deterministic tests without GUI/API keys. XCTest adds app orchestration and isolated Keychain coverage.
 - `scripts/integration.sh`: opt-in real APIs using only synthetic documents/audio.
+- `Support/LiveSmokeCheck.swift`: shared synthetic Live protocol check, also available through the installed app's explicit `--verify-live --audio <path>` startup option when its Keychain identity is already authorized. Normal launches never run it or start paid listening automatically.
 
 Mock mode uses a separate knowledge/history directory and preferences suite. Production credentials are never used by mock providers.

@@ -68,51 +68,13 @@ import AVFoundation
         return ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
     }
     @MainActor static func verifyLive(key: String, settings: AppSettings) async throws {
-        let live = OpenAILiveProvider(key: key, model: settings.liveModel, speaker: .them, scenario: .meeting)
-        var ready = false, failure: String?, delegated = false, transcript = "", closed = false
-        live.onEvent = { event in
-            switch event {
-            case .ready: ready = true
-            case .failed(let message): failure = message
-            case .transcript(let fragment): transcript += fragment.text
-            case .delegation: delegated = true
-            case .closed(let finalized): closed = finalized
-            default: break
-            }
-        }
-        live.connect(context: "This is an automated synthetic audio check. Delegate the benchmark question when complete.")
-        let deadline = Date().addingTimeInterval(25)
-        while !ready && failure == nil && Date() < deadline { try await Task.sleep(nanoseconds: 50_000_000) }
-        guard ready else { await live.disconnect(); throw CopilotError.message(failure ?? "Live did not start before timeout.") }
-        print("PASS official GPT-Live session.started")
+        var audioURL: URL?
         if CommandLine.arguments.contains("--live-question") {
-            guard let pathIndex = CommandLine.arguments.firstIndex(of: "--audio"), CommandLine.arguments.indices.contains(pathIndex + 1) else {
-                await live.disconnect(); throw CopilotError.message("Pass --audio with a synthetic test audio file.")
+            guard let i = CommandLine.arguments.firstIndex(of: "--audio"), CommandLine.arguments.indices.contains(i + 1) else {
+                throw CopilotError.message("Pass --audio with a synthetic test audio file.")
             }
-            let file = try AVAudioFile(forReading: URL(fileURLWithPath: CommandLine.arguments[pathIndex + 1]))
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) else {
-                await live.disconnect(); throw CopilotError.message("Cannot decode synthetic audio.")
-            }
-            try file.read(into: buffer)
-            guard let data = PCMConverter().convert(buffer) else { await live.disconnect(); throw CopilotError.message("Cannot convert synthetic audio.") }
-            for start in stride(from: 0, to: data.count, by: 4800) {
-                live.sendAudio(data.subdata(in: start..<min(start + 4800, data.count)))
-                try await Task.sleep(nanoseconds: 100_000_000)
-            }
-            for _ in 0..<120 {
-                live.sendAudio(Data(repeating: 0, count: 4800))
-                try await Task.sleep(nanoseconds: 100_000_000)
-                if delegated && !transcript.isEmpty { break }
-            }
-        } else {
-            for _ in 0..<10 { live.sendAudio(Data(repeating: 0, count: 4800)); try await Task.sleep(nanoseconds: 100_000_000) }
+            audioURL = URL(fileURLWithPath: CommandLine.arguments[i + 1])
         }
-        await live.disconnect()
-        guard closed else { throw CopilotError.message("Live disconnected without session.closed; final duration unconfirmed.") }
-        print("PASS official Live graceful close with final usage event")
-        if CommandLine.arguments.contains("--live-question") {
-            guard delegated, !transcript.isEmpty else { throw CopilotError.message("Live connected but synthetic question transcription/delegation was not observed.") }
-            print("PASS synthetic speech transcription and semantic client delegation")
-        }
+        try await LiveSmokeCheck.run(key: key, settings: settings, audioURL: audioURL) { print($0) }
     }
 }

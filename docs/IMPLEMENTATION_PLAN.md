@@ -1,123 +1,91 @@
-# LiveCopilot V1 implementation plan
+# LiveCopilot V1 implementation and acceptance
 
-Source of truth: `livecopilot_goal.md`. Started 2026-09-13.
+Source of truth: `livecopilot_goal.md`. Development: 2026-09-13–14. Final local delivery: 2026-09-14 (Asia/Shanghai).
 
-## Baseline audit
+## Delivery status
 
-- Workspace initially contained only the two supplied requirements documents, no Git repository.
-- Imported complete upstream history from `vortechron/stealth`, baseline commit `02b78cc82195a1711e3de11adfaed26011635dae`. Original checkout preserved outside the workspace at `/tmp/livecopilot-stealth-baseline-20260913`.
-- Native Swift/SwiftUI, macOS 14+, no third-party runtime dependencies. XcodeGen generates the Xcode project. Upstream has no automated tests.
-- Reuse ScreenCaptureKit PCM conversion, AVAudioEngine capture, NSPanel overlay, Carbon hotkeys, session history, and Keychain wrapper (with reliability fixes).
-- Replace the old Realtime suggestion coupling with official Live client delegation plus independent Responses and Embeddings providers.
-- Upstream documentation reports successful prior live use; that is not verification on this Mac. Current `micEchoCancellation` is false despite older prose describing AEC as enabled.
-- Target Mac: arm64, macOS 26.6.2, Swift 6.4 Command Line Tools. `xcodebuild -version` fails because full Xcode is absent. Direct baseline `swiftc` also fails because the new SwiftUI SDK requires `SwiftUIMacros`, absent from CLT. User has been asked to install Xcode; continue core development/tests independently.
-- Preserve `sharingType = .none`, but verify capture exclusion with actual sharing software; do not equate setting the property with proven invisibility.
+V1 implementation is complete and installed at `/Users/careyzhang/Applications/LiveCopilot.app`, version **1.0.0**, build **20260914.075740**. The installed application has passed real OpenAI Embeddings, Responses and official Live checks. It has been restarted normally, reads the existing Keychain credential, and is left ready with listening off. The synthetic acceptance document has been removed from the production knowledge base; only the exact disposable fixture was deleted.
 
-## Milestones
+Physical microphone/system-audio behavior, background global keypresses, complete visual/resize inspection, permission denial/network interruption, and actual meeting-app screen-share exclusion have an explicit interactive checklist in `VERIFICATION.md`. These are **not represented as passed hardware tests**. The supplied requirements explicitly allow a manual checklist for audio behavior requiring user participation. No further development or API-credential prerequisite is outstanding.
 
-1. [done] Baseline, official API contract, reproducible build scripts and acceptance ledger.
-2. [done] Provider-independent domain: profiles, conversation fragments/state, duplicate/follow-up handling, retrieval query, structured suggestion parsing.
-3. [done] Local SQLite/FTS5 store; PDF/Markdown/text import; chunk/source metadata; embeddings; atomic reindex/delete; hybrid retrieval.
-4. [done; real API pending valid credential] OpenAI Embeddings + streamed Responses + official Live WebSocket/client delegation; bounded reconnects and clear failure states.
-5. [done; basic native UI QA passed; hardware pending] Wire native capture, operating modes, auto/manual triggers, text input, settings, knowledge management, history and Keychain.
-6. [in progress; deterministic/native tests passed] Deterministic test suite including provider failures, native builds, app UI smoke verification and opt-in real API path.
-7. [docs done; final interactive/API audit remains open] README/setup/architecture/privacy/troubleshooting and criterion-by-criterion final audit.
+## Baseline audit and scope
+
+- The workspace initially contained the supplied requirements documents, without a Git repository. Imported upstream history from `vortechron/stealth`, baseline `02b78cc82195a1711e3de11adfaed26011635dae`. The original checkout is preserved at `/tmp/livecopilot-stealth-baseline-20260913`.
+- Created personal fork `carey-bk/stealth`, configured `origin` and retained `upstream`. Work is on local branch `livecopilot-v1`; development changes have not been pushed.
+- Original Stealth and V1 both passed native Release builds after the user installed full Xcode. Initial CLT-only failure was an environment prerequisite, resolved with Xcode 26.6 (17F113), selected at `/Applications/Xcode.app/Contents/Developer`.
+- Target Mac: arm64, macOS 26.6.2. Installed application: universal arm64/x86_64. XcodeGen 2.46.0 is installed with official presets at `~/.local/share/livecopilot-tools/XcodeGen-2.46.0`, wrapper `~/.local/bin/xcodegen`.
+- Reused Swift/SwiftUI, ScreenCaptureKit, AVAudioEngine, PCM conversion, NSPanel, menu bar, Carbon shortcuts, local history and Keychain. Kept native build/signing, original MIT license and the source directory layout.
+- OpenAI-only V1: official Live client delegation, Embeddings and independent streamed Responses. No alternate providers, cloud index, Docker, account system or unrelated product expansion.
+
+## Completed milestones
+
+1. Baseline audit, official API contract and reproducible native build scripts.
+2. Provider-independent conversation/question state, normalized retrieval intent, incomplete/duplicate/answered suppression and follow-up handling.
+3. Local SQLite/FTS5 knowledge store, PDF/MD/TXT/DOCX extraction, chunk/source metadata, persisted vectors, atomic re-index/delete and hybrid retrieval.
+4. OpenAI Embeddings, official Live WebSocket protocol/client delegation and independent streamed Responses, with bounded reconnects and readable failure states.
+5. Native capture orchestration, Room/Remote modes, three profiles, automatic/manual/text triggers, settings, knowledge management, history and secure credential access.
+6. Deterministic mocks, native XCTest, native UI smoke checks, real API validation and fixes for failures found during acceptance.
+7. Final package verification, criterion audit and current setup/architecture/privacy/troubleshooting documentation.
 
 ## Implementation decisions
 
-- Keep existing source directory to minimize unrelated moves; product, bundle identifier, runtime data and UI become LiveCopilot.
-- All three triggers share one asynchronous retrieval/reasoning pipeline. Listening does not await that pipeline. Manual requests supersede stale answers; automatic requests are deduplicated and bounded.
-- Live uses `wss://api.openai.com/v1/live/sessions`, `session.start`/`session.started`, PCM24k audio appends, timestamped transcript fragments, and `session.delegation.created`. Delegation contains an opaque ID, not query text. Display grouping does not imply a completed question.
-- Remote mode preserves separate Them/You streams. Room mode labels the microphone Room without claiming diarization. Output audio is discarded; no playback engine.
-- Local exact cosine + SQLite FTS5 with reciprocal rank fusion, default six chunks. Embedding model identity is persisted so incompatible vectors never silently mix.
-- Original files stay local. Only indexing text, query embeddings, necessary conversation/audio, and retrieved reasoning evidence go to OpenAI. No cloud index.
-- No real API requests until key-independent development and Mock testing are complete. No key in source, logs, process arguments or Git.
+- Three assistance triggers share one asynchronous retrieval/reasoning pipeline. Listening continues independently. Manual requests supersede stale answers; automatic requests are deduplicated and bounded.
+- Live uses `wss://api.openai.com/v1/live/sessions`, `session.start`/`session.started`, PCM24k audio, timestamped transcript fragments, `session.delegation.created` and explicit close. Delegation IDs are opaque; the app derives retrieval intent from conversation state. No model audio is played.
+- Remote mode retains Them/You streams. In-Person mode labels the shared microphone Room and makes no diarization claim.
+- Retrieval combines local exact cosine with SQLite FTS5/BM25 using reciprocal rank fusion, default six chunks. Embedding model identity prevents incompatible vectors from mixing.
+- Originals, chunks, vectors and history remain local. OpenAI receives indexing text, query embeddings, necessary audio/context and retrieved answer evidence. There is no cloud knowledge index.
+- All key-independent development and Mock testing preceded real API requests. The Keychain convention is Service `LiveCopilot-OpenAI`, Account current macOS username; environment fallback is `OPENAI_API_KEY`. Credentials are never printed, logged, supplied as process arguments or committed.
 
-## Verification ledger
+## Acceptance audit
 
-| Evidence | Status |
-|---|---|
-| Original `xcodebuild` | Passed after Xcode installation; initial CLT-only failure retained below as history |
-| Original direct Swift compile | Initial CLT-only failure; superseded by successful native Xcode build |
-| Core deterministic tests | 32 passed |
-| LiveCopilot native build/test | Release passed; 8 XCTest cases passed |
-| UI launch/hotkeys/Keychain | Basic Mock UI and focused shortcuts passed; actual Keychain read awaits local system authorization |
-| Real API manual query/indexing | Old key failed authentication; updated key not yet readable in this run |
-| Real audio/permissions/share exclusion | Pending interactive verification |
-
-This plan remains open until every required acceptance criterion has evidence or an explicitly documented external prerequisite. Missing external prerequisites do not stop independent implementation.
-
-## Progress update — 2026-09-14
-
-- User installed Xcode 26.6 (17F113); selected developer directory verified. Both original Stealth and LiveCopilot now pass native Release `xcodebuild` on this Mac.
-- Created GitHub fork `carey-bk/stealth`; configured `origin` and retained `upstream`. No development changes pushed.
-- XcodeGen 2.46.0 installed from its official release with complete presets at `~/.local/share/livecopilot-tools/XcodeGen-2.46.0`, wrapper at `~/.local/bin/xcodegen`. The stalled Homebrew install was cancelled. Initial missing-preset generation was diagnosed and regenerated correctly before successful builds.
-- Milestones 1–5 implemented. Mock text query, independent retrieval/reasoning, latest-request cancellation, automatic delegation, queued follow-ups, Room/Remote modes, profiles, source sections and knowledge-management controls exist.
-- `test-core.sh`: **32 deterministic checks passed**.
-- `xcodebuild test`: **6 XCTest cases, zero failures**, covering the 32 core checks, independent manual query/cancellation, live/answer concurrency, transcript grouping, isolated Keychain round trip, and NSPanel properties.
-- Native Release app installed and process launched at `~/Applications/LiveCopilot.app`. Process launch/signature are verified; interactive visibility/keyboard actions still require UI verification.
-- CUA reported the Mac locked; asked the user to unlock. Do not claim overlay/hotkey/permission/audio UI checks passed.
-- User specified API key identity: Keychain Service `LiveCopilot-OpenAI`, Account current macOS user. API key content has not been displayed, logged or committed.
-- Direct Security framework read from the new CLI helper timed out without making API calls. The trusted system `/usr/bin/security` CLI can access the exact specified item. Opt-in integration now captures that command's output privately in memory. Native app retains the Keychain access flow and performs lookup in the background so access prompts cannot freeze its UI.
-- Real API integration is in progress with synthetic material only. Final outcome to be recorded below.
-
-### Acceptance audit (implementation versus verification)
-
-| Requirement | Implementation/evidence | Remaining verification |
+| Requirement | Final implementation and evidence | Explicit verification boundary |
 |---|---|---|
-| Native macOS build | Original + V1 Release xcodebuild succeeded | Latest final package recheck |
-| Preserve capture/overlay behavior | Reused native managers/panel/hotkeys; converter thread safety improved; NSPanel property test passes | Hardware, permissions and actual share exclusion |
-| LiveCopilot identity | UI, product/bundle, app storage, installed app renamed | Visual UI check |
-| Official GPT-Live-1 API | New Live endpoint/startup/transcript/delegation/close implementation; protocol tests | Real Live acceptance |
-| Automatic meaningful questions | Live delegation plus state/cooldown/dedup; incomplete and answered suppression tests | Synthetic/interactive speech check |
-| Manual conversation hotkey | Existing Carbon actions route into independent pipeline | Actual keypress |
-| Manual input without Live | Native orchestration test passes | UI Ask/Return interaction |
-| Remote / In-Person | Separate Them/You or one Room input | Hardware mode checks |
-| Three scenario profiles | Interview/Meeting/Defense settings and prompts; unit check | UI selection |
-| Supported document import | PDFKit, native DOCX, Markdown/TXT; metadata and chunking | Interactive PDF/DOCX chooser |
-| OpenAI embeddings | Batched provider with strict response validation and mocks | Real embeddings |
-| Persisted local index | SQLite WAL + source/chunk/vector metadata; reopen test passes | Real API fixture reopen covered by integration path |
-| Hybrid retrieval | FTS5/BM25 + exact cosine + fusion, CJK, model compatibility; tests pass | Real query fixture |
-| Separate strong reasoning | Configurable Responses provider, bounded context/effort and stream | Real Responses model access |
-| Source references | [S#] mapped to local excerpts/page metadata; source/parser tests | Real model factual/citation check |
-| Concise streamed overlay | Progressive section parser and observable stream, cancel, sources | Visual scan/readability |
-| Secure API key | Specified Keychain convention, isolated create/read/update/delete test, environment fallback | App access to user's existing item may need native authorization |
-| Graceful failure | HTTP/auth/rate mappings, lexical fallback, re-index rollback, bounded reconnects, request supersession | Real network disconnect and hardware permission denial |
-| Meaningful automated tests | 32 core checks + 6 native XCTest cases | Passed |
-| Native build/tests pass | xcodebuild build/test successful | Final source/package check |
-| Real/manual verification docs | Integration script + concise interactive checklist | User participation required for hardware |
-| Current docs | README, architecture, privacy, verification and plan updated | Final results update |
+| Native macOS build | Original + final V1 Release builds pass; native Debug XCTest passes | Installed local ad-hoc package, not a notarized distribution |
+| Preserve useful capture/overlay behavior | Native managers/panel/menu/hotkeys/history retained; converter, capture-generation and shutdown reliability improved; NSPanel property test passes | Physical capture and actual sharing exclusion require interactive checks |
+| LiveCopilot identity | UI/product/bundle/storage renamed; installed native Settings and overlay inspected | Full visual/resize inspection remains manual |
+| Official GPT-Live-1 API | Real `session.started`, synthetic speech transcript, client delegation and `session.closed` observed | Synthetic audio bypasses physical devices |
+| Automatic meaningful questions | Live delegation plus conservative state/cooldown/dedup; incomplete/answered/follow-up tests; Mock automatic UI assistance | Real Live delegation and orchestration tested separately; real hardware end-to-end remains manual |
+| Manual conversation hotkey | Carbon registration retained; focused Option+Space invokes the shared pipeline without inserting characters | Physical keypress while another app is foreground remains manual |
+| Text query with listening off | Native tests and UI Ask/Return; real grounded answer completed without a Live session | Passed |
+| Remote / In-Person | Them/You and Room paths; UI mode switching and Mock behavior checked | Hardware mode checks remain manual |
+| Three scenario profiles | Interview/Meeting/Academic Defense prompts/settings; UI selection checked | Passed implementation/UI selection |
+| Import supported local documents | Native PDFKit/DOCX and MD/TXT; all four formats reached Ready in isolated Mock UI | Scanned PDFs need external OCR |
+| OpenAI Embeddings | Production UI indexed disposable `benchmark.txt` with real `text-embedding-3-small` | Real fixture: one chunk, 1536 dimensions |
+| Persisted local knowledge | SQLite WAL metadata/chunks/vectors/source copies; reopen tests and Mock app restart; real vector verified in SQLite | Personal-scale exact vector search |
+| Hybrid retrieval | FTS5/BM25 + cosine + fusion, CJK and model compatibility tests; real query retrieved exact fixture | Retrieval relevance on the user's own corpus is not benchmarked |
+| Separate configurable reasoning | Real `gpt-5.6-sol` low-effort Responses request after local retrieval | Other model/effort combinations depend on API access |
+| Source references | Real answer reports **42 ms [S1]**; source expands to exact local excerpt; Mock PDF page reference checked | Retrieved sources do not guarantee every generated claim is supported |
+| Concise streamed overlay | Progressive text, structured sections, cancellation and source disclosure; real first text at **4312 ms** | One synthetic run, not a latency percentile/SLA |
+| Secure Keychain + fallback | Native dummy-item CRUD test; real credential read and reuse after normal restart | CLI helper has its own macOS authorization identity |
+| Graceful failures | Auth/rate/error mappings, lexical fallback, index rollback, bounded reconnect, request cancellation and shutdown tests | Physical permission denial and real network interruption remain manual |
+| Meaningful automated tests | **34 core checks**, included in **9 native XCTest cases**, zero failures | Deterministic suite makes no real API calls |
+| Native builds/tests pass | Final Release build and native Debug tests pass; integration helper compiles | Passed |
+| Real/manual verification steps | Opt-in CLI/native synthetic Live diagnostic and interactive macOS checklist | No fabricated hardware success |
+| Current documentation | README, ARCHITECTURE, PRIVACY, VERIFICATION and this audit updated | Requirements document preserved unchanged |
 
-The goal remains active. Implemented and Mock-tested features are not represented as real hardware/API verification.
+## Real API evidence — installed build 20260914.075740
 
-### Real API outcome — 2026-09-14
+- User approved Keychain access for the installed build. Normal restart also shows `Credential available. No API request made.` without requiring another credential entry.
+- Real Embeddings imported the exact disposable benchmark fixture. SQLite showed model `text-embedding-3-small` and vector dimension **1536**.
+- At **08:02:09.744**, the native opt-in diagnostic observed official GPT-Live `session.started`; at **08:02:18.155**, `session.closed`; at **08:02:18.156**, it confirmed synthetic speech transcription and semantic client delegation. Only locally generated synthetic speech was transmitted; no physical microphone/system audio was captured by this check.
+- With listening off, the production UI question “What is the latency of Method B in the synthetic benchmark? Cite the source.” completed with “Method B’s latency in the synthetic benchmark is 42 ms. [S1]”. Expanding `[S1]` showed the exact fixture text and filename.
+- Metadata timing: retrieval ready **2768 ms**; first answer text **4312 ms** from request start. This is a single run including query embedding, not a general performance guarantee.
+- The diagnostic session closed. After cleanup, the same signed application restarted without diagnostic arguments; the production Knowledge list is empty and the overlay shows `Ready — type a question or start listening`.
 
-- The system `security` CLI successfully read the exact specified Keychain item; value withheld throughout.
-- Actual OpenAI Embeddings request failed with **HTTP 401** before index generation.
-- An independent, read-only request to `/v1/models` confirmed **HTTP 401, `error.code = invalid_api_key`**. Only the standardized code/status was surfaced; server text that might echo credentials was not printed.
-- Asked the user to update the existing Keychain item locally. Real Embeddings/Responses/Live success is **not verified**, and Live audio integration was not started because authentication failed first.
-- GUI/physical audio checks remain pending Mac unlock. User has been asked once to unlock; no attempt to bypass the lock or its permission prompts.
-- An invalid credential and a locked desktop are external verification prerequisites, not successful acceptance results. Continue final code/package checks; keep the goal open.
+## Acceptance fixes and verification history
 
-### Final local checkpoint — 2026-09-14 00:59 (Asia/Shanghai)
+- The original credential returned HTTP 401 / `invalid_api_key`. The user updated it locally. Later CLI access timeouts occurred before API requests and did not establish credential validity. Native application access ultimately succeeded and all three real API paths above passed.
+- Fixed a native quit hang: `terminateLater` changed the run-loop mode while cleanup awaited MainActor work. Termination now cancels the first request, finishes async cleanup on the normal loop, then terminates. Generation guards prevent late capture/permission completions from starting sessions after shutdown. Repeated graceful termination/relaunch passed.
+- Added local focused-overlay key handling alongside Carbon, preventing Option+Space from inserting a nonbreaking space. Changed document selection to asynchronous `NSOpenPanel.begin`, preserving the event loop. Mock preferences and documents are isolated.
+- Real Responses exposed an SSE defect: Foundation `AsyncBytes.lines` omitted blank event separators. Replaced it with bounded UTF-8 byte framing preserving LF/CRLF/CR. New core checks and an actual URLSession/URLProtocol regression test cover fragmented UTF-8 and CRLF without a network call. The corrected real answer then completed successfully.
+- An incremental accessibility snapshot temporarily retained a removed Cancel control. A full snapshot confirmed the request had completed. No speculative completion workaround was retained; stale UI observation is not an app failure.
+- Latest native XCTest result: **9 cases, 0 failures**, at **08:09:06**. The core suite reports **34 checks**. Final Release compilation and CLI helper compilation also pass.
 
-- Latest source passed **32 deterministic checks and 6 native XCTest cases (0 failures)**, including interrupted/batched indexing and in-flight deletion safeguards.
-- Latest Release build passed and was installed at `/Users/careyzhang/Applications/LiveCopilot.app`, build **20260914.005926**. `codesign --verify --deep --strict` passed. Installed and built executable SHA-256 match: `f28e73ea2a20627d1cade9314500ac2866f72bd87b946882ab4c1081d8f83921`.
-- The installed universal arm64/x86_64 app process launched. A prior development instance did not finish closing while waiting on Keychain/locked-desktop interaction; it contained no listening session or user-entered work and was terminated before replacement. Interactive quit/keychain behavior remains on the macOS QA list.
-- Added automatic closure of the corresponding Live connection when a capture device stops, microphone configuration-change handling, recovery of interrupted initial indexing, and explicit hotkey-registration failures. Full hardware behavior still needs interactive verification.
-- Source secret-literal scan and `git diff --check` passed. No private documents, transcripts, runtime databases or credentials are staged. The supplied DOCX remains local/ignored; the source requirements Markdown was not modified.
-- **External prerequisites now block further meaningful acceptance verification:** update the invalid OpenAI key in the specified Keychain item and unlock the Mac for UI/hardware checks. No further API retries should be made until the credential is updated. Keep the Goal active/incomplete; do not claim final delivery acceptance.
+## Installed artifact and repository
 
-### Resumed acceptance — 2026-09-14 03:53 (Asia/Shanghai)
-
-- User confirmed unlock and Keychain update. Native UI is now accessible. The earlier `invalid_api_key` result belongs to the previous credential; **do not describe the new key as invalid** without an API result.
-- The initial resumed helper read timed out after 15 seconds, before sending any API request. Fixed its orphaned child-process behavior: allow 60 seconds for authorization and terminate the child on timeout. The old orphan was cancelled. The installed production app now clearly displays `Checking Keychain…`; local system authorization is still pending. The computer-use tool refuses access to SecurityAgent, so the user must handle that system prompt locally.
-- Diagnosed an actual quit hang: `terminateLater` changes AppKit's run-loop mode, while cleanup awaits MainActor work. Return `terminateCancel`, finish asynchronous cleanup on the normal loop, then terminate. Added capture generation guards and shutdown gating so late permission/capture completions cannot start a Live session after quitting. Graceful SIGTERM quit and repeated installation/relaunch now passed; no force kill was needed after the fix.
-- Added focused-overlay shortcut handling alongside Carbon registration. CUA's app-targeted Option+Space originally inserted a nonbreaking space; after the fix it triggered manual conversation assistance and left the query field unchanged. Physical system-wide keypresses with another foreground app remain on the hardware checklist.
-- Changed file import to asynchronous `NSOpenPanel.begin`, preserving the running application event loop. Improved per-document button styling/accessibility. Mock shortcut preferences now use the same isolated suite as other Mock settings.
-- Actual Mock UI checks passed: native overlay/settings, manual Return and Ask with listening off, simulated automatic assistance, focused Option+Space, Remote/In-Person and all three scenario choices, separate Mock preference persistence, four-format document import, source disclosure with PDF page number and exact excerpt, and knowledge persistence after restarting.
-- Synthetic local fixtures: `benchmark.txt` (1 chunk), `experiment.md` (1), `method-notes.docx` (1), `study.pdf` (2 pages/chunks). All reached Ready using `mock-embedding-v1`; the query returned sources across the files and exposed `study.pdf · p.2` with the test latency of 42 ms. Fixtures were imported only into `LiveCopilot/Mock`, and no private user documents were accessed or sent.
-- Latest native XCTest run: **8 cases, zero failures**, including the **32 core checks**, plus new shortcut consumption/repeat suppression and shutdown/restart prevention checks. Release build succeeded; final UI-only styling change also compiled successfully.
-- Installed build **20260914.035208**, executable SHA-256 **95c0a79528130c101db9a6952243a163f90f215d6b90b6210a860b9a026c656c**; built/installed hashes match and strict codesign verification passes. App has been switched back to production mode and is open at Settings for local Keychain authorization.
-- Still unverified: updated-key authentication, real Embeddings/Responses/Live, physical microphone/system-audio flow, background global shortcuts, actual sharing exclusion, and complete visual/resize checks. Core re-index/delete tests pass; those controls were not exercised through UI automation. The blank private-window capture from the UI tool is not evidence for Zoom/Teams/Meet exclusion.
-- Task remains incomplete pending the local credential access step, followed by real API acceptance and the documented hardware checklist.
+- Installed path: `/Users/careyzhang/Applications/LiveCopilot.app`.
+- Version/build: **1.0.0 / 20260914.075740**.
+- Installed executable SHA-256: `bd8f79d03933f1606c37108c0d0fb42b239895ba6ed254ea34456a744962aa9c`.
+- `codesign --verify --deep --strict` passes. The installed, real-API-tested signature was preserved during final source compilation to avoid unnecessary Keychain reauthorization. Unsigned build products are separate from this installed artifact.
+- Source secret-literal scan and `git diff --check` pass. No credentials, private documents, transcripts, runtime databases or test audio are committed. Disposable speech/documents were generated under `/tmp`; the production fixture was removed by exact filename-and-content match through the index deletion API.
+- Historical implementation commits and the final acceptance fix are local. No remote push or release publication was performed.

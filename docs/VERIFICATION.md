@@ -30,6 +30,17 @@ say -o /tmp/livecopilot-synthetic-question.aiff \
 
 The tool sends PCM at real playback pace and waits for transcript/delegation events. Output audio is discarded. This checks protocol and model behavior, **not physical microphone or ScreenCaptureKit behavior**. These commands incur API charges; they are never run by the deterministic suite.
 
+If the installed app has Keychain permission but the separate CLI helper does not, run the same Live check within the installed app's identity. Quit LiveCopilot first, then use the existing installed binary (no rebuild):
+
+```bash
+say -o /tmp/livecopilot-synthetic-acceptance.aiff \
+  'In our synthetic benchmark, why did we choose method B, and what is its latency?'
+open "$HOME/Applications/LiveCopilot.app" --args --verify-live \
+  --audio /tmp/livecopilot-synthetic-acceptance.aiff
+```
+
+This explicit diagnostic uses only the supplied synthetic audio file, does not start microphone/system capture, and reports fixed status messages in the overlay and metadata log. Cancellation closes its Live connection. A normal launch does not run it. Ad-hoc rebuilding changes the app's code signature and macOS may require access approval for the new build; a previous approval is not proof that a different binary is authorized.
+
 ## Interactive macOS checklist
 
 1. Launch the installed app, verify menu-bar icon and overlay. Open Settings and History, close/reopen each. Show/hide with `⌥H`. Resize the overlay and confirm the input/answer remain reachable.
@@ -64,12 +75,25 @@ The tool sends PCM at real playback pace and waits for transcript/delegation eve
 
 Do not treat logs from macOS `com.apple.linkd.autoShortcut` or the build-time AppIntents metadata extractor as application test failures when the actual compiler/tests succeed; investigate application errors separately.
 
-## Real-API and native UI status (2026-09-14, resumed acceptance)
+## Verified delivery — 2026-09-14
 
-The **previous credential** returned HTTP 401 / `invalid_api_key`. The user subsequently confirmed that the Mac was unlocked and the Keychain value updated. The updated credential's authentication status is **unknown**: the resumed CLI read timed out before any API request, and the installed production app currently displays `Checking Keychain…`. Complete the system access prompt locally. The automation tool explicitly disallows control of macOS authentication windows; no password or API key should be sent in chat.
+Installed build **20260914.075740** has passed real API acceptance with the updated Keychain credential:
 
-The CLI helper now allows 60 seconds for local authorization and terminates its child process on timeout. Its output is captured privately in memory. The native app uses the Security framework asynchronously and reports pending/read-success/error state separately from API authentication.
+- **Embeddings:** the production UI indexed a synthetic document with `text-embedding-3-small`; its 1536-dimensional vector was verified in local SQLite.
+- **Responses:** with listening off, the app streamed and completed the correct **42 ms [S1]** answer. The source disclosure showed the exact synthetic document. First text was **4.3 seconds** in this single run.
+- **Official Live:** a paced, locally generated synthetic question produced a transcript and semantic client delegation; both `session.started` and `session.closed` were observed. This verifies the real protocol/model path, not physical audio capture.
+- **Native:** Release builds, **34 core checks** and **9 XCTest cases** pass. Tests include a real URLSession transport with a synthetic URLProtocol fixture for SSE boundaries and fragmented UTF-8; no network/key is used by that fixture.
+- **UI/lifecycle:** isolated Mock tests covered Ask/Return, automatic suggestions, focused Option+Space, modes/profiles, four-format import, PDF page/excerpt disclosure and persistence. Graceful quit/relaunch passed. The final production app restarted normally, reused Keychain access and shows Ready with listening off.
 
-Native UI checks with isolated Mock providers passed: app/settings open, Ask and Return while listening is off, automatic simulated question, Option+Space with the input focused, mode/profile selection, TXT/Markdown/PDF/DOCX import, retrieval/source expansion including PDF page 2, and persistence after restarting the app. These checks made no API calls. Physical global shortcuts while another app is focused, audio permissions/devices, real streaming, and meeting-app sharing exclusion still need interactive acceptance.
+Acceptance fixed a native termination hang, focused shortcut character insertion, synchronous modal file selection and a real SSE framing bug caused by `AsyncBytes.lines` dropping blank separators. The synthetic production knowledge fixture was deleted by exact name/content match after verification; original test files remain under `/tmp`. No private user document or microphone recording was used.
 
-Acceptance found and fixed a termination hang, focused-input shortcut characters, and synchronous modal file selection. The installed app now quits gracefully and can reopen its overlay. Release build and **8 native XCTest cases (including all 32 core checks)** pass. Exact package identity and remaining criteria are recorded in `IMPLEMENTATION_PLAN.md`.
+The earlier 401 applied to the old credential and is resolved. The CLI helper's separate Keychain timeout was an OS access issue, not a failed API authentication for the installed app. Do not replace or resend the working Key merely to run that helper.
+
+### 本机首次体验（约 3–5 分钟）
+
+1. 打开 `~/Applications/LiveCopilot.app`，在设置 → Knowledge 导入一份自己允许发送提取文本给 OpenAI 的资料，等待 Ready。保持监听关闭，提问一个资料中的数字并展开 `[S1]` 核对。
+2. 选择 **In-Person**，点击开始并在系统提示中授予麦克风权限。说一个完整问题，检查 Room 转写和自动建议；再用 `⌥Space` 手动触发。
+3. 戴耳机切换 **Remote Meeting**，按提示授予屏幕/系统音频权限。用另一应用播放非隐私语音，检查 Them；自己说话检查 You，测试静音及在其他应用前台时的快捷键。
+4. 在实际会议软件的共享预览或另一台观看设备中检查悬浮窗排除效果。结束后停止监听。
+
+Physical audio and permission behavior, real network interruption, background global keypresses, full visual/resize checks and actual meeting-app sharing exclusion remain **manual checks, not passed automated evidence**. The longer checklist above covers these cases and expected behavior. This boundary follows the supplied requirement to prepare an interactive path for audio behaviors requiring user participation.

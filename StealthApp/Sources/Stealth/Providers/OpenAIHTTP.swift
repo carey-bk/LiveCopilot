@@ -18,7 +18,14 @@ struct URLSessionTransport: HTTPTransport {
                 do {
                     let (bytes, response) = try await session.bytes(for: request)
                     try OpenAIHTTP.check((response as? HTTPURLResponse)?.statusCode ?? 0)
-                    for try await line in bytes.lines { try Task.checkCancellation(); continuation.yield(line) }
+                    var framer = StreamingLines()
+                    for try await byte in bytes {
+                        if let line = try framer.consume(byte) {
+                            try Task.checkCancellation()
+                            continuation.yield(line)
+                        }
+                    }
+                    if let line = try framer.finish() { continuation.yield(line) }
                     continuation.finish()
                 } catch { continuation.finish(throwing: error) }
             }
@@ -79,7 +86,35 @@ struct OpenAIEmbeddingProvider: EmbeddingProvider {
     }
 }
 
-/// SSE data is dispatched on blank lines; fragmented HTTP bytes are handled by AsyncBytes.lines.
+/// Foundation's AsyncBytes.lines omits empty lines, which destroys SSE event
+/// boundaries. Frame the original UTF-8 bytes, preserving LF, CRLF and CR blanks.
+struct StreamingLines {
+    private var bytes: [UInt8] = []
+    private var afterCR = false
+    mutating func consume(_ byte: UInt8) throws -> String? {
+        if afterCR {
+            afterCR = false
+            if byte == 10 { return nil }
+        }
+        if byte == 10 || byte == 13 {
+            afterCR = byte == 13
+            return try flush()
+        }
+        guard bytes.count < 1_048_576 else { throw CopilotError.message("Reasoning stream contained an oversized event. Retry this question.") }
+        bytes.append(byte)
+        return nil
+    }
+    mutating func finish() throws -> String? { bytes.isEmpty ? nil : try flush() }
+    private mutating func flush() throws -> String {
+        defer { bytes.removeAll(keepingCapacity: true) }
+        guard let text = String(bytes: bytes, encoding: .utf8) else {
+            throw CopilotError.message("Reasoning stream contained invalid text encoding. Retry this question.")
+        }
+        return text
+    }
+}
+
+/// SSE data is dispatched on the blank lines preserved by StreamingLines.
 struct ServerSentEvents {
     private var data: [String] = []
     mutating func consume(_ line: String) -> String? {

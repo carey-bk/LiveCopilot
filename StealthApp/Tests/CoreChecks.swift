@@ -148,6 +148,24 @@ enum CoreChecks {
         let embeddings = try await OpenAIEmbeddingProvider(key: "test-only", model: "fixture", transport: transport).embed(["first", "second"])
         try expect(embeddings == [[1, 0], [0, 1]], "provider didn't reorder indexed vectors"); passed.append("embedding provider parses ordered batches")
         let answer = AnswerRequest(query: query, conversation: "", scenario: .meeting, sources: hybrid)
+        try check("raw SSE bytes preserve blank boundaries and fragmented UTF-8") {
+            for newline in ["\n", "\r\n", "\r"] {
+                let wire = "data: 中文🧪" + newline + newline + "data: second" + newline + newline
+                var framer = StreamingLines(), parser = ServerSentEvents(), payloads: [String] = []
+                for byte in wire.utf8 {
+                    if let line = try framer.consume(byte), let payload = parser.consume(line) { payloads.append(payload) }
+                }
+                try expect(payloads == ["中文🧪", "second"], "SSE framing merged events or lost Unicode")
+                let tail = try framer.finish()
+                try expect(tail == nil, "unexpected trailing line")
+            }
+        }
+        try check("invalid UTF-8 stream fails instead of corrupting answer text") {
+            var framer = StreamingLines()
+            _ = try framer.consume(0xFF)
+            do { _ = try framer.consume(10); throw CheckError(description: "invalid encoding accepted") }
+            catch is CopilotError { }
+        }
         let events = ["data: {\"type\":\"response.output_text.delta\",\"delta\":\"Core answer\"}", "", "data: {\"type\":\"response.completed\"}", ""]
         var text = ""
         for try await delta in OpenAIReasoningProvider(key: "test-only", model: "fixture", transport: FixtureTransport(body: Data(), status: 200, events: events)).stream(answer) { text += delta }

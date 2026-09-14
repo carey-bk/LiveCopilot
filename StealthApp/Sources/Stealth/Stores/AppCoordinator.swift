@@ -21,6 +21,8 @@ final class AppCoordinator: ObservableObject {
     private var credentialRevision = UUID()
     private var cachedKey: String?
     private var isShuttingDown = false
+    private var startupCheckStarted = false
+    private var startupCheckTask: Task<Void, Never>?
     private var sessionStartedAt: Date?
     private var liveEpoch = UUID()
     private var activeDelegations = Set<String>()
@@ -92,10 +94,35 @@ final class AppCoordinator: ObservableObject {
                 cachedKey = key; hasAPIKey = key != nil
                 keyStatus = key == nil ? "No credential available." : "Credential available. No API request made."
                 if key == nil { statusMessage = "No key available — open Settings to configure Keychain." }
+                if let key { runStartupCheckIfRequested(key: key) }
             } catch {
                 guard credentialRevision == revision else { return }
                 cachedKey = nil; hasAPIKey = false; statusMessage = error.localizedDescription
                 keyStatus = error.localizedDescription
+            }
+        }
+    }
+    private func runStartupCheckIfRequested(key: String) {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("--verify-live"), !startupCheckStarted, !isShuttingDown else { return }
+        startupCheckStarted = true
+        var audioURL: URL?
+        if let i = arguments.firstIndex(of: "--audio") {
+            guard arguments.indices.contains(i + 1) else { statusMessage = "Live check needs a synthetic audio path after --audio."; return }
+            audioURL = URL(fileURLWithPath: arguments[i + 1])
+        }
+        startupCheckTask = Task {
+            isTransitioning = true
+            defer { isTransitioning = false }
+            statusMessage = "Running explicit Live API check — synthetic audio only"
+            do {
+                try await LiveSmokeCheck.run(key: key, settings: settings, audioURL: audioURL) { message in
+                    self.statusMessage = message
+                    DebugLog.log("api.check \(message)")
+                }
+            } catch {
+                statusMessage = "Live API check: " + error.localizedDescription
+                DebugLog.log("api.check \(statusMessage)")
             }
         }
     }
@@ -193,6 +220,8 @@ final class AppCoordinator: ObservableObject {
     func shutdown() async {
         isShuttingDown = true
         cancelAnswer()
+        startupCheckTask?.cancel()
+        await startupCheckTask?.value
         await stop(force: true)
     }
     func stop(force: Bool = false) async {

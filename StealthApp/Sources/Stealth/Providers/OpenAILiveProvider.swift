@@ -42,9 +42,10 @@ enum LiveProtocol {
         case "error":
             let error = obj["error"] as? [String: Any]
             let code = error?["code"] as? String ?? "unknown"
+            let safeCode = code.range(of: "^[a-z_]{1,64}$", options: .regularExpression) == nil ? "unknown" : code
             // Do not surface raw error text: it can contain request/credential content.
             let auth = code.contains("auth") || code.contains("api_key") || code.contains("permission")
-            return .failed(auth ? "Live authentication/access failed. Check your API key and model access." : "Live command/session failed. Check model configuration, API access and network.")
+            return .failed(auth ? "Live authentication/access failed (\(safeCode)). Check your API key and model access." : "Live command/session failed (\(safeCode)). Check model configuration, API access and network.")
         default: return nil // Output audio is intentionally discarded. Nothing is played.
         }
     }
