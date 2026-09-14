@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+./scripts/build-local-runtime.sh
 if ! xcodebuild -version >/dev/null 2>&1; then
   echo "Install/open full Xcode and select it with xcode-select before building." >&2; exit 1
 fi

@@ -12,6 +12,7 @@ enum LiveEvent {
     case ready
     case transcript(TranscriptFragment)
     case delegation(id: String, offsetMS: Int)
+    case speechActivity(Bool)
     case status(String)
     case failed(String)
     case closed(finalized: Bool)

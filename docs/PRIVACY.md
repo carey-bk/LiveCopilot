@@ -1,10 +1,11 @@
-# Privacy boundary (V1.1.1)
+# Privacy boundary (V1.2)
 
 ## Stored locally
 
 - Original imported files are copied without modifying the originals into `~/Library/Application Support/LiveCopilot/knowledge/originals/<document-id>/`.
 - `knowledge.sqlite` (and SQLite WAL/SHM) contains document metadata, extracted text/chunks, source/page references, embedding model identifiers, vectors and FTS5 terms.
 - Retrieval ranking, keyword search and exact cosine similarity run on the Mac.
+- Optional local model weights live in `~/Library/Application Support/LiveCopilot/Models/`. SenseVoiceSmall + Silero VAD processes audio locally; BGE-M3 generates document and query vectors locally. Workers communicate through private stdin/stdout pipes, open no network listener, inherit no API credentials, and do not log audio/text. Raw audio is held in bounded memory, not recorded to disk by this route.
 - Session history is local JSON under `~/Library/Application Support/LiveCopilot/sessions/`. It includes timestamps, speaker labels and raw Live transcript fragments. History is retained until deleted.
 - Live/Embeddings key: macOS Keychain generic password, Service **LiveCopilot-OpenAI**, Account **current macOS username**. `OPENAI_API_KEY` is the existing development fallback.
 - Optional separate analysis keys: Services **LiveCopilot-Reasoning-OpenAI** and **LiveCopilot-Reasoning-DeepSeek**, Account current username. Compatible services use **LiveCopilot-Reasoning-Compatible**, Account current username plus the canonical endpoint. Changing the endpoint does not reuse another destination's key. There is no fallback from an external analysis service to the Live key.
@@ -16,11 +17,12 @@ Local private storage directories are created with user-only permissions where a
 
 ## Sent to the selected service when a feature needs it
 
-- **Listening:** system and/or microphone audio, plus relevant conversation context, sent to the official Live API. No recording is uploaded while listening is off.
-- **Indexing / re-indexing:** extracted document chunks sent to OpenAI Embeddings. Original PDF/DOCX files themselves are not uploaded by this path.
-- **Retrieval query:** normalized question and bounded relevant context sent for a query embedding. Search/ranking over stored vectors remains local.
+- **Model download:** public model weights are fetched from pinned GitHub/Hugging Face locations, verified by SHA-256 and installed locally. No user audio, documents or API keys are sent with these downloads.
+- **Listening:** local mode sends no audio to a service and uses local Chinese/English question heuristics. OpenAI Live mode sends system and/or microphone audio plus relevant conversation context to the official Live API. No audio is uploaded while listening is off.
+- **Indexing / re-indexing:** local BGE-M3 runs entirely on the Mac. Selecting OpenAI Embeddings sends extracted document chunks to OpenAI; original PDF/DOCX files themselves are not uploaded by this path.
+- **Retrieval query:** local BGE-M3 computes the query vector on the Mac. OpenAI Embeddings sends the normalized question and bounded relevant context for a query embedding. Search/ranking over stored vectors is local in both modes.
 - **Answer:** current question, relevant conversation and roughly the best six retrieved chunks go to the **selected analysis service**: OpenAI Responses by default, optionally DeepSeek or the configured compatible endpoint. The full knowledge base is not attached to each question. Custom endpoints must use HTTPS; credentials in URL user info, query parameters or fragments are rejected.
-- **Live result feedback:** a short completed-answer summary may be returned to the active Live session so it can track completed assistance and later follow-ups.
+- **Live result feedback:** a short completed-answer summary may be returned to an active OpenAI Live session. Local mode retains context inside the application.
 
 OpenAI Live sessions and OpenAI Responses requests set `store: false`. Custom Chat Completions services receive only portable request fields; their storage/retention behavior depends on that provider. This is an API storage setting, **not a claim of zero provider retention**. OpenAI's account-level data controls and applicable policies still apply; see the [official data controls documentation](https://developers.openai.com/api/docs/guides/your-data).
 

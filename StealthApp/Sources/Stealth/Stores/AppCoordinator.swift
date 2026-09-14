@@ -7,6 +7,8 @@ final class AppCoordinator: ObservableObject {
     let suggestion = SuggestionStore()
     let sessions = SessionStore()
     let hotkeys: HotkeyStore
+    let localModels: LocalModelManager
+    private var localEmbedding: LocalEmbeddingProvider?
     let systemAudio = AudioCaptureManager()
     let mic = MicCaptureManager()
     let isMock: Bool
@@ -29,6 +31,8 @@ final class AppCoordinator: ObservableObject {
     private var sessionStartedAt: Date?
     private var liveEpoch = UUID()
     private var activeDelegations = Set<String>()
+    private var speakingSources = Set<Speaker>()
+    private var incompleteLocalStop = false
     private var pendingAutomatic: (speaker: Speaker, id: String, deadline: Date)?
     private var cancellables = Set<AnyCancellable>()
     private var mockTask: Task<Void, Never>?
@@ -36,6 +40,13 @@ final class AppCoordinator: ObservableObject {
     @Published var settings = AppSettings() {
         didSet {
             settings.save(defaults: settingsDefaults)
+            if oldValue.requiresOpenAIKey != settings.requiresOpenAIKey {
+                if settings.requiresOpenAIKey { refreshKeyState() }
+                else {
+                    credentialRevision = UUID(); isCheckingKey = false; cachedKey = nil; hasAPIKey = false
+                    keyStatus = "OpenAI is not required by the selected local services."
+                }
+            }
             if oldValue.reasoningService != settings.reasoningService ||
                 oldValue.compatibleBaseURL != settings.compatibleBaseURL || oldValue.compatiblePath != settings.compatiblePath {
                 refreshAnalysisKeyState()
@@ -64,13 +75,15 @@ final class AppCoordinator: ObservableObject {
 
     init(mock: Bool = ProcessInfo.processInfo.arguments.contains("--mock") || ProcessInfo.processInfo.environment["LIVECOPILOT_MOCK"] == "1") {
         isMock = mock
+        localModels = LocalModelManager(root: AppPaths.dataDirectory(mock: mock).appendingPathComponent("Models"))
         settingsDefaults = mock ? UserDefaults(suiteName: "com.livecopilot.mock")! : .standard
         hotkeys = HotkeyStore(defaults: settingsDefaults)
         settings = AppSettings.load(defaults: settingsDefaults)
         do { knowledge = try KnowledgeIndex(directory: AppPaths.dataDirectory(mock: mock).appendingPathComponent("knowledge")) }
         catch { knowledgeMessage = error.localizedDescription }
         if mock { hasAPIKey = true; keyStatus = "Mock providers — no credential needed."; statusMessage = "MOCK MODE — no API calls" }
-        else { refreshKeyState() }
+        else if settings.requiresOpenAIKey { refreshKeyState() }
+        else { keyStatus = "OpenAI is not required by the selected local services." }
         refreshAnalysisKeyState()
         systemAudio.onPCM16 = { [weak self] data in Task { @MainActor in self?.systemLive?.sendAudio(data) } }
         mic.onPCM16 = { [weak self] data in Task { @MainActor in self?.micLive?.sendAudio(data) } }
@@ -199,14 +212,20 @@ final class AppCoordinator: ObservableObject {
         }
         return key
     }
-    private func embeddingProvider(key: String) -> any EmbeddingProvider {
-        isMock ? MockEmbeddingProvider() : OpenAIEmbeddingProvider(key: key, model: settings.embeddingModel)
+    private func embeddingProvider(requireReady: Bool = false) throws -> any EmbeddingProvider {
+        if isMock { return MockEmbeddingProvider() }
+        if settings.embeddingService == .local {
+            if requireReady, !LocalModelKind.embedding.isInstalled(in: localModels.root) { throw CopilotError.message("Download the local embedding model in Services first.") }
+            if localEmbedding == nil { localEmbedding = LocalEmbeddingProvider(directory: LocalModelKind.embedding.location(in: localModels.root)) }
+            return localEmbedding!
+        }
+        return OpenAIEmbeddingProvider(key: cachedKey ?? "", model: settings.embeddingModel)
     }
     func start() async {
         guard !isRunning, !isTransitioning, !isShuttingDown else { return }
         isTransitioning = true; defer { isTransitioning = false }
         let epoch = UUID(); liveEpoch = epoch
-        conversation.reset(); transcript.clear(); activeDelegations = []
+        conversation.reset(); transcript.clear(); activeDelegations = []; speakingSources = []
         sessionStartedAt = Date()
         if isMock {
             isRunning = true; statusMessage = "MOCK listening — sample conversation"
@@ -220,7 +239,12 @@ final class AppCoordinator: ObservableObject {
             return
         }
         do {
-            let key = try credential()
+            let key = settings.listeningService == .openAI ? try credential() : ""
+            if settings.listeningService == .local, !LocalModelKind.speech.isInstalled(in: localModels.root) {
+                throw CopilotError.message("Download SenseVoiceSmall and VAD in Services first.")
+            }
+            systemAudio.configure(sampleRate: settings.listeningService.sampleRate)
+            mic.configure(sampleRate: settings.listeningService.sampleRate)
             statusMessage = "Starting audio capture…"
             // Acquire permissions/capture first; never leave paid sockets open after a capture failure.
             if settings.mode == .remote { await systemAudio.start() }
@@ -237,17 +261,23 @@ final class AppCoordinator: ObservableObject {
                 let speaker: Speaker = settings.mode == .inPerson ? .room : .you
                 micLive = makeLive(key: key, speaker: speaker, epoch: epoch); micLive?.connect(context: "")
             }
-            statusMessage = systemAudio.lastError ?? mic.lastError ?? "Connecting Live…"
+            statusMessage = systemAudio.lastError ?? mic.lastError ?? (settings.listeningService == .local ? "Loading local speech model…" : "Connecting Live…")
         } catch { statusMessage = error.localizedDescription; sessionStartedAt = nil }
     }
     private func makeLive(key: String, speaker: Speaker, epoch: UUID) -> any LiveProvider {
-        let provider = OpenAILiveProvider(key: key, model: settings.liveModel, speaker: speaker, scenario: settings.scenario)
+        let provider: any LiveProvider
+        if settings.listeningService == .local {
+            provider = LocalLiveProvider(directory: LocalModelKind.speech.location(in: localModels.root), speaker: speaker, sessionStart: sessionStartedAt ?? Date())
+        } else { provider = OpenAILiveProvider(key: key, model: settings.liveModel, speaker: speaker, scenario: settings.scenario) }
         provider.onEvent = { [weak self] event in self?.receive(event, speaker: speaker, epoch: epoch) }
         return provider
     }
     private func receive(_ event: LiveEvent, speaker: Speaker, epoch: UUID) {
         guard epoch == liveEpoch else { return }
         switch event {
+        case .speechActivity(let active):
+            if active { speakingSources.insert(speaker); if pendingAutomatic?.speaker == speaker { questionTask?.cancel() } }
+            else { speakingSources.remove(speaker); if pendingAutomatic != nil { scheduleAutomatic() } }
         case .transcript(let fragment):
             guard conversation.append(fragment) else { return }
             transcript.ingest(fragment)
@@ -255,14 +285,20 @@ final class AppCoordinator: ObservableObject {
             questionState = conversation.phase.rawValue
             if pendingAutomatic != nil { scheduleAutomatic() }
         case .delegation(let id, _):
-            guard settings.automaticSuggestions, speaker != .you, activeDelegations.insert(id).inserted else { return }
+            guard isRunning, settings.automaticSuggestions, speaker != .you, activeDelegations.insert(id).inserted else { return }
             if activeDelegations.count > 400 { activeDelegations = [id] }
             pendingAutomatic = (speaker, id, Date().addingTimeInterval(25))
             scheduleAutomatic()
         case .ready: statusMessage = "Listening · \(settings.mode.rawValue) · \(speaker.rawValue) ready"
-        case .status(let message), .failed(let message): statusMessage = message
+        case .status(let message): statusMessage = message
+        case .failed(let message):
+            statusMessage = message
+            if settings.listeningService == .local, isRunning, !isTransitioning {
+                Task { await stop(); statusMessage = message }
+            }
         case .closed(let finalized):
-            if !finalized { DebugLog.log("live.close final_usage_unconfirmed speaker=\(speaker.rawValue)") }
+            if !finalized, settings.listeningService == .local { incompleteLocalStop = true; DebugLog.log("local.close incomplete_flush") }
+            else if !finalized { DebugLog.log("live.close final_usage_unconfirmed speaker=\(speaker.rawValue)") }
         }
     }
     private func scheduleAutomatic() {
@@ -273,12 +309,16 @@ final class AppCoordinator: ObservableObject {
             guard !Task.isCancelled, let self, self.liveEpoch == epoch, self.isRunning,
                   self.settings.automaticSuggestions, let pending = self.pendingAutomatic else { return }
             if Date() > pending.deadline { self.pendingAutomatic = nil; return }
+            if self.speakingSources.contains(pending.speaker) { self.questionState = QuestionPhase.forming.rawValue; return }
             if self.suggestion.isLoading { return } // Latest follow-up remains queued until answer finishes.
             guard let question = self.conversation.candidate(speaker: pending.speaker, now: Date(), cooldown: self.settings.scenario.cooldown) else {
                 self.questionState = self.conversation.phase.rawValue
                 if self.conversation.phase == .duplicate || self.conversation.phase == .answered { self.pendingAutomatic = nil }
                 else { self.scheduleAutomatic() }
                 return
+            }
+            if self.settings.listeningService == .local, !LocalQuestionDetector.isQuestion(question) {
+                self.pendingAutomatic = nil; self.questionState = QuestionPhase.waiting.rawValue; return
             }
             self.pendingAutomatic = nil
             self.request(query: question, mode: .reply, speaker: pending.speaker, delegationID: pending.id)
@@ -290,19 +330,23 @@ final class AppCoordinator: ObservableObject {
         startupCheckTask?.cancel()
         await startupCheckTask?.value
         await stop(force: true)
+        localEmbedding?.close(); localEmbedding = nil
+        await localModels.shutdown()
     }
     func stop(force: Bool = false) async {
         guard force || !isTransitioning else { return }
         isTransitioning = true; defer { isTransitioning = false }
-        liveEpoch = UUID(); isRunning = false
+        incompleteLocalStop = false
+        isRunning = false
         questionTask?.cancel(); pendingAutomatic = nil; mockTask?.cancel()
         await systemAudio.stop(); mic.stop()
         let a = systemLive, b = micLive; systemLive = nil; micLive = nil
         async let closeA: Void = a?.disconnect() ?? ()
         async let closeB: Void = b?.disconnect() ?? ()
         _ = await (closeA, closeB)
+        liveEpoch = UUID()
         saveSession()
-        statusMessage = "Listening stopped — manual questions remain available"
+        statusMessage = incompleteLocalStop ? "Listening stopped. The final local speech segment could not be completed." : "Listening stopped — manual questions remain available"
     }
     func saveSession() {
         if let started = sessionStartedAt {
@@ -320,7 +364,7 @@ final class AppCoordinator: ObservableObject {
         Task {
             if micEnabled {
                 do {
-                    let key = try credential(); await mic.start()
+                    let key = settings.listeningService == .openAI ? try credential() : ""; await mic.start()
                     guard mic.isCapturing, liveEpoch == epoch, isRunning, !isShuttingDown, micEnabled else { return }
                     micLive = makeLive(key: key, speaker: .you, epoch: liveEpoch); micLive?.connect(context: conversation.context())
                 } catch { statusMessage = error.localizedDescription }
@@ -350,10 +394,11 @@ final class AppCoordinator: ObservableObject {
         guard !query.isEmpty else { return }
         guard query.count <= 8000 else { suggestion.fail("Keep a manual question under 8,000 characters."); return }
         let reasoning: any ReasoningProvider
+        let embedding: any EmbeddingProvider
         do {
             reasoning = isMock ? MockReasoningProvider() : try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
+            embedding = try embeddingProvider()
         } catch { suggestion.fail(error.localizedDescription); onShowOverlay?(); return }
-        let embedding = embeddingProvider(key: cachedKey ?? "")
         if delegationID == nil { pendingAutomatic = nil; questionTask?.cancel() }
         answerTask?.cancel()
         let id = UUID(); requestID = id
@@ -421,7 +466,8 @@ final class AppCoordinator: ObservableObject {
         Task {
             defer { isIndexing = false }
             do {
-                let provider = embeddingProvider(key: isMock ? "" : try credential())
+                if !isMock, settings.embeddingService == .openAI { _ = try credential() }
+                let provider = try embeddingProvider(requireReady: true)
                 for url in urls {
                     knowledgeMessage = "Indexing \(url.lastPathComponent)…"
                     do { _ = try await knowledge.importDocument(url, provider: provider) }
@@ -439,7 +485,8 @@ final class AppCoordinator: ObservableObject {
             defer { isIndexing = false }
             do {
                 knowledgeMessage = "Re-indexing \(document.name)…"
-                _ = try await knowledge.reindex(document, provider: embeddingProvider(key: isMock ? "" : try credential()))
+                if !isMock, settings.embeddingService == .openAI { _ = try credential() }
+                _ = try await knowledge.reindex(document, provider: embeddingProvider(requireReady: true))
                 knowledgeMessage = "Re-indexing complete."
             } catch { knowledgeMessage = error.localizedDescription }
             await refreshKnowledge()
@@ -450,6 +497,25 @@ final class AppCoordinator: ObservableObject {
         Task {
             do { try await knowledge.delete(document.id); knowledgeMessage = "Deleted local document and index." }
             catch { knowledgeMessage = error.localizedDescription }
+            await refreshKnowledge()
+        }
+    }
+    func reindexAll() {
+        guard !isIndexing, let knowledge else { return }
+        let documents = knowledgeDocuments
+        isIndexing = true
+        Task {
+            defer { isIndexing = false }
+            do {
+                if !isMock, settings.embeddingService == .openAI { _ = try credential() }
+                let provider = try embeddingProvider(requireReady: true)
+                for document in documents {
+                    knowledgeMessage = "Re-indexing \(document.name)…"
+                    _ = try await knowledge.reindex(document, provider: provider)
+                    await refreshKnowledge()
+                }
+                knowledgeMessage = "Re-indexing complete."
+            } catch { knowledgeMessage = error.localizedDescription }
             await refreshKnowledge()
         }
     }

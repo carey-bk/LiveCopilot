@@ -6,7 +6,12 @@ import Foundation
 final class PCMConverter: @unchecked Sendable {
     private let lock = NSLock()
     private var converter: AVAudioConverter?
-    private let target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24_000, channels: 1, interleaved: true)!
+    private var target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24_000, channels: 1, interleaved: true)!
+    func configure(sampleRate: Double) {
+        lock.lock(); defer { lock.unlock() }
+        target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true)!
+        converter = nil
+    }
     func convert(_ buffer: AVAudioPCMBuffer) -> Data? {
         lock.lock(); defer { lock.unlock() }
         guard buffer.format.sampleRate > 0, buffer.frameLength > 0 else { return nil }

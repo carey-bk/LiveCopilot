@@ -23,6 +23,8 @@ enum ScenarioProfile: String, Codable, CaseIterable, Identifiable {
 }
 
 struct AppSettings: Codable, Equatable {
+    var listeningService = ListeningService.openAI
+    var embeddingService = EmbeddingService.openAI
     var liveModel = "gpt-live-1"
     var reasoningModel = "gpt-5.6-sol"
     var embeddingModel = "text-embedding-3-small"
@@ -41,14 +43,19 @@ struct AppSettings: Codable, Equatable {
     var compatibleBaseURL = ""
     var compatiblePath = "chat/completions"
     var compatibleModel = ""
+    var requiresOpenAIKey: Bool { listeningService == .openAI || embeddingService == .openAI || reasoningService == .sharedOpenAI }
+    var selectedEmbeddingIdentity: String { embeddingService == .local ? LocalModelKind.embeddingIdentity : embeddingModel }
 
     init() {}
     private enum CodingKeys: String, CodingKey {
+        case listeningService, embeddingService
         case liveModel, reasoningModel, embeddingModel, reasoningEffort, mode, scenario, automaticSuggestions, includeConversation, retrievalCount, language, background, excludeOverlayFromCapture, reasoningService, deepSeekModel, deepSeekEffort, compatibleBaseURL, compatiblePath, compatibleModel
     }
     init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        listeningService = try c.decodeIfPresent(ListeningService.self, forKey: .listeningService) ?? listeningService
+        embeddingService = try c.decodeIfPresent(EmbeddingService.self, forKey: .embeddingService) ?? embeddingService
         liveModel = try c.decodeIfPresent(String.self, forKey: .liveModel) ?? liveModel
         reasoningModel = try c.decodeIfPresent(String.self, forKey: .reasoningModel) ?? reasoningModel
         embeddingModel = try c.decodeIfPresent(String.self, forKey: .embeddingModel) ?? embeddingModel

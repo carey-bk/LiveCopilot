@@ -1,13 +1,15 @@
-# LiveCopilot architecture (V1.1.1)
+# LiveCopilot architecture (V1.2)
 
 The product requirements are `livecopilot_goal.md`. This is an incremental native evolution of Stealth; upstream source and history remain available through Git.
+
+The user's later local-model request extends the original V1 provider scope. Listening and embedding providers are now selected independently; old preferences retain OpenAI on migration. See `LOCAL_MODELS.md` for pinned runtime/model provenance and verification.
 
 ## Data flow
 
 ```text
-ScreenCaptureKit (Them) ── PCMConverter ── OpenAILiveProvider ─┐
-AVAudioEngine (You/Room) ─ PCMConverter ── OpenAILiveProvider ├─ timestamped fragments
-                                                           │  + semantic client delegation
+ScreenCaptureKit (Them) ── PCMConverter ── selected LiveProvider ─┐
+AVAudioEngine (You/Room) ─ PCMConverter ── selected LiveProvider ├─ timestamped fragments
+                                                             │  + provider delegation
                                                            ▼
                                       ConversationState + TranscriptStore
                                                            │
@@ -17,7 +19,7 @@ AVAudioEngine (You/Room) ─ PCMConverter ── OpenAILiveProvider ├─ times
                                             AppCoordinator.request
                                              RetrievalQuery.formulate
                                                            │
-                                  OpenAIEmbeddingProvider (query vector)
+                                  selected EmbeddingProvider (query vector)
                                                            │
                                             local KnowledgeIndex actor
                                    SQLite FTS5/BM25 + cosine + rank fusion
@@ -29,9 +31,15 @@ AVAudioEngine (You/Room) ─ PCMConverter ── OpenAILiveProvider ├─ times
 
 Listening runs independently of retrieval/reasoning. Manual requests cancel obsolete answers via task cancellation and generation IDs. Automatic requests retain at most the latest pending delegation while an answer runs; a conservative cooldown and duplicate/answered-question state prevent repeated cards. Source counts and stage durations enter diagnostics; content and keys do not.
 
+Local listening uses 16 kHz mono PCM16 (cloud Live retains 24 kHz). Each audio source has a resident native worker running SenseVoiceSmall INT8 and Silero VAD on CPU. Endpointed segments retain up to 200 ms of non-overlapping pre-roll and are bounded at 12 seconds. `LocalLiveProvider` gates delegations with local Chinese/English question rules, waits for stable silence, and reports VAD activity so the coordinator holds pending work while speech resumes. Local ASR is not token-streaming, and the heuristic is not equivalent to Live semantic comprehension. The existing manual hotkey remains the fallback.
+
+`LocalEmbeddingProvider` uses a separate resident native worker running BGE-M3 Q8 through llama.cpp (CLS pooling, L2 normalization, 1024 dimensions). One embedding per IPC request lets interactive retrieval run between import chunks. A content/version-qualified model identity excludes old OpenAI vectors from semantic comparison; FTS keyword retrieval remains compatible, and the UI offers bulk re-indexing.
+
+Workers use serialized, bounded JSON-lines stdin/stdout IPC, no localhost server and no inherited credentials. Blocking reads run off the main actor and consume available pipe bytes without waiting for a full buffer. Cancellation/timeout terminates active inference; close prevents restart. Audio input queues are limited to 12 seconds, and native VAD history to 30 seconds. No local failure switches silently to a cloud provider.
+
 ## Native preservation
 
-- The original ScreenCaptureKit content-filter/capture configuration and AVAudioEngine microphone path remain. Independent PCM converters run on capture callbacks and synchronize converter state. The input is mono signed PCM16 LE, 24 kHz.
+- The original ScreenCaptureKit content-filter/capture configuration and AVAudioEngine microphone path remain. Independent PCM converters run on capture callbacks and synchronize converter state; output is 16 kHz for local ASR or 24 kHz for Live.
 - Remote mode has distinct Them/You sessions; You fragments are mirrored as short context to Them. Room mode uses one microphone session and labels it Room.
 - The NSPanel remains floating across Spaces, resizable and nonactivating; it can become key for typed input. Overlay capture exclusion defaults on and is user-configurable; settings/history allow capture. A native `OverlayResizeView` reserves 12 pt edge strips and 28 pt corners, preserving opposite edges while resizing and clamping dimensions. Header buttons are inset from these corners. Capture exclusion still requires real software validation.
 - The application uses regular activation policy and `LSUIElement = false`, with a bundled ICNS generated from editable SVG artwork. Dock reopening restores the overlay; menu-bar controls remain available.
@@ -68,7 +76,7 @@ The transport frames raw UTF-8 bytes with a bounded buffer and preserves blank L
 
 Evidence has per-request `[S1]` IDs tied to local chunk metadata. Prompts distinguish local evidence from model reasoning and treat documents/transcripts as untrusted reference data. The tolerant Markdown section parser permits plain or partial output. The UI includes the question, compact sections, source excerpts, stage timing, cancel/copy, and optional conversation context for typed queries.
 
-`LiveProvider`, `EmbeddingProvider`, and `ReasoningProvider` define the boundaries. V1.1 adds `ReasoningProviderFactory` to select OpenAI Responses (shared or separate Key), DeepSeek Chat Completions, or a custom compatible Chat Completions endpoint. Live and Embeddings remain OpenAI. Vendor-specific thinking options are emitted only for DeepSeek. Only `delta.content` is displayed; `reasoning_content` is ignored. Error bodies are not echoed.
+`LiveProvider`, `EmbeddingProvider`, and `ReasoningProvider` define the boundaries. `ReasoningProviderFactory` selects OpenAI Responses (shared or separate Key), DeepSeek Chat Completions, or a custom compatible Chat Completions endpoint. V1.2 adds local listening and embeddings; selecting both with DeepSeek does not require or initiate a read of the OpenAI credential on startup. Vendor-specific thinking options are emitted only for DeepSeek. Only `delta.content` is displayed; `reasoning_content` is ignored. Error bodies are not echoed.
 
 `AppSettings` decodes older V1 records field by field, defaulting only new preferences. `AppLanguage` and `L10n` translate application chrome/status messages without translating user documents or transcripts; model answers still follow the question language. Backgrounds offer glass, soft frosted and solid white. `WindowBackgroundView` shares the surface between overlay/settings/history: soft frosted layers a 72–78% opaque, slightly cool light gradient over native material, keeping Aqua/dark text and reducing backdrop contrast; solid white is opaque; glass retains its original behavior. Settings/history clear their native window backing only for soft frosted. Existing background selections and raw storage values remain valid. Window capture exclusion remains independent of appearance.
 

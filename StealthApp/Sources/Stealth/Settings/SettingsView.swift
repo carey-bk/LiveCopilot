@@ -5,11 +5,12 @@ struct SettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var hotkeys: HotkeyStore
     @State private var page = SettingsPage.general
-    @State private var analysis = false
+    @State private var serviceRole = 0
     @State private var baseURL = ""
     @State private var apiPath = ""
     @State private var customModel = ""
     @State private var connectionMessage = ""
+    @State private var showOpenAIKey = false
     init(coordinator: AppCoordinator) { self.coordinator = coordinator; hotkeys = coordinator.hotkeys }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     private var locked: Bool { coordinator.isRunning || coordinator.isTransitioning }
@@ -49,6 +50,13 @@ struct SettingsView: View {
         .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
         .environment(\.locale, coordinator.settings.language.locale)
         .onAppear { loadCustomDraft() }
+        .sheet(isPresented: $showOpenAIKey) {
+            VStack(alignment: .leading, spacing: 18) {
+                Text(t("Manage OpenAI credential")).font(.title2)
+                CredentialEditor(coordinator: coordinator, analysis: false)
+                Button(t("Done")) { showOpenAIKey = false }
+            }.padding(24).frame(width: 540)
+        }
     }
     private var general: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -91,25 +99,46 @@ struct SettingsView: View {
     }
     private var services: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Picker(t("Service role"), selection: $analysis) {
-                Text(t("Live service")).tag(false)
-                Text(t("Analysis service")).tag(true)
+            Picker(t("Service role"), selection: $serviceRole) {
+                Text(t("Live service")).tag(0)
+                Text(t("Knowledge service")).tag(1)
+                Text(t("Analysis service")).tag(2)
             }.pickerStyle(.segmented).accessibilityIdentifier("service-role")
-            if analysis { analysisService } else { liveService }
+            if serviceRole == 2 { analysisService } else if serviceRole == 1 { embeddingService } else { liveService }
         }.padding(.bottom, 4)
     }
     private var liveService: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Label("OpenAI", systemImage: "waveform").font(.title3.bold())
-            Text(t("Live conversation uses GPT-Live-1. Knowledge indexing and query embeddings also use this OpenAI credential.")).font(.callout).foregroundStyle(.secondary)
-            CredentialEditor(coordinator: coordinator, analysis: false)
-            SettingsSection {
-                VStack(spacing: 14) {
-                    modelField("Live model", value: $coordinator.settings.liveModel).disabled(locked)
-                    modelField("Embedding model", value: $coordinator.settings.embeddingModel).disabled(coordinator.isIndexing)
-                    Text(t("After changing the embedding model, re-index documents. Keyword retrieval remains available for older indexes.")).font(.caption).foregroundStyle(.secondary)
-                }.padding(10)
-            } label: { Text(t("Models")) }
+            Picker(t("Listening provider"), selection: $coordinator.settings.listeningService) {
+                ForEach(ListeningService.allCases) { Text(t($0.label)).tag($0) }
+            }.disabled(locked).accessibilityIdentifier("listening-provider")
+            if coordinator.settings.listeningService == .local {
+                Text(t("Audio stays on this Mac. Captions appear after a pause or a 12-second segment. Chinese, English, Japanese, Korean and Cantonese are detected automatically.")).font(.callout).foregroundStyle(.secondary)
+                LocalModelCard(manager: coordinator.localModels, kind: .speech, language: coordinator.settings.language, locked: locked)
+                Text(t("Automatic suggestions use conservative local question rules. Pauses alone do not trigger analysis; use the shortcut for missed questions.")).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Label("OpenAI", systemImage: "waveform").font(.title3.bold())
+                Text(t("Audio is sent to OpenAI Live for transcription and semantic question detection.")).font(.callout).foregroundStyle(.secondary)
+                CredentialEditor(coordinator: coordinator, analysis: false)
+                modelField("Live model", value: $coordinator.settings.liveModel).disabled(locked)
+            }
+        }
+    }
+    private var embeddingService: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Picker(t("Embedding provider"), selection: $coordinator.settings.embeddingService) {
+                ForEach(EmbeddingService.allCases) { Text(t($0.label)).tag($0) }
+            }.disabled(coordinator.isIndexing || coordinator.suggestion.isLoading).accessibilityIdentifier("embedding-provider")
+            if coordinator.settings.embeddingService == .local {
+                Text(t("Document and query embeddings run on this Mac. No OpenAI key or network is needed after downloading the model.")).font(.callout).foregroundStyle(.secondary)
+                LocalModelCard(manager: coordinator.localModels, kind: .embedding, language: coordinator.settings.language, locked: coordinator.isIndexing || coordinator.suggestion.isLoading)
+            } else {
+                Text(t("Extracted document text and retrieval queries are sent to OpenAI Embeddings using the shared OpenAI credential.")).font(.callout).foregroundStyle(.secondary)
+                CredentialEditor(coordinator: coordinator, analysis: false)
+                modelField("Embedding model", value: $coordinator.settings.embeddingModel).disabled(coordinator.isIndexing)
+            }
+            Text(t("After changing the embedding model, re-index documents. Keyword retrieval remains available for older indexes.")).font(.caption).foregroundStyle(.secondary)
+            Button(t("Open knowledge library")) { page = .knowledge }
         }
     }
     private var analysisService: some View {
@@ -117,11 +146,11 @@ struct SettingsView: View {
             Picker(t("Provider"), selection: $coordinator.settings.reasoningService) {
                 ForEach(ReasoningService.allCases) { Text(t($0.label)).tag($0) }
             }.accessibilityIdentifier("analysis-provider")
-            Text(t("This service combines the question, conversation and retrieved evidence into an answer. Live audio stays with OpenAI.")).font(.callout).foregroundStyle(.secondary)
+            Text(t("This service receives the question, relevant conversation and retrieved excerpts to generate an answer. Audio follows your listening provider selection.")).font(.callout).foregroundStyle(.secondary)
             if coordinator.settings.reasoningService == .sharedOpenAI {
                 Label(t("Using the Live service credential."), systemImage: "link").font(.headline)
                 CredentialStatus(coordinator: coordinator, analysis: false)
-                Button(t("Manage Live service")) { analysis = false }
+                Button(t("Manage OpenAI credential")) { showOpenAIKey = true }
             } else if coordinator.settings.reasoningService != .compatible {
                 CredentialEditor(coordinator: coordinator, analysis: true).id(coordinator.settings.reasoningService)
             }
@@ -199,7 +228,15 @@ struct SettingsView: View {
                 Text(t("Local knowledge base")).font(.headline); Spacer()
                 Button(t("Import documents…")) { selectDocuments() }.disabled(coordinator.isIndexing)
             }
-            Text(t("PDF, Markdown, TXT and DOCX · original copies remain local. Indexing sends extracted text to OpenAI.")).font(.caption).foregroundStyle(.secondary)
+            Text(t(coordinator.settings.embeddingService == .local
+                   ? "PDF, Markdown, TXT and DOCX · parsing, embeddings and retrieval stay on this Mac. Answer generation sends selected excerpts to your analysis service."
+                   : "PDF, Markdown, TXT and DOCX · original copies remain local. Indexing sends extracted text to OpenAI.")).font(.caption).foregroundStyle(.secondary)
+            if coordinator.knowledgeDocuments.contains(where: { $0.embeddingModel != coordinator.settings.selectedEmbeddingIdentity }) {
+                HStack {
+                    Text(t("Some documents use a different embedding model. Re-index them to restore semantic retrieval.")).font(.caption).foregroundStyle(.orange)
+                    Button(t("Re-index all")) { coordinator.reindexAll() }.disabled(coordinator.isIndexing)
+                }
+            }
             Stepper(t("Evidence chunks") + ": \(coordinator.settings.retrievalCount)", value: $coordinator.settings.retrievalCount, in: 3...8)
             if coordinator.isIndexing { ProgressView().controlSize(.small) }
             if !coordinator.knowledgeMessage.isEmpty { Text(t(coordinator.knowledgeMessage)).font(.caption).textSelection(.enabled) }
@@ -253,6 +290,37 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         case .knowledge: return "books.vertical"
         case .shortcuts: return "keyboard"
         }
+    }
+}
+
+private struct LocalModelCard: View {
+    @ObservedObject var manager: LocalModelManager
+    let kind: LocalModelKind
+    let language: AppLanguage
+    let locked: Bool
+    private func t(_ text: String) -> String { L10n.text(text, language: language) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(kind.title).font(.headline)
+                    Text(t("Download size") + " · " + kind.downloadSize).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Label(t(manager.installed.contains(kind) ? "Installed · offline ready" : "Not downloaded"),
+                      systemImage: manager.installed.contains(kind) ? "checkmark.circle.fill" : "arrow.down.circle")
+                    .font(.caption).foregroundStyle(manager.installed.contains(kind) ? .green : .secondary)
+            }
+            if manager.downloading == kind {
+                HStack { ProgressView().controlSize(.small); Text(t(manager.message)).font(.caption); Spacer(); Button(t("Cancel")) { manager.cancel() } }
+            } else {
+                Button(t(manager.installed.contains(kind) ? "Download again" : "Download model")) { manager.install(kind) }
+                    .disabled(locked || manager.downloading != nil).accessibilityIdentifier("download-" + kind.rawValue)
+                if manager.downloading == nil, manager.messageKind == kind, !manager.message.isEmpty { Text(t(manager.message)).font(.caption).foregroundStyle(.secondary) }
+            }
+            Text(t("Downloaded once, stored on this Mac. No Python, Ollama or Docker installation is required.")).font(.caption).foregroundStyle(.secondary)
+        }.padding(16).background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+            .onAppear { manager.refresh() }
     }
 }
 

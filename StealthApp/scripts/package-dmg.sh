@@ -41,7 +41,7 @@ else
   [[ -n "$APP_SOURCE_REF" ]] || { echo "Supply the validated app's --app-source-ref." >&2; exit 1; }
   APP_SOURCE_REF="$(git rev-parse --verify "$APP_SOURCE_REF^{commit}")"
   git diff --quiet "$APP_SOURCE_REF" "$RELEASE_COMMIT" -- \
-    StealthApp/Sources StealthApp/Resources StealthApp/project.yml || {
+    StealthApp/Sources StealthApp/Resources StealthApp/Native StealthApp/scripts/build-local-runtime.sh StealthApp/project.yml || {
     echo "App inputs changed since --app-source-ref. Build a new app instead." >&2; exit 1;
   }
   codesign --verify --deep --strict "$APP_PATH"

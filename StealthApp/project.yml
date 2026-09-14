@@ -6,7 +6,7 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "1.1.1"
+    MARKETING_VERSION: "1.2.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: ""
@@ -22,6 +22,11 @@ targets:
     sources:
       - path: Sources
       - path: Resources/AppIcon.icns
+        buildPhase: resources
+      - path: Resources/LocalRuntime
+        type: folder
+        buildPhase: resources
+      - path: Resources/ThirdPartyNotices.txt
         buildPhase: resources
     settings:
       base:

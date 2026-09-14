@@ -11,6 +11,71 @@ enum CoreChecks {
     static func run() async throws -> [String] {
         var passed: [String] = []
         func check(_ name: String, _ body: () throws -> Void) throws { try body(); passed.append(name) }
+        try check("local services migrate independently and do not require OpenAI for DeepSeek") {
+            let old = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+            try expect(old.listeningService == .openAI && old.embeddingService == .openAI, "old route silently changed")
+            var local = old; local.listeningService = .local; local.embeddingService = .local; local.reasoningService = .deepSeek
+            try expect(!local.requiresOpenAIKey, "local + DeepSeek unnecessarily requires OpenAI")
+            let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(local))
+            try expect(restored == local, "local selections did not persist")
+            local.listeningService = .openAI; try expect(local.requiresOpenAIKey, "cloud listening lost credential requirement")
+            local.listeningService = .local; local.reasoningService = .sharedOpenAI
+            try expect(local.requiresOpenAIKey, "shared reasoning lost its credential requirement")
+        }
+        try check("local question gate distinguishes questions from silence fillers and statements") {
+            for text in ["Why did you choose method B?", "Could you explain the sample size?", "What about latency?", "请介绍一下你的项目经历。", "这个方法的延迟是多少？", "你们为什么选择方法B？"] {
+                try expect(LocalQuestionDetector.isQuestion(text), "missed explicit question: " + text)
+            }
+            for text in ["", "好的。", "Thank you.", "Method B is faster.", "Why did you choose the", "请介绍这个实验，因为", "我不知道为什么失败。", "Why did you choose B? Never mind, no need to answer."] {
+                try expect(!LocalQuestionDetector.isQuestion(text), "false trigger: " + text)
+            }
+        }
+        let localFixture = FileManager.default.temporaryDirectory.appendingPathComponent("LiveCopilot-Local-Core-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: localFixture, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: localFixture) }
+        try check("local model readiness rejects partial missing and size-mismatched installs") {
+            let kind = LocalModelKind.embedding, folder = kind.location(in: localFixture)
+            try expect(!kind.isInstalled(in: localFixture), "missing install accepted")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data([1, 2, 3]).write(to: folder.appendingPathComponent(kind.files[0]))
+            try expect(!kind.isInstalled(in: localFixture), "uncommitted payload accepted")
+            try JSONEncoder().encode([kind.files[0]: 4]).write(to: folder.appendingPathComponent("installed.json"))
+            try expect(!kind.isInstalled(in: localFixture), "truncated payload accepted")
+        }
+        do {
+            try await LocalModelInstaller.install(.embedding, root: localFixture, downloader: { _, destination in try Data("corrupt download".utf8).write(to: destination) })
+            throw CheckError(description: "corrupt model committed")
+        } catch is CopilotError {
+            let original = try Data(contentsOf: LocalModelKind.embedding.location(in: localFixture).appendingPathComponent("bge-m3-Q8_0.gguf"))
+            try expect(original == Data([1, 2, 3]), "previous model destroyed")
+            passed.append("bad download checksum preserves the previous local model")
+        }
+        do {
+            try await LocalModelInstaller.install(.embedding, root: localFixture, downloader: { _, _ in throw CancellationError() })
+            throw CheckError(description: "cancelled download committed")
+        } catch is CancellationError { passed.append("local download cancellation cleans staging without changing installed data") }
+        try check("failed local model replacement rolls back atomically") {
+            let target = LocalModelKind.embedding.location(in: localFixture)
+            do { try LocalModelInstaller.commit(localFixture.appendingPathComponent("absent"), to: target); throw CheckError(description: "missing payload accepted") }
+            catch is CheckError { throw CheckError(description: "missing payload accepted") }
+            catch { try expect(FileManager.default.fileExists(atPath: target.appendingPathComponent("bge-m3-Q8_0.gguf").path), "failed replacement lost previous data") }
+        }
+        let fake = localFixture.appendingPathComponent("fake-worker")
+        try "#!/bin/sh\nprintf '%s\\n' '{\"ready\":true}'\nwhile IFS= read -r row; do printf '%s\\n' \"$row\"; done\n".write(to: fake, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fake.path)
+        let echoWorker = LocalInferenceWorker(mode: "speech", modelDirectory: localFixture, executable: fake)
+        let response = try await echoWorker.call(["op": "ping", "unicode": "中文🙂"], timeout: 2)
+        try expect(response["unicode"] as? String == "中文🙂", "stdio framing or Unicode was corrupted")
+        echoWorker.close(); passed.append("native IPC delivers short flushed replies without waiting for a full read buffer")
+        do { _ = try await echoWorker.call(["op": "ping"]); throw CheckError(description: "closed worker restarted") }
+        catch is CancellationError { passed.append("closed local workers cannot restart after shutdown") }
+        let hanging = localFixture.appendingPathComponent("hanging-worker")
+        try "#!/bin/sh\nprintf '%s\\n' '{\"ready\":true}'\nwhile :; do :; done\n".write(to: hanging, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: hanging.path)
+        let timedWorker = LocalInferenceWorker(mode: "speech", modelDirectory: localFixture, executable: hanging)
+        do { _ = try await timedWorker.call(["op": "ping"], timeout: 0.2); throw CheckError(description: "hung worker succeeded") }
+        catch is CopilotError { passed.append("local worker timeout terminates inference and returns a visible error") }
+        timedWorker.close()
         let fixture = "Experiment A has 128 samples. Method B latency is 42 ms. Revenue in 2025 was 18.7 million."
         let chunks = DocumentChunker.chunk([.init(text: String(repeating: fixture + "\n", count: 40), page: 3)], documentID: "doc", name: "study.pdf", maxCharacters: 256, overlap: 30)
         try check("chunk bounds and page/source metadata") {

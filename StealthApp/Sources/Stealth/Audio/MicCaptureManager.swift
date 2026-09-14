@@ -19,6 +19,7 @@ final class MicCaptureManager: ObservableObject {
     private let pcmConverter = PCMConverter()
     private var configurationObserver: NSObjectProtocol?
     private var captureRevision = UUID()
+    func configure(sampleRate: Double) { if !isCapturing { pcmConverter.configure(sampleRate: sampleRate) } }
 
     init() {
         configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in

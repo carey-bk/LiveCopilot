@@ -1,6 +1,12 @@
 # LiveCopilot V1 implementation and acceptance
 
-This is the historical V1 acceptance ledger. The user subsequently authorized V1.1 language, appearance and analysis-provider changes; see `V1_1_UPDATE.md` for current delivery.
+This is the historical V1 acceptance ledger. Later user requests authorize the V1.1 language/appearance/analysis changes and V1.2 local models. Current delivery is described in `LOCAL_MODELS.md`; the original V1 evidence below is preserved.
+
+## V1.2 local-model delivery — 2026-09-14
+
+Completed native runtime packaging, verified model management, independent provider selectors, local SenseVoiceSmall + Silero VAD, local BGE-M3, conservative local automatic triggering, and reuse of existing DeepSeek analysis. No native-app rewrite or extra server/runtime installation is required. Old cloud options remain selectable.
+
+Universal Release, 52 deterministic checks and 14 native XCTest cases passed. Real local synthetic English/Chinese/You/silence/final-flush checks and persisted cross-language knowledge retrieval passed. Installed 1.2.0 / 20260914.212128; both models are ready, existing DeepSeek credentials were retained, and all three knowledge documents/eight chunks were locally re-indexed after backup. Physical audio capture and new cloud answers are separate from those fixture checks. Full provenance, timings, limitations, installation hash and backup paths are in `LOCAL_MODELS.md`.
 
 Source of truth: `livecopilot_goal.md`. Development: 2026-09-13–14. Final local delivery: 2026-09-14 (Asia/Shanghai).
 

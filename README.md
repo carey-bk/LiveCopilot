@@ -2,9 +2,9 @@
 
 基于 [vortechron/stealth](https://github.com/vortechron/stealth) 的原生 macOS 个人 AI 助手，面向面试、会议和学术答辩。保留 Swift/SwiftUI、ScreenCaptureKit 系统音频、AVAudioEngine 麦克风、菜单栏、悬浮窗、全局快捷键和本地历史。
 
-V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本机知识库生成文字建议。分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
+V1.2 可选择 **本地 SenseVoiceSmall + VAD** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
-当前源码为 **1.1.1**：恢复 Dock 图标、加入原创矢量图标、扩大悬浮窗缩放热区，并提供截图排除开关。详见 [1.1.1 更新](docs/V1_1_1_UPDATE.md)。当前公开 Release 仍为 1.1.0。
+当前源码为 **1.2.0**：新增本地语音识别、本地向量、模型下载管理和独立服务选择，保留 Dock、矢量图标、扩大后的缩放热区、截图排除开关和三档底色。详见 [本地模型说明](docs/LOCAL_MODELS.md)。当前公开 Release 仍为 1.1.0，公开旧安装包不含本地模型功能。
 
 ## 下载与安装
 
@@ -18,14 +18,14 @@ V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本�
 
 ## 首次配置与使用
 
-1. 点击悬浮窗齿轮，进入 **服务 → 实时服务**，配置自己的 OpenAI API Key。密钥保存在 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴；系统询问时允许 LiveCopilot 读取。开发回退是 `OPENAI_API_KEY`，不需要配置 `.env`。
+1. 点击悬浮窗齿轮，进入 **服务 → 实时服务**，选择“本地 · SenseVoiceSmall + VAD”并下载模型（约 164 MB），或选择 OpenAI Live 并配置 Key。OpenAI 密钥保存在 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴。开发回退是 `OPENAI_API_KEY`。
 
    如果显示 `Checking Keychain…`，请在本机完成 macOS 的访问提示；密码只输入系统窗口。读取权限与 Key 是否有效是两项独立检查。重新打开已启动的 LiveCopilot 会恢复悬浮窗；`⌥H` 可隐藏它。
-2. 默认 Live `gpt-live-1`、分析 `gpt-5.6-sol`（low effort）、向量 `text-embedding-3-small`。在 **服务 → 分析服务** 可沿用实时服务的 OpenAI Key、使用独立 OpenAI Key，或选择 DeepSeek／OpenAI 兼容服务并单独配置密钥。实时音频与向量服务保持 OpenAI。需要自己的账户具备所选模型权限，API 费用由该账户承担。
-3. 设置 → 知识库 → 导入文档，导入 PDF、Markdown、TXT 或 DOCX，等待 `Ready`。扫描 PDF 需预先 OCR。首次索引会向 OpenAI 发送提取文本。
+2. **服务 → 知识库服务** 选择“本地 · BGE-M3”并下载模型（约 635 MB），或保留 OpenAI Embeddings。**服务 → 分析服务** 可选择 DeepSeek 并配置独立密钥。语音与向量均选本地、分析选 DeepSeek 时，无需 OpenAI Key；模型下载后只有生成建议需要连接分析 API。旧配置升级时保持原有云端选择。
+3. 设置 → 知识库 → 导入文档，支持 PDF、Markdown、TXT 和 DOCX；扫描 PDF 需预先 OCR。本地向量模式不上传索引文本，OpenAI 模式会发送提取文本。切换向量模型后，点击“重建全部索引”，完成前旧资料仍可进行关键词检索。生成回答时，相关资料片段会发送至所选分析服务。
 4. 选择 Interview、Meeting 或 Academic Defense，以及 Remote Meeting / In-Person 模式。
 5. 点击播放开始监听，按系统提示允许所需音频权限。远程模式使用系统音频 `Them` 和麦克风 `You`；现场模式仅使用麦克风，标为 `Room`，不承诺说话人分离。
-6. 自动建议只响应 Live 判断完成的问题；`⌥Space` 可随时基于已有对话请求帮助，`⌥R` 总结，`⌥F` 追问，`⌥H` 显示/隐藏悬浮窗。
+6. 自动建议响应 Live 语义判断或本地中英文问题规则；不会仅因 VAD 停顿就请求分析。本地字幕在停顿后或连续语音满 12 秒时更新，本地规则可能漏判含蓄问题。`⌥Space` 可基于已有对话请求帮助，`⌥R` 总结，`⌥F` 追问，`⌥H` 显示/隐藏悬浮窗。
 7. 直接在下方文本框输入问题，点击 **Ask** 或按 Return。可勾选是否附加近期对话；不要求正在监听。回答流式展示，`[S1]` 等对应可展开的本地来源。
 
 菜单栏波形图标可打开设置和历史。1.1.1 起悬浮窗四边具有 12 pt 缩放热区，四角为 28 × 28 pt；右下角显示缩放提示，头部仍可拖动窗口。
@@ -33,8 +33,8 @@ V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本�
 ## 语言、底色和服务配置
 
 - **通用 → 界面语言**：跟随系统、English、简体中文，立即生效。回答跟随提问语言。
-- **通用 → 窗口底色**：半透明毛玻璃／纯白底色。白底使用浅色控件与深色文字。
-- **服务 → 实时服务**：OpenAI Live 和 Embeddings 共用现有 Key；配置成功显示“API Key 已配置”和固定掩码，点击“更换密钥”才打开输入框。界面不会回填真实 Key。
+- **通用 → 窗口底色**：半透明毛玻璃／微透磨砂／纯白底色。微透与白底使用浅色控件与深色文字。
+- **服务 → 实时服务／知识库服务**：独立选择本地或 OpenAI。选择 OpenAI 时，Live 和 Embeddings 共用现有 Key；界面显示固定掩码，点击“更换密钥”才打开输入框，不回填真实 Key。
 - **服务 → 分析服务**：选择分析供应商。默认沿用实时服务的 OpenAI；DeepSeek 使用独立 Key，默认模型 `deepseek-v4-pro`，可修改。兼容服务填写 HTTPS Base URL、Chat Completions 路径和模型，先保存连接，再配置该地址的 Key。
 - 更换分析模型不需要重建知识库。自定义 API 地址改变后不会沿用旧地址的密钥。
 
@@ -50,7 +50,7 @@ V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本�
 
 ## 验证与开发
 
-源码构建需要安装并首次打开完整 **Xcode**、完成组件安装，再安装 XcodeGen（`brew install xcodegen`，或设置 `XCODEGEN_BIN`）。执行 `./StealthApp/run.sh` 会编译、签名并安装到 `~/Applications/LiveCopilot.app`；旧应用会备份。
+源码构建需要完整 **Xcode** 和 XcodeGen（`brew install xcodegen`，或设置 `XCODEGEN_BIN`）。首次构建会下载并校验固定版本的原生 sherpa-onnx/llama.cpp 运行库，再编译通用辅助程序；已安装的成品无需开发环境。执行 `./StealthApp/run.sh` 会编译、签名并安装到 `~/Applications/LiveCopilot.app`，旧应用会备份。
 
 ```bash
 # 不使用 Key、不调用 API 的确定性检查

@@ -31,8 +31,8 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>LiveCopilot transcribes your microphone so your own words appear in the meeting transcript. Audio is sent to OpenAI while listening. Transcript history is stored locally.</string>
+	<string>LiveCopilot transcribes your microphone. Local mode processes audio on this Mac; OpenAI Live mode sends audio to OpenAI. Transcript history is stored locally.</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>LiveCopilot listens to your meeting's system audio to transcribe it and suggest replies. Audio is sent to OpenAI while listening. Transcript history is stored locally.</string>
+	<string>LiveCopilot transcribes meeting system audio. Local mode processes audio on this Mac; OpenAI Live mode sends audio to OpenAI. Transcript history is stored locally.</string>
 </dict>
 </plist>

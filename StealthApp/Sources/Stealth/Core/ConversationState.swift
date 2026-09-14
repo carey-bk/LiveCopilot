@@ -16,7 +16,8 @@ enum QuestionPhase: String {
     case answered = "User has already answered", waiting = "Waiting for complete context"
 }
 
-/// Only a Live semantic delegation can request automatic assistance. Caption gaps never do.
+/// Automatic assistance requires a provider delegation (Live semantics or the local text gate).
+/// Caption gaps and VAD silence alone never request it.
 struct ConversationState {
     private(set) var fragments: [TranscriptFragment] = []
     private(set) var phase = QuestionPhase.listening

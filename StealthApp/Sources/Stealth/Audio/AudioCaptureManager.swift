@@ -20,6 +20,8 @@ final class AudioCaptureManager: NSObject, ObservableObject {
     private var output: AudioStreamOutput?
     private var captureRevision = UUID()
     private var pcmBufferCount = 0
+    private var outputSampleRate: Double = 24000
+    func configure(sampleRate: Double) { if !isCapturing { outputSampleRate = sampleRate } }
     private let outputQueue = DispatchQueue(label: "com.livecopilot.audio.output")
 
     func start() async {
@@ -51,7 +53,7 @@ final class AudioCaptureManager: NSObject, ObservableObject {
             cfg.queueDepth = 6
 
             let stream = SCStream(filter: filter, configuration: cfg, delegate: self)
-            let output = AudioStreamOutput(emit: onPCM16)
+            let output = AudioStreamOutput(emit: onPCM16, sampleRate: outputSampleRate)
             try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: outputQueue)
             self.output = output
             try await stream.startCapture()
@@ -110,7 +112,7 @@ extension AudioCaptureManager: SCStreamDelegate {
 private final class AudioStreamOutput: NSObject, SCStreamOutput {
     private let converter = PCMConverter()
     private let emit: ((Data) -> Void)?
-    init(emit: ((Data) -> Void)?) { self.emit = emit }
+    init(emit: ((Data) -> Void)?, sampleRate: Double) { self.emit = emit; converter.configure(sampleRate: sampleRate) }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, sampleBuffer.isValid, let buffer = sampleBuffer.toPCMBuffer(),
               let data = converter.convert(buffer) else { return }

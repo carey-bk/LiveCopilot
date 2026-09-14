@@ -8,6 +8,12 @@ The latest exact results are maintained in `IMPLEMENTATION_PLAN.md`. Distinguish
 
 ## Deterministic checks (no API calls)
 
+### 2026-09-14 — local ASR and embeddings (1.2.0)
+
+Final universal Release build passed; 52 deterministic checks and 14 native XCTest cases passed with zero failures (21:20:12). Real local SenseVoiceSmall + Silero VAD transcribed Chinese/English synthetic questions, delegated once for Them/Room and never for You, suppressed silence and retained the final segment on flush. BGE-M3 generated real 1024-dimensional vectors, retrieved an English fact from a Chinese question and survived reopening the SQLite index. These are real local model checks, not Mock inference, but do not exercise physical microphone/ScreenCaptureKit or a new DeepSeek API answer.
+
+Installed as 1.2.0 / 20260914.212128, with both models downloaded and selected and existing DeepSeek credentials available. The production app successfully re-indexed the user's three documents into eight local BGE-M3 vectors after a consistent SQLite backup; no document text was logged. Mock UI exercised missing-model status, download start/cancellation and service selection. See `LOCAL_MODELS.md` for exact provenance, commands, measured fixture timings and installation evidence. GitHub release publication is not part of this update.
+
 ### 2026-09-14 — soft frosted background
 
 Added the `frosted` preference between existing `glass` and `white`, with English/Chinese labels and selection-specific help. A shared material plus light-gradient surface covers overlay, settings and history; frosted keeps dark text and a subtle cool tint. Prior stored selections retain their values and the default remains glass.
