@@ -116,6 +116,63 @@ final class NativeTests: XCTestCase {
         XCTAssertEqual(border.edges(at: NSPoint(x: 22, y: 618)), [.left, .top])
         XCTAssertEqual(border.edges(at: NSPoint(x: 458, y: 618)), [.right, .top])
     }
+    @MainActor func testHiddenOverlayCanGrowWithoutRevealingAndPinRestoresIt() async throws {
+        let panel = OverlayWindow(rootView: Text("Synthetic overlay check"))
+        defer { panel.close() }
+        panel.configure(autoHeight: true, edgeHide: true)
+        XCTAssertTrue(panel.edgeHidden)
+        XCTAssertFalse(panel.isVisible)
+        let top = panel.frame.maxY, width = panel.frame.width
+        panel.contentHeightChanged(570)
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertEqual(panel.frame.height, 570, accuracy: 1)
+        XCTAssertEqual(panel.frame.maxY, top, accuracy: 1)
+        XCTAssertEqual(panel.frame.width, width)
+        panel.showForAnswer()
+        XCTAssertFalse(panel.isVisible, "automatic answers must respect edge hiding")
+        panel.showForAnswer(automatic: false)
+        XCTAssertTrue(panel.isVisible, "explicit keyboard/menu requests must remain discoverable")
+        panel.configure(autoHeight: true, edgeHide: false)
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertFalse(panel.edgeHidden)
+    }
+    @MainActor func testManualVerticalResizeOverridesPendingAutomaticGrowth() async throws {
+        let panel = OverlayWindow(rootView: Text("Synthetic overlay check"))
+        defer { panel.close() }
+        var notified = false
+        panel.onManualHeight = { notified = true }
+        panel.contentHeightChanged(700)
+        panel.setFrame(NSRect(x: panel.frame.minX, y: panel.frame.minY, width: 510, height: 410), display: false)
+        panel.userFinishedResize(vertical: true)
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertTrue(notified)
+        XCTAssertFalse(panel.autoHeight)
+        XCTAssertEqual(panel.frame.height, 410)
+        XCTAssertEqual(panel.frame.width, 510)
+    }
+    @MainActor func testEdgePointerRevealsActualPanelAndRespectsInteractions() throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let panel = OverlayWindow(rootView: Text("Synthetic edge check"))
+        defer { panel.close() }
+        panel.configure(autoHeight: true, edgeHide: true)
+        let point = NSPoint(x: screen.frame.maxX - 1, y: screen.visibleFrame.midY)
+        let now = ProcessInfo.processInfo.systemUptime
+        panel.updatePointer(point, now: now, interacting: false)
+        XCTAssertFalse(panel.isVisible)
+        panel.updatePointer(point, now: now + 0.2, interacting: false)
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertFalse(panel.edgeHidden)
+        let outside = NSPoint(x: screen.visibleFrame.minX + 10, y: screen.visibleFrame.midY)
+        panel.updatePointer(outside, now: now + 3, interacting: true)
+        panel.updatePointer(outside, now: now + 5, interacting: true)
+        XCTAssertFalse(panel.edgeHidden, "window hid during editing or dragging")
+        panel.updatePointer(outside, now: now + 6, interacting: false)
+        panel.updatePointer(outside, now: now + 7, interacting: false)
+        XCTAssertTrue(panel.edgeHidden)
+        panel.configure(autoHeight: true, edgeHide: false)
+        panel.updatePointer(outside, now: now + 20, interacting: false)
+        XCTAssertTrue(panel.isVisible, "pinned panel still responded to edge hiding")
+    }
     @MainActor func testResizeAllDirectionsPreserveOppositeEdgesAndClamp() {
         let original = NSRect(x: 100, y: 200, width: 480, height: 640)
         let minimum = NSSize(width: 400, height: 440), maximum = NSSize(width: 700, height: 1000)

@@ -39,6 +39,8 @@ Workers use serialized, bounded JSON-lines stdin/stdout IPC, no localhost server
 
 ## Native preservation
 
+The overlay's persisted `overlayAutoHeight` and `overlayEdgeHide` preferences default on. SwiftUI measures natural content height, while `OverlayWindow` owns frame constraints and throttles streaming growth, preserving the top edge and width. A screen-bounded answer viewport scrolls at the available height. Native vertical dragging switches to manual height. An AppKit timer samples `NSEvent.mouseLocation` at 10 Hz with tolerance, without an event tap, input interception or additional accessibility permission. Edge dwell/leave policy is independently testable; hidden windows may grow without becoming visible. Explicit user requests reveal the panel; automatic answers respect hiding. The timer, screen observer and pending geometry work are released during shutdown.
+
 - The original ScreenCaptureKit content-filter/capture configuration and AVAudioEngine microphone path remain. Independent PCM converters run on capture callbacks and synchronize converter state; output is 16 kHz for local ASR or 24 kHz for Live.
 - Remote mode has distinct Them/You sessions; You fragments are mirrored as short context to Them. Room mode uses one microphone session and labels it Room.
 - The NSPanel remains floating across Spaces, resizable and nonactivating; it can become key for typed input. Overlay capture exclusion defaults on and is user-configurable; settings/history allow capture. A native `OverlayResizeView` reserves 12 pt edge strips and 28 pt corners, preserving opposite edges while resizing and clamping dimensions. Header buttons are inset from these corners. Capture exclusion still requires real software validation.

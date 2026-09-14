@@ -22,6 +22,38 @@ enum CoreChecks {
             local.listeningService = .local; local.reasoningService = .sharedOpenAI
             try expect(local.requiresOpenAIKey, "shared reasoning lost its credential requirement")
         }
+        try check("overlay preferences migrate and persist independently") {
+            let migrated = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+            try expect(migrated.overlayAutoHeight && migrated.overlayEdgeHide, "new window defaults missing")
+            var manual = migrated; manual.overlayAutoHeight = false; manual.overlayEdgeHide = false
+            let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(manual))
+            try expect(restored == manual, "manual window preferences lost")
+        }
+        try check("overlay growth preserves top and width and stays within each display") {
+            let display = CGRect(x: -1440, y: -200, width: 1440, height: 860)
+            let small = CGRect(x: -510, y: 350, width: 480, height: 280)
+            let grown = OverlayLayout.fitted(small, height: 580, visible: display, docked: false)
+            try expect(grown.maxY == small.maxY && grown.width == small.width && grown.height == 580, "growth moved the top edge")
+            let capped = OverlayLayout.fitted(small, height: 9999, visible: display, docked: true)
+            try expect(display.contains(capped) && capped.maxX == display.maxX - 12, "window escaped negative-origin display")
+            let tiny = CGRect(x: 200, y: 0, width: 360, height: 220)
+            try expect(tiny.contains(OverlayLayout.fitted(grown, height: 600, visible: tiny, docked: true)), "display removal/short screen clipping")
+            try expect(OverlayLayout.atRightEdge(CGPoint(x: -1, y: 100), screen: display, visible: display), "right edge not found")
+            try expect(!OverlayLayout.atRightEdge(CGPoint(x: -1, y: 658), screen: display, visible: display), "menu corner triggered")
+        }
+        try check("edge hover ignores quick crossings and pauses hiding during interaction") {
+            var state = OverlayHoverState()
+            try expect(!state.shouldReveal(atEdge: true, now: 0), "instant reveal")
+            try expect(!state.shouldReveal(atEdge: false, now: 0.1), "revealed away from edge")
+            try expect(!state.shouldReveal(atEdge: true, now: 0.2), "crossing carried stale dwell")
+            try expect(state.shouldReveal(atEdge: true, now: 0.4), "sustained hover failed")
+            state.reset()
+            try expect(!state.shouldHide(inside: false, interacting: false, now: 1), "instant hide")
+            try expect(!state.shouldHide(inside: false, interacting: true, now: 2), "hid during text selection")
+            try expect(!state.shouldHide(inside: false, interacting: false, now: 3), "interaction did not restart leave delay")
+            try expect(state.shouldHide(inside: false, interacting: false, now: 4), "did not hide after leaving")
+            try expect(!state.shouldHide(inside: true, interacting: false, now: 5), "hid under pointer")
+        }
         try check("local question gate distinguishes questions from silence fillers and statements") {
             for text in ["Why did you choose method B?", "Could you explain the sample size?", "What about latency?", "请介绍一下你的项目经历。", "这个方法的延迟是多少？", "你们为什么选择方法B？"] {
                 try expect(LocalQuestionDetector.isQuestion(text), "missed explicit question: " + text)

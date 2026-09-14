@@ -32,7 +32,7 @@ private struct MenuContent: View {
         Button(t(coordinator.isRunning ? "Stop Listening" : "Start Listening")) {
             Task { await coordinator.toggle() }
         }
-        .disabled(!coordinator.hasAPIKey)
+        .disabled(coordinator.isTransitioning)
 
         Button("\(t("Suggest Reply")) (\(coordinator.hotkeys.combo(for: .reply).display))") {
             coordinator.requestSuggestion(mode: .reply)
@@ -78,12 +78,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminationSignal?.resume()
         NSApp.setActivationPolicy(.regular)
 
-        let overlay = OverlayWindow(rootView: OverlayView(coordinator: coordinator))
+        let overlay = OverlayWindow(rootView: OverlayView(coordinator: coordinator, onContentHeight: { [weak self] height in
+            // Hosting can measure synchronously inside OverlayWindow.init, before self.overlay is assigned.
+            DispatchQueue.main.async { self?.overlay?.contentHeightChanged(height) }
+        }))
         overlay.orderFrontRegardless()
         self.overlay = overlay
+        overlay.onManualHeight = { [weak self] in self?.coordinator.settings.overlayAutoHeight = false }
         settingsObservation = coordinator.$settings.sink { [weak self] settings in self?.applyPreferences(settings) }
         coordinator.onOpenSettings = { [weak self] in self?.openSettings() }
-        coordinator.onShowOverlay = { [weak self] in self?.overlay?.orderFrontRegardless() }
+        coordinator.onShowOverlay = { [weak self] automatic in self?.overlay?.showForAnswer(automatic: automatic) }
 
         hotkeys.onError = { [weak self] message in self?.coordinator.statusMessage = message }
         hotkeys.register(
@@ -95,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onHotkeysChanged = { [weak self] in self?.hotkeys.reload() }
 
         // If there's no key yet, surface settings so the user can paste one.
-        if !coordinator.hasAPIKey { openSettings() }
+        if coordinator.settings.requiresOpenAIKey && !coordinator.hasAPIKey { openSettings() }
     }
 
     private func applyPreferences(_ settings: AppSettings) {
@@ -105,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let preview = coordinator.isMock && ProcessInfo.processInfo.arguments.contains("--ui-preview")
         overlay?.sharingType = settings.excludeOverlayFromCapture && !preview ? .none : .readOnly
+        overlay?.configure(autoHeight: settings.overlayAutoHeight, edgeHide: settings.overlayEdgeHide)
         if let menu = NSApp.mainMenu { localizeMenu(menu, language: settings.language) }
         settingsWindow?.title = L10n.text("LiveCopilot Settings", language: settings.language)
         historyWindow?.title = L10n.text("LiveCopilot — History", language: settings.language)
@@ -143,11 +148,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        overlay?.stopWatching()
         hotkeys.unregisterAll()
         coordinator.saveSession()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        overlay?.reveal()
         overlay?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         return true

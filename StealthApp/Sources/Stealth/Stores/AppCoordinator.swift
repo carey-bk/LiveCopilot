@@ -71,7 +71,7 @@ final class AppCoordinator: ObservableObject {
     @Published var tone = ReplyTone.professional
     var onHotkeysChanged: (() -> Void)?
     var onOpenSettings: (() -> Void)?
-    var onShowOverlay: (() -> Void)?
+    var onShowOverlay: ((_ automatic: Bool) -> Void)?
 
     init(mock: Bool = ProcessInfo.processInfo.arguments.contains("--mock") || ProcessInfo.processInfo.environment["LIVECOPILOT_MOCK"] == "1") {
         isMock = mock
@@ -373,7 +373,7 @@ final class AppCoordinator: ObservableObject {
     }
     func requestSuggestion(mode: SuggestionMode = .reply) {
         let context = conversation.context()
-        guard !context.isEmpty else { statusMessage = "No conversation yet. Type a question below to ask directly."; onShowOverlay?(); return }
+        guard !context.isEmpty else { statusMessage = "No conversation yet. Type a question below to ask directly."; onShowOverlay?(false); return }
         let query: String
         switch mode {
         case .reply: query = "Help me answer the latest substantive question in this conversation."
@@ -398,7 +398,7 @@ final class AppCoordinator: ObservableObject {
         do {
             reasoning = isMock ? MockReasoningProvider() : try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
             embedding = try embeddingProvider()
-        } catch { suggestion.fail(error.localizedDescription); onShowOverlay?(); return }
+        } catch { suggestion.fail(error.localizedDescription); onShowOverlay?(delegationID != nil); return }
         if delegationID == nil { pendingAutomatic = nil; questionTask?.cancel() }
         answerTask?.cancel()
         let id = UUID(); requestID = id
@@ -408,7 +408,7 @@ final class AppCoordinator: ObservableObject {
         conversation.begin(query, speaker: speaker, now: Date())
         questionState = conversation.phase.rawValue
         suggestion.begin(mode: mode, question: query)
-        onShowOverlay?()
+        onShowOverlay?(delegationID != nil)
         let settings = settings, epoch = liveEpoch, started = Date()
         answerTask = Task { [weak self] in
             guard let self else { return }

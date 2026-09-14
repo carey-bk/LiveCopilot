@@ -78,6 +78,16 @@ struct SettingsView: View {
                 }.padding(10)
             } label: { Label(t("Language & appearance"), systemImage: "textformat") }
             SettingsSection {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle(t("Fit window height to content"), isOn: $coordinator.settings.overlayAutoHeight)
+                        .accessibilityIdentifier("overlay-auto-height")
+                    Text(t("Stay compact when empty, grow with captions and answers, then scroll at the screen limit. Drag a vertical edge to switch to manual sizing.")).font(.caption).foregroundStyle(.secondary)
+                    Toggle(t("Hide at the right screen edge"), isOn: $coordinator.settings.overlayEdgeHide)
+                        .accessibilityIdentifier("overlay-edge-hide")
+                    Text(t("Starts hidden. Hover at the right edge to reveal; move away to tuck it back. Pin the window or press ⌥H to keep it within reach.")).font(.caption).foregroundStyle(.secondary)
+                }.padding(10)
+            } label: { Label(t("Floating window"), systemImage: "rectangle.righthalf.inset.filled") }
+            SettingsSection {
                 VStack(alignment: .leading, spacing: 14) {
                     Picker(t("Operating mode"), selection: $coordinator.settings.mode) {
                         ForEach(OperatingMode.allCases) { Text(t($0.rawValue)).tag($0) }

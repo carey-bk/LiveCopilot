@@ -72,6 +72,7 @@ final class OverlayResizeView: NSView {
             window.setFrame(frame, display: true)
         }
         window.invalidateCursorRects(for: self)
+        (window as? OverlayWindow)?.userFinishedResize(vertical: edge.contains(.top) || edge.contains(.bottom))
     }
     static func resized(_ frame: NSRect, by delta: NSPoint, edges: Edge, minimum: NSSize, maximum: NSSize) -> NSRect {
         var result = frame

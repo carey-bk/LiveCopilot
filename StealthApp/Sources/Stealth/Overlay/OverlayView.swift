@@ -7,11 +7,48 @@ struct OverlayView: View {
     @State private var query = ""
     @State private var showTranscript = true
     @State private var followTranscript = true
-    init(coordinator: AppCoordinator) {
+    @State private var transcriptHeight: CGFloat = 22
+    @State private var answerHeight: CGFloat = 28
+    @State private var chromeHeight: CGFloat = 260
+    @State private var screenHeight: CGFloat = NSScreen.main?.visibleFrame.height ?? 800
+    var onContentHeight: (CGFloat) -> Void
+    init(coordinator: AppCoordinator, onContentHeight: @escaping (CGFloat) -> Void = { _ in }) {
         self.coordinator = coordinator; transcript = coordinator.transcript; suggestion = coordinator.suggestion
+        self.onContentHeight = onContentHeight
     }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     var body: some View {
+        Group {
+            if coordinator.settings.overlayAutoHeight {
+                // Also scroll the whole card on unusually short displays, keeping every control reachable.
+                ScrollView { content }
+            } else { content }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background {
+            WindowBackgroundView(style: coordinator.settings.background, isOverlay: true)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
+        .environment(\.locale, coordinator.settings.language.locale)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.12)))
+        .overlay(alignment: .bottomTrailing) { resizeHandle }
+        .onPreferenceChange(OverlayContentHeights.self) { heights in
+            if let height = heights["transcript"] { transcriptHeight = height }
+            if let height = heights["answer"] { answerHeight = height }
+            if let height = heights["window"] {
+                if let viewport = heights["answerViewport"] { chromeHeight = max(0, height - viewport) }
+                onContentHeight(height)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)) { event in
+            if let window = event.object as? OverlayWindow, let screen = window.screen { screenHeight = screen.visibleFrame.height }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            screenHeight = (NSApp.windows.first(where: { $0 is OverlayWindow })?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+        }
+    }
+    private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
             header.padding(.trailing, 16) // Keep header buttons outside the corner resize target.
             Text(t(coordinator.statusMessage)).font(.caption).foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
@@ -24,7 +61,13 @@ struct OverlayView: View {
                         .accessibilityIdentifier("automatic-suggestions")
                 }
             }
-            if showTranscript { transcriptView.frame(minHeight: 65, maxHeight: 145) }
+            if showTranscript {
+                if transcript.lines.isEmpty {
+                    if coordinator.isRunning { Text(t("Listening — waiting for speech")).font(.caption).foregroundStyle(.secondary) }
+                } else {
+                    transcriptView.frame(height: min(145, max(44, transcriptHeight + 22)))
+                }
+            }
             HStack(spacing: 6) {
                 ForEach(SuggestionMode.allCases) { mode in
                     Button { coordinator.requestSuggestion(mode: mode) } label: { Label(t(mode.label), systemImage: mode.systemImage).font(.caption) }
@@ -47,15 +90,9 @@ struct OverlayView: View {
                 if suggestion.isLoading { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption) }
             }
             footer.padding(.trailing, 20)
-        }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background {
-                WindowBackgroundView(style: coordinator.settings.background, isOverlay: true)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-            }
-            .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
-            .environment(\.locale, coordinator.settings.language.locale)
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.12)))
-            .overlay(alignment: .bottomTrailing) { resizeHandle }
+        }.padding(14)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background { measure("window") }
     }
     private func submit() { let value = query; query = ""; coordinator.askText(value) }
     private var header: some View {
@@ -70,14 +107,19 @@ struct OverlayView: View {
             Button { coordinator.toggleMic() } label: { Image(systemName: coordinator.micEnabled ? "mic.fill" : "mic.slash") }
                 .help(t("Toggle your microphone in Remote Meeting mode"))
             Button { coordinator.onOpenSettings?() } label: { Image(systemName: "gearshape") }.help(t("Settings and knowledge base"))
-            Button { NSApp.windows.first(where: { $0 is OverlayWindow })?.orderOut(nil) } label: { Image(systemName: "minus") }.help(t("Hide (⌥H)"))
+            Button { coordinator.settings.overlayEdgeHide.toggle() } label: {
+                Image(systemName: coordinator.settings.overlayEdgeHide ? "pin" : "pin.fill")
+                    .foregroundStyle(coordinator.settings.overlayEdgeHide ? Color.secondary : .blue)
+            }.help(t(coordinator.settings.overlayEdgeHide ? "Pin window" : "Unpin and hide at right edge"))
+                .accessibilityIdentifier("overlay-pin")
+            Button { (NSApp.windows.first(where: { $0 is OverlayWindow }) as? OverlayWindow)?.tuckAway() } label: { Image(systemName: "minus") }.help(t("Hide (⌥H)"))
         }.buttonStyle(.borderless)
     }
     private var transcriptView: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 2) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 6) {
                         if transcript.lines.isEmpty { Text(t("Conversation appears here when listening.")).font(.caption).foregroundStyle(.secondary) }
                         ForEach(transcript.lines) { line in
                             HStack(alignment: .top, spacing: 6) {
@@ -86,7 +128,7 @@ struct OverlayView: View {
                             }
                         }
                         Color.clear.frame(height: 1).id("latest")
-                    }
+                    }.background { measure("transcript") }
                 }.onChange(of: transcript.lines) { _, _ in if followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
                 Toggle(t("Follow transcript"), isOn: $followTranscript).font(.caption2).toggleStyle(.checkbox).frame(maxWidth: .infinity, alignment: .trailing)
             }
@@ -120,7 +162,17 @@ struct OverlayView: View {
                     }
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
-        }.frame(maxWidth: .infinity, minHeight: 80, maxHeight: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
+                .background { measure("answer") }
+        }.frame(maxWidth: .infinity)
+            .frame(height: coordinator.settings.overlayAutoHeight ? min(max(80, min(900, screenHeight - 24) - chromeHeight), max(28, answerHeight)) : nil)
+            .frame(minHeight: coordinator.settings.overlayAutoHeight ? 0 : 80, maxHeight: coordinator.settings.overlayAutoHeight ? nil : .infinity)
+            .background { measure("answerViewport") }
+    }
+    private func measure(_ key: String) -> some View {
+        GeometryReader { proxy in
+            Color.clear.preference(key: OverlayContentHeights.self, value: [key: ceil(proxy.size.height)])
+        }
     }
     private var footer: some View {
         HStack {
@@ -139,6 +191,13 @@ struct OverlayView: View {
             .frame(width: 28, height: 28)
             .help(t("Drag any edge or corner to resize"))
             .allowsHitTesting(false) // The native border owns all eight resize directions.
+    }
+}
+
+private struct OverlayContentHeights: PreferenceKey {
+    static var defaultValue: [String: CGFloat] = [:]
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, next in next })
     }
 }
 

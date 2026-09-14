@@ -8,6 +8,12 @@ The latest exact results are maintained in `IMPLEMENTATION_PLAN.md`. Distinguish
 
 ## Deterministic checks (no API calls)
 
+### 2026-09-14 — adaptive overlay, right-edge hiding and LIVE icon (1.2.1)
+
+Installed and launched `~/Applications/LiveCopilot.app`, build `20260914.221600`. Universal Release build and strict recursive code-signature verification passed; the staged and installed executable hashes match: `09581c36b4136d28d65722ad01d1c723e4bcf3eb3d98409d08734ddd36ea8932`. The previous installed bundle is retained at `/Users/careyzhang/Applications/LiveCopilot.app.previous.20260914221600`; preferences were backed up before replacement, and models, knowledge and credentials were not modified.
+
+The 55 deterministic checks and 17 native XCTest cases passed (final native run 22:10:04). Tests exercise real NSPanel visibility and height changes driven by synthetic edge pointer input, hover delays, interaction suppression, screen geometry, explicit versus automatic reveal and manual resize precedence. An isolated Mock preview showed a 480 × 240 empty window growing for synthetic transcript/answer content, including a longer Chinese question and evidence disclosures. The new settings and vector/icon renders were visually inspected. No physical audio capture, new real analysis request or production Keychain authorization was verified in this update. Code signing remains ad-hoc. See `V1_2_1_UPDATE.md`.
+
 ### 2026-09-14 — local ASR and embeddings (1.2.0)
 
 Final universal Release build passed; 52 deterministic checks and 14 native XCTest cases passed with zero failures (21:20:12). Real local SenseVoiceSmall + Silero VAD transcribed Chinese/English synthetic questions, delegated once for Them/Room and never for You, suppressed silence and retained the final segment on flush. BGE-M3 generated real 1024-dimensional vectors, retrieved an English fact from a Chinese question and survived reopening the SQLite index. These are real local model checks, not Mock inference, but do not exercise physical microphone/ScreenCaptureKit or a new DeepSeek API answer.
@@ -107,6 +113,8 @@ This explicit diagnostic uses only the supplied synthetic audio file, does not s
 The installed 1.1.1 build `20260914.191619` was the only running LiveCopilot copy. Its signature was valid but ad-hoc. macOS TCC logs repeatedly reported that the saved ScreenCapture code requirement did not match the current executable; system-audio start failed with TCC denial while microphone capture succeeded. The enabled Settings switch alone therefore did not prove current access.
 
 The application was quit and its ScreenCapture authorization reset with the scoped command above, then the identical app was reopened without rebuilding/re-signing or changing credentials. After the user granted access, the application logged `AUDIO capture started OK` at 19:33:47; the user also confirmed normal behavior after the stop/start check. Avoid fixing this symptom by repeatedly rebuilding: an ad-hoc rebuild changes the code identity again. A consistent signing identity is the longer-term requirement for smoother updates, distinct from Apple notarization. That signing migration has not yet been performed; future ad-hoc updates may still require renewed permissions.
+
+The issue recurred after installing 1.2.0 / `20260914.212128`. At 21:34:55 on 2026-09-14, TCC again reported `Failed to match existing code requirement` for this app's ScreenCapture (and AudioCapture) service: the saved ad-hoc identity differed from the installed executable. The app was gracefully quit, only `ScreenCapture com.livecopilot.app` was reset, and the same installed bundle was relaunched with its designated requirement unchanged. User reauthorization and a successful stop/start capture check are still pending for this recovery. No model, credential, microphone authorization, or application binary was changed. This is a targeted recovery, not a completed migration to stable signing.
 
 Do not treat logs from macOS `com.apple.linkd.autoShortcut` or the build-time AppIntents metadata extractor as application test failures when the actual compiler/tests succeed; investigate application errors separately.
 
