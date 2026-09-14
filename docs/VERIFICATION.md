@@ -73,7 +73,14 @@ This explicit diagnostic uses only the supplied synthetic audio file, does not s
 | Model changed, semantic retrieval sparse | Re-index documents with the selected embedding model. Older vectors remain excluded from incompatible comparisons. |
 | Reasoning fails halfway | Partial text is retained; retry or choose compatible model/effort. |
 | Permissions return after rebuild | Ad-hoc signatures may require reapproval. Use a stable signing identity for repeated builds. |
+| Screen Recording is enabled but every start prompts again | The visible switch may refer to an older ad-hoc code identity. If macOS TCC logs report `Failed to match existing code requirement` for `com.livecopilot.app` / `kTCCServiceScreenCapture`, quit LiveCopilot, run `tccutil reset ScreenCapture com.livecopilot.app`, reopen the same installed app and grant Screen & System Audio Recording again. Follow any macOS quit/reopen request. This resets only this app's screen-capture authorization, not microphone or Keychain access; do not reset all services/apps. |
 | Final Live usage unconfirmed | A disconnect prevented `session.closed`; check OpenAI usage if needed. The app released the local connection. |
+
+### Screen-capture identity mismatch observed on 2026-09-14
+
+The installed 1.1.1 build `20260914.191619` was the only running LiveCopilot copy. Its signature was valid but ad-hoc. macOS TCC logs repeatedly reported that the saved ScreenCapture code requirement did not match the current executable; system-audio start failed with TCC denial while microphone capture succeeded. The enabled Settings switch alone therefore did not prove current access.
+
+The application was quit and its ScreenCapture authorization reset with the scoped command above, then the identical app was reopened without rebuilding/re-signing or changing credentials. After the user granted access, the application logged `AUDIO capture started OK` at 19:33:47; the user also confirmed normal behavior after the stop/start check. Avoid fixing this symptom by repeatedly rebuilding: an ad-hoc rebuild changes the code identity again. A consistent signing identity is the longer-term requirement for smoother updates, distinct from Apple notarization. That signing migration has not yet been performed; future ad-hoc updates may still require renewed permissions.
 
 Do not treat logs from macOS `com.apple.linkd.autoShortcut` or the build-time AppIntents metadata extractor as application test failures when the actual compiler/tests succeed; investigate application errors separately.
 
