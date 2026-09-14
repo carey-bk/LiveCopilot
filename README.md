@@ -4,13 +4,15 @@
 
 V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本机知识库生成文字建议。分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
+当前源码为 **1.1.1**：恢复 Dock 图标、加入原创矢量图标、扩大悬浮窗缩放热区，并提供截图排除开关。详见 [1.1.1 更新](docs/V1_1_1_UPDATE.md)。当前公开 Release 仍为 1.1.0。
+
 ## 下载与安装
 
 从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/latest) 下载 **LiveCopilot-1.1.0-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**，直接安装无需 Xcode。
 
 1. 打开 DMG，将 `LiveCopilot.app` 拖到 `Applications`，然后从应用程序文件夹启动。没有管理员权限时可复制到 `~/Applications`。
 2. 当前版本为 **ad-hoc 签名，未经 Apple 公证**。如果 macOS 无法验证开发者，确认来源与 Release 中的 SHA-256 后，可按照 [Apple 官方说明](https://support.apple.com/en-us/102445)，在尝试打开后到“系统设置 → 隐私与安全性 → 仍要打开”允许该应用。
-3. 应用位于菜单栏，没有 Dock 图标；点击波形图标打开设置，`⌥H` 显示或隐藏悬浮窗。
+3. 点击菜单栏波形图标打开设置，`⌥H` 显示或隐藏悬浮窗。1.1.1 起也显示 Dock 图标，点击可恢复悬浮窗。
 
 安装包不含 API Key、个人文档、会话历史或知识库。已有用户升级前先退出旧版，替换应用不会自动删除本地数据；macOS 可能重新询问权限。完整说明见 [安装说明](docs/INSTALL.txt)。
 
@@ -26,7 +28,7 @@ V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本�
 6. 自动建议只响应 Live 判断完成的问题；`⌥Space` 可随时基于已有对话请求帮助，`⌥R` 总结，`⌥F` 追问，`⌥H` 显示/隐藏悬浮窗。
 7. 直接在下方文本框输入问题，点击 **Ask** 或按 Return。可勾选是否附加近期对话；不要求正在监听。回答流式展示，`[S1]` 等对应可展开的本地来源。
 
-没有 Dock 图标是正常行为；菜单栏波形图标可打开设置和历史。悬浮窗可拖动和调整大小。
+菜单栏波形图标可打开设置和历史。1.1.1 起悬浮窗四边具有 12 pt 缩放热区，四角为 28 × 28 pt；右下角显示缩放提示，头部仍可拖动窗口。
 
 ## 语言、底色和服务配置
 
@@ -36,7 +38,7 @@ V1.1 使用 OpenAI Live 理解实时对话，通过独立的分析服务与本�
 - **服务 → 分析服务**：选择分析供应商。默认沿用实时服务的 OpenAI；DeepSeek 使用独立 Key，默认模型 `deepseek-v4-pro`，可修改。兼容服务填写 HTTPS Base URL、Chat Completions 路径和模型，先保存连接，再配置该地址的 Key。
 - 更换分析模型不需要重建知识库。自定义 API 地址改变后不会沿用旧地址的密钥。
 
-窗口在截图中消失源于原生 `NSWindow.sharingType = .none` 请求捕获排除；悬浮窗、设置和历史都保留此行为。底色选择不改变捕获策略。实际共享排除效果仍依赖 macOS 和具体会议软件。
+早期版本通过 `NSWindow.sharingType = .none` 对全部窗口请求截图排除。1.1.1 起设置和历史页允许截图；**通用 → 在截图和屏幕共享中隐藏悬浮窗** 控制悬浮窗，默认保留隐藏，关闭后可截图。实际排除效果仍依赖 macOS 和具体会议软件。
 
 详见 [V1.1 更新与验证](docs/V1_1_UPDATE.md)。
 
@@ -94,7 +96,7 @@ unset OPENAI_API_KEY
 - 回答结合文档证据和模型常识；来源列表是检索出的证据，不代表每条都被引用。应核对关键数字和结论。
 - 远程模式最多同时使用两个 Live 会话，现场模式一个；Live 按时长计费，结束使用时停止监听或退出。
 - 共享麦克风不提供可靠 diarization；耳机可减少 `Them` 音频漏入 `You`。自动识别是保守的，并保留手动触发。
-- 悬浮窗保留 `NSWindow.sharingType = .none`。实际屏幕共享排除效果取决于 macOS 和会议软件，必须用实际共享画面验证，不能仅凭该属性视为已验证。
+- 悬浮窗的截图排除可以在通用设置中切换。排除效果取决于 macOS 和会议软件，必须用实际共享画面验证，不能仅凭该属性视为已验证。
 - 默认使用 ad-hoc 本机签名，重建后系统可能再次询问权限。可使用自己的签名身份，或参阅可选 `setup-signing.sh` 的原生证书流程。
 - 索引限制单文件 50 MB、4,000 chunks；不提供 OCR、复杂 DOCX 排版还原或云备份。
 
@@ -103,3 +105,5 @@ unset OPENAI_API_KEY
 ## 来源与许可
 
 派生于 Stealth commit `02b78cc82195a1711e3de11adfaed26011635dae`，原作者 vortechron，MIT 许可保持不变，并保留原始 Git 历史。LiveCopilot 独立发布于 [carey-bk/LiveCopilot](https://github.com/carey-bk/LiveCopilot)；原始项目见 [vortechron/stealth](https://github.com/vortechron/stealth)。打包与发布流程见 [发布说明](docs/RELEASING.md)。
+
+图标的可编辑 SVG、单色标志与生成方式见 [品牌文件](assets/brand/README.md)。对本地 FunASR 的下一阶段评估见 [ASR 技术路线](docs/ASR_DIRECTION.md)；当前尚未替换 Live 识别。

@@ -82,7 +82,9 @@ struct SettingsView: View {
             } label: { Label(t("Conversation"), systemImage: "waveform") }
             VStack(alignment: .leading, spacing: 7) {
                 Label(t("Capture exclusion"), systemImage: "eye.slash").font(.headline)
-                Text(t("macOS is asked to exclude the overlay, settings and history from capture. This is why they can disappear in screenshots. Verify the result in your meeting app.")).font(.caption).foregroundStyle(.secondary)
+                Toggle(t("Hide overlay from screenshots and screen sharing"), isOn: $coordinator.settings.excludeOverlayFromCapture)
+                    .accessibilityIdentifier("exclude-overlay-capture")
+                Text(t("Turn this off to capture the overlay. Settings and history can always be captured. Exclusion depends on macOS and your capture app.")).font(.caption).foregroundStyle(.secondary)
             }
         }.padding(.bottom, 4)
     }

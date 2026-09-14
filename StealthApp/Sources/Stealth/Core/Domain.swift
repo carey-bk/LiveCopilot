@@ -34,6 +34,7 @@ struct AppSettings: Codable, Equatable {
     var retrievalCount = 6
     var language = AppLanguage.system
     var background = AppBackground.glass
+    var excludeOverlayFromCapture = true
     var reasoningService = ReasoningService.sharedOpenAI
     var deepSeekModel = "deepseek-v4-pro"
     var deepSeekEffort = "low"
@@ -43,7 +44,7 @@ struct AppSettings: Codable, Equatable {
 
     init() {}
     private enum CodingKeys: String, CodingKey {
-        case liveModel, reasoningModel, embeddingModel, reasoningEffort, mode, scenario, automaticSuggestions, includeConversation, retrievalCount, language, background, reasoningService, deepSeekModel, deepSeekEffort, compatibleBaseURL, compatiblePath, compatibleModel
+        case liveModel, reasoningModel, embeddingModel, reasoningEffort, mode, scenario, automaticSuggestions, includeConversation, retrievalCount, language, background, excludeOverlayFromCapture, reasoningService, deepSeekModel, deepSeekEffort, compatibleBaseURL, compatiblePath, compatibleModel
     }
     init(from decoder: Decoder) throws {
         self.init()
@@ -59,6 +60,7 @@ struct AppSettings: Codable, Equatable {
         retrievalCount = try c.decodeIfPresent(Int.self, forKey: .retrievalCount) ?? retrievalCount
         language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? language
         background = try c.decodeIfPresent(AppBackground.self, forKey: .background) ?? background
+        excludeOverlayFromCapture = try c.decodeIfPresent(Bool.self, forKey: .excludeOverlayFromCapture) ?? excludeOverlayFromCapture
         reasoningService = try c.decodeIfPresent(ReasoningService.self, forKey: .reasoningService) ?? reasoningService
         deepSeekModel = try c.decodeIfPresent(String.self, forKey: .deepSeekModel) ?? deepSeekModel
         deepSeekEffort = try c.decodeIfPresent(String.self, forKey: .deepSeekEffort) ?? deepSeekEffort

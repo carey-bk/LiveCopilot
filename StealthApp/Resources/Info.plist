@@ -25,7 +25,9 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>LSUIElement</key>
-	<true/>
+	<false/>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>

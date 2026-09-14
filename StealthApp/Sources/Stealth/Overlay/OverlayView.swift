@@ -7,14 +7,13 @@ struct OverlayView: View {
     @State private var query = ""
     @State private var showTranscript = true
     @State private var followTranscript = true
-    @State private var lastDragSize: CGSize?
     init(coordinator: AppCoordinator) {
         self.coordinator = coordinator; transcript = coordinator.transcript; suggestion = coordinator.suggestion
     }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
+            header.padding(.trailing, 16) // Keep header buttons outside the corner resize target.
             Text(t(coordinator.statusMessage)).font(.caption).foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
             if coordinator.isRunning {
                 HStack {
@@ -45,7 +44,7 @@ struct OverlayView: View {
                 Spacer()
                 if suggestion.isLoading { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption) }
             }
-            footer
+            footer.padding(.trailing, 20)
         }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background {
                 if coordinator.settings.background == .white { RoundedRectangle(cornerRadius: 16).fill(Color.white) }
@@ -133,15 +132,10 @@ struct OverlayView: View {
         }
     }
     private var resizeHandle: some View {
-        Image(systemName: "arrow.down.right").font(.system(size: 9)).padding(4).contentShape(Rectangle())
-            .gesture(DragGesture(coordinateSpace: .global).onChanged { value in
-                guard let window = NSApp.windows.first(where: { $0 is OverlayWindow }) else { return }
-                if lastDragSize == nil { lastDragSize = window.frame.size }
-                guard let size = lastDragSize else { return }
-                let width = min(max(size.width + value.translation.width, window.minSize.width), window.maxSize.width)
-                let height = min(max(size.height - value.translation.height, window.minSize.height), window.maxSize.height)
-                var frame = window.frame; frame.origin.y += frame.height - height; frame.size = CGSize(width: width, height: height)
-                window.setFrame(frame, display: true)
-            }.onEnded { _ in lastDragSize = nil })
+        Image(systemName: "arrow.up.left.and.arrow.down.right")
+            .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            .frame(width: 28, height: 28)
+            .help(t("Drag any edge or corner to resize"))
+            .allowsHitTesting(false) // The native border owns all eight resize directions.
     }
 }

@@ -1,4 +1,4 @@
-# Privacy boundary (V1.1)
+# Privacy boundary (V1.1.1)
 
 ## Stored locally
 
@@ -30,6 +30,6 @@ Stop listening to end Live sessions; typed questions remain available independen
 
 Previously transmitted text/audio is governed by the receiving provider's data controls; deleting a local file does not retract earlier API requests. Quitting the app gracefully closes Live sessions, but a network failure may leave final server usage unconfirmed.
 
-The overlay, settings and history request exclusion through macOS `sharingType = .none`; white/glass appearance does not change this. A developer-only `--mock --ui-preview` launch permits capture solely for isolated Mock UI review; `--ui-preview` alone never changes production capture exclusion. This is not a universal secrecy guarantee. Test actual sharing/recording software on the target OS and use the application in accordance with the conversation's agreed rules.
+Settings and history windows allow capture. The overlay requests exclusion through macOS `sharingType = .none` by default; the General page has a persistent toggle to allow its capture instead. Older settings retain overlay exclusion on migration. White/glass appearance does not change this choice. A developer-only `--mock --ui-preview` launch also permits overlay capture for isolated Mock UI review; `--ui-preview` alone does not override the production preference. This is not a universal secrecy guarantee. Test actual sharing/recording software on the target OS and use the application in accordance with the conversation's agreed rules.
 
 Do not put personal knowledge documents, transcripts, credentials or local database files in the Git repository. `.gitignore` covers local secrets/data/build outputs; it does not inspect arbitrary files placed elsewhere.

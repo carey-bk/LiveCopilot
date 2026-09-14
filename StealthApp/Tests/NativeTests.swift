@@ -104,6 +104,37 @@ final class NativeTests: XCTestCase {
         XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces))
         panel.close()
     }
+    @MainActor func testResizeBorderLeavesContentInteractive() {
+        let child = NSView(), border = OverlayResizeView(content: NSView())
+        border.frame = NSRect(x: 0, y: 0, width: 480, height: 640)
+        border.addSubview(child)
+        child.frame = NSRect(x: 80, y: 200, width: 200, height: 200)
+        XCTAssertTrue(border.hitTest(NSPoint(x: 9, y: 300)) === border)
+        XCTAssertTrue(border.hitTest(NSPoint(x: 458, y: 22)) === border)
+        XCTAssertTrue(border.hitTest(NSPoint(x: 180, y: 300)) === child)
+        XCTAssertEqual(border.edges(at: NSPoint(x: 22, y: 22)), [.left, .bottom])
+        XCTAssertEqual(border.edges(at: NSPoint(x: 22, y: 618)), [.left, .top])
+        XCTAssertEqual(border.edges(at: NSPoint(x: 458, y: 618)), [.right, .top])
+    }
+    @MainActor func testResizeAllDirectionsPreserveOppositeEdgesAndClamp() {
+        let original = NSRect(x: 100, y: 200, width: 480, height: 640)
+        let minimum = NSSize(width: 400, height: 440), maximum = NSSize(width: 700, height: 1000)
+        let combinations: [OverlayResizeView.Edge] = [.left, .right, .top, .bottom,
+            [.left, .top], [.right, .top], [.left, .bottom], [.right, .bottom]]
+        for edges in combinations {
+            for delta in [NSPoint(x: 80, y: -60), NSPoint(x: -2000, y: 2000), NSPoint(x: 2000, y: -2000)] {
+                let result = OverlayResizeView.resized(original, by: delta, edges: edges, minimum: minimum, maximum: maximum)
+                XCTAssertTrue((400...700).contains(result.width))
+                XCTAssertTrue((440...1000).contains(result.height))
+                if edges.contains(.left) { XCTAssertEqual(result.maxX, original.maxX) }
+                else { XCTAssertEqual(result.minX, original.minX) }
+                if edges.contains(.bottom) { XCTAssertEqual(result.maxY, original.maxY) }
+                else { XCTAssertEqual(result.minY, original.minY) }
+            }
+        }
+        let grown = OverlayResizeView.resized(original, by: NSPoint(x: 80, y: -60), edges: [.bottom, .right], minimum: minimum, maximum: maximum)
+        XCTAssertEqual(grown.size, NSSize(width: 560, height: 700))
+    }
     func testKeychainRoundTripInIsolatedItem() throws {
         let service = "LiveCopilot-Test-" + UUID().uuidString
         defer { try? KeychainStore.clear(service: service, account: "test") }

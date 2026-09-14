@@ -209,7 +209,9 @@ enum CoreChecks {
             try expect(restored.liveModel == "existing-live" && restored.reasoningModel == "existing-reasoning" && restored.embeddingModel == "existing-embedding", "migration reset models")
             try expect(restored.mode == .inPerson && restored.scenario == .defense && !restored.automaticSuggestions && restored.retrievalCount == 8, "migration reset behavior")
             try expect(restored.reasoningService == .sharedOpenAI && restored.language == .system && restored.background == .glass, "unsafe migration defaults")
+            try expect(restored.excludeOverlayFromCapture, "migration unexpectedly exposes overlay")
             var updated = restored; updated.language = .simplifiedChinese; updated.background = .white; updated.reasoningService = .deepSeek
+            updated.excludeOverlayFromCapture = false
             let encoded = try JSONEncoder().encode(updated)
             let roundTrip = try JSONDecoder().decode(AppSettings.self, from: encoded)
             try expect(roundTrip == updated, "preferences fail round trip")

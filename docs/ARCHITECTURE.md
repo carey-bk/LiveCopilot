@@ -1,4 +1,4 @@
-# LiveCopilot architecture (V1.1)
+# LiveCopilot architecture (V1.1.1)
 
 The product requirements are `livecopilot_goal.md`. This is an incremental native evolution of Stealth; upstream source and history remain available through Git.
 
@@ -33,7 +33,8 @@ Listening runs independently of retrieval/reasoning. Manual requests cancel obso
 
 - The original ScreenCaptureKit content-filter/capture configuration and AVAudioEngine microphone path remain. Independent PCM converters run on capture callbacks and synchronize converter state. The input is mono signed PCM16 LE, 24 kHz.
 - Remote mode has distinct Them/You sessions; You fragments are mirrored as short context to Them. Room mode uses one microphone session and labels it Room.
-- The NSPanel remains floating across Spaces, resizable, nonactivating and configured with `sharingType = .none`; it can become key for typed input. Capture exclusion still requires real software validation.
+- The NSPanel remains floating across Spaces, resizable and nonactivating; it can become key for typed input. Overlay capture exclusion defaults on and is user-configurable; settings/history allow capture. A native `OverlayResizeView` reserves 12 pt edge strips and 28 pt corners, preserving opposite edges while resizing and clamping dimensions. Header buttons are inset from these corners. Capture exclusion still requires real software validation.
+- The application uses regular activation policy and `LSUIElement = false`, with a bundled ICNS generated from editable SVG artwork. Dock reopening restores the overlay; menu-bar controls remain available.
 - Carbon global hotkeys and settings key recorder remain. Local JSON history retains speaker labels plus raw Live transcript fragments/timestamps. History lives under Application Support/LiveCopilot.
 - Keychain is the existing native Security framework flow, hardened to report errors and update without deleting a valid old key first. Service/account follow the user's explicit convention.
 - Shutdown completes asynchronous capture/session cleanup on the normal AppKit run loop before terminating. Capture generation checks prevent a late permission or device callback from restarting a session after stop/quit. Focused-overlay shortcut handling complements Carbon registration.

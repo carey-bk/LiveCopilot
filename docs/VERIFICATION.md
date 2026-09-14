@@ -60,7 +60,7 @@ This explicit diagnostic uses only the supplied synthetic audio file, does not s
 |---|---|
 | `xcodebuild` says CLT or license missing | Install/open Xcode; complete its setup; use `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` if needed. |
 | XcodeGen not found | `brew install xcodegen`; or set `XCODEGEN_BIN` to a complete official XcodeGen installation. Keep its `share/xcodegen` presets next to `bin`. |
-| No Dock icon | Expected: use the menu-bar waveform or `⌥H`. |
+| No Dock icon | Versions through 1.1.0 were menu-bar-only. Version 1.1.1 restores the Dock icon; verify the installed version. |
 | Keychain read denied / interaction required | Unlock login Keychain and Mac. Launch the installed app and allow access to `LiveCopilot-OpenAI/current username`. Do not paste the Key into chat. CLI may have a different Keychain access identity from the app. |
 | Shell environment Key not seen in GUI | Launch the binary from that same shell, or use Keychain. Finder/`open` do not necessarily inherit shell exports. |
 | 401 / 403 | Check OpenAI project Key and model access. A valid text API Key does not prove access to GPT-Live-1. |

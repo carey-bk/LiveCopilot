@@ -7,7 +7,7 @@ struct LiveCopilotApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // Menu-bar only — no dock icon (LSUIElement in Info.plist).
+        // Keep the menu-bar controls alongside the normal Dock application.
         MenuBarExtra("LiveCopilot", systemImage: appDelegate.coordinator.isRunning ? "waveform" : "waveform.slash") {
             MenuContent(coordinator: appDelegate.coordinator,
                         openSettings: appDelegate.openSettings,
@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminationSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         terminationSignal?.setEventHandler { NSApp.terminate(nil) }
         terminationSignal?.resume()
-        NSApp.setActivationPolicy(.accessory) // belt-and-braces: no dock icon
+        NSApp.setActivationPolicy(.regular)
 
         let overlay = OverlayWindow(rootView: OverlayView(coordinator: coordinator))
         overlay.orderFrontRegardless()
@@ -98,15 +98,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !coordinator.hasAPIKey { openSettings() }
     }
 
-    // Preview is restricted to isolated Mock data and never changes production capture policy.
-    private var previewSharingType: NSWindow.SharingType {
-        coordinator.isMock && ProcessInfo.processInfo.arguments.contains("--ui-preview") ? .readOnly : .none
-    }
     private func applyPreferences(_ settings: AppSettings) {
         for window in [overlay, settingsWindow, historyWindow].compactMap({ $0 }) {
             window.appearance = settings.background == .white ? NSAppearance(named: .aqua) : nil
-            window.sharingType = previewSharingType
+            if !(window is OverlayWindow) { window.sharingType = .readOnly }
         }
+        let preview = coordinator.isMock && ProcessInfo.processInfo.arguments.contains("--ui-preview")
+        overlay?.sharingType = settings.excludeOverlayFromCapture && !preview ? .none : .readOnly
         if let menu = NSApp.mainMenu { localizeMenu(menu, language: settings.language) }
         settingsWindow?.title = L10n.text("LiveCopilot Settings", language: settings.language)
         historyWindow?.title = L10n.text("LiveCopilot — History", language: settings.language)
@@ -142,7 +140,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        overlay?.orderFrontRegardless()
+        overlay?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
         return true
     }
 
@@ -160,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hosting = NSHostingController(rootView: SettingsView(coordinator: coordinator))
         let window = NSWindow(contentViewController: hosting)
         window.title = L10n.text("LiveCopilot Settings", language: coordinator.settings.language)
-        window.sharingType = previewSharingType
+        window.sharingType = .readOnly
         window.appearance = coordinator.settings.background == .white ? NSAppearance(named: .aqua) : nil
         window.styleMask = [.titled, .closable, .resizable]
         window.minSize = NSSize(width: 820, height: 640)
@@ -181,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hosting = NSHostingController(rootView: HistoryView(coordinator: coordinator))
         let window = NSWindow(contentViewController: hosting)
         window.title = L10n.text("LiveCopilot — History", language: coordinator.settings.language)
-        window.sharingType = previewSharingType
+        window.sharingType = .readOnly
         window.appearance = coordinator.settings.background == .white ? NSAppearance(named: .aqua) : nil
         window.styleMask = [.titled, .closable, .resizable]
         window.isReleasedWhenClosed = false

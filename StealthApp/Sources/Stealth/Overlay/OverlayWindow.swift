@@ -40,9 +40,7 @@ final class OverlayWindow: NSPanel {
         titlebarAppearsTransparent = true
         isMovableByWindowBackground = true
 
-        let hosting = NSHostingView(rootView: rootView)
-        hosting.autoresizingMask = [.width, .height]
-        contentView = hosting
+        contentView = OverlayResizeView(content: NSHostingView(rootView: rootView))
 
         positionTopRight()
     }

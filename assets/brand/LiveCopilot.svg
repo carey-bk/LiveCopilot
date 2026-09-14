@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <title>LiveCopilot — listening becomes a useful cue</title>
+  <desc>A sculpted porcelain macOS tile with two overlapping conversation cards. A white sound wave becomes two lines of a written reply on the blue front card. All elements are editable vector paths, shapes and gradients.</desc>
+  <defs>
+    <linearGradient id="rim" x1="240" y1="80" x2="744" y2="954" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset=".42" stop-color="#EEF2F8"/><stop offset="1" stop-color="#AEB9CC"/></linearGradient>
+    <linearGradient id="ceramic" x1="330" y1="110" x2="702" y2="940" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset=".6" stop-color="#F2F5FA"/><stop offset="1" stop-color="#D9E1EF"/></linearGradient>
+    <radialGradient id="glaze" cx="0" cy="0" r="1" gradientTransform="translate(310 188) rotate(55) scale(820 720)" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/></radialGradient>
+    <linearGradient id="rear" x1="238" y1="206" x2="566" y2="600" gradientUnits="userSpaceOnUse"><stop stop-color="#BEF8EB"/><stop offset=".5" stop-color="#75DCCC"/><stop offset="1" stop-color="#31A9AC"/></linearGradient>
+    <linearGradient id="rearRim" x1="296" y1="214" x2="490" y2="630" gradientUnits="userSpaceOnUse"><stop stop-color="#ECFFF9"/><stop offset="1" stop-color="#1B8E99"/></linearGradient>
+    <linearGradient id="blue" x1="382" y1="316" x2="704" y2="762" gradientUnits="userSpaceOnUse"><stop stop-color="#4CB4FF"/><stop offset=".38" stop-color="#197CF0"/><stop offset="1" stop-color="#194ABD"/></linearGradient>
+    <linearGradient id="blueRim" x1="404" y1="312" x2="720" y2="752" gradientUnits="userSpaceOnUse"><stop stop-color="#AFE4FF"/><stop offset=".4" stop-color="#358FEF"/><stop offset="1" stop-color="#12368E"/></linearGradient>
+    <linearGradient id="ink" x1="480" y1="420" x2="570" y2="600" gradientUnits="userSpaceOnUse"><stop stop-color="#FFFFFF"/><stop offset="1" stop-color="#D7EBFF"/></linearGradient>
+    <filter id="tileShadow" x="0" y="0" width="1024" height="1024" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#172A4E" flood-opacity=".22"/></filter>
+    <filter id="rearShadow" x="124" y="170" width="650" height="618" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="15" stdDeviation="13" flood-color="#225A6B" flood-opacity=".2"/></filter>
+    <filter id="frontShadow" x="180" y="234" width="730" height="650" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="26" stdDeviation="23" flood-color="#163E89" flood-opacity=".32"/><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#0D3984" flood-opacity=".22"/></filter>
+    <filter id="inkShadow" x="330" y="404" width="442" height="220" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="3" stdDeviation="2" flood-color="#094AAB" flood-opacity=".46"/></filter>
+  </defs>
+  <g id="porcelain-base" filter="url(#tileShadow)">
+    <rect x="80" y="80" width="864" height="864" rx="192" fill="url(#rim)"/>
+    <rect x="88" y="86" width="848" height="842" rx="184" fill="url(#ceramic)"/>
+    <rect x="91" y="89" width="842" height="834" rx="181" fill="url(#glaze)" stroke="white" stroke-width="3"/>
+    <path d="M126 260C133 170 187 121 275 119H748" stroke="white" stroke-width="5" stroke-linecap="round" opacity=".85"/>
+    <path d="M271 916H749C848 916 914 854 917 751" stroke="#ADBBD0" stroke-width="3" stroke-linecap="round" opacity=".48"/>
+  </g>
+  <g id="listening-card" filter="url(#rearShadow)">
+    <path d="M212 302C212 247 244 214 302 214H595C653 214 684 247 684 302V489C684 544 651 577 596 577H387L279 650V577H302C243 577 212 544 212 489Z" fill="#299C9D"/>
+    <path d="M212 292C212 238 246 206 302 206H595C651 206 684 238 684 292V478C684 532 651 565 596 565H380L279 634V565H302C246 565 212 532 212 478Z" fill="url(#rear)" stroke="url(#rearRim)" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M253 289C253 261 270 247 302 247H571" stroke="#E3FFF6" stroke-width="6" stroke-linecap="round" opacity=".78"/>
+    <rect x="266" y="294" width="145" height="18" rx="9" fill="#247F8A" opacity=".24"/>
+  </g>
+  <g id="written-cue-card" filter="url(#frontShadow)">
+    <path d="M294 414C294 352 331 318 393 318H713C774 318 811 353 811 414V598C811 660 774 695 713 695H704V774L579 695H393C331 695 294 660 294 598Z" fill="#153C99"/>
+    <path d="M294 402C294 341 331 306 393 306H713C774 306 811 341 811 402V584C811 645 774 681 713 681H704V756L585 681H393C331 681 294 645 294 584Z" fill="url(#blue)" stroke="url(#blueRim)" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M326 394C329 353 351 336 397 336H710C750 336 773 352 779 381" stroke="#BFE8FF" stroke-width="5" stroke-linecap="round" opacity=".65"/>
+    <path d="M329 592C334 628 356 647 397 647H583" stroke="#83BAFF" stroke-width="3" stroke-linecap="round" opacity=".2"/>
+  </g>
+  <g id="wave-to-words" fill="url(#ink)" filter="url(#inkShadow)">
+    <rect x="366" y="475" width="26" height="57" rx="13"/>
+    <rect x="407" y="443" width="26" height="121" rx="13"/>
+    <rect x="448" y="418" width="26" height="171" rx="13"/>
+    <rect x="489" y="461" width="26" height="85" rx="13"/>
+    <rect x="556" y="457" width="171" height="27" rx="13.5"/>
+    <rect x="556" y="525" width="128" height="27" rx="13.5"/>
+  </g>
+</svg>
