@@ -18,6 +18,10 @@ enum CoreChecks {
             try expect(!local.requiresOpenAIKey, "local + DeepSeek unnecessarily requires OpenAI")
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(local))
             try expect(restored == local, "local selections did not persist")
+            local.listeningService = .paraformer
+            let streamed = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(local))
+            try expect(streamed == local && !streamed.requiresOpenAIKey, "streaming selection lost persistence or requires a cloud key")
+            try expect(streamed.listeningService.sampleRate == 16000 && streamed.listeningService.localModel == .streamingSpeech, "streaming audio/model route mismatch")
             local.listeningService = .openAI; try expect(local.requiresOpenAIKey, "cloud listening lost credential requirement")
             local.listeningService = .local; local.reasoningService = .sharedOpenAI
             try expect(local.requiresOpenAIKey, "shared reasoning lost its credential requirement")

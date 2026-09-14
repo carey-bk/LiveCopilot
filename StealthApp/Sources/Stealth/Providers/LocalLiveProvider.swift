@@ -1,7 +1,7 @@
 import Foundation
 
-/// Endpointed local transcription. SenseVoice is not a token-streaming recognizer:
-/// captions arrive after silence, or a bounded 12-second speech segment.
+/// Local transcription. SenseVoice emits endpointed segments; Paraformer also
+/// emits replaceable previews while its streaming decoder is still listening.
 @MainActor
 final class LocalLiveProvider: LiveProvider {
     var onEvent: ((LiveEvent) -> Void)?
@@ -21,10 +21,11 @@ final class LocalLiveProvider: LiveProvider {
     private var speaking = false
     private var lastSegmentID = ""
     private var inferenceFailed = false
+    private var partial = ""
 
-    init(directory: URL, speaker: Speaker, sessionStart: Date = Date(), executable: URL? = nil) {
+    init(directory: URL, speaker: Speaker, sessionStart: Date = Date(), executable: URL? = nil, streaming: Bool = false) {
         self.speaker = speaker; self.sessionStart = sessionStart
-        worker = .init(mode: "speech", modelDirectory: directory, executable: executable)
+        worker = .init(mode: streaming ? "paraformer" : "speech", modelDirectory: directory, executable: executable)
     }
     func prepare() async throws { _ = try await worker.call(["op": "ping"]) }
     func connect(context: String) {
@@ -44,7 +45,8 @@ final class LocalLiveProvider: LiveProvider {
         guard active, !closing else { return }
         // At most 12 seconds. Never silently drop audio then pretend the transcript is complete.
         guard pending.count + data.count <= 16000 * 2 * 12 else {
-            active = false; trigger?.cancel(); worker.close()
+            active = false; inferenceFailed = true; trigger?.cancel(); pending.removeAll(); worker.close()
+            partial = ""; onEvent?(.partialTranscript(""))
             onEvent?(.failed("Local recognition fell behind. Stop/start listening and reduce other heavy workloads.")); return
         }
         pending.append(data); drain()
@@ -79,6 +81,9 @@ final class LocalLiveProvider: LiveProvider {
             onEvent?(.transcript(.init(id: id, speaker: speaker, text: " " + text, startMS: offsetMS + start,
                                       endMS: offsetMS + end, receivedAt: Date())))
         }
+        if let preview = response["partial"] as? String, preview != partial {
+            partial = preview; onEvent?(.partialTranscript(preview))
+        }
         if !speaking, active, !closing, speaker != .you, trigger == nil, LocalQuestionDetector.isQuestion(question) {
             let id = lastSegmentID
             trigger = Task { [weak self] in
@@ -91,6 +96,7 @@ final class LocalLiveProvider: LiveProvider {
     }
     private func fail() {
         active = false; trigger?.cancel(); pending.removeAll(); worker.close()
+        partial = ""; onEvent?(.partialTranscript(""))
         onEvent?(.failed("Local model stopped unexpectedly or timed out. Retry after checking model files."))
     }
     func appendContext(_ text: String, delegationID: String?) { /* The app owns local conversation context. */ }
@@ -110,6 +116,7 @@ final class LocalLiveProvider: LiveProvider {
             } else { finalized = false }
         }
         worker.close(); pump?.cancel(); pending.removeAll(); ready = false
+        partial = ""; onEvent?(.partialTranscript(""))
         onEvent?(.closed(finalized: finalized))
     }
 }

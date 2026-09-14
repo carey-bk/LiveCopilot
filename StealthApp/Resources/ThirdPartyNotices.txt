@@ -3,6 +3,9 @@ LiveCopilot local inference third-party notices
 Native runtime versions: sherpa-onnx v1.13.8; llama.cpp b10955.
 Models are downloaded separately, not included in the app bundle.
 SenseVoiceSmall: https://github.com/FunAudioLLM/SenseVoice
+Paraformer-zh-streaming INT8 (Apache-2.0): https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en
+Pinned conversion revision: 8e40c43232a1c5c66c82111efc5820d3accca11b
+Original FunASR model: https://www.modelscope.cn/models/damo/speech_paraformer_asr_nat-zh-cn-16k-common-vocab8404-online/summary
 Silero VAD: https://github.com/snakers4/silero-vad
 BGE-M3: https://huggingface.co/BAAI/bge-m3
 Pinned Q8 conversion: https://huggingface.co/gpustack/bge-m3-GGUF

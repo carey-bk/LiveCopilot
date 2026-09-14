@@ -122,9 +122,14 @@ struct SettingsView: View {
             Picker(t("Listening provider"), selection: $coordinator.settings.listeningService) {
                 ForEach(ListeningService.allCases) { Text(t($0.label)).tag($0) }
             }.disabled(locked).accessibilityIdentifier("listening-provider")
-            if coordinator.settings.listeningService == .local {
-                Text(t("Audio stays on this Mac. Captions appear after a pause or a 12-second segment. Chinese, English, Japanese, Korean and Cantonese are detected automatically.")).font(.callout).foregroundStyle(.secondary)
-                LocalModelCard(manager: coordinator.localModels, kind: .speech, language: coordinator.settings.language, locked: locked)
+            if let kind = coordinator.settings.listeningService.localModel {
+                Text(t(kind == .streamingSpeech
+                    ? "Audio stays on this Mac. Chinese and English captions update while you speak. Preview text can change; completed sentences are used for automatic suggestions."
+                    : "Audio stays on this Mac. Captions appear after a pause or a 12-second segment. Chinese, English, Japanese, Korean and Cantonese are detected automatically.")).font(.callout).foregroundStyle(.secondary)
+                LocalModelCard(manager: coordinator.localModels, kind: kind, language: coordinator.settings.language, locked: locked)
+                if kind == .streamingSpeech {
+                    Text(t("English terminology can be misrecognized. Compare with SenseVoiceSmall for English-heavy conversations.")).font(.caption).foregroundStyle(.secondary)
+                }
                 Text(t("Automatic suggestions use conservative local question rules. Pauses alone do not trigger analysis; use the shortcut for missed questions.")).font(.caption).foregroundStyle(.secondary)
             } else {
                 Label("OpenAI", systemImage: "waveform").font(.title3.bold())

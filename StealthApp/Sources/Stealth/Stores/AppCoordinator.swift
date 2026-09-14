@@ -240,8 +240,8 @@ final class AppCoordinator: ObservableObject {
         }
         do {
             let key = settings.listeningService == .openAI ? try credential() : ""
-            if settings.listeningService == .local, !LocalModelKind.speech.isInstalled(in: localModels.root) {
-                throw CopilotError.message("Download SenseVoiceSmall and VAD in Services first.")
+            if let kind = settings.listeningService.localModel, !kind.isInstalled(in: localModels.root) {
+                throw CopilotError.message("Download the selected speech model and VAD in Services first.")
             }
             systemAudio.configure(sampleRate: settings.listeningService.sampleRate)
             mic.configure(sampleRate: settings.listeningService.sampleRate)
@@ -261,13 +261,13 @@ final class AppCoordinator: ObservableObject {
                 let speaker: Speaker = settings.mode == .inPerson ? .room : .you
                 micLive = makeLive(key: key, speaker: speaker, epoch: epoch); micLive?.connect(context: "")
             }
-            statusMessage = systemAudio.lastError ?? mic.lastError ?? (settings.listeningService == .local ? "Loading local speech model…" : "Connecting Live…")
+            statusMessage = systemAudio.lastError ?? mic.lastError ?? (settings.listeningService.isLocal ? "Loading local speech model…" : "Connecting Live…")
         } catch { statusMessage = error.localizedDescription; sessionStartedAt = nil }
     }
     private func makeLive(key: String, speaker: Speaker, epoch: UUID) -> any LiveProvider {
         let provider: any LiveProvider
-        if settings.listeningService == .local {
-            provider = LocalLiveProvider(directory: LocalModelKind.speech.location(in: localModels.root), speaker: speaker, sessionStart: sessionStartedAt ?? Date())
+        if let kind = settings.listeningService.localModel {
+            provider = LocalLiveProvider(directory: kind.location(in: localModels.root), speaker: speaker, sessionStart: sessionStartedAt ?? Date(), streaming: kind == .streamingSpeech)
         } else { provider = OpenAILiveProvider(key: key, model: settings.liveModel, speaker: speaker, scenario: settings.scenario) }
         provider.onEvent = { [weak self] event in self?.receive(event, speaker: speaker, epoch: epoch) }
         return provider
@@ -278,7 +278,11 @@ final class AppCoordinator: ObservableObject {
         case .speechActivity(let active):
             if active { speakingSources.insert(speaker); if pendingAutomatic?.speaker == speaker { questionTask?.cancel() } }
             else { speakingSources.remove(speaker); if pendingAutomatic != nil { scheduleAutomatic() } }
+        case .partialTranscript(let text):
+            transcript.setPartial(text, speaker: speaker)
+            if !text.isEmpty { questionState = QuestionPhase.forming.rawValue }
         case .transcript(let fragment):
+            transcript.clearPartial(speaker)
             guard conversation.append(fragment) else { return }
             transcript.ingest(fragment)
             if speaker == .you { systemLive?.appendContext("You said: " + fragment.text, delegationID: nil) }
@@ -292,12 +296,14 @@ final class AppCoordinator: ObservableObject {
         case .ready: statusMessage = "Listening · \(settings.mode.rawValue) · \(speaker.rawValue) ready"
         case .status(let message): statusMessage = message
         case .failed(let message):
+            transcript.clearPartial(speaker)
             statusMessage = message
-            if settings.listeningService == .local, isRunning, !isTransitioning {
+            if settings.listeningService.isLocal, isRunning, !isTransitioning {
                 Task { await stop(); statusMessage = message }
             }
         case .closed(let finalized):
-            if !finalized, settings.listeningService == .local { incompleteLocalStop = true; DebugLog.log("local.close incomplete_flush") }
+            transcript.clearPartial(speaker)
+            if !finalized, settings.listeningService.isLocal { incompleteLocalStop = true; DebugLog.log("local.close incomplete_flush") }
             else if !finalized { DebugLog.log("live.close final_usage_unconfirmed speaker=\(speaker.rawValue)") }
         }
     }
@@ -317,7 +323,7 @@ final class AppCoordinator: ObservableObject {
                 else { self.scheduleAutomatic() }
                 return
             }
-            if self.settings.listeningService == .local, !LocalQuestionDetector.isQuestion(question) {
+            if self.settings.listeningService.isLocal, !LocalQuestionDetector.isQuestion(question) {
                 self.pendingAutomatic = nil; self.questionState = QuestionPhase.waiting.rawValue; return
             }
             self.pendingAutomatic = nil

@@ -38,6 +38,11 @@ enum L10n {
         return text
     }
     static let chinese: [String: String] = [
+        "Local · Paraformer-zh-streaming": "本地 · Paraformer 流式识别",
+        "Audio stays on this Mac. Chinese and English captions update while you speak. Preview text can change; completed sentences are used for automatic suggestions.": "音频保留在本机。支持中文和英文，边说边显示字幕。识别中的文字可能修正；完整句子才会用于自动建议。",
+        "Download the selected speech model and VAD in Services first.": "请先在“服务”中下载所选语音模型和 VAD。",
+        "Recognizing": "正在识别",
+        "English terminology can be misrecognized. Compare with SenseVoiceSmall for English-heavy conversations.": "英文术语可能出现误识别。英文较多时，可与 SenseVoiceSmall 对比识别效果。",
         "Knowledge service": "知识库服务",
         "Listening provider": "语音识别服务",
         "Embedding provider": "向量服务",

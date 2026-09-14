@@ -38,7 +38,7 @@ enum LocalModelInstaller {
         defer { try? fm.removeItem(at: stage) }
         let payload = stage.appendingPathComponent("payload")
         try fm.createDirectory(at: payload, withIntermediateDirectories: false)
-        for item in kind == .speech ? [ModelDownload.senseVoice, .vad] : [.bge] {
+        for item in kind.downloads {
             status("Downloading local model…")
             let destination = stage.appendingPathComponent(item.name)
             try await downloader(item, destination)
@@ -56,7 +56,7 @@ enum LocalModelInstaller {
                     try extraction.run(); extraction.waitUntilExit()
                     guard extraction.terminationStatus == 0 else { throw CopilotError.message("Local model installation failed. Retry the download.") }
                 }.value
-            } else { try fm.moveItem(at: destination, to: payload.appendingPathComponent(item.name)) }
+            } else { try fm.moveItem(at: destination, to: payload.appendingPathComponent(item.installedName ?? item.name)) }
         }
         try Task.checkCancellation()
         var sizes: [String: Int64] = [:]

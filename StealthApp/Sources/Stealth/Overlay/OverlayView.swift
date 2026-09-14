@@ -62,7 +62,7 @@ struct OverlayView: View {
                 }
             }
             if showTranscript {
-                if transcript.lines.isEmpty {
+                if !transcript.hasContent {
                     if coordinator.isRunning { Text(t("Listening — waiting for speech")).font(.caption).foregroundStyle(.secondary) }
                 } else {
                     transcriptView.frame(height: min(145, max(44, transcriptHeight + 22)))
@@ -120,19 +120,31 @@ struct OverlayView: View {
             VStack(spacing: 2) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 6) {
-                        if transcript.lines.isEmpty { Text(t("Conversation appears here when listening.")).font(.caption).foregroundStyle(.secondary) }
+                        if !transcript.hasContent { Text(t("Conversation appears here when listening.")).font(.caption).foregroundStyle(.secondary) }
                         ForEach(transcript.lines) { line in
                             HStack(alignment: .top, spacing: 6) {
                                 Text(t(line.speaker.rawValue)).font(.caption2.bold()).foregroundStyle(line.speaker == .you ? Color.blue : .green).frame(width: 35, alignment: .leading)
                                 Text(line.content).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
+                        if !transcript.partialThem.isEmpty {
+                            partialRow(transcript.partialThem, speaker: coordinator.settings.mode == .inPerson ? .room : .them)
+                        }
+                        if !transcript.partialYou.isEmpty { partialRow(transcript.partialYou, speaker: .you) }
                         Color.clear.frame(height: 1).id("latest")
                     }.background { measure("transcript") }
                 }.onChange(of: transcript.lines) { _, _ in if followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
+                    .onChange(of: transcript.partialThem) { _, _ in if followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
+                    .onChange(of: transcript.partialYou) { _, _ in if followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
                 Toggle(t("Follow transcript"), isOn: $followTranscript).font(.caption2).toggleStyle(.checkbox).frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
+    }
+    private func partialRow(_ text: String, speaker: Speaker) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(t(speaker.rawValue)).font(.caption2.bold()).foregroundStyle(speaker == .you ? Color.blue : .green).frame(width: 35, alignment: .leading)
+            Text(text).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+        }.accessibilityLabel(t("Recognizing") + " · " + t(speaker.rawValue) + " · " + text)
     }
     private var answer: some View {
         ScrollView {

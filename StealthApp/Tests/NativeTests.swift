@@ -65,6 +65,25 @@ final class NativeTests: XCTestCase {
         store.ingest(.init(id: "c", speaker: .you, text: "42 ms", startMS: 600, endMS: 1100, receivedAt: now))
         XCTAssertEqual(store.lines[1].speaker, .you)
     }
+    @MainActor func testStreamingPreviewsReplaceWithoutEnteringConversationContext() {
+        let store = TranscriptStore()
+        store.setPartial("Why did we", speaker: .them)
+        store.setPartial("Why did we choose method B", speaker: .them)
+        store.setPartial("我在听", speaker: .you)
+        XCTAssertEqual(store.partialThem, "Why did we choose method B")
+        XCTAssertEqual(store.partialYou, "我在听")
+        XCTAssertTrue(store.hasContent) // Empty compact window must grow for previews too.
+        XCTAssertTrue(store.lines.isEmpty)
+        XCTAssertTrue(store.recentContext().isEmpty)
+        store.clearPartial(.them)
+        store.ingest(.init(id: "stable", speaker: .them, text: "Why did we choose method B?", startMS: 0, endMS: 3000, receivedAt: Date()))
+        XCTAssertEqual(store.lines.count, 1)
+        XCTAssertEqual(store.lines[0].content, "Why did we choose method B?")
+        XCTAssertTrue(store.partialThem.isEmpty)
+        XCTAssertFalse(store.partialYou.isEmpty)
+        store.clear()
+        XCTAssertFalse(store.hasContent)
+    }
     @MainActor func testShutdownCancelsAnswerAndPreventsSessionRestart() async {
         let coordinator = AppCoordinator(mock: true)
         await coordinator.start()

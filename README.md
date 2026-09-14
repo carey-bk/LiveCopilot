@@ -2,9 +2,9 @@
 
 基于 [vortechron/stealth](https://github.com/vortechron/stealth) 的原生 macOS 个人 AI 助手，面向面试、会议和学术答辩。保留 Swift/SwiftUI、ScreenCaptureKit 系统音频、AVAudioEngine 麦克风、菜单栏、悬浮窗、全局快捷键和本地历史。
 
-V1.2 可选择 **本地 SenseVoiceSmall + VAD** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
+V1.2.2 可选择 **本地 Paraformer 中英流式识别**、**本地 SenseVoiceSmall + VAD** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
-当前源码为 **1.2.1**：在本地模型功能上加入按内容自动调整窗口高度、右侧贴边隐藏，并更新粉色气泡与 **LIVE** 发光标记的矢量图标。详见 [窗口与图标更新](docs/V1_2_1_UPDATE.md) 和 [本地模型说明](docs/LOCAL_MODELS.md)。当前公开 Release 仍为 1.1.0，公开旧安装包不含这些功能。
+当前源码为 **1.2.2**：增加 Paraformer 中英流式选项，边说边显示可修正的字幕，完整句子才进入自动建议。保留按内容调整高度、贴边隐藏与 **LIVE** 矢量图标。详见 [本地模型说明](docs/LOCAL_MODELS.md) 和 [窗口与图标更新](docs/V1_2_1_UPDATE.md)。当前公开 Release 仍为 1.1.0，公开旧安装包不含这些功能。
 
 ## 下载与安装
 
@@ -18,7 +18,7 @@ V1.2 可选择 **本地 SenseVoiceSmall + VAD** 或 OpenAI Live 进行语音识�
 
 ## 首次配置与使用
 
-1. 点击悬浮窗齿轮，进入 **服务 → 实时服务**，选择“本地 · SenseVoiceSmall + VAD”并下载模型（约 164 MB），或选择 OpenAI Live 并配置 Key。OpenAI 密钥保存在 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴。开发回退是 `OPENAI_API_KEY`。
+1. 点击悬浮窗齿轮，进入 **服务 → 实时服务**，选择“本地 · Paraformer 流式识别”（约 238 MB）或“本地 · SenseVoiceSmall + VAD”（约 164 MB）并下载模型，或选择 OpenAI Live 并配置 Key。OpenAI 密钥保存在 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴。开发回退是 `OPENAI_API_KEY`。
 
    如果显示 `Checking Keychain…`，请在本机完成 macOS 的访问提示；密码只输入系统窗口。读取权限与 Key 是否有效是两项独立检查。重新打开已启动的 LiveCopilot 会恢复悬浮窗；`⌥H` 可隐藏它。
 2. **服务 → 知识库服务** 选择“本地 · BGE-M3”并下载模型（约 635 MB），或保留 OpenAI Embeddings。**服务 → 分析服务** 可选择 DeepSeek 并配置独立密钥。语音与向量均选本地、分析选 DeepSeek 时，无需 OpenAI Key；模型下载后只有生成建议需要连接分析 API。旧配置升级时保持原有云端选择。
@@ -106,4 +106,4 @@ unset OPENAI_API_KEY
 
 派生于 Stealth commit `02b78cc82195a1711e3de11adfaed26011635dae`，原作者 vortechron，MIT 许可保持不变，并保留原始 Git 历史。LiveCopilot 独立发布于 [carey-bk/LiveCopilot](https://github.com/carey-bk/LiveCopilot)；原始项目见 [vortechron/stealth](https://github.com/vortechron/stealth)。打包与发布流程见 [发布说明](docs/RELEASING.md)。
 
-图标的可编辑 SVG、单色标志与生成方式见 [品牌文件](assets/brand/README.md)。对本地 FunASR 的下一阶段评估见 [ASR 技术路线](docs/ASR_DIRECTION.md)；当前尚未替换 Live 识别。
+图标的可编辑 SVG、单色标志与生成方式见 [品牌文件](assets/brand/README.md)。本地 FunASR 已提供 SenseVoiceSmall 和 Paraformer 流式两种选项，OpenAI Live 仍可切换。

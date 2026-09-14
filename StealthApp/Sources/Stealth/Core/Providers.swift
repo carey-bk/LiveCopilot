@@ -11,6 +11,8 @@ protocol ReasoningProvider {
 enum LiveEvent {
     case ready
     case transcript(TranscriptFragment)
+    /// A replacement preview for one speaker; not persisted or used for analysis.
+    case partialTranscript(String)
     case delegation(id: String, offsetMS: Int)
     case speechActivity(Bool)
     case status(String)

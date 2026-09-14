@@ -1,6 +1,6 @@
 # 本地 ASR 技术路线评估
 
-核对日期：2026-09-14。本文是基于用户新用途的设计建议，不表示本地 ASR 已接入，也不替代真实音频评测。1.1.1 保持已经能使用的 OpenAI Live 链路。
+初次核对日期：2026-09-14。下文保留 1.1.1 时的路线评估背景；后续已实现 SenseVoiceSmall + VAD、BGE-M3 本地向量模型，并在 1.2.2 增加 Paraformer 中英流式识别。当前实现和验收以 [本地模型说明](LOCAL_MODELS.md) 为准。
 
 ## 对当前用途的判断
 
@@ -48,3 +48,9 @@ FunASR 已提供 [llama.cpp/GGUF 运行时](https://github.com/modelscope/FunASR
 用同一组有人工转写的真实场景音频比较候选模型：普通话、英语长句、中英混说、名字/缩写/数字、安静和噪声、远程音频和现场收音。记录中文 CER、英文 WER、关键术语/数字正确率、说完后的出字延迟、首段延迟、实时因子、内存和功耗；单独统计自动建议的误触发、漏触发和重复触发。
 
 本次只完成官方资料与当前代码的路线核对，未下载模型、未跑本机 ASR 性能/准确率测试，不给出未经测量的识别率或加速倍数。
+
+## Apple 原生接口候选（尚未接入）
+
+macOS 26 的 SpeechAnalyzer + SpeechTranscriber 支持本机长时转写和可修正的实时结果，模型资产由系统管理。旧 SFSpeechRecognizer 也能在支持的设备及语言上通过 requiresOnDeviceRecognition 强制本地运行；需要先检查 supportsOnDeviceRecognition。见 [Apple WWDC25](https://developer.apple.com/videos/play/wwdc2025/277/) 和 [本地识别能力检查](https://developer.apple.com/documentation/speech/sfspeechrecognizer/supportsondevicerecognition)。
+
+2026-09-14 在这台 macOS 26.6.2 上实际查询 SpeechTranscriber.supportedLocales，返回 zh_CN、zh_HK、zh_TW，以及 en_US 等英文地区。这只验证接口和语言可用性，未下载 Apple 模型或验证真实识别、中英混说及延迟。若后续接入，应使用运行时能力检查，为应用目前支持的 macOS 14/15 保留现有识别路线。

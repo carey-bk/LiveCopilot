@@ -1,12 +1,22 @@
 # Verification and troubleshooting
 
-For the latest language, background and analysis-service update, see `V1_1_UPDATE.md`. The V1 real-API evidence below is historical; it is not a claim of a real DeepSeek call.
+For the current local recognition and model options, see `LOCAL_MODELS.md`; older language/background changes are in `V1_1_UPDATE.md`. The V1 real-API evidence below is historical; it is not a claim of a real DeepSeek call.
 
 ## Evidence recorded during development
 
 The latest exact results are maintained in `IMPLEMENTATION_PLAN.md`. Distinguish source implementation, deterministic mocks, native build/test, real API checks, and interactive hardware/UI checks. An API session starting is not proof of successful capture or question detection; setting capture exclusion is not proof of exclusion in a specific meeting app.
 
 ## Deterministic checks (no API calls)
+
+### 2026-09-14 — Paraformer bilingual streaming (1.2.2)
+
+- Universal Release build passed; **18 native XCTest cases, zero failures**, final run at 23:42:45 local time. The native suite includes the **55 deterministic core checks** plus replacement-preview isolation: partial text grows the overlay's content state without entering conversation history.
+- Pinned Paraformer INT8 encoder/decoder/tokens and Silero weights passed SHA-256 installation verification. The 238 MB model pack is installed outside the repository/app. No Python dependency was added to the application.
+- Real local synthetic speech, paced at real time: English and Chinese produced **6 and 10 distinct previews**, respectively, with the first preview by 1,000 ms of supplied audio (including 500 ms of leading silence). This tiny fixture is not a general latency benchmark. Each completed question delegated once; `You` produced zero delegations.
+- **Accuracy limitation:** the Chinese fixture retained “延迟” but rendered method B as “方法比”; English rendered “latency” as “lency.” The upstream C API example also misrecognized the English term. These are recorded model limitations, not passing accuracy claims. Integration assertions cover streaming/finalization/trigger behavior; keyword fidelity is recorded separately. SenseVoice regression retained correct latency keywords in both languages.
+- Stop initially lost the final token with 300 ms of model padding. Finalization now provides a full model chunk plus lookahead as generated silence (no extra recording or wall-clock wait), then drains final short input. Same-audio stop and normal-endpoint results match; repeated flush produces no duplicate transcript.
+- Installed **1.2.2 / 20260914.154440 (UTC build ID)** at `~/Applications/LiveCopilot.app`; strict recursive codesign verification passed. Main executable SHA-256: `b688052f12543e421875b1efb9b91c5bb3eb84490dab308f499fc0fbb92941aa`. Previous app: `LiveCopilot.app.previous.20260914154440`. Existing listening selection, embedding/reasoning settings and private knowledge were preserved.
+- The installed app's bundled native worker was separately exercised against the installed production model using synthetic audio: partial and final text passed. The app was **not relaunched**: the Mac was locked, so CUA could not inspect the final GUI. New microphone/system-capture, new Keychain authorization and real cloud answers are **not verified by this update**. No cloud API calls were made. Signing remains ad-hoc; no new GitHub release was published.
 
 ### 2026-09-14 — adaptive overlay, right-edge hiding and LIVE icon (1.2.1)
 

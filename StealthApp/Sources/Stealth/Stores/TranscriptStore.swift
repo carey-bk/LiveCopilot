@@ -26,6 +26,14 @@ final class TranscriptStore: ObservableObject {
     /// In-progress (not-yet-final) text per speaker, shown dimmer while streaming.
     @Published private(set) var partialThem: String = ""
     @Published private(set) var partialYou: String = ""
+    var hasContent: Bool { !lines.isEmpty || !partialThem.isEmpty || !partialYou.isEmpty }
+
+    func setPartial(_ text: String, speaker: Speaker) {
+        switch speaker {
+        case .them, .room: partialThem = text
+        case .you: partialYou = text
+        }
+    }
 
     func appendDelta(_ delta: String, speaker: Speaker) {
         switch speaker {
