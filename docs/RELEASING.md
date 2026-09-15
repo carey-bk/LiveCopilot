@@ -39,3 +39,18 @@ The script rejects this mode if source, resources or project settings differ fro
 Version 1.1.0 is an ad-hoc signed community build, not Developer ID signed or Apple notarized. Passing `codesign --verify` confirms bundle integrity; it does not make the app trusted by Gatekeeper. Installation guidance links to [Apple's per-app opening instructions](https://support.apple.com/en-us/102445), without recommending a global Gatekeeper change.
 
 A future notarized release needs the maintainer's Developer ID Application identity, a suitable hardened-runtime build and an Apple notarization submission. No signing private key, account password or API key belongs in Git or release assets.
+
+## Local updates and stale permissions (V1.3.0)
+
+For updates on the development Mac, finish validation and sign **one** staging app, quit the installed application, then use:
+
+```bash
+python3 StealthApp/scripts/install-local.py /absolute/path/to/validated/LiveCopilot.app --dry-run
+python3 StealthApp/scripts/install-local.py /absolute/path/to/validated/LiveCopilot.app
+```
+
+The target is always `~/Applications/LiveCopilot.app`. The installer verifies the bundle identity/signature, archives each old `LiveCopilot.app.previous.*` and the installed version to verified `.tar.gz` files under `~/Library/Application Support/LiveCopilot/Backups/Applications`, unregisters those loose backups, and registers the canonical app. The backups preserve file bytes and symlinks; restore a selected archive outside Applications before installing it. Never leave a renamed, same-ID application bundle beside the live app again.
+
+If the designated requirement changes, it resets only `ScreenCapture` for `com.livecopilot.app`, once after installation. `--repair-permissions` forces this repair for an already stale grant. It never changes Keychain ACLs, resets other applications, edits TCC databases or grants permission itself. A same-signature reinstall does not reset grants. The receipt `latest-install.json` records version/build, executable SHA-256 and archive paths, without credentials.
+
+After installation, the user requests access in General → System audio permission and allows the canonical LiveCopilot in macOS Privacy Settings, following any quit/reopen request. A changed ad-hoc signature can still prompt for existing Keychain access. Stable Developer ID signing is the long-term solution for upgrade identity continuity; this installer does not claim to solve that by weakening signature requirements.

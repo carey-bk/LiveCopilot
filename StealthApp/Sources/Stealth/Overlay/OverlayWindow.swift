@@ -119,6 +119,13 @@ final class OverlayWindow: NSPanel {
         geometryTask = task
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: task)
     }
+    func minimumContentHeightChanged(_ height: CGFloat) {
+        guard height.isFinite, let screen = displayScreen else { return }
+        let minimum = min(max(240, height), screen.visibleFrame.height - 24)
+        guard abs(minSize.height - minimum) > 1 else { return }
+        minSize.height = minimum
+        fitHeight(animated: false)
+    }
 
     private var displayScreen: NSScreen? {
         if !edgeHide, let screen { return screen }
@@ -128,11 +135,15 @@ final class OverlayWindow: NSPanel {
 
     private func fitHeight(animated: Bool) {
         guard let display = displayScreen else { return }
-        let fitted = OverlayLayout.fitted(frame, height: autoHeight ? desiredHeight : frame.height,
+        let fitted = OverlayLayout.fitted(frame, height: max(minSize.height, autoHeight ? desiredHeight : frame.height),
                                          visible: display.visibleFrame, docked: edgeHide)
         guard fitted != frame else { return }
         // Keep the top edge stable. Hidden content can grow without revealing the window.
-        setFrame(fitted, display: isVisible, animate: animated && isVisible && !edgeHidden && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        // Overlapping NSWindow frame animations can leave the hosting view at an
+        // obsolete height while streaming/revealing. Apply geometry atomically.
+        setFrame(fitted, display: isVisible)
+        contentView?.layoutSubtreeIfNeeded()
+        invalidateShadow()
     }
 
     func userFinishedResize(vertical: Bool) {
@@ -171,13 +182,10 @@ final class OverlayWindow: NSPanel {
         alphaValue = 1
         orderFrontRegardless()
         if wasHidden && edgeHide && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            let final = frame
-            setFrameOrigin(NSPoint(x: final.minX + 10, y: final.minY))
             alphaValue = 0
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.18
                 animator().alphaValue = 1
-                animator().setFrame(final, display: true)
             }
         }
     }

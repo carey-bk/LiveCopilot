@@ -26,6 +26,44 @@ enum CoreChecks {
             local.listeningService = .local; local.reasoningService = .sharedOpenAI
             try expect(local.requiresOpenAIKey, "shared reasoning lost its credential requirement")
         }
+        try check("Apple route persists without requiring a cloud credential") {
+            var settings = AppSettings(); settings.listeningService = .apple
+            settings.reasoningService = .deepSeek; settings.embeddingService = .local; settings.appleSpeechLanguage = .english
+            let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+            try expect(restored == settings && !restored.requiresOpenAIKey && restored.listeningService.sampleRate == 16000, "Apple route incorrectly migrated")
+            let old = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+            try expect(old.appleSpeechLanguage == .chinese && old.listeningService == .openAI, "legacy route changed")
+        }
+        try check("Apple volatile ranges revise, commit and reject stale results") {
+            var state = SpeechPreviewState()
+            _ = state.accept(startMS: 0, endMS: 500, text: "why", final: false)
+            _ = state.accept(startMS: 0, endMS: 900, text: "why this", final: false)
+            try expect(state.preview == "why this", "preview duplicated")
+            let part = state.accept(startMS: 0, endMS: 400, text: "Why", final: true)
+            try expect(part?.text == "Why" && state.preview.isEmpty, "final duplicated volatile prefix")
+            _ = state.accept(startMS: 400, endMS: 1000, text: "this method?", final: false)
+            try expect(state.accept(startMS: 0, endMS: 400, text: "Why", final: true) == nil, "duplicate final accepted")
+            try expect(state.preview == "this method?", "stale event removed newer preview")
+            _ = state.accept(startMS: 400, endMS: 1000, text: "this method?", final: true)
+            try expect(state.preview.isEmpty, "final preview remained")
+        }
+        try check("small overlay bounds reserve space for fixed controls") {
+            for room in [0.0, 20, 80, 400, 900] {
+                for automatic in [true, false] {
+                    let panes = OverlayLayout.panes(available: room, transcriptIdeal: 145, answerIdeal: 2000, automatic: automatic)
+                    try expect(panes.transcript >= 0 && panes.answer >= 0 && panes.transcript + panes.answer <= room, "content overflowed reserved bounds")
+                }
+            }
+        }
+        try check("prices match official model and provider, never a compatible proxy") {
+            try expect(ServiceGuide.livePrice("gpt-live-1", language: .english).contains("$0.10"), "dual-session charge omitted")
+            try expect(ServiceGuide.embeddingPrice("text-embedding-3-large", language: .english).contains("$0.13"), "embedding rate incorrect")
+            try expect(ServiceGuide.analysisPrice(.deepSeek, model: "deepseek-flash", language: .english).contains("$0.15 / $0.30"), "flash peak rates incorrect")
+            try expect(ServiceGuide.analysisPrice(.deepSeek, model: "deepseek-v4-pro", language: .english).contains("$0.66 / $1.32"), "Pro accidentally quoted Flash rates")
+            for provider in [ReasoningService.compatible, .deepSeek] {
+                try expect(ServiceGuide.analysisPrice(provider, model: "gpt-5.6-sol", language: .english) == ServiceGuide.unknown(.english), "cross-provider price guessed")
+            }
+        }
         try check("overlay preferences migrate and persist independently") {
             let migrated = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
             try expect(migrated.overlayAutoHeight && migrated.overlayEdgeHide, "new window defaults missing")

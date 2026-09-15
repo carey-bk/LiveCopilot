@@ -2,9 +2,9 @@
 
 基于 [vortechron/stealth](https://github.com/vortechron/stealth) 的原生 macOS 个人 AI 助手，面向面试、会议和学术答辩。保留 Swift/SwiftUI、ScreenCaptureKit 系统音频、AVAudioEngine 麦克风、菜单栏、悬浮窗、全局快捷键和本地历史。
 
-V1.2.2 可选择 **本地 Paraformer 中英流式识别**、**本地 SenseVoiceSmall + VAD** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
+V1.3.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别**、**本地 SenseVoiceSmall + VAD** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
-当前源码为 **1.2.2**：增加 Paraformer 中英流式选项，边说边显示可修正的字幕，完整句子才进入自动建议。保留按内容调整高度、贴边隐藏与 **LIVE** 矢量图标。详见 [本地模型说明](docs/LOCAL_MODELS.md) 和 [窗口与图标更新](docs/V1_2_1_UPDATE.md)。当前公开 Release 仍为 1.1.0，公开旧安装包不含这些功能。
+当前源码为 **1.3.0**：新增 Apple 本地流式识别（macOS 26+、支持的硬件），修复窗口高度变化时的裁切，增加服务差异和价格说明，提供清理旧应用注册的本地安装脚本。保留按内容调整高度、贴边隐藏与 **LIVE** 矢量图标。详见 [1.3.0 更新与验收](docs/V1_3_0_UPDATE.md)、[本地模型说明](docs/LOCAL_MODELS.md) 和 [窗口与图标更新](docs/V1_2_1_UPDATE.md)。当前公开 Release 仍为 1.1.0，公开旧安装包不含这些功能。
 
 ## 下载与安装
 

@@ -2,6 +2,14 @@ import Foundation
 
 /// Screen coordinates are AppKit points, including negative origins on secondary displays.
 enum OverlayLayout {
+    /// Only content panes consume spare height; never put window controls in a
+    /// scrolled or oversized hosting view. Header/footer measurements are fixed.
+    static func panes(available: CGFloat, transcriptIdeal: CGFloat, answerIdeal: CGFloat, automatic: Bool) -> (transcript: CGFloat, answer: CGFloat) {
+        let room = max(0, available)
+        let transcript = min(transcriptIdeal, max(0, room - 28), room * 0.45)
+        let answer = automatic ? min(max(28, answerIdeal), max(0, room - transcript)) : max(0, room - transcript)
+        return (transcript, answer)
+    }
     static func fitted(_ frame: CGRect, height: CGFloat, visible: CGRect, docked: Bool) -> CGRect {
         let inset = visible.insetBy(dx: 12, dy: 12)
         let width = min(frame.width, inset.width)

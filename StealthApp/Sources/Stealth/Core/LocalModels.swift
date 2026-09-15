@@ -2,23 +2,24 @@ import Foundation
 import CryptoKit
 
 enum ListeningService: String, Codable, CaseIterable, Identifiable {
-    case openAI, local, paraformer
+    case openAI, apple, local, paraformer
     var id: String { rawValue }
     var label: String {
         switch self {
         case .openAI: return "OpenAI · GPT-Live"
+        case .apple: return "Apple · on-device speech"
         case .local: return "Local · SenseVoiceSmall + VAD"
         case .paraformer: return "Local · Paraformer-zh-streaming"
         }
     }
     var localModel: LocalModelKind? {
         switch self {
-        case .openAI: return nil
+        case .openAI, .apple: return nil
         case .local: return .speech
         case .paraformer: return .streamingSpeech
         }
     }
-    var isLocal: Bool { localModel != nil }
+    var isLocal: Bool { self != .openAI }
     var sampleRate: Double { isLocal ? 16000 : 24000 }
 }
 

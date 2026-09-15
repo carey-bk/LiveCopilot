@@ -24,6 +24,7 @@ enum ScenarioProfile: String, Codable, CaseIterable, Identifiable {
 
 struct AppSettings: Codable, Equatable {
     var listeningService = ListeningService.openAI
+    var appleSpeechLanguage = AppleSpeechLanguage.chinese
     var embeddingService = EmbeddingService.openAI
     var liveModel = "gpt-live-1"
     var reasoningModel = "gpt-5.6-sol"
@@ -50,13 +51,14 @@ struct AppSettings: Codable, Equatable {
 
     init() {}
     private enum CodingKeys: String, CodingKey {
-        case listeningService, embeddingService, overlayAutoHeight, overlayEdgeHide
+        case listeningService, appleSpeechLanguage, embeddingService, overlayAutoHeight, overlayEdgeHide
         case liveModel, reasoningModel, embeddingModel, reasoningEffort, mode, scenario, automaticSuggestions, includeConversation, retrievalCount, language, background, excludeOverlayFromCapture, reasoningService, deepSeekModel, deepSeekEffort, compatibleBaseURL, compatiblePath, compatibleModel
     }
     init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
         listeningService = try c.decodeIfPresent(ListeningService.self, forKey: .listeningService) ?? listeningService
+        appleSpeechLanguage = try c.decodeIfPresent(AppleSpeechLanguage.self, forKey: .appleSpeechLanguage) ?? appleSpeechLanguage
         embeddingService = try c.decodeIfPresent(EmbeddingService.self, forKey: .embeddingService) ?? embeddingService
         liveModel = try c.decodeIfPresent(String.self, forKey: .liveModel) ?? liveModel
         reasoningModel = try c.decodeIfPresent(String.self, forKey: .reasoningModel) ?? reasoningModel

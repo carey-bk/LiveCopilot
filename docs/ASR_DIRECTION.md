@@ -49,8 +49,11 @@ FunASR 已提供 [llama.cpp/GGUF 运行时](https://github.com/modelscope/FunASR
 
 本次只完成官方资料与当前代码的路线核对，未下载模型、未跑本机 ASR 性能/准确率测试，不给出未经测量的识别率或加速倍数。
 
-## Apple 原生接口候选（尚未接入）
+## Apple 原生接口（1.3.0 已接入）
 
 macOS 26 的 SpeechAnalyzer + SpeechTranscriber 支持本机长时转写和可修正的实时结果，模型资产由系统管理。旧 SFSpeechRecognizer 也能在支持的设备及语言上通过 requiresOnDeviceRecognition 强制本地运行；需要先检查 supportsOnDeviceRecognition。见 [Apple WWDC25](https://developer.apple.com/videos/play/wwdc2025/277/) 和 [本地识别能力检查](https://developer.apple.com/documentation/speech/sfspeechrecognizer/supportsondevicerecognition)。
 
 2026-09-14 在这台 macOS 26.6.2 上实际查询 SpeechTranscriber.supportedLocales，返回 zh_CN、zh_HK、zh_TW，以及 en_US 等英文地区。这只验证接口和语言可用性，未下载 Apple 模型或验证真实识别、中英混说及延迟。若后续接入，应使用运行时能力检查，为应用目前支持的 macOS 14/15 保留现有识别路线。
+
+
+2026-09-15 更新：SpeechAnalyzer + SpeechTranscriber 已实际接入，原有未下载/未测试描述仅记录 9 月 14 日的调查阶段。已下载普通话、英语模型，并完成真实本地流式与触发测试。当前交付、样本限制及权限验收边界见 [1.3.0 更新](V1_3_0_UPDATE.md)。

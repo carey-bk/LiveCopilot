@@ -123,6 +123,41 @@ final class NativeTests: XCTestCase {
         XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces))
         panel.close()
     }
+    @MainActor func testOverlayHostingTracksRapidContentAndManualBounds() async throws {
+        let coordinator = AppCoordinator(mock: true)
+        coordinator.settings.overlayEdgeHide = false
+        var panel: OverlayWindow?
+        let view = OverlayView(coordinator: coordinator, onContentHeight: { height in
+            DispatchQueue.main.async { panel?.contentHeightChanged(height) }
+        }, onMinimumHeight: { height in
+            DispatchQueue.main.async { panel?.minimumContentHeightChanged(height) }
+        })
+        panel = OverlayWindow(rootView: view)
+        let window = try XCTUnwrap(panel)
+        defer { window.close(); panel = nil }
+        window.configure(autoHeight: true, edgeHide: false)
+        coordinator.isRunning = true
+        coordinator.transcript.setPartial(String(repeating: "Synthetic streaming captions. ", count: 50), speaker: .them)
+        coordinator.suggestion.appendDelta(String(repeating: "A long synthetic answer for layout validation. ", count: 100))
+        try await Task.sleep(for: .milliseconds(450))
+        window.contentView?.layoutSubtreeIfNeeded()
+        let border = try XCTUnwrap(window.contentView as? OverlayResizeView)
+        let hosting = try XCTUnwrap(border.subviews.first)
+        XCTAssertEqual(hosting.frame.size, border.bounds.size)
+        XCTAssertEqual(border.layer?.cornerRadius, 16)
+        XCTAssertTrue(border.layer?.masksToBounds == true)
+        XCTAssertGreaterThan(window.minSize.height, 240, "live controls need a dynamic minimum")
+        XCTAssertGreaterThanOrEqual(window.frame.height, window.minSize.height)
+        window.setFrame(NSRect(x: window.frame.minX, y: window.frame.minY, width: 410, height: window.minSize.height), display: true)
+        window.userFinishedResize(vertical: true)
+        coordinator.transcript.setPartial("short preview", speaker: .them)
+        coordinator.isRunning = false
+        try await Task.sleep(for: .milliseconds(300))
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(hosting.frame.size, border.bounds.size)
+        XCTAssertGreaterThanOrEqual(window.frame.height, window.minSize.height)
+        await coordinator.shutdown()
+    }
     @MainActor func testResizeBorderLeavesContentInteractive() {
         let child = NSView(), border = OverlayResizeView(content: NSView())
         border.frame = NSRect(x: 0, y: 0, width: 480, height: 640)

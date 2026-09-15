@@ -9,26 +9,42 @@ struct OverlayView: View {
     @State private var followTranscript = true
     @State private var transcriptHeight: CGFloat = 22
     @State private var answerHeight: CGFloat = 28
-    @State private var chromeHeight: CGFloat = 260
-    @State private var screenHeight: CGFloat = NSScreen.main?.visibleFrame.height ?? 800
+    @State private var fixedHeights: [String: CGFloat] = [:]
     var onContentHeight: (CGFloat) -> Void
-    init(coordinator: AppCoordinator, onContentHeight: @escaping (CGFloat) -> Void = { _ in }) {
+    var onMinimumHeight: (CGFloat) -> Void
+    init(coordinator: AppCoordinator, onContentHeight: @escaping (CGFloat) -> Void = { _ in }, onMinimumHeight: @escaping (CGFloat) -> Void = { _ in }) {
         self.coordinator = coordinator; transcript = coordinator.transcript; suggestion = coordinator.suggestion
-        self.onContentHeight = onContentHeight
+        self.onContentHeight = onContentHeight; self.onMinimumHeight = onMinimumHeight
     }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
+    private var hasTranscript: Bool { showTranscript && transcript.hasContent }
+    private var transcriptIdeal: CGFloat { hasTranscript ? min(145, max(44, transcriptHeight + 22)) : 0 }
+    private var chromeHeight: CGFloat {
+        // Padding, divider, and spacing between the fixed groups and content panes.
+        (fixedHeights["top"] ?? 66) + (fixedHeights["actions"] ?? 24) + (fixedHeights["bottom"] ?? 84) + 29 + (hasTranscript ? 50 : 40)
+    }
+    private var desiredHeight: CGFloat { chromeHeight + transcriptIdeal + max(28, answerHeight) }
+    private func reportSize() {
+        onMinimumHeight(chromeHeight + 28 + (hasTranscript ? 44 : 0))
+        onContentHeight(desiredHeight)
+    }
     var body: some View {
-        Group {
-            if coordinator.settings.overlayAutoHeight {
-                // Also scroll the whole card on unusually short displays, keeping every control reachable.
-                ScrollView { content }
-            } else { content }
+        GeometryReader { geometry in
+            let panes = OverlayLayout.panes(available: geometry.size.height - chromeHeight, transcriptIdeal: transcriptIdeal,
+                                            answerIdeal: answerHeight, automatic: coordinator.settings.overlayAutoHeight)
+            VStack(alignment: .leading, spacing: 10) {
+                top.fixedSize(horizontal: false, vertical: true).background { measure("top") }
+                if hasTranscript { transcriptView.frame(height: panes.transcript) }
+                actions.fixedSize(horizontal: false, vertical: true).background { measure("actions") }
+                Divider()
+                answer.frame(height: panes.answer)
+                bottom.fixedSize(horizontal: false, vertical: true).background { measure("bottom") }
+            }
+            .padding(14)
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background {
-            WindowBackgroundView(style: coordinator.settings.background, isOverlay: true)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-        }
+        .background { WindowBackgroundView(style: coordinator.settings.background, isOverlay: true) }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
         .environment(\.locale, coordinator.settings.language.locale)
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.12)))
@@ -36,48 +52,40 @@ struct OverlayView: View {
         .onPreferenceChange(OverlayContentHeights.self) { heights in
             if let height = heights["transcript"] { transcriptHeight = height }
             if let height = heights["answer"] { answerHeight = height }
-            if let height = heights["window"] {
-                if let viewport = heights["answerViewport"] { chromeHeight = max(0, height - viewport) }
-                onContentHeight(height)
-            }
+            for key in ["top", "actions", "bottom"] { if let height = heights[key] { fixedHeights[key] = height } }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeScreenNotification)) { event in
-            if let window = event.object as? OverlayWindow, let screen = window.screen { screenHeight = screen.visibleFrame.height }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-            screenHeight = (NSApp.windows.first(where: { $0 is OverlayWindow })?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
-        }
+        .onChange(of: desiredHeight) { _, _ in reportSize() }
+        .onAppear { reportSize() }
     }
-    private var content: some View {
+    private var top: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header.padding(.trailing, 16) // Keep header buttons outside the corner resize target.
+            header.padding(.trailing, 16)
             Text(t(coordinator.statusMessage)).font(.caption).foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
             if coordinator.isRunning {
                 HStack {
                     Text(t(coordinator.questionState)).font(.caption2).foregroundStyle(.secondary)
                     Spacer()
                     Toggle(t("Auto"), isOn: $coordinator.settings.automaticSuggestions)
-                        .toggleStyle(OverlaySwitchStyle())
-                        .accessibilityIdentifier("automatic-suggestions")
+                        .toggleStyle(OverlaySwitchStyle()).accessibilityIdentifier("automatic-suggestions")
+                }
+                if showTranscript && !transcript.hasContent {
+                    Text(t("Listening — waiting for speech")).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if showTranscript {
-                if !transcript.hasContent {
-                    if coordinator.isRunning { Text(t("Listening — waiting for speech")).font(.caption).foregroundStyle(.secondary) }
-                } else {
-                    transcriptView.frame(height: min(145, max(44, transcriptHeight + 22)))
-                }
+        }
+    }
+    private var actions: some View {
+        HStack(spacing: 6) {
+            ForEach(SuggestionMode.allCases) { mode in
+                Button { coordinator.requestSuggestion(mode: mode) } label: { Label(t(mode.label), systemImage: mode.systemImage).font(.caption) }
+                    .help(coordinator.hotkeys.combo(for: mode).display)
             }
-            HStack(spacing: 6) {
-                ForEach(SuggestionMode.allCases) { mode in
-                    Button { coordinator.requestSuggestion(mode: mode) } label: { Label(t(mode.label), systemImage: mode.systemImage).font(.caption) }
-                        .help(coordinator.hotkeys.combo(for: mode).display)
-                }
-                Spacer()
-                Button { showTranscript.toggle() } label: { Image(systemName: "text.bubble") }.help(t("Show/hide conversation"))
-            }
-            Divider()
-            answer
+            Spacer()
+            Button { showTranscript.toggle() } label: { Image(systemName: "text.bubble") }.help(t("Show/hide conversation"))
+        }
+    }
+    private var bottom: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
                 TextField(t("Ask anything — listening can be off"), text: $query, axis: .vertical)
                     .textFieldStyle(.roundedBorder).lineLimit(1...3)
@@ -90,9 +98,7 @@ struct OverlayView: View {
                 if suggestion.isLoading { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption) }
             }
             footer.padding(.trailing, 20)
-        }.padding(14)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .background { measure("window") }
+        }
     }
     private func submit() { let value = query; query = ""; coordinator.askText(value) }
     private var header: some View {
@@ -177,10 +183,8 @@ struct OverlayView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .background { measure("answer") }
         }.frame(maxWidth: .infinity)
-            .frame(height: coordinator.settings.overlayAutoHeight ? min(max(80, min(900, screenHeight - 24) - chromeHeight), max(28, answerHeight)) : nil)
-            .frame(minHeight: coordinator.settings.overlayAutoHeight ? 0 : 80, maxHeight: coordinator.settings.overlayAutoHeight ? nil : .infinity)
-            .background { measure("answerViewport") }
     }
+
     private func measure(_ key: String) -> some View {
         GeometryReader { proxy in
             Color.clear.preference(key: OverlayContentHeights.self, value: [key: ceil(proxy.size.height)])

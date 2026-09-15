@@ -81,6 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let overlay = OverlayWindow(rootView: OverlayView(coordinator: coordinator, onContentHeight: { [weak self] height in
             // Hosting can measure synchronously inside OverlayWindow.init, before self.overlay is assigned.
             DispatchQueue.main.async { self?.overlay?.contentHeightChanged(height) }
+        }, onMinimumHeight: { [weak self] height in
+            DispatchQueue.main.async { self?.overlay?.minimumContentHeightChanged(height) }
         }))
         overlay.orderFrontRegardless()
         self.overlay = overlay

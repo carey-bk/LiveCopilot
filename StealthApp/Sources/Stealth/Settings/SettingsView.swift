@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var showOpenAIKey = false
     init(coordinator: AppCoordinator) { self.coordinator = coordinator; hotkeys = coordinator.hotkeys }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
+    private func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
     private var locked: Bool { coordinator.isRunning || coordinator.isTransitioning }
 
     var body: some View {
@@ -92,13 +93,16 @@ struct SettingsView: View {
                     Picker(t("Operating mode"), selection: $coordinator.settings.mode) {
                         ForEach(OperatingMode.allCases) { Text(t($0.rawValue)).tag($0) }
                     }.disabled(locked)
+                    Text(b("Remote Meeting separates system audio (Them) from your microphone (You); In-Person uses one room microphone, without speaker diarization.", "远程会议：系统音频标为对方、麦克风标为我；现场/答辩：仅用房间麦克风，不区分具体说话人。")).font(.caption).foregroundStyle(.secondary)
                     Picker(t("Scenario"), selection: $coordinator.settings.scenario) {
                         ForEach(ScenarioProfile.allCases) { Text(t($0.rawValue)).tag($0) }
                     }.disabled(locked)
+                    Text(b("Interview: personal experience and talking points. Meeting: decisions and next actions. Defense: methods, evidence and limitations. These change answer instructions and automatic-suggestion cooldown, not ASR accuracy.", "面试：个人经历与表达要点；会议：决策与后续行动；答辩：方法、证据与局限。场景改变回答提示词和自动建议冷却时间，不改变语音识别准确率。")).font(.caption).foregroundStyle(.secondary)
                     if locked { Text(t("Stop listening to change mode or scenario.")).font(.caption).foregroundStyle(.secondary) }
                     Toggle(t("Automatic suggestions for meaningful questions"), isOn: $coordinator.settings.automaticSuggestions)
                 }.padding(10)
             } label: { Label(t("Conversation"), systemImage: "waveform") }
+            CapturePermissionCard(language: coordinator.settings.language)
             VStack(alignment: .leading, spacing: 7) {
                 Label(t("Capture exclusion"), systemImage: "eye.slash").font(.headline)
                 Toggle(t("Hide overlay from screenshots and screen sharing"), isOn: $coordinator.settings.excludeOverlayFromCapture)
@@ -120,9 +124,17 @@ struct SettingsView: View {
     private var liveService: some View {
         VStack(alignment: .leading, spacing: 18) {
             Picker(t("Listening provider"), selection: $coordinator.settings.listeningService) {
-                ForEach(ListeningService.allCases) { Text(t($0.label)).tag($0) }
+                ForEach(ListeningService.allCases) { service in
+                    Text(service == .openAI && coordinator.settings.liveModel == "gpt-live-1"
+                         ? b("GPT-Live-1 · $0.05/min/session, cloud", "GPT-Live-1 · $0.05/分钟/路，云端")
+                         : ServiceGuide.listening(service, language: coordinator.settings.language)).tag(service)
+                }
             }.disabled(locked).accessibilityIdentifier("listening-provider")
-            if let kind = coordinator.settings.listeningService.localModel {
+            if coordinator.settings.listeningService == .apple {
+                Text(b("SpeechAnalyzer + SpeechTranscriber: offline streaming captions with revisable previews. Apple manages language downloads and inference. Requires macOS 26 and supported hardware; choose Mandarin or English before listening. This option does not automatically switch languages.", "SpeechAnalyzer + SpeechTranscriber：离线流式转写，预览文字会修正。语言模型与推理由 macOS 管理，需要 macOS 26 和受支持硬件；开始前选择普通话或英语，不自动切换语言。")).font(.callout).foregroundStyle(.secondary)
+                AppleSpeechCard(manager: coordinator.appleSpeech, language: $coordinator.settings.appleSpeechLanguage, interfaceLanguage: coordinator.settings.language, locked: locked)
+                Text(b("Like FunASR, automatic suggestions use local question rules plus a pause. Recognition speed and accuracy depend on your language, microphone and vocabulary; neither engine is always better.", "与 FunASR 一样，自动建议通过本地提问规则与停顿触发。速度和准确率取决于语言、麦克风及术语，没有在所有场景都更好的引擎。")).font(.caption).foregroundStyle(.secondary)
+            } else if let kind = coordinator.settings.listeningService.localModel {
                 Text(t(kind == .streamingSpeech
                     ? "Audio stays on this Mac. Chinese and English captions update while you speak. Preview text can change; completed sentences are used for automatic suggestions."
                     : "Audio stays on this Mac. Captions appear after a pause or a 12-second segment. Chinese, English, Japanese, Korean and Cantonese are detected automatically.")).font(.callout).foregroundStyle(.secondary)
@@ -131,18 +143,22 @@ struct SettingsView: View {
                     Text(t("English terminology can be misrecognized. Compare with SenseVoiceSmall for English-heavy conversations.")).font(.caption).foregroundStyle(.secondary)
                 }
                 Text(t("Automatic suggestions use conservative local question rules. Pauses alone do not trigger analysis; use the shortcut for missed questions.")).font(.caption).foregroundStyle(.secondary)
+                localCost
             } else {
                 Label("OpenAI", systemImage: "waveform").font(.title3.bold())
                 Text(t("Audio is sent to OpenAI Live for transcription and semantic question detection.")).font(.callout).foregroundStyle(.secondary)
                 CredentialEditor(coordinator: coordinator, analysis: false)
                 modelField("Live model", value: $coordinator.settings.liveModel).disabled(locked)
+                priceNote(ServiceGuide.livePrice(coordinator.settings.liveModel, language: coordinator.settings.language), url: "https://developers.openai.com/api/docs/models/gpt-live-1")
             }
         }
     }
     private var embeddingService: some View {
         VStack(alignment: .leading, spacing: 18) {
             Picker(t("Embedding provider"), selection: $coordinator.settings.embeddingService) {
-                ForEach(EmbeddingService.allCases) { Text(t($0.label)).tag($0) }
+                ForEach(EmbeddingService.allCases) { service in
+                    Text(t(service.label) + (service == .local ? b(" · local/free", " · 本地/免费") : b(" · billed per token", " · 按 token 计费"))).tag(service)
+                }
             }.disabled(coordinator.isIndexing || coordinator.suggestion.isLoading).accessibilityIdentifier("embedding-provider")
             if coordinator.settings.embeddingService == .local {
                 Text(t("Document and query embeddings run on this Mac. No OpenAI key or network is needed after downloading the model.")).font(.callout).foregroundStyle(.secondary)
@@ -151,7 +167,10 @@ struct SettingsView: View {
                 Text(t("Extracted document text and retrieval queries are sent to OpenAI Embeddings using the shared OpenAI credential.")).font(.callout).foregroundStyle(.secondary)
                 CredentialEditor(coordinator: coordinator, analysis: false)
                 modelField("Embedding model", value: $coordinator.settings.embeddingModel).disabled(coordinator.isIndexing)
+                Text(b("Small: lower cost. Large: larger vectors and higher cost. Validate retrieval on your own documents; BGE-M3 runs locally without an API fee.", "Small：费用更低；Large：向量更大、费用更高。检索效果需用自己的文档验证；BGE-M3 在本地运行，无 API 调用费。")).font(.caption).foregroundStyle(.secondary)
+                priceNote(ServiceGuide.embeddingPrice(coordinator.settings.embeddingModel, language: coordinator.settings.language), url: "https://developers.openai.com/api/docs/pricing")
             }
+            if coordinator.settings.embeddingService == .local { localCost }
             Text(t("After changing the embedding model, re-index documents. Keyword retrieval remains available for older indexes.")).font(.caption).foregroundStyle(.secondary)
             Button(t("Open knowledge library")) { page = .knowledge }
         }
@@ -159,7 +178,9 @@ struct SettingsView: View {
     private var analysisService: some View {
         VStack(alignment: .leading, spacing: 18) {
             Picker(t("Provider"), selection: $coordinator.settings.reasoningService) {
-                ForEach(ReasoningService.allCases) { Text(t($0.label)).tag($0) }
+                ForEach(ReasoningService.allCases) { service in
+                    Text(t(service.label) + (service == .compatible ? b(" · provider pricing", " · 服务商定价") : b(" · billed per token", " · 按 token 计费"))).tag(service)
+                }
             }.accessibilityIdentifier("analysis-provider")
             Text(t("This service receives the question, relevant conversation and retrieved excerpts to generate an answer. Audio follows your listening provider selection.")).font(.callout).foregroundStyle(.secondary)
             if coordinator.settings.reasoningService == .sharedOpenAI {
@@ -193,6 +214,9 @@ struct SettingsView: View {
                 } label: { Text("DeepSeek") }
             case .compatible: customService
             }
+            Text(b("Higher reasoning effort can improve complex answers but takes longer and can use more output tokens. Off disables optional thinking when the model supports it. A separate OpenAI key changes billing credentials, not the model's capability.", "更高思考强度可能改善复杂回答，但通常更慢、输出 token 更多；关闭表示不启用模型可选的思考。独立 OpenAI Key 仅改变计费凭据，不改变模型能力。")).font(.caption).foregroundStyle(.secondary)
+            priceNote(ServiceGuide.analysisPrice(coordinator.settings.reasoningService, model: coordinator.settings.analysisModel, language: coordinator.settings.language),
+                      url: coordinator.settings.reasoningService == .compatible ? nil : (coordinator.settings.reasoningService == .deepSeek ? "https://api-docs.deepseek.com/quick_start/pricing/" : "https://developers.openai.com/api/docs/models/gpt-5.6-sol"))
             Text(t("Changes apply to the next answer. Existing knowledge vectors do not need re-indexing when you change only the analysis model.")).font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -231,6 +255,23 @@ struct SettingsView: View {
             connectionMessage = "Connection saved. Credentials are scoped to this endpoint."
         } catch { connectionMessage = error.localizedDescription }
     }
+    private var localCost: some View {
+        Text(b("Local/free means no API usage fee. The first model download needs a network connection and disk space; inference uses this Mac's memory and compute. Selected excerpts still go to your analysis service when requesting an answer.", "本地/免费指无 API 调用费。首次模型下载需要联网与磁盘空间，运行占用本机内存与计算资源；请求回答时，选中的文本证据仍会发送给分析服务。")).font(.caption).foregroundStyle(.secondary)
+    }
+    private func priceNote(_ message: String, url: String?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(b("Usage & price", "用量与价格"), systemImage: "creditcard").font(.headline)
+            Text(message).font(.callout).textSelection(.enabled)
+            if let url, let destination = URL(string: url) {
+                HStack {
+                    Text(b("USD · checked ", "美元 · 核对于 ") + ServiceGuide.checked).font(.caption)
+                    Link(b("Official pricing", "官方价格"), destination: destination).font(.caption)
+                }.foregroundStyle(.secondary)
+                Text(b("Published list prices are a reference, not a bill. Provider updates, taxes and account discounts may change the amount.", "公布价格供参考，不是账单估算；厂商调价、税费和账户优惠可能影响实际费用。")).font(.caption2).foregroundStyle(.secondary)
+            }
+        }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+    }
     private func modelField(_ title: String, value: Binding<String>, prompt: String? = nil) -> some View {
         HStack {
             Text(t(title)).frame(width: 120, alignment: .leading)
@@ -253,6 +294,7 @@ struct SettingsView: View {
                 }
             }
             Stepper(t("Evidence chunks") + ": \(coordinator.settings.retrievalCount)", value: $coordinator.settings.retrievalCount, in: 3...8)
+            Text(b("More evidence chunks provide more context but increase the analysis model's input tokens and may add irrelevant text.", "证据片段越多，分析模型可读的上下文越多，但输入 token 和无关信息也可能增加。")).font(.caption).foregroundStyle(.secondary)
             if coordinator.isIndexing { ProgressView().controlSize(.small) }
             if !coordinator.knowledgeMessage.isEmpty { Text(t(coordinator.knowledgeMessage)).font(.caption).textSelection(.enabled) }
             List {

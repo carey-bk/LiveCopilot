@@ -13,6 +13,9 @@ final class OverlayResizeView: NSView {
 
     init(content: NSView) {
         super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 16
+        layer?.masksToBounds = true
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         NSLayoutConstraint.activate([

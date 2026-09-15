@@ -44,9 +44,10 @@ import AVFoundation
                 var transcript = "", delegations = 0, failure: String?
                 var partials = Set<String>(), firstPartialMS: Int?, sentBytes = 0, prematureDelegation = false
                 var finalCount = 0, preview = "", finalized = false
+                var firstFinalAudioMS: Int?
                 provider.onEvent = { event in
                     switch event {
-                    case .transcript(let fragment): transcript += fragment.text; finalCount += 1
+                    case .transcript(let fragment): transcript += fragment.text; finalCount += 1; if firstFinalAudioMS == nil { firstFinalAudioMS = sentBytes / 32 }
                     case .partialTranscript(let text):
                         preview = text
                         if !text.isEmpty {
@@ -65,7 +66,7 @@ import AVFoundation
                     let end = min(pcm.count, offset + 8000)
                     sentBytes = end
                     provider.sendAudio(pcm.subdata(in: offset..<end))
-                    try await Task.sleep(nanoseconds: streaming ? 250_000_000 : 10_000_000)
+                    try await Task.sleep(nanoseconds: (streaming || ProcessInfo.processInfo.environment["ASR_REALTIME"] == "1") ? 250_000_000 : 10_000_000)
                 }
                 let deadline = Date().addingTimeInterval(25)
                 while (transcript.isEmpty || (speaker != .you && delegations == 0)) && failure == nil && Date() < deadline { try await Task.sleep(nanoseconds: 100_000_000) }
@@ -75,7 +76,7 @@ import AVFoundation
                 // model, separate from the live-preview/finalization contract. Keep
                 // the established SenseVoice accuracy regression assertion intact.
                 let keywordMatch = transcript.lowercased().contains(expected)
-                print("QUALITY \(speechKind.rawValue) \(name): reference_keyword=\(expected), matched=\(keywordMatch)")
+                print("QUALITY \(speechKind.rawValue) \(name): reference_keyword=\(expected), matched=\(keywordMatch), first_final_audio_ms=\(firstFinalAudioMS ?? -1)")
                 guard failure == nil, finalized, !prematureDelegation, preview.isEmpty, !transcript.isEmpty,
                       (streaming || keywordMatch), delegations == (speaker == .you ? 0 : 1) else {
                     print("Synthetic transcript: \(transcript); delegations=\(delegations)")

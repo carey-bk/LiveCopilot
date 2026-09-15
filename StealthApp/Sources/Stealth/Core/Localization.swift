@@ -38,6 +38,14 @@ enum L10n {
         return text
     }
     static let chinese: [String: String] = [
+        "Apple · on-device speech": "Apple · 本地语音识别",
+        "Apple speech requires macOS 26 and a supported Mac and language.": "Apple 语音识别需要 macOS 26、受支持的 Mac 与语言。",
+        "Download the selected Apple speech language in Services first.": "请先在服务页面下载所选 Apple 识别语言。",
+        "Apple speech has no compatible audio format.": "Apple 语音识别找不到兼容的音频格式。",
+        "Apple speech stopped unexpectedly. Stop/start listening to retry.": "Apple 语音识别意外停止，请停止后重新开始监听。",
+        "Downloading Apple speech language…": "正在下载 Apple 语音识别资源…",
+        "Apple speech download cancelled.": "已取消 Apple 语音资源下载。",
+        "Apple speech download failed. Check the network and retry.": "Apple 语音资源下载失败，请检查网络后重试。",
         "Local · Paraformer-zh-streaming": "本地 · Paraformer 流式识别",
         "Audio stays on this Mac. Chinese and English captions update while you speak. Preview text can change; completed sentences are used for automatic suggestions.": "音频保留在本机。支持中文和英文，边说边显示字幕。识别中的文字可能修正；完整句子才会用于自动建议。",
         "Download the selected speech model and VAD in Services first.": "请先在“服务”中下载所选语音模型和 VAD。",

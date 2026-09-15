@@ -8,6 +8,7 @@ final class AppCoordinator: ObservableObject {
     let sessions = SessionStore()
     let hotkeys: HotkeyStore
     let localModels: LocalModelManager
+    let appleSpeech = AppleSpeechManager()
     private var localEmbedding: LocalEmbeddingProvider?
     let systemAudio = AudioCaptureManager()
     let mic = MicCaptureManager()
@@ -243,6 +244,10 @@ final class AppCoordinator: ObservableObject {
             if let kind = settings.listeningService.localModel, !kind.isInstalled(in: localModels.root) {
                 throw CopilotError.message("Download the selected speech model and VAD in Services first.")
             }
+            if settings.listeningService == .apple {
+                guard AppleSpeechSupport.available else { throw CopilotError.message("Apple speech requires macOS 26 and a supported Mac and language.") }
+                guard await AppleSpeechSupport.installed(settings.appleSpeechLanguage) else { throw CopilotError.message("Download the selected Apple speech language in Services first.") }
+            }
             systemAudio.configure(sampleRate: settings.listeningService.sampleRate)
             mic.configure(sampleRate: settings.listeningService.sampleRate)
             statusMessage = "Starting audio capture…"
@@ -266,7 +271,9 @@ final class AppCoordinator: ObservableObject {
     }
     private func makeLive(key: String, speaker: Speaker, epoch: UUID) -> any LiveProvider {
         let provider: any LiveProvider
-        if let kind = settings.listeningService.localModel {
+        if settings.listeningService == .apple, #available(macOS 26, *) {
+            provider = AppleLiveProvider(speaker: speaker, language: settings.appleSpeechLanguage, sessionStart: sessionStartedAt ?? Date())
+        } else if let kind = settings.listeningService.localModel {
             provider = LocalLiveProvider(directory: kind.location(in: localModels.root), speaker: speaker, sessionStart: sessionStartedAt ?? Date(), streaming: kind == .streamingSpeech)
         } else { provider = OpenAILiveProvider(key: key, model: settings.liveModel, speaker: speaker, scenario: settings.scenario) }
         provider.onEvent = { [weak self] event in self?.receive(event, speaker: speaker, epoch: epoch) }
@@ -338,6 +345,7 @@ final class AppCoordinator: ObservableObject {
         await stop(force: true)
         localEmbedding?.close(); localEmbedding = nil
         await localModels.shutdown()
+        await appleSpeech.shutdown()
     }
     func stop(force: Bool = false) async {
         guard force || !isTransitioning else { return }

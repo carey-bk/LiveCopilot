@@ -2,6 +2,7 @@ import Foundation
 import ScreenCaptureKit
 import AVFoundation
 import OSLog
+import CoreGraphics
 
 /// Captures SYSTEM audio (everyone else on the call — browser Meet, Zoom, Teams, anything)
 /// via ScreenCaptureKit, with no microphone and no virtual audio device.
@@ -28,6 +29,12 @@ final class AudioCaptureManager: NSObject, ObservableObject {
         guard !isCapturing else { return }
         let revision = UUID(); captureRevision = revision
         lastError = nil
+        // Checking a denied/stale grant must not spawn a new macOS prompt on
+        // every Start. The explicit Settings button owns the permission request.
+        guard CGPreflightScreenCaptureAccess() else {
+            lastError = "Screen Recording permission is required. Grant it in System Settings → Privacy & Security → Screen Recording, then reopen LiveCopilot."
+            return
+        }
         do {
             // Pick the main display as the capture surface. We discard video frames;
             // ScreenCaptureKit still requires a content filter built from shareable content.
@@ -88,7 +95,7 @@ final class AudioCaptureManager: NSObject, ObservableObject {
 
     private func humanReadable(_ error: Error) -> String {
         let ns = error as NSError
-        if ns.domain == SCStreamError.errorDomain {
+        if ns.domain == SCStreamError.errorDomain && ns.code == SCStreamError.userDeclined.rawValue {
             return "Screen Recording permission is required. Grant it in System Settings → Privacy & Security → Screen Recording, then reopen LiveCopilot."
         }
         return error.localizedDescription

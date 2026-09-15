@@ -2,7 +2,7 @@
 
 The user's September 14 request extends the original OpenAI-only V1 scope. Preserve the native Swift app and the selectable OpenAI Live/Embeddings services. The local route must not require an OpenAI credential or silently send audio/document indexing requests to the cloud.
 
-Implemented in V1.2, extended in V1.2.2:
+Implemented in V1.2, extended in V1.2.2 and V1.3.0:
 
 1. Package pinned native sherpa-onnx and llama.cpp runtimes with the application. SenseVoiceSmall INT8 or Paraformer bilingual streaming INT8 + Silero VAD handles audio; BGE-M3 Q8 handles dense embeddings.
 2. Add verified, cancellable model downloads and independent listening/embedding selectors. Downloaded weights live outside the repository and application bundle.
@@ -58,3 +58,13 @@ The bilingual model produces replaceable live captions and stable final sentence
 - New real DeepSeek answers and macOS capture permissions were not part of the local-model fixture check. Prior V1 cloud/hardware evidence remains historical. This update has not been published as a new GitHub release.
 
 For repeatable developer acceptance, run `scripts/build-local-runtime.sh`, then `scripts/test-local.sh <isolated-model-root> <absolute-runtime-executable> <verified-download-cache>`. The cache contains the download names pinned in `LocalModels.swift` (including `paraformer-encoder.int8.onnx`, `paraformer-decoder.int8.onnx` and `paraformer-tokens.txt`). The test generates synthetic speech with macOS `say`, installs verified model copies into the isolated root and makes no cloud API calls. `speech-only` limits the run to SenseVoice, and `paraformer-only` limits it to streaming speech. Paraformer fixtures are paced at real time and assert multiple previews before the audio finishes, stable question delegation, no self-delegation, silence suppression and stop flushing.
+
+## Apple speech (V1.3.0)
+
+Services → Live service → Apple selects `SpeechAnalyzer` + `SpeechTranscriber` and Apple's `SpeechDetector`. Requires macOS 26+ and a supported device/locale; the app still runs on macOS 14+ with its other providers. Choose Mandarin (`zh_CN`) or English US (`en_US`) separately from the interface language. This route does not automatically switch languages or diarize room speakers.
+
+The Services card reserves the selected locale and reports readiness, with an explicit download button if needed. Apple manages shared language assets, so they do not appear in LiveCopilot's Models folder. Reservation is needed even if another app has already downloaded the assets; it does not itself download speech models. Runtime never falls back to server recognition.
+
+Audio enters at mono PCM16/16 kHz, is adapted to the analyzer's compatible format, and carries source-relative timestamps. Revisable preview ranges remain outside conversation context. Only finalized text enters history, question detection and retrieval. Apple's speech activity plus the existing local question gate triggers analysis; silence alone does not. The two remote audio sources use separate providers; microphone (`You`) does not auto-trigger. Stopping drains the analyzer's final result, with a 15-second cancellation deadline once initialized.
+
+Run `StealthApp/scripts/test-apple.sh /path/to/synthetic-fixtures` (en.aiff, zh.aiff, own.aiff). `APPLE_ASR_INSTALL=1` explicitly permits the test process to acquire language assets first. No capture or cloud API keys are used. [1.3.0 evidence](V1_3_0_UPDATE.md) includes sample accuracy limits.

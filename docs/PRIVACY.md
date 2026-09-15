@@ -1,4 +1,4 @@
-# Privacy boundary (V1.2)
+# Privacy boundary (V1.3)
 
 ## Stored locally
 
@@ -6,6 +6,7 @@
 - `knowledge.sqlite` (and SQLite WAL/SHM) contains document metadata, extracted text/chunks, source/page references, embedding model identifiers, vectors and FTS5 terms.
 - Retrieval ranking, keyword search and exact cosine similarity run on the Mac.
 - Optional local model weights live in `~/Library/Application Support/LiveCopilot/Models/`. SenseVoiceSmall or Paraformer streaming + Silero VAD processes audio locally; BGE-M3 generates document and query vectors locally. Workers communicate through private stdin/stdout pipes, open no network listener, inherit no API credentials, and do not log audio/text. Raw audio is held in bounded memory, not recorded to disk by this route.
+- Apple ASR uses on-device SpeechAnalyzer/SpeechTranscriber and SpeechDetector. Language assets are downloaded and managed by macOS; no fallback to Apple server dictation is implemented. Final captions enter the same local history and selected analysis context.
 - Session history is local JSON under `~/Library/Application Support/LiveCopilot/sessions/`. It includes timestamps, speaker labels and raw Live transcript fragments. History is retained until deleted.
 - Live/Embeddings key: macOS Keychain generic password, Service **LiveCopilot-OpenAI**, Account **current macOS username**. `OPENAI_API_KEY` is the existing development fallback.
 - Optional separate analysis keys: Services **LiveCopilot-Reasoning-OpenAI** and **LiveCopilot-Reasoning-DeepSeek**, Account current username. Compatible services use **LiveCopilot-Reasoning-Compatible**, Account current username plus the canonical endpoint. Changing the endpoint does not reuse another destination's key. There is no fallback from an external analysis service to the Live key.
@@ -17,6 +18,7 @@ Local private storage directories are created with user-only permissions where a
 
 ## Sent to the selected service when a feature needs it
 
+- **Apple language download:** macOS obtains its speech assets from Apple when the user requests installation. Subsequent recognition uses the on-device SpeechTranscriber.
 - **Model download:** public model weights are fetched from pinned GitHub/Hugging Face locations, verified by SHA-256 and installed locally. No user audio, documents or API keys are sent with these downloads.
 - **Listening:** local mode sends no audio to a service and uses local Chinese/English question heuristics. OpenAI Live mode sends system and/or microphone audio plus relevant conversation context to the official Live API. No audio is uploaded while listening is off.
 - **Indexing / re-indexing:** local BGE-M3 runs entirely on the Mac. Selecting OpenAI Embeddings sends extracted document chunks to OpenAI; original PDF/DOCX files themselves are not uploaded by this path.
