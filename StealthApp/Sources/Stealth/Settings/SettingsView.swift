@@ -19,7 +19,8 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 20) {
-                Text("LiveCopilot").font(.title2.weight(.semibold)).padding(.horizontal, 16).padding(.top, 22)
+                AppBrandTitle(iconSize: 26, titleFont: .title2.weight(.semibold))
+                    .padding(.horizontal, 16).padding(.top, 22)
                 VStack(spacing: 5) {
                     ForEach(SettingsPage.allCases) { item in
                         Button { page = item } label: {
@@ -43,6 +44,7 @@ struct SettingsView: View {
                 case .services: ScrollView { services }
                 case .knowledge: knowledge
                 case .shortcuts: shortcuts
+                case .about: ScrollView { about }
                 }
             }.padding(26).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -58,6 +60,34 @@ struct SettingsView: View {
                 Button(t("Done")) { showOpenAIKey = false }
             }.padding(24).frame(width: 540)
         }
+    }
+    private var about: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            AppBrandTitle(iconSize: 64, titleFont: .system(size: 28, weight: .semibold))
+            Text(AppInfo.display).foregroundStyle(.secondary).textSelection(.enabled)
+            Text(b("A native macOS conversation copilot. Listen, find relevant knowledge, and get words you can say aloud.",
+                   "原生 macOS 对话助手。听取对话、查找相关资料，给你可以直接说出口的回答建议。"))
+                .font(.body).fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 18) {
+                Link(destination: URL(string: "https://github.com/carey-bk")!) {
+                    Label(b("Author on GitHub", "作者 GitHub 主页"), systemImage: "person.crop.circle")
+                }.accessibilityIdentifier("about-author")
+                Link(destination: URL(string: "https://github.com/carey-bk/LiveCopilot")!) {
+                    Label(b("LiveCopilot on GitHub", "LiveCopilot 项目仓库"), systemImage: "chevron.left.forwardslash.chevron.right")
+                }.accessibilityIdentifier("about-repository")
+                Link(destination: URL(string: coordinator.settings.language.usesChinese
+                                       ? "https://carey-bk.github.io/LiveCopilot/"
+                                       : "https://carey-bk.github.io/LiveCopilot/en/")!) {
+                    Label(b("Product guide · 中文 / English", "使用介绍 · 中文 / English"), systemImage: "globe")
+                }.accessibilityIdentifier("about-guide")
+            }.buttonStyle(.link)
+            Divider()
+            Text(b("Open source under the MIT license. Built on Stealth's native macOS foundation.",
+                   "基于 Stealth 原生 macOS 架构开发，采用 MIT 开源许可。"))
+                .font(.callout).foregroundStyle(.secondary)
+            Link("Stealth · vortechron", destination: URL(string: "https://github.com/vortechron/stealth")!)
+                .font(.callout)
+        }.padding(.top, 8).frame(maxWidth: .infinity, alignment: .leading)
     }
     private var general: some View {
         VStack(alignment: .leading, spacing: 22) {
@@ -338,7 +368,7 @@ struct SettingsView: View {
 }
 
 private enum SettingsPage: String, CaseIterable, Identifiable {
-    case general = "General", services = "Services", knowledge = "Knowledge", shortcuts = "Shortcuts"
+    case general = "General", services = "Services", knowledge = "Knowledge", shortcuts = "Shortcuts", about = "About"
     var id: String { rawValue.lowercased() }
     var icon: String {
         switch self {
@@ -346,6 +376,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
         case .services: return "shippingbox"
         case .knowledge: return "books.vertical"
         case .shortcuts: return "keyboard"
+        case .about: return "info.circle"
         }
     }
 }

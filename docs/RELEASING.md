@@ -36,7 +36,7 @@ The script rejects this mode if source, resources or project settings differ fro
 
 ## Signing boundary
 
-Version 1.1.0 is an ad-hoc signed community build, not Developer ID signed or Apple notarized. Passing `codesign --verify` confirms bundle integrity; it does not make the app trusted by Gatekeeper. Installation guidance links to [Apple's per-app opening instructions](https://support.apple.com/en-us/102445), without recommending a global Gatekeeper change.
+Version 1.3.2 is an ad-hoc signed community build, not Developer ID signed or Apple notarized. Passing `codesign --verify` confirms bundle integrity; it does not make the app trusted by Gatekeeper. Installation guidance links to [Apple's per-app opening instructions](https://support.apple.com/en-us/102445), without recommending a global Gatekeeper change.
 
 A future notarized release needs the maintainer's Developer ID Application identity, a suitable hardened-runtime build and an Apple notarization submission. No signing private key, account password or API key belongs in Git or release assets.
 
@@ -59,3 +59,16 @@ After installation, the user requests access in General → System audio permiss
 ### Keep development identity separate
 
 Debug uses `com.livecopilot.development`; Release uses `com.livecopilot.app`. The prior shared bundle ID let a post-install Xcode test run register its Debug signature as the apparent production application, so a user could enable the right-looking permission switch for the wrong binary. Confirm the built Debug plist retains its distinct ID. Run validation **before** the final local install, then register the canonical app last. The installer unregisters known same-production-ID copies under build/dist/staging without deleting them; it leaves the separate development app alone. Do not run production-ID preview/test bundles after final installation.
+
+## Bilingual website
+
+`site/` contains Chinese and English content and a shared template. Build with
+`python3 StealthApp/scripts/build-site.py`; serve `_site/` to check both desktop
+and mobile layouts, language links and all three example buttons.
+
+Enable GitHub Pages with GitHub Actions as its build source. The pinned
+`.github/workflows/pages.yml` builds and deploys `_site/` from `main`; it can also
+be dispatched manually. Publish the matching release assets before announcing
+the download link. Verify `/LiveCopilot/` and `/LiveCopilot/en/` after deployment.
+Only public product content belongs in `site/`; never include user recordings,
+keys, local data, or screenshots of private conversations.

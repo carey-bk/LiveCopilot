@@ -1,14 +1,18 @@
 # LiveCopilot
 
+<img src="assets/brand/LiveCopilot-preview.png" width="100" alt="LiveCopilot Logo">
+
+**中文** · [English](README.en.md) · [中文介绍页](https://carey-bk.github.io/LiveCopilot/) · [English website](https://carey-bk.github.io/LiveCopilot/en/)
+
 基于 [vortechron/stealth](https://github.com/vortechron/stealth) 的原生 macOS 个人 AI 助手，面向面试、会议和学术答辩。保留 Swift/SwiftUI、ScreenCaptureKit 系统音频、AVAudioEngine 麦克风、菜单栏、悬浮窗、全局快捷键和本地历史。
 
-V1.3.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别**、**本地 SenseVoiceSmall + VAD** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
+V1.3.2 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别**、**本地 SenseVoiceSmall + VAD** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
-当前源码为 **1.3.1**：新增一键刷新会话、可直接念出的口语回答，以及安全持久化密钥与静默启动检查。语言与外观使用调色盘图标。保留 Apple 本地流式识别、服务价格说明、动态窗口高度和贴边隐藏。详见 [1.3.1 更新与验收](docs/V1_3_1_UPDATE.md)、[1.3.0 更新](docs/V1_3_0_UPDATE.md) 和 [本地模型说明](docs/LOCAL_MODELS.md)。当前公开 Release 仍为 1.1.0，公开旧安装包不含这些功能。
+**1.3.2** 在悬浮窗和设置标题加入 Logo，新增“关于”页，提供作者 GitHub、项目仓库及双语介绍页入口。本次公开发布也包含本地语音与向量模型、自动伸缩与贴边隐藏、一键刷新、口语回答及密钥静默读取等累计更新。详见 [1.3.2 更新](docs/V1_3_2_UPDATE.md)、[1.3.1 更新与验收](docs/V1_3_1_UPDATE.md) 和 [本地模型说明](docs/LOCAL_MODELS.md)。
 
 ## 下载与安装
 
-从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/latest) 下载 **LiveCopilot-1.1.0-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**，直接安装无需 Xcode。
+从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/tag/v1.3.2) 下载 **LiveCopilot-1.3.2-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**；Apple 本地识别另需 macOS 26+ 和受支持的设备。直接安装无需 Xcode。
 
 1. 打开 DMG，将 `LiveCopilot.app` 拖到 `Applications`，然后从应用程序文件夹启动。没有管理员权限时可复制到 `~/Applications`。
 2. 当前版本为 **ad-hoc 签名，未经 Apple 公证**。如果 macOS 无法验证开发者，确认来源与 Release 中的 SHA-256 后，可按照 [Apple 官方说明](https://support.apple.com/en-us/102445)，在尝试打开后到“系统设置 → 隐私与安全性 → 仍要打开”允许该应用。
@@ -96,12 +100,12 @@ unset OPENAI_API_KEY
 ## 边界与限制
 
 - Live 使用当前官方 `/v1/live/sessions` 和 client delegation，未以旧 Realtime 更换模型名代替。无端点自动降级。
-- 本地索引保存来源、文本和向量；查询向量仍需请求 Embeddings API。检索排名在本机计算；embedding 请求失败时使用本地关键词检索。
+- 本地索引保存来源、文本和向量；选择 BGE-M3 时查询向量也在本机生成，选择 OpenAI 时请求 Embeddings API。检索排名在本机计算；embedding 请求失败时使用本地关键词检索。
 - 回答结合文档证据和模型常识；来源列表是检索出的证据，不代表每条都被引用。应核对关键数字和结论。
 - 远程模式最多同时使用两个 Live 会话，现场模式一个；Live 按时长计费，结束使用时停止监听或退出。
 - 共享麦克风不提供可靠 diarization；耳机可减少 `Them` 音频漏入 `You`。自动识别是保守的，并保留手动触发。
 - 悬浮窗的截图排除可以在通用设置中切换。排除效果取决于 macOS 和会议软件，必须用实际共享画面验证，不能仅凭该属性视为已验证。
-- 默认使用 ad-hoc 本机签名，重建后系统可能再次询问权限。可使用自己的签名身份，或参阅可选 `setup-signing.sh` 的原生证书流程。
+- 当前使用 ad-hoc 签名，重建后系统可能要求重新授权。正式升级身份连续性需要稳定的 Developer ID 签名；不要通过放宽 Keychain ACL 或弱化签名验证来规避。参见[发布说明](docs/RELEASING.md)。
 - 索引限制单文件 50 MB、4,000 chunks；不提供 OCR、复杂 DOCX 排版还原或云备份。
 
 详见 [架构与协议](docs/ARCHITECTURE.md)、[隐私边界](docs/PRIVACY.md)、[实测清单与故障排查](docs/VERIFICATION.md)、[开发计划和证据](docs/IMPLEMENTATION_PLAN.md)。最终验收依据为用户提供的 [开发需求](docs/livecopilot_goal.md)。

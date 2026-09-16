@@ -1,0 +1,80 @@
+# LiveCopilot
+
+<img src="assets/brand/LiveCopilot-preview.png" width="100" alt="LiveCopilot logo">
+
+[中文](README.md) · **English** · [English website](https://carey-bk.github.io/LiveCopilot/en/) · [中文介绍页](https://carey-bk.github.io/LiveCopilot/)
+
+A native macOS conversation copilot for interviews, meetings, and academic discussions. Follow live speech, retrieve relevant material from your own documents, and get suggestions you can say aloud. You can also type a question with listening off.
+
+Built with Swift/SwiftUI on the native macOS foundation of [Stealth](https://github.com/vortechron/stealth). No LiveCopilot account, developer-operated relay server, cloud vector database, or spoken AI responses.
+
+## Download
+
+[Download LiveCopilot 1.3.2 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v1.3.2/LiveCopilot-1.3.2-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v1.3.2)
+
+Requires **macOS 14+**, on Apple Silicon or Intel. Apple Speech additionally requires **macOS 26+**, supported hardware, and a supported language. No Xcode, Python, Ollama, or developer tools are needed to use the packaged app.
+
+Quit the previous version, open the DMG, and drag `LiveCopilot.app` into Applications (or `~/Applications`). Keep the app at a consistent path.
+
+This is an **ad-hoc signed community build, not Apple-notarized**. Verify the download source and SHA-256 checksums. If blocked, follow [Apple's per-app Open Anyway instructions](https://support.apple.com/en-us/102445); do not disable Gatekeeper globally. Changed signing identities can require renewed permissions on updates.
+
+## Choose your services
+
+| Stage | Options | Data and cost |
+|---|---|---|
+| Local speech | Apple SpeechAnalyzer / SpeechTranscriber; Paraformer streaming; SenseVoiceSmall + VAD | On-device recognition with no API usage fee. Initial model downloads require internet. |
+| Cloud speech | OpenAI Live | Sends audio to OpenAI; billed to your account. Realtime transcription and semantic question detection. |
+| Embeddings | Local BGE-M3 or OpenAI Embeddings | BGE-M3 processes text on-device; OpenAI sends indexing/query text to its API. Retrieval stays local. |
+| Answers | OpenAI, DeepSeek, or a compatible streaming Chat Completions API | Receives the question, relevant conversation, and retrieved passages. Bring your own service key. |
+
+Choose local speech + BGE-M3 + DeepSeek to keep recognition and indexing on your Mac while using DeepSeek for answers. No OpenAI key is needed for that combination. Local models still use disk space, memory, and compute; analysis still sends relevant text to your chosen provider.
+
+Paraformer updates Chinese/English caption previews as you speak. SenseVoiceSmall transcribes completed speech segments. Apple streams supported languages using on-device models. Compare accuracy and latency using your own voice, accent, hardware, and audio conditions. Local automatic suggestions use conservative text-based question detection; pauses alone do not trigger an answer.
+
+## Get started
+
+1. Open Settings → Services. Select a speech route and download its local model, or configure OpenAI Live.
+2. Select BGE-M3 or OpenAI Embeddings under the knowledge service. Select an analysis provider and save its API key.
+3. Optionally import PDF, Markdown, TXT, or DOCX in Knowledge. Scanned PDFs require external OCR. Rebuild the index after changing embedding models.
+4. Choose Interview, Meeting, or Academic Defense. Remote Meeting captures system audio plus an optional microphone; In-Person uses the microphone without promising speaker separation.
+5. Start listening and grant the requested macOS audio permissions. Or type a question without starting capture.
+
+Keys are securely stored in the local macOS Keychain. Startup checks silently; a saved-but-inaccessible key is shown as needing authorization. Old manually created `LiveCopilot-OpenAI` and analysis items can be imported once with **Authorize saved key**. Keys never enter source, logs, or editable fields.
+
+## A small window for the conversation
+
+- Chinese and English UI; glass, soft frost, or white backgrounds.
+- Compact when empty, taller as content arrives. Manual resize and right-edge reveal.
+- **Refresh** clears the current transcript, draft, answer, and context. Active listening starts fresh; knowledge and saved history remain.
+- Replies use spoken paragraphs, with evidence/notes below when useful. General knowledge and reasoning can extend the documents without inventing personal experience.
+- Reply, recap, and follow-up have distinct task prompts. Source passages can be expanded.
+- **About** links to the author's GitHub, repository, and bilingual product guide.
+
+`Option + H` toggles the overlay. Reply, recap, and follow-up shortcuts are configurable. Screenshot/sharing exclusion is optional; its behavior depends on macOS and the capture application. Settings and History remain capturable.
+
+## Privacy and limits
+
+The DMG contains no keys, personal documents, history, or knowledge database. Documents, indexes, and session history stay local. Selected cloud services receive the content described above; their retention policies still apply. Refreshing or deleting local data does not retract previous requests.
+
+Check important facts and citations. The app does not provide OCR, reliable multi-speaker diarization, or cloud backups. Headphones help prevent remote audio leaking into microphone transcription. See [privacy boundaries](docs/PRIVACY.md), [local models](docs/LOCAL_MODELS.md), and [verification notes](docs/VERIFICATION.md).
+
+## Build and verify
+
+Install full Xcode and XcodeGen, then:
+
+```bash
+./StealthApp/scripts/test-core.sh
+./StealthApp/scripts/build.sh
+xcodebuild -project StealthApp/LiveCopilot.xcodeproj -scheme LiveCopilot \
+  -configuration Debug -derivedDataPath StealthApp/build CODE_SIGNING_ALLOWED=NO test
+```
+
+The build downloads checksum-pinned sherpa-onnx/llama.cpp runtimes and compiles a universal inference helper. Debug uses a separate bundle identifier to avoid taking over production permissions. Mock checks do not use real keys or paid APIs.
+
+From a clean, committed checkout, `./StealthApp/scripts/package-dmg.sh` builds the DMG. See [publishing instructions](docs/RELEASING.md). Preview the bilingual site with `python3 StealthApp/scripts/build-site.py`, then serve `_site/` with a local HTTP server.
+
+## Attribution
+
+Derived from Stealth commit `02b78cc82195a1711e3de11adfaed26011635dae`, by vortechron. Original Git history and the [MIT license](LICENSE) are preserved. Inference runtimes retain their own notices in the app. Editable SVG logos are in [assets/brand](assets/brand/README.md).
+
+[Author: carey-bk](https://github.com/carey-bk) · [LiveCopilot repository](https://github.com/carey-bk/LiveCopilot)

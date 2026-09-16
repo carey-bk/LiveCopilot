@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="$lang">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>$page_title</title>
+  <meta name="description" content="$description">
+  <meta name="theme-color" content="#f5f8fc">
+  <meta property="og:title" content="$page_title">
+  <meta property="og:description" content="$description">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="$canonical">
+  <meta property="og:image" content="https://carey-bk.github.io/LiveCopilot/assets/logo.png">
+  <link rel="canonical" href="$canonical">
+  <link rel="alternate" hreflang="zh-Hans" href="https://carey-bk.github.io/LiveCopilot/">
+  <link rel="alternate" hreflang="en" href="https://carey-bk.github.io/LiveCopilot/en/">
+  <link rel="icon" type="image/svg+xml" href="${prefix}assets/logo.svg">
+  <link rel="stylesheet" href="${prefix}styles.css">
+  <script src="${prefix}demo.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">$skip</a>
+  <header class="site-header">
+    <nav class="wrap nav" aria-label="$navigation">
+      <a class="brand" href="$home"><img src="${prefix}assets/logo.svg" width="42" height="42" alt="">LiveCopilot</a>
+      <div class="nav-links">
+        <a class="desktop" href="#features">$nav_features</a>
+        <a class="desktop" href="#services">$nav_services</a>
+        <a class="desktop" href="https://github.com/carey-bk/LiveCopilot">GitHub</a>
+        <div class="languages" aria-label="$language_label">
+          <a href="$zh_url" lang="zh-CN" hreflang="zh-Hans" $zh_current>中文</a>
+          <a href="$en_url" lang="en" hreflang="en" $en_current>EN</a>
+        </div>
+      </div>
+    </nav>
+  </header>
+  <main id="main">
+    <div class="wrap">
+      <section class="hero" aria-labelledby="hero-heading">
+        <div class="hero-copy">
+          <img src="${prefix}assets/logo.svg" alt="" width="96" height="96">
+          <h1 id="hero-heading">$hero_title</h1>
+          <p class="intro">$hero_intro</p>
+          <div class="actions">
+            <a class="primary" href="$download_url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg>$download_label</a>
+            <a class="text-link" href="#install">$install_link</a>
+          </div>
+          <small class="platform">$platform<br>$release_note</small>
+        </div>
+        <div class="hero-demo">
+          <div class="demo-caption"><span>$demo_caption</span><span>LiveCopilot 1.3.2</span></div>
+          <div class="app-demo">
+            <div class="demo-header"><img src="${prefix}assets/logo.svg" alt="" width="29" height="29">LiveCopilot<div class="demo-controls" aria-hidden="true"><span>↻</span><span>⚙</span><span>−</span></div></div>
+            <div class="demo-status"><span class="live-dot" aria-hidden="true"></span>$demo_status</div>
+            <div class="utterance"><span class="speaker">$speaker_them</span><span>$demo_question</span></div>
+            <div class="utterance"><span class="speaker">$speaker_you</span><div class="waveform" aria-label="$thinking"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+            <div class="demo-switch" role="group" aria-label="$demo_modes">
+              <button type="button" data-example="reply-example" data-title="$reply_title" aria-pressed="true">$reply_label</button>
+              <button type="button" data-example="recap-example" data-title="$recap_label" aria-pressed="false">$recap_label</button>
+              <button type="button" data-example="followup-example" data-title="$followup_label" aria-pressed="false">$followup_label</button>
+            </div>
+            <div class="demo-response" aria-live="polite" aria-atomic="true"><h3 id="example-title">$reply_title</h3><p id="example-copy">$demo_reply</p></div>
+            <div class="demo-evidence">$demo_evidence</div>
+            <div class="demo-input">$demo_input</div>
+          </div>
+          <p class="demo-note">$demo_note</p>
+          <template id="reply-example">$demo_reply</template>
+          <template id="recap-example">$demo_recap</template>
+          <template id="followup-example">$demo_followup</template>
+        </div>
+      </section>
+      <div class="uses"><strong>$uses_title</strong><span>$use_interview</span><span>$use_meeting</span><span>$use_defense</span><span>$use_questions</span></div>
+      <section id="features" class="section">
+        <div class="section-intro"><h2>$features_title</h2><p>$features_intro</p></div>
+        <div class="workflow">
+          <div class="quote-sheet"><p>$quote</p><small>$quote_note</small></div>
+          <ul>
+            <li><h3>$feature_one_title</h3><p>$feature_one_body</p></li>
+            <li><h3>$feature_two_title</h3><p>$feature_two_body</p></li>
+            <li><h3>$feature_three_title</h3><p>$feature_three_body</p></li>
+          </ul>
+        </div>
+      </section>
+    </div>
+    <section id="services" class="section services-section">
+      <div class="wrap">
+        <div class="section-intro"><h2>$services_title</h2><p>$services_intro</p></div>
+        <table class="service-table">
+          <thead><tr><th scope="col">$table_service</th><th scope="col">$table_options</th><th scope="col">$table_choice</th></tr></thead>
+          <tbody>
+            <tr><td><strong>$speech_title</strong><span class="scope">$speech_scope</span></td><td><strong>Apple Speech</strong>$apple_body <span class="tag">$local_tag</span><br><br><strong>Paraformer / SenseVoiceSmall</strong>$funasr_body <span class="tag">$local_tag</span></td><td>$speech_choice</td></tr>
+            <tr><td><strong>$cloud_speech_title</strong><span class="scope">$cloud_scope</span></td><td><strong>OpenAI Live</strong>$cloud_speech_body <span class="tag">$paid_tag</span></td><td>$cloud_speech_choice</td></tr>
+            <tr><td><strong>$knowledge_title</strong><span class="scope">$knowledge_scope</span></td><td><strong>BGE-M3 / OpenAI Embeddings</strong>$embedding_body</td><td>$embedding_choice</td></tr>
+            <tr><td><strong>$analysis_title</strong><span class="scope">$analysis_scope</span></td><td><strong>OpenAI / DeepSeek</strong>$analysis_body <span class="tag">$paid_tag</span></td><td>$analysis_choice</td></tr>
+          </tbody>
+        </table>
+        <p class="service-note">$service_note</p>
+      </div>
+    </section>
+    <section class="wrap section privacy-layout" id="privacy">
+      <div><h2>$privacy_title</h2><p>$privacy_intro</p><a class="text-link" href="https://github.com/carey-bk/LiveCopilot/blob/main/docs/PRIVACY.md">$privacy_link</a></div>
+      <div class="data-path">
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg><section><h3>$privacy_local_title</h3><p>$privacy_local_body</p></section></div>
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6"/></svg><section><h3>$privacy_cloud_title</h3><p>$privacy_cloud_body</p></section></div>
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg><section><h3>$privacy_key_title</h3><p>$privacy_key_body</p></section></div>
+      </div>
+    </section>
+    <section class="wrap download-section" id="install">
+      <div class="download-box">
+        <div><h2>$install_title</h2><p>$install_intro</p><a class="primary" href="$download_url">$download_label</a><small>$download_details</small></div>
+        <div><ol class="install"><li>$install_one</li><li>$install_two</li><li>$install_three</li><li>$install_four</li></ol><p class="install-note">$signing_note <a href="https://support.apple.com/en-us/102445">$apple_link</a></p></div>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="wrap">
+    <div class="footer-row"><a class="brand" href="$home"><img src="${prefix}assets/logo.svg" alt="" width="42" height="42">LiveCopilot</a><div class="footer-links"><a href="https://github.com/carey-bk">$author_link</a><a href="https://github.com/carey-bk/LiveCopilot">GitHub</a><a href="https://github.com/carey-bk/LiveCopilot/releases/tag/v1.3.2">$release_link</a><a href="https://github.com/carey-bk/LiveCopilot/blob/main/LICENSE">MIT License</a></div></div>
+    <div class="footer-credit">$credit_prefix <a href="https://github.com/vortechron/stealth">Stealth</a>. $site_privacy</div>
+  </div></footer>
+</body>
+</html>

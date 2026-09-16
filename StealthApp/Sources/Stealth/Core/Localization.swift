@@ -38,6 +38,7 @@ enum L10n {
         return text
     }
     static let chinese: [String: String] = [
+        "About": "关于",
         "Start fresh": "刷新会话",
         "Clear conversation and answers; keep listening if active": "清空转写与回答上下文，收起窗口；正在监听时会继续监听",
         "Suggested answer": "可以这样说",

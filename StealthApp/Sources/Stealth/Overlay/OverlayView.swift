@@ -108,7 +108,7 @@ struct OverlayView: View {
     private func submit() { let value = query; query = ""; coordinator.askText(value) }
     private var header: some View {
         HStack {
-            Text(t("LiveCopilot")).font(.headline)
+            AppBrandTitle(iconSize: 22)
             if coordinator.isMock { Text(t("MOCK")).font(.caption2.bold()).foregroundStyle(.orange) }
             Spacer()
             Button { Task { await coordinator.toggle() } } label: {

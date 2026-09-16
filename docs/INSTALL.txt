@@ -1,50 +1,62 @@
-LiveCopilot 1.1.1 — 安装 / Installation
+LiveCopilot 1.3.2 — 安装 / Installation
 
-系统要求：macOS 14 或更新版本；支持 Apple Silicon 和 Intel。
-使用 DMG 安装无需 Xcode、Homebrew 或 XcodeGen。
+中文
 
-1. 退出正在运行的 LiveCopilot，再把 LiveCopilot.app 拖到 Applications。
-   如果没有管理员权限，可把应用复制到自己的 ~/Applications 文件夹。
-   从应用程序文件夹启动后，可推出此磁盘映像。
-2. 这是 ad-hoc 签名、未经 Apple 公证的社区发行版。
-   如果 macOS 提示无法验证开发者，先核对下载来源和 SHA256SUMS.txt。
-   确认信任此版本后，可在尝试打开后进入“系统设置 → 隐私与安全性”，
-   使用“仍要打开”单独允许此应用。无需全局关闭 Gatekeeper。
-   Apple 官方说明：https://support.apple.com/en-us/102445
-3. 应用显示 Dock 图标，同时保留菜单栏入口。点击波形图标打开设置；
-   Option+H 显示或隐藏悬浮窗。
-4. 设置 → 通用：选择简体中文、English 或跟随系统，以及毛玻璃或纯白底色。
-5. 设置 → 服务 → 实时服务：配置自己的 OpenAI API Key。
-   密钥保存在 macOS Keychain；Service 为 LiveCopilot-OpenAI，
-   Account 为当前 macOS 用户名。已有凭据时，按系统提示允许应用读取。
-   本安装包不包含 API Key、聊天记录、个人文档或知识库。
-6. 设置 → 服务 → 分析服务：沿用 OpenAI，或配置独立 OpenAI、
-   DeepSeek、OpenAI 兼容服务。其他服务需要自己的 Key、模型和兼容接口。
-   实时转写和向量化仍使用 OpenAI；模型权限和 API 费用由自己的账户承担。
-7. 需要监听时点击播放，按系统提示授予所需音频权限。
-   不开启监听也可以直接输入问题。首次导入知识文档会向 OpenAI 发送提取文本；
-   分析请求会向所选服务发送问题、选中的对话上下文和检索证据。
+系统要求：macOS 14+，支持 Apple Silicon 和 Intel。
+Apple 本地语音另需 macOS 26+、受支持的设备和语言。
+成品无需 Xcode、Python、Ollama 或其他开发工具。
 
-悬浮窗默认请求截图排除，可在“通用”中关闭；设置和历史页允许截图。
-实际排除效果取决于 macOS 和捕获软件。
-安装和升级不会自动删除 Keychain 凭据、设置或本地知识库；
-新签名或安装位置可能导致 macOS 重新询问访问权限。
+1. 退出旧版，将 LiveCopilot.app 拖入 Applications（或 ~/Applications）。
+   从固定位置启动，然后推出磁盘映像。不要把改名的旧应用放在旁边。
+2. 当前为临时签名、未经 Apple 公证的社区版。核对来源和 SHA256SUMS.txt。
+   如被 macOS 阻止，按 Apple 的单应用“仍要打开”说明操作，不要全局关闭安全保护。
+   https://support.apple.com/en-us/102445
+3. 设置 → 服务：选择本地 Apple、Paraformer 或 SenseVoiceSmall 语音并下载资源，
+   或配置 OpenAI Live。知识库向量可选本地 BGE-M3 或 OpenAI Embeddings。
+4. 分析服务选择 OpenAI、DeepSeek 或兼容服务，保存自己的 API Key。
+   密钥安全保存在 macOS Keychain，启动静默读取。旧密钥若显示待授权，
+   点击“授权已保存的密钥”完成导入。系统密码只输入 macOS 窗口。
+5. 开始监听时授予所需音频权限，也可直接输入问题。
+   本地识别与向量不上传音频/建库文本；云端选项会发送对应内容。
+   生成回答会把问题、相关对话和检索片段发送给所选分析服务。
+6. Option + H 唤出窗口；贴边隐藏、固定、自动高度均可配置。
+   刷新清空当前转写、回答和草稿，监听继续新会话，保留知识库与已保存历史。
+   关于页可打开作者 GitHub、项目仓库和双语介绍页。
+
+安装包不含 API Key、个人文档、历史或知识库。升级不删除本地资料。
+临时签名变化的更新可能需要重新授权录屏或密钥访问。
+本地模型无 API 调用费，但占用本机资源；云端费用由自己的账户承担。
+截图排除可选，效果依赖 macOS 与捕获软件；设置和历史页允许截图。
 
 English
 
-Requires macOS 14+, Apple Silicon or Intel. No development tools are needed.
-Quit LiveCopilot, drag the app into Applications (or ~/Applications), then launch it.
-This is an ad-hoc signed, non-notarized community build. Verify the source and the
-published checksums. If blocked, follow Apple's per-app Open Anyway guidance:
+Requires macOS 14+, Apple Silicon or Intel. Apple speech additionally requires
+macOS 26+, supported hardware and languages. No developer tools needed.
+Quit the old version, drag LiveCopilot.app into Applications (or ~/Applications),
+and launch from that consistent location. Eject the DMG. Avoid renamed app backups
+beside the current app.
+
+This community build is ad-hoc signed and not Apple-notarized. Verify the source
+and SHA256SUMS.txt. If blocked, follow Apple's per-app Open Anyway guidance:
 https://support.apple.com/en-us/102445
 
-The app has both a Dock icon and menu-bar controls. Option+H toggles the overlay.
-Choose your language/background in Settings > General. Configure your own OpenAI
-key in Services > Live service; analysis can reuse that key or use a separate
-OpenAI, DeepSeek or OpenAI-compatible service. Live and embeddings remain OpenAI.
-Keys stay in Keychain. Audio/document content is sent only as described above.
-Grant the required audio permissions when starting listening. You can type a
-question without listening. API access and charges belong to your own account.
+In Settings > Services, download local speech resources or configure OpenAI Live.
+Choose BGE-M3 or OpenAI Embeddings for knowledge. Choose an analysis provider
+(OpenAI, DeepSeek, or a compatible API) and save your key. Keys stay in Keychain.
+Startup reads silently; explicitly authorize an old saved key to import it.
 
-This package contains no credentials, personal documents, histories or indexes.
-See the repository README, PRIVACY.md and LICENSE for details and attribution.
+Grant audio permissions when listening, or type a question without capture.
+Local speech and embeddings stay on-device. Cloud options send the corresponding
+audio/text. Answer generation sends the question, relevant context and retrieved
+passages to your analysis service. Cloud usage is billed to your account.
+
+Option + H shows the overlay. Refresh clears the current conversation and answer;
+active listening starts fresh. Knowledge and saved history stay intact.
+About links to the author, repository and bilingual guide.
+
+No credentials, documents, history or indexes are included. Data is retained on
+upgrade. Changed ad-hoc signatures can require renewed macOS permissions.
+
+中文介绍：https://carey-bk.github.io/LiveCopilot/
+English: https://carey-bk.github.io/LiveCopilot/en/
+Source: https://github.com/carey-bk/LiveCopilot
