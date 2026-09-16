@@ -34,13 +34,16 @@ enum AppBackground: String, Codable, CaseIterable, Identifiable {
 }
 
 enum ReasoningService: String, Codable, CaseIterable, Identifiable {
-    case sharedOpenAI, separateOpenAI, deepSeek, compatible
+    case sharedOpenAI, separateOpenAI, deepSeek, qwen, glm, kimi, compatible
     var id: String { rawValue }
     var label: String {
         switch self {
         case .sharedOpenAI: return "Use Live service's OpenAI"
         case .separateOpenAI: return "OpenAI · separate key"
         case .deepSeek: return "DeepSeek"
+        case .qwen: return "Qwen · Alibaba Cloud"
+        case .glm: return "GLM · Zhipu"
+        case .kimi: return "Kimi · Moonshot"
         case .compatible: return "OpenAI-compatible"
         }
     }
@@ -61,6 +64,7 @@ extension AppSettings {
         switch reasoningService {
         case .sharedOpenAI, .separateOpenAI: return reasoningModel
         case .deepSeek: return deepSeekModel
+        case .qwen, .glm, .kimi: return presetConnection!.model
         case .compatible: return compatibleModel
         }
     }
@@ -69,6 +73,9 @@ extension AppSettings {
         case .sharedOpenAI: return .live
         case .separateOpenAI: return .separateOpenAI
         case .deepSeek: return .deepSeek
+        case .qwen, .glm, .kimi:
+            return CredentialReference(service: "LiveCopilot-Reasoning-" + reasoningService.rawValue,
+                                       accountSuffix: "|" + (try presetConnection!.endpoint()).absoluteString)
         case .compatible:
             // Editing a destination cannot silently reuse the previous host's key.
             return CredentialReference(service: "LiveCopilot-Reasoning-Compatible", accountSuffix: "|" + (try compatibleEndpoint()).absoluteString)

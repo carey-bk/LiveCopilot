@@ -41,6 +41,11 @@ struct AppSettings: Codable, Equatable {
     var overlayEdgeHide = true
     var excludeOverlayFromCapture = true
     var reasoningService = ReasoningService.sharedOpenAI
+    var transcriptFontSize = 12.0
+    var answerFontSize = 14.0
+    var qwenConnection = AnalysisConnection.qwen
+    var glmConnection = AnalysisConnection.glm
+    var kimiConnection = AnalysisConnection.kimi
     var deepSeekModel = "deepseek-v4-pro"
     var deepSeekEffort = "low"
     var compatibleBaseURL = ""
@@ -51,6 +56,7 @@ struct AppSettings: Codable, Equatable {
 
     init() {}
     private enum CodingKeys: String, CodingKey {
+        case transcriptFontSize, answerFontSize, qwenConnection, glmConnection, kimiConnection
         case listeningService, appleSpeechLanguage, embeddingService, overlayAutoHeight, overlayEdgeHide
         case liveModel, reasoningModel, embeddingModel, reasoningEffort, mode, scenario, automaticSuggestions, includeConversation, retrievalCount, language, background, excludeOverlayFromCapture, reasoningService, deepSeekModel, deepSeekEffort, compatibleBaseURL, compatiblePath, compatibleModel
     }
@@ -80,6 +86,11 @@ struct AppSettings: Codable, Equatable {
         compatibleBaseURL = try c.decodeIfPresent(String.self, forKey: .compatibleBaseURL) ?? compatibleBaseURL
         compatiblePath = try c.decodeIfPresent(String.self, forKey: .compatiblePath) ?? compatiblePath
         compatibleModel = try c.decodeIfPresent(String.self, forKey: .compatibleModel) ?? compatibleModel
+        transcriptFontSize = OverlayTypography.clamped(try c.decodeIfPresent(Double.self, forKey: .transcriptFontSize) ?? transcriptFontSize, fallback: 12)
+        answerFontSize = OverlayTypography.clamped(try c.decodeIfPresent(Double.self, forKey: .answerFontSize) ?? answerFontSize, fallback: 14)
+        qwenConnection = try c.decodeIfPresent(AnalysisConnection.self, forKey: .qwenConnection) ?? qwenConnection
+        glmConnection = try c.decodeIfPresent(AnalysisConnection.self, forKey: .glmConnection) ?? glmConnection
+        kimiConnection = try c.decodeIfPresent(AnalysisConnection.self, forKey: .kimiConnection) ?? kimiConnection
         retrievalCount = min(8, max(3, retrievalCount))
     }
 

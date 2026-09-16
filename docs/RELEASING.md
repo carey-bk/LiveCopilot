@@ -36,7 +36,7 @@ The script rejects this mode if source, resources or project settings differ fro
 
 ## Signing boundary
 
-Version 1.3.2 is an ad-hoc signed community build, not Developer ID signed or Apple notarized. Passing `codesign --verify` confirms bundle integrity; it does not make the app trusted by Gatekeeper. Installation guidance links to [Apple's per-app opening instructions](https://support.apple.com/en-us/102445), without recommending a global Gatekeeper change.
+Version 1.4.0 is an ad-hoc signed community build, not Developer ID signed or Apple notarized. Passing `codesign --verify` confirms bundle integrity; it does not make the app trusted by Gatekeeper. Installation guidance links to [Apple's per-app opening instructions](https://support.apple.com/en-us/102445), without recommending a global Gatekeeper change.
 
 A future notarized release needs the maintainer's Developer ID Application identity, a suitable hardened-runtime build and an Apple notarization submission. No signing private key, account password or API key belongs in Git or release assets.
 

@@ -17,6 +17,9 @@ struct OverlayView: View {
         self.onContentHeight = onContentHeight; self.onMinimumHeight = onMinimumHeight
     }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
+    private var transcriptSize: CGFloat { OverlayTypography.clamped(coordinator.settings.transcriptFontSize, fallback: 12) }
+    private var answerSize: CGFloat { OverlayTypography.clamped(coordinator.settings.answerFontSize, fallback: 14) }
+    private var speakerWidth: CGFloat { max(35, transcriptSize * 2.8) }
     private var hasTranscript: Bool { showTranscript && transcript.hasContent }
     private var transcriptIdeal: CGFloat { hasTranscript ? min(145, max(44, transcriptHeight + 22)) : 0 }
     private var chromeHeight: CGFloat {
@@ -138,8 +141,8 @@ struct OverlayView: View {
                         if !transcript.hasContent { Text(t("Conversation appears here when listening.")).font(.caption).foregroundStyle(.secondary) }
                         ForEach(transcript.lines) { line in
                             HStack(alignment: .top, spacing: 6) {
-                                Text(t(line.speaker.rawValue)).font(.caption2.bold()).foregroundStyle(line.speaker == .you ? Color.blue : .green).frame(width: 35, alignment: .leading)
-                                Text(line.content).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                                Text(t(line.speaker.rawValue)).font(.system(size: max(11, transcriptSize - 1), weight: .bold)).foregroundStyle(line.speaker == .you ? Color.blue : .green).frame(width: speakerWidth, alignment: .leading)
+                                Text(line.content).font(.system(size: transcriptSize)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
                         if !transcript.partialThem.isEmpty {
@@ -157,14 +160,14 @@ struct OverlayView: View {
     }
     private func partialRow(_ text: String, speaker: Speaker) -> some View {
         HStack(alignment: .top, spacing: 6) {
-            Text(t(speaker.rawValue)).font(.caption2.bold()).foregroundStyle(speaker == .you ? Color.blue : .green).frame(width: 35, alignment: .leading)
-            Text(text).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+            Text(t(speaker.rawValue)).font(.system(size: max(11, transcriptSize - 1), weight: .bold)).foregroundStyle(speaker == .you ? Color.blue : .green).frame(width: speakerWidth, alignment: .leading)
+            Text(text).font(.system(size: transcriptSize)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
         }.accessibilityLabel(t("Recognizing") + " · " + t(speaker.rawValue) + " · " + text)
     }
     private var answer: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 9) {
-                if !suggestion.question.isEmpty { Text(suggestion.question).font(.subheadline.bold()).textSelection(.enabled) }
+                if !suggestion.question.isEmpty { Text(suggestion.question).font(.system(size: answerSize, weight: .semibold)).textSelection(.enabled) }
                 if let warning = suggestion.warning { Text(t(warning)).font(.caption).foregroundStyle(.orange) }
                 if suggestion.isLoading && suggestion.text.isEmpty {
                     HStack { ProgressView().controlSize(.small); Text(t("Retrieving evidence and thinking…")).font(.caption) }
@@ -174,8 +177,8 @@ struct OverlayView: View {
                 }
                 ForEach(Array(SuggestionParser.sections(suggestion.text).enumerated()), id: \.offset) { _, section in
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(t(section.title)).font(.caption.bold()).foregroundStyle(.secondary)
-                        Text(.init(section.content)).font(.system(size: 14)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(t(section.title)).font(.system(size: max(11, answerSize - 1), weight: .semibold)).foregroundStyle(.secondary)
+                        Text(.init(section.content)).font(.system(size: answerSize)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 if let error = suggestion.error { Text(t(error)).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
@@ -184,7 +187,7 @@ struct OverlayView: View {
                     Text(t("Sources · retrieved local evidence")).font(.caption.bold())
                     ForEach(Array(suggestion.sources.enumerated()), id: \.element.id) { i, source in
                         DisclosureGroup("[S\(i + 1)] \(source.chunk.displayLabel(language: coordinator.settings.language))") {
-                            Text(source.chunk.text).font(.caption).textSelection(.enabled)
+                            Text(source.chunk.text).font(.system(size: answerSize)).textSelection(.enabled)
                         }.font(.caption2)
                     }
                 }

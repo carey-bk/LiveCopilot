@@ -6,13 +6,13 @@
 
 基于 [vortechron/stealth](https://github.com/vortechron/stealth) 的原生 macOS 个人 AI 助手，面向面试、会议和学术答辩。保留 Swift/SwiftUI、ScreenCaptureKit 系统音频、AVAudioEngine 麦克风、菜单栏、悬浮窗、全局快捷键和本地历史。
 
-V1.3.2 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别**、**本地 SenseVoiceSmall + VAD** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
+V1.4.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek、Qwen、GLM、Kimi 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
-**1.3.2** 在悬浮窗和设置标题加入 Logo，新增“关于”页，提供作者 GitHub、项目仓库及双语介绍页入口。本次公开发布也包含本地语音与向量模型、自动伸缩与贴边隐藏、一键刷新、口语回答及密钥静默读取等累计更新。详见 [1.3.2 更新](docs/V1_3_2_UPDATE.md)、[1.3.1 更新与验收](docs/V1_3_1_UPDATE.md) 和 [本地模型说明](docs/LOCAL_MODELS.md)。
+**1.4.0** 移除非流式 SenseVoiceSmall，保留 Apple、Paraformer 和 GPT-Live-1 三种流式识别；新增转写区与回答区独立字号（11–28 pt）以及 Qwen、GLM、Kimi 分析服务预设。旧 SenseVoice 配置自动迁移至 Paraformer，其他偏好与已有模型文件保留。详见 [1.4.0 更新与验收](docs/V1_4_0_UPDATE.md) 和 [服务选择指南](docs/SERVICE_GUIDE.md)。
 
 ## 下载与安装
 
-从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/tag/v1.3.2) 下载 **LiveCopilot-1.3.2-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**；Apple 本地识别另需 macOS 26+ 和受支持的设备。直接安装无需 Xcode。
+从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/tag/v1.4.0) 下载 **LiveCopilot-1.4.0-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**；Apple 本地识别另需 macOS 26+ 和受支持的设备。直接安装无需 Xcode。
 
 1. 打开 DMG，将 `LiveCopilot.app` 拖到 `Applications`，然后从应用程序文件夹启动。没有管理员权限时可复制到 `~/Applications`。
 2. 当前版本为 **ad-hoc 签名，未经 Apple 公证**。如果 macOS 无法验证开发者，确认来源与 Release 中的 SHA-256 后，可按照 [Apple 官方说明](https://support.apple.com/en-us/102445)，在尝试打开后到“系统设置 → 隐私与安全性 → 仍要打开”允许该应用。
@@ -29,7 +29,7 @@ V1.3.2 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 3. 设置 → 知识库 → 导入文档，支持 PDF、Markdown、TXT 和 DOCX；扫描 PDF 需预先 OCR。本地向量模式不上传索引文本，OpenAI 模式会发送提取文本。切换向量模型后，点击“重建全部索引”，完成前旧资料仍可进行关键词检索。生成回答时，相关资料片段会发送至所选分析服务。
 4. 选择 Interview、Meeting 或 Academic Defense，以及 Remote Meeting / In-Person 模式。
 5. 点击播放开始监听，按系统提示允许所需音频权限。远程模式使用系统音频 `Them` 和麦克风 `You`；现场模式仅使用麦克风，标为 `Room`，不承诺说话人分离。
-6. 自动建议响应 Live 语义判断或本地中英文问题规则；不会仅因 VAD 停顿就请求分析。本地字幕在停顿后或连续语音满 12 秒时更新，本地规则可能漏判含蓄问题。`⌥Space` 可基于已有对话请求帮助，`⌥R` 总结，`⌥F` 追问，`⌥H` 显示/隐藏悬浮窗。
+6. 自动建议响应 Live 语义判断或本地中英文问题规则；不会仅因 VAD 停顿就请求分析。Apple 与 Paraformer 都会在说话时更新字幕预览，自动建议基于完成的转写。本地规则可能漏判含蓄问题；Live 语义委派也不保证每次都正确。`⌥Space` 可基于已有对话请求帮助，`⌥R` 总结，`⌥F` 追问，`⌥H` 显示/隐藏悬浮窗。
 7. 直接在下方文本框输入问题，点击 **Ask** 或按 Return。可勾选是否附加近期对话；不要求正在监听。回答流式展示，`[S1]` 等对应可展开的本地来源。
 
 菜单栏波形图标可打开设置和历史。1.2.1 起悬浮窗默认隐藏于屏幕右侧，悬停右边缘可唤出，也可点击 Dock 或按 `⌥H`；固定按钮关闭贴边隐藏。空白窗口保持紧凑，内容增加后向下展开。四边具有 12 pt 缩放热区，四角为 28 × 28 pt；拖动上下边缘切换为手动高度，取消贴边隐藏后可从头部移动窗口。两个模式均可在 **通用 → 悬浮窗** 中切换。
@@ -41,10 +41,12 @@ V1.3.2 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 ## 语言、底色和服务配置
 
 - **通用 → 界面语言**：跟随系统、English、简体中文，立即生效。回答跟随提问语言。
+- **通用 → 语言与外观 → 字号**：流式识别区与回答区分别调节，11–28 pt，即时生效并独立保存；长内容自动换行并可滚动。
 - **通用 → 窗口底色**：半透明毛玻璃／微透磨砂／纯白底色。微透与白底使用浅色控件与深色文字。
 - **服务 → 实时服务／知识库服务**：独立选择本地或 OpenAI。选择 OpenAI 时，Live 和 Embeddings 共用现有 Key；界面显示固定掩码，点击“更换密钥”才打开输入框，不回填真实 Key。
 - **服务 → 分析服务**：选择分析供应商。默认沿用实时服务的 OpenAI；DeepSeek 使用独立 Key，默认模型 `deepseek-v4-pro`，可修改。兼容服务填写 HTTPS Base URL、Chat Completions 路径和模型，先保存连接，再配置该地址的 Key。
-- 更换分析模型不需要重建知识库。自定义 API 地址改变后不会沿用旧地址的密钥。
+- **Qwen / GLM / Kimi**：分别预填 `qwen-plus`、`glm-5.2`、`kimi-k2.6` 和国内通用 API 地址，可修改模型、地域/业务空间 Base URL 和思考模式。先保存连接，再输入自己的 Key。厂商与端点之间的密钥互相隔离，不会继承 OpenAI Key。GLM Coding Plan 不等同于通用 API；Qwen 的 Key 必须与地域对应。
+- 更换分析模型不需要重建知识库。自定义 API 地址改变后不会沿用旧地址的密钥。新三家服务已完成协议及 Mock 测试，未使用真实 Qwen、GLM、Kimi Key 联调；实际账户权限、余额、模型可用性需在本机验证。不要把 Key 发到聊天或写入仓库。
 
 早期版本通过 `NSWindow.sharingType = .none` 对全部窗口请求截图排除。1.1.1 起设置和历史页允许截图；**通用 → 在截图和屏幕共享中隐藏悬浮窗** 控制悬浮窗，默认保留隐藏，关闭后可截图。实际排除效果仍依赖 macOS 和具体会议软件。
 
@@ -114,4 +116,4 @@ unset OPENAI_API_KEY
 
 派生于 Stealth commit `02b78cc82195a1711e3de11adfaed26011635dae`，原作者 vortechron，MIT 许可保持不变，并保留原始 Git 历史。LiveCopilot 独立发布于 [carey-bk/LiveCopilot](https://github.com/carey-bk/LiveCopilot)；原始项目见 [vortechron/stealth](https://github.com/vortechron/stealth)。打包与发布流程见 [发布说明](docs/RELEASING.md)。
 
-图标的可编辑 SVG、单色标志与生成方式见 [品牌文件](assets/brand/README.md)。本地 FunASR 已提供 SenseVoiceSmall 和 Paraformer 流式两种选项，OpenAI Live 仍可切换。
+图标的可编辑 SVG、单色标志与生成方式见 [品牌文件](assets/brand/README.md)。本地 FunASR 使用 Paraformer 流式模型；Apple 本地识别和 OpenAI Live 仍可切换。

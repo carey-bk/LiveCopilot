@@ -25,7 +25,7 @@ enum CoreChecks {
         try check("local services migrate independently and do not require OpenAI for DeepSeek") {
             let old = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
             try expect(old.listeningService == .openAI && old.embeddingService == .openAI, "old route silently changed")
-            var local = old; local.listeningService = .local; local.embeddingService = .local; local.reasoningService = .deepSeek
+            var local = old; local.listeningService = .paraformer; local.embeddingService = .local; local.reasoningService = .deepSeek
             try expect(!local.requiresOpenAIKey, "local + DeepSeek unnecessarily requires OpenAI")
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(local))
             try expect(restored == local, "local selections did not persist")
@@ -34,8 +34,27 @@ enum CoreChecks {
             try expect(streamed == local && !streamed.requiresOpenAIKey, "streaming selection lost persistence or requires a cloud key")
             try expect(streamed.listeningService.sampleRate == 16000 && streamed.listeningService.localModel == .streamingSpeech, "streaming audio/model route mismatch")
             local.listeningService = .openAI; try expect(local.requiresOpenAIKey, "cloud listening lost credential requirement")
-            local.listeningService = .local; local.reasoningService = .sharedOpenAI
+            local.listeningService = .paraformer; local.reasoningService = .sharedOpenAI
             try expect(local.requiresOpenAIKey, "shared reasoning lost its credential requirement")
+        }
+        try check("retired sentence ASR migrates without resetting user preferences") {
+            let json = #"{"listeningService":"local","reasoningService":"deepSeek","deepSeekModel":"deepseek-flash","embeddingService":"local","background":"frosted","automaticSuggestions":false}"#
+            let settings = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+            try expect(settings.listeningService == .paraformer && settings.deepSeekModel == "deepseek-flash" && settings.embeddingService == .local, "legacy upgrade lost configuration")
+            try expect(settings.background == .frosted && !settings.automaticSuggestions, "legacy upgrade reset appearance or behavior")
+            try expect(ListeningService.allCases.map(\.rawValue) == ["openAI", "apple", "paraformer"], "retired recognizer still selectable")
+        }
+        try check("independent text sizes persist with safe migration and limits") {
+            var settings = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+            try expect(settings.transcriptFontSize == 12 && settings.answerFontSize == 14, "old text defaults changed")
+            settings.transcriptFontSize = 21; settings.answerFontSize = 27
+            let defaults = UserDefaults(suiteName: "LiveCopilot-FontTest-" + UUID().uuidString)!
+            settings.save(defaults: defaults)
+            defer { defaults.removeObject(forKey: "livecopilot.settings") }
+            try expect(AppSettings.load(defaults: defaults) == settings, "font controls did not persist independently")
+            let invalid = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"transcriptFontSize":-12,"answerFontSize":999}"#.utf8))
+            try expect(invalid.transcriptFontSize == 11 && invalid.answerFontSize == 28, "invalid font size escaped bounds")
+            try expect(OverlayTypography.clamped(.nan, fallback: 14) == 14, "nonfinite size escaped fallback")
         }
         try check("Apple route persists without requiring a cloud credential") {
             var settings = AppSettings(); settings.listeningService = .apple
@@ -385,6 +404,7 @@ enum CoreChecks {
             try expect(a != b && a != .live && a != .deepSeek, "credential identities overlap")
         }
         let chatEvents = [
+            #"data: {"choices":[],"usage":{"prompt_tokens":12}}"#, "",
             #"data: {"choices":[{"index":0,"delta":{"reasoning_content":"private-reasoning-fixture"},"finish_reason":null}]}"#, "",
             #"data: {"choices":[{"index":0,"delta":{"content":"42 毫秒 [S1]"},"finish_reason":null}]}"#, "",
             #"data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#, "", "data: [DONE]", ""
@@ -402,12 +422,56 @@ enum CoreChecks {
             try expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer " + expectedKey, "service received wrong credential")
             let body = try JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
             try expect(body["stream"] as? Bool == true, "stream disabled")
-            if service == .deepSeek || service == .compatible {
+            if service != .sharedOpenAI && service != .separateOpenAI {
                 try expect(output == "42 毫秒 [S1]" && !output.contains("private-reasoning"), "final text/source corrupted or reasoning leaked")
                 try expect((body["messages"] as? [[String: String]])?.last?["content"]?.contains("[S1]") == true, "evidence omitted")
-                try expect((body["thinking"] != nil) == (service == .deepSeek), "vendor options leaked to custom service")
+                try expect((body["thinking"] != nil) == (service == .deepSeek || service == .kimi), "vendor options leaked to custom service")
             } else { try expect(body["store"] as? Bool == false, "OpenAI storage contract changed") }
             passed.append("analysis routing and credential isolation: " + service.rawValue)
+        }
+        try check("preset connections persist and isolate credentials by provider and region") {
+            var identities = Set<String>()
+            for service in [ReasoningService.qwen, .glm, .kimi] {
+                var settings = AppSettings(); settings.reasoningService = service
+                let initial = try settings.analysisCredentialReference()
+                try expect(initial != .live && initial != .deepSeek, "preset reuses an existing provider key")
+                identities.insert(initial.service + initial.account)
+                var connection = settings.presetConnection!
+                connection.model = "another-model"; connection.thinking = .enabled
+                settings.presetConnection = connection
+                let sameHost = try settings.analysisCredentialReference()
+                try expect(sameHost == initial, "model edit unnecessarily discarded provider key")
+                connection.baseURL = "https://region.example/v1"; settings.presetConnection = connection
+                let otherHost = try settings.analysisCredentialReference()
+                try expect(otherHost != initial, "region change inherited old endpoint key")
+                let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+                try expect(restored == settings, "preset connection did not persist")
+                do { _ = try ReasoningProviderFactory.make(settings: settings, liveKey: "live-fixture-only", analysisKey: nil); throw CheckError(description: "Live key inherited by preset") }
+                catch is CopilotError { }
+            }
+            try expect(identities.count == 3, "preset credentials overlap")
+        }
+        try check("vendor thinking options and endpoints follow their own protocols") {
+            let endpoints = [ReasoningService.qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                             .glm: "https://open.bigmodel.cn/api/paas/v4/chat/completions", .kimi: "https://api.moonshot.cn/v1/chat/completions"]
+            for (service, endpoint) in endpoints {
+                for thinking in AnalysisThinking.allCases {
+                    var settings = AppSettings(); settings.reasoningService = service
+                    settings.presetConnection!.thinking = thinking
+                    let provider = try ReasoningProviderFactory.make(settings: settings, liveKey: nil, analysisKey: "fixture") as! ChatCompletionsProvider
+                    let http = try provider.httpRequest(answer)
+                    let body = try JSONSerialization.jsonObject(with: http.httpBody!) as! [String: Any]
+                    try expect(http.url?.absoluteString == endpoint && body["model"] as? String == settings.analysisModel, "wrong preset endpoint or model")
+                    try expect(body["temperature"] == nil && body["reasoning_effort"] == nil, "unsupported sampling parameters sent")
+                    if thinking == .modelDefault {
+                        try expect(body["thinking"] == nil && body["enable_thinking"] == nil, "default thinking not delegated to model")
+                    } else if service == .qwen {
+                        try expect(body["enable_thinking"] as? Bool == (thinking == .enabled) && body["thinking"] == nil, "Qwen wire format incorrect")
+                    } else {
+                        try expect((body["thinking"] as? [String: String])?["type"] == thinking.rawValue && body["enable_thinking"] == nil, "GLM/Kimi wire format incorrect")
+                    }
+                }
+            }
         }
         try check("external analysis cannot silently fall back to the Live credential") {
             var settings = AppSettings(); settings.reasoningService = .deepSeek
@@ -415,7 +479,7 @@ enum CoreChecks {
             catch is CopilotError { }
         }
         for broken in [
-            Array(chatEvents.prefix(4)),
+            Array(chatEvents.prefix(6)),
             [#"data: {"choices":[{"delta":{"content":"partial"},"finish_reason":"length"}]}"#, ""],
             [#"data: {"error":{"message":"must-not-echo-private-server-text"}}"#, ""],
             ["data: malformed", ""], ["data: [DONE]", ""]

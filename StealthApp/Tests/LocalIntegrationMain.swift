@@ -6,11 +6,10 @@ import AVFoundation
     @MainActor static func main() async throws {
         setbuf(stdout, nil)
         let args = CommandLine.arguments
-        guard args.count >= 4 else { fatalError("Usage: LocalChecks <model-root> <runtime-executable> <download-cache> [speech-only | paraformer-only]") }
+        guard args.count >= 4 else { fatalError("Usage: LocalChecks <model-root> <runtime-executable> <download-cache> [paraformer-only]") }
         let root = URL(fileURLWithPath: args[1]), executable = URL(fileURLWithPath: args[2]), cache = URL(fileURLWithPath: args[3])
-        let streamingOnly = args.contains("paraformer-only")
-        let speechOnly = args.contains("speech-only") || streamingOnly
-        let speechKinds: [LocalModelKind] = streamingOnly ? [.streamingSpeech] : speechOnly ? [.speech] : [.speech, .streamingSpeech]
+        let speechOnly = args.contains("paraformer-only")
+        let speechKinds: [LocalModelKind] = [.streamingSpeech]
         for kind in speechOnly ? speechKinds : LocalModelKind.allCases {
             if !kind.isInstalled(in: root) {
                 try await LocalModelInstaller.install(kind, root: root, downloader: { item, destination in
@@ -22,7 +21,6 @@ import AVFoundation
         let fixtures = root.deletingLastPathComponent().appendingPathComponent("fixtures")
         try FileManager.default.createDirectory(at: fixtures, withIntermediateDirectories: true)
         for speechKind in speechKinds {
-            let streaming = speechKind == .streamingSpeech
             for (name, voice, text, expected, speaker) in [
                 ("en", "Samantha", "Why did we choose method B, and what is its latency?", "latency", Speaker.them),
                 ("zh", "Tingting", "请问这个实验为什么选择方法B？它的延迟是多少毫秒？", "延迟", Speaker.room),
@@ -40,7 +38,7 @@ import AVFoundation
                 var pcm = Data(repeating: 0, count: 16000)
                 pcm.append(converter.convert(source)!)
                 pcm.append(Data(repeating: 0, count: 16000 * 2))
-                let provider = LocalLiveProvider(directory: speechKind.location(in: root), speaker: speaker, executable: executable, streaming: streaming)
+                let provider = LocalLiveProvider(directory: speechKind.location(in: root), speaker: speaker, executable: executable)
                 var transcript = "", delegations = 0, failure: String?
                 var partials = Set<String>(), firstPartialMS: Int?, sentBytes = 0, prematureDelegation = false
                 var finalCount = 0, preview = "", finalized = false
@@ -66,23 +64,21 @@ import AVFoundation
                     let end = min(pcm.count, offset + 8000)
                     sentBytes = end
                     provider.sendAudio(pcm.subdata(in: offset..<end))
-                    try await Task.sleep(nanoseconds: (streaming || ProcessInfo.processInfo.environment["ASR_REALTIME"] == "1") ? 250_000_000 : 10_000_000)
+                    try await Task.sleep(nanoseconds: 250_000_000)
                 }
                 let deadline = Date().addingTimeInterval(25)
                 while (transcript.isEmpty || (speaker != .you && delegations == 0)) && failure == nil && Date() < deadline { try await Task.sleep(nanoseconds: 100_000_000) }
                 if speaker == .you { try await Task.sleep(nanoseconds: 1_200_000_000) }
                 await provider.disconnect()
-                // Keyword fidelity is an accuracy diagnostic for the new bilingual
-                // model, separate from the live-preview/finalization contract. Keep
-                // the established SenseVoice accuracy regression assertion intact.
+                // Keyword fidelity is diagnostic; preview/finalization is the contract.
                 let keywordMatch = transcript.lowercased().contains(expected)
                 print("QUALITY \(speechKind.rawValue) \(name): reference_keyword=\(expected), matched=\(keywordMatch), first_final_audio_ms=\(firstFinalAudioMS ?? -1)")
                 guard failure == nil, finalized, !prematureDelegation, preview.isEmpty, !transcript.isEmpty,
-                      (streaming || keywordMatch), delegations == (speaker == .you ? 0 : 1) else {
+                      delegations == (speaker == .you ? 0 : 1) else {
                     print("Synthetic transcript: \(transcript); delegations=\(delegations)")
                     throw CopilotError.message(failure ?? "Local ASR/trigger acceptance failed.")
                 }
-                if streaming {
+                do {
                     guard partials.count >= 2, let first = firstPartialMS, first < (pcm.count - 32000) / 32 else {
                         throw CopilotError.message("Streaming captions did not appear before speech ended.")
                     }
@@ -90,7 +86,7 @@ import AVFoundation
                 }
                 print("PASS \(speechKind.rawValue) \(name) local ASR + VAD + question trigger; load_ms=\(Int(loaded.timeIntervalSince(start)*1000)), total_ms=\(Int(Date().timeIntervalSince(start)*1000)); synthetic transcript: \(transcript)")
             }
-            let flushWorker = LocalInferenceWorker(mode: streaming ? "paraformer" : "speech", modelDirectory: speechKind.location(in: root), executable: executable)
+            let flushWorker = LocalInferenceWorker(mode: "paraformer", modelDirectory: speechKind.location(in: root), executable: executable)
             let silence = try await flushWorker.call(["op": "audio", "pcm": Data(repeating: 0, count: 32000).base64EncodedString()])
             guard (silence["segments"] as? [[String: Any]])?.isEmpty == true else { throw CopilotError.message("Silence produced a transcript.") }
             let tailFile = try AVAudioFile(forReading: fixtures.appendingPathComponent("en.aiff"))
@@ -104,8 +100,8 @@ import AVFoundation
             // This fixture's final word can be misrecognized by Paraformer. Compare
             // the full final result to the same audio through an unstopped stream
             // below instead of making spelling correction part of stop handling.
-            guard !flushed.isEmpty, streaming || flushed.lowercased().contains("latency") else { throw CopilotError.message("Final speech was lost when stopping.") }
-            if streaming {
+            guard !flushed.isEmpty else { throw CopilotError.message("Final speech was lost when stopping.") }
+            do {
                 let secondFlush = try await flushWorker.call(["op": "flush"])
                 guard (secondFlush["segments"] as? [[String: Any]])?.isEmpty == true,
                       (secondFlush["partial"] as? String)?.isEmpty == true else { throw CopilotError.message("Final text was duplicated on a second flush.") }

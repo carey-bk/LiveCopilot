@@ -1,15 +1,14 @@
 import Foundation
 
-/// Published list prices, checked 2026-09-15. Match exact official model IDs only;
+/// Published list prices, checked 2026-09-16. Match exact official model IDs only;
 /// a compatible endpoint can have a completely different billing policy.
 enum ServiceGuide {
-    static let checked = "2026-09-15"
+    static let checked = "2026-09-16"
     static func text(_ en: String, _ zh: String, _ language: AppLanguage) -> String { language.usesChinese ? zh : en }
     static func listening(_ service: ListeningService, language: AppLanguage) -> String {
         switch service {
         case .openAI: return text("OpenAI · cloud, semantic question detection", "OpenAI · 云端，语义判断提问", language)
         case .apple: return text("Apple · local/free, streaming, macOS 26+", "Apple · 本地/免费，流式，macOS 26+", language)
-        case .local: return text("SenseVoiceSmall + VAD · local/free, sentence captions", "SenseVoiceSmall + VAD · 本地/免费，整句识别", language)
         case .paraformer: return text("Paraformer · local/free, Chinese/English streaming", "Paraformer · 本地/免费，中英文流式", language)
         }
     }
@@ -27,6 +26,15 @@ enum ServiceGuide {
     static func analysisPrice(_ service: ReasoningService, model: String, language: AppLanguage) -> String {
         switch service {
         case .compatible: return unknown(language)
+        case .qwen:
+            return text("Qwen is billed per input/output token. Price varies by model, region, context length and thinking mode. The Beijing preset is independent of Singapore/US API credentials; check the official tier for your account.",
+                        "Qwen 按输入/输出 token 计费，价格随模型、地域、上下文长度和思考模式变化。北京预设与新加坡/美国的 Key 不通用；请按账户地域查看官方价格档位。", language)
+        case .glm:
+            return text("GLM is billed per input/output token on the general API. Model and context tiers affect the price. A Coding Plan subscription is not a general API balance; use the standard API endpoint and check its current rate.",
+                        "GLM 通用 API 按输入/输出 token 计费，不同模型和上下文档位价格不同。Coding Plan 订阅不等于通用 API 余额；请使用通用接口并查看当前报价。", language)
+        case .kimi:
+            return text("Kimi is billed per input/output token, with different rates for cached input. Thinking consumes output tokens too. China and international accounts have separate endpoints and billing; check the current model price on your platform.",
+                        "Kimi 按输入/输出 token 计费，缓存命中输入另有价格；思考也消耗输出 token。国内与国际平台的端点和计费不同，请查看账户所属平台的当前模型报价。", language)
         case .sharedOpenAI, .separateOpenAI:
             guard model == "gpt-5.6-sol" else { return unknown(language) }
             return text("GPT-5.6 Sol: per 1M tokens, input $4 · cached input $0.40 · output $20. Current promotional price, guaranteed at least through Nov 21, 2026. Cost depends on context and answer length, not minutes.",

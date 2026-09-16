@@ -1,11 +1,13 @@
 import Foundation
 
-/// DeepSeek and services implementing the OpenAI Chat Completions wire format.
+/// DeepSeek, Qwen, GLM, Kimi and services implementing the OpenAI Chat Completions wire format.
 /// Deliberately displays final content only, never reasoning_content.
 struct ChatCompletionsProvider: ReasoningProvider {
     let key: String
     let model: String
     let endpoint: URL
+    var service = ReasoningService.compatible
+    var thinking = AnalysisThinking.modelDefault
     var deepSeekEffort: String? = nil
     var transport: any HTTPTransport = URLSessionTransport()
 
@@ -17,6 +19,14 @@ struct ChatCompletionsProvider: ReasoningProvider {
         if let effort = deepSeekEffort {
             body["thinking"] = ["type": effort == "none" ? "disabled" : "enabled"]
             if !effort.isEmpty && effort != "none" { body["reasoning_effort"] = effort }
+        }
+        // Do not send another vendor's optional fields or fixed sampling parameters.
+        if thinking != .modelDefault {
+            switch service {
+            case .qwen: body["enable_thinking"] = thinking == .enabled
+            case .glm, .kimi: body["thinking"] = ["type": thinking == .enabled ? "enabled" : "disabled"]
+            default: break
+            }
         }
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"; request.timeoutInterval = 90
@@ -81,6 +91,10 @@ enum ReasoningProviderFactory {
             return OpenAIReasoningProvider(key: key, model: settings.reasoningModel, effort: settings.reasoningEffort, transport: transport)
         case .deepSeek:
             return ChatCompletionsProvider(key: key, model: settings.deepSeekModel, endpoint: URL(string: "https://api.deepseek.com/chat/completions")!, deepSeekEffort: settings.deepSeekEffort, transport: transport)
+        case .qwen, .glm, .kimi:
+            let connection = settings.presetConnection!
+            return ChatCompletionsProvider(key: key, model: connection.model, endpoint: try connection.endpoint(),
+                                           service: settings.reasoningService, thinking: connection.thinking, transport: transport)
         case .compatible:
             return ChatCompletionsProvider(key: key, model: settings.compatibleModel, endpoint: try settings.compatibleEndpoint(), transport: transport)
         }

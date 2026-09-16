@@ -1,4 +1,4 @@
-LiveCopilot 1.3.2 — 安装 / Installation
+LiveCopilot 1.4.0 — 安装 / Installation
 
 中文
 
@@ -11,9 +11,9 @@ Apple 本地语音另需 macOS 26+、受支持的设备和语言。
 2. 当前为临时签名、未经 Apple 公证的社区版。核对来源和 SHA256SUMS.txt。
    如被 macOS 阻止，按 Apple 的单应用“仍要打开”说明操作，不要全局关闭安全保护。
    https://support.apple.com/en-us/102445
-3. 设置 → 服务：选择本地 Apple、Paraformer 或 SenseVoiceSmall 语音并下载资源，
+3. 设置 → 服务：选择本地 Apple 或 Paraformer 语音并下载资源，
    或配置 OpenAI Live。知识库向量可选本地 BGE-M3 或 OpenAI Embeddings。
-4. 分析服务选择 OpenAI、DeepSeek 或兼容服务，保存自己的 API Key。
+4. 分析服务选择 OpenAI、DeepSeek、Qwen、GLM、Kimi 或兼容服务，保存自己的 API Key。
    密钥安全保存在 macOS Keychain，启动静默读取。旧密钥若显示待授权，
    点击“授权已保存的密钥”完成导入。系统密码只输入 macOS 窗口。
 5. 开始监听时授予所需音频权限，也可直接输入问题。
@@ -42,7 +42,7 @@ https://support.apple.com/en-us/102445
 
 In Settings > Services, download local speech resources or configure OpenAI Live.
 Choose BGE-M3 or OpenAI Embeddings for knowledge. Choose an analysis provider
-(OpenAI, DeepSeek, or a compatible API) and save your key. Keys stay in Keychain.
+(OpenAI, DeepSeek, Qwen, GLM, Kimi, or a compatible API) and save your key. Keys stay in Keychain.
 Startup reads silently; explicitly authorize an old saved key to import it.
 
 Grant audio permissions when listening, or type a question without capture.

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Local transcription. SenseVoice emits endpointed segments; Paraformer also
+/// Local streaming transcription. Paraformer
 /// emits replaceable previews while its streaming decoder is still listening.
 @MainActor
 final class LocalLiveProvider: LiveProvider {
@@ -23,9 +23,9 @@ final class LocalLiveProvider: LiveProvider {
     private var inferenceFailed = false
     private var partial = ""
 
-    init(directory: URL, speaker: Speaker, sessionStart: Date = Date(), executable: URL? = nil, streaming: Bool = false) {
+    init(directory: URL, speaker: Speaker, sessionStart: Date = Date(), executable: URL? = nil) {
         self.speaker = speaker; self.sessionStart = sessionStart
-        worker = .init(mode: streaming ? "paraformer" : "speech", modelDirectory: directory, executable: executable)
+        worker = .init(mode: "paraformer", modelDirectory: directory, executable: executable)
     }
     func prepare() async throws { _ = try await worker.call(["op": "ping"]) }
     func connect(context: String) {

@@ -16,90 +16,6 @@ static void reply(NSDictionary *value) {
     fwrite(data.bytes, 1, data.length, stdout); fputc('\n', stdout); fflush(stdout);
 }
 
-class SpeechEngine {
-    const SherpaOnnxOfflineRecognizer *recognizer = nullptr;
-    const SherpaOnnxVoiceActivityDetector *vad = nullptr;
-    std::vector<float> pending;
-    std::vector<float> history;
-    int64_t historyStart = 0, previousEnd = 0;
-public:
-    explicit SpeechEngine(const std::string &root) {
-        const auto model = root + "/model.int8.onnx", tokens = root + "/tokens.txt", vadPath = root + "/silero_vad.onnx";
-        SherpaOnnxOfflineRecognizerConfig config{};
-        config.feat_config.sample_rate = 16000; config.feat_config.feature_dim = 80;
-        config.decoding_method = "greedy_search";
-        config.model_config.num_threads = 4; config.model_config.provider = "cpu";
-        config.model_config.tokens = tokens.c_str();
-        config.model_config.sense_voice.model = model.c_str();
-        config.model_config.sense_voice.language = "auto"; config.model_config.sense_voice.use_itn = 1;
-        recognizer = SherpaOnnxCreateOfflineRecognizer(&config);
-        if (!recognizer) throw std::runtime_error("asr_load");
-        SherpaOnnxVadModelConfig v{};
-        v.silero_vad.model = vadPath.c_str(); v.silero_vad.threshold = 0.5f;
-        v.silero_vad.min_silence_duration = 0.65f; v.silero_vad.min_speech_duration = 0.2f;
-        v.silero_vad.max_speech_duration = 12.0f; v.silero_vad.window_size = 512;
-        v.sample_rate = 16000; v.num_threads = 1; v.provider = "cpu";
-        vad = SherpaOnnxCreateVoiceActivityDetector(&v, 30);
-        if (!vad) { SherpaOnnxDestroyOfflineRecognizer(recognizer); recognizer = nullptr; throw std::runtime_error("vad_load"); }
-    }
-    ~SpeechEngine() {
-        if (vad) SherpaOnnxDestroyVoiceActivityDetector(vad);
-        if (recognizer) SherpaOnnxDestroyOfflineRecognizer(recognizer);
-    }
-    NSDictionary *accept(NSData *pcm, bool flush) {
-        if (pcm.length % 2 || pcm.length > 16000 * 2 * 15) throw std::runtime_error("audio_size");
-        const uint8_t *bytes = static_cast<const uint8_t *>(pcm.bytes);
-        for (NSUInteger i = 0; i < pcm.length; i += 2) {
-            int16_t sample = static_cast<int16_t>(static_cast<uint16_t>(bytes[i]) | (static_cast<uint16_t>(bytes[i + 1]) << 8));
-            pending.push_back(static_cast<float>(sample) / 32768.0f);
-            history.push_back(static_cast<float>(sample) / 32768.0f);
-        }
-        NSMutableArray *segments = [NSMutableArray array];
-        size_t consumed = 0;
-        while (pending.size() - consumed >= 512) {
-            SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad, pending.data() + consumed, 512);
-            consumed += 512;
-            drain(segments);
-        }
-        pending.erase(pending.begin(), pending.begin() + consumed);
-        if (flush) {
-            if (!pending.empty()) {
-                pending.resize(512, 0); SherpaOnnxVoiceActivityDetectorAcceptWaveform(vad, pending.data(), 512); pending.clear();
-            }
-            SherpaOnnxVoiceActivityDetectorFlush(vad); drain(segments);
-        }
-        if (history.size() > 16000 * 30) {
-            const auto remove = history.size() - 16000 * 30;
-            history.erase(history.begin(), history.begin() + remove); historyStart += remove;
-        }
-        return @{ @"segments": segments, @"speaking": @(SherpaOnnxVoiceActivityDetectorDetected(vad) != 0) };
-    }
-    void drain(NSMutableArray *segments) {
-        while (!SherpaOnnxVoiceActivityDetectorEmpty(vad)) {
-            const auto *segment = SherpaOnnxVoiceActivityDetectorFront(vad);
-            const auto *stream = SherpaOnnxCreateOfflineStream(recognizer);
-            if (!segment || !stream) throw std::runtime_error("asr_stream");
-            // Restore up to 200 ms before the VAD boundary so quiet initial consonants and
-            // short question words are retained. Never overlap the previous decoded segment.
-            int64_t start = std::max(previousEnd, std::max(historyStart, static_cast<int64_t>(segment->start) - 3200));
-            const int64_t end = static_cast<int64_t>(segment->start) + segment->n;
-            const bool available = start >= historyStart && end <= historyStart + static_cast<int64_t>(history.size());
-            if (available) SherpaOnnxAcceptWaveformOffline(stream, 16000, history.data() + start - historyStart, static_cast<int32_t>(end - start));
-            else { start = segment->start; SherpaOnnxAcceptWaveformOffline(stream, 16000, segment->samples, segment->n); }
-            SherpaOnnxDecodeOfflineStream(recognizer, stream);
-            const auto *result = SherpaOnnxGetOfflineStreamResult(stream);
-            if (result && result->text) {
-                NSString *text = [NSString stringWithUTF8String:result->text];
-                if (text.length) [segments addObject:@{ @"text": text, @"start_ms": @(start / 16), @"end_ms": @(end / 16) }];
-            }
-            if (result) SherpaOnnxDestroyOfflineRecognizerResult(result);
-            SherpaOnnxDestroyOfflineStream(stream); SherpaOnnxDestroySpeechSegment(segment);
-            SherpaOnnxVoiceActivityDetectorPop(vad);
-            previousEnd = end;
-        }
-    }
-};
-
 // Streaming Paraformer keeps encoder/decoder caches across live audio chunks.
 // Silero gates silence and finalizes utterances; previews never become final by
 // merely being displayed. Fresh streams bound memory and prevent cross-turn repeats.
@@ -267,12 +183,10 @@ int main(int argc, char **argv) {
         if (argc != 3) return 2;
         signal(SIGPIPE, SIG_IGN);
         try {
-            std::unique_ptr<SpeechEngine> speech;
             std::unique_ptr<StreamingSpeechEngine> streamingSpeech;
             std::unique_ptr<EmbeddingEngine> embedding;
             const std::string mode(argv[1]), root(argv[2]);
-            if (mode == "speech") speech = std::make_unique<SpeechEngine>(root);
-            else if (mode == "paraformer") streamingSpeech = std::make_unique<StreamingSpeechEngine>(root);
+            if (mode == "paraformer") streamingSpeech = std::make_unique<StreamingSpeechEngine>(root);
             else if (mode == "embedding") embedding = std::make_unique<EmbeddingEngine>(root);
             else return 2;
             reply(@{ @"ready": @YES, @"protocol": @1 });
@@ -289,10 +203,10 @@ int main(int argc, char **argv) {
                     try {
                         NSMutableDictionary *response = [@{ @"id": idValue } mutableCopy];
                         if ([op isEqual:@"ping"]) response[@"ok"] = @YES;
-                        else if ((speech || streamingSpeech) && ([op isEqual:@"audio"] || [op isEqual:@"flush"])) {
+                        else if (streamingSpeech && ([op isEqual:@"audio"] || [op isEqual:@"flush"])) {
                             NSData *pcm = [op isEqual:@"flush"] ? [NSData data] : [[NSData alloc] initWithBase64EncodedString:command[@"pcm"] options:0];
                             if (!pcm) throw std::runtime_error("audio_base64");
-                            [response addEntriesFromDictionary:speech ? speech->accept(pcm, [op isEqual:@"flush"]) : streamingSpeech->accept(pcm, [op isEqual:@"flush"])];
+                            [response addEntriesFromDictionary:streamingSpeech->accept(pcm, [op isEqual:@"flush"])];
                         } else if (embedding && [op isEqual:@"embed"] && [command[@"text"] isKindOfClass:NSString.class]) {
                             response[@"vector"] = embedding->embed(command[@"text"]);
                         } else throw std::runtime_error("operation");

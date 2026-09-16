@@ -5,7 +5,7 @@ control links between complete HTML pages and works without JavaScript.
 
 ## Content and design
 
-The landing page follows the seven sections in the supplied Chinese and English
+The landing page preserves the seven original narrative sections in the supplied Chinese and English
 website copy: promise, recall under pressure, personal materials, three-step
 preparation, use cases, local knowledge/privacy, and download. Preserve both
 languages together in `content.json`. The editorial blockquote in the supplied
@@ -19,8 +19,7 @@ CTA. Headings use balanced wrapping; body text stays within comfortable measures
 The main visual is a synthetic native conversation window paired with prepared
 reference sheets. Quiet editorial sections and three sequential steps explain
 how preparation returns during a conversation. Review against the copy removed
-the previous prominent model table: service and window details now sit in a
-native disclosure under privacy, so technical choices support the main narrative.
+the previous prominent model table. In V1.4 the user requested an additional, always-visible service guide: three modules explain speech, embeddings and analysis; a dedicated comparison distinguishes semantic Live delegation from local text rules. No service information is hidden in a disclosure.
 No repeated feature-card grid, ornamental metrics, or automatic motion.
 
 The supplied privacy promise is accompanied by a visible qualification for cloud
@@ -46,8 +45,7 @@ content. Only display keys ending in `_rich` support `**strong emphasis**`; othe
 HTML and Markdown are not interpreted.
 
 Check both languages at desktop and mobile widths, the three demo buttons,
-Chinese/English navigation, installation deep links, collapsed/expanded technical
-details, keyboard focus, and download URLs. The GitHub Pages workflow publishes
+Chinese/English navigation, installation deep links, always-visible services and responsive comparisons, keyboard focus, and download URLs. The GitHub Pages workflow publishes
 only `_site/` when site inputs change on `main`. App builds and signatures are
 independent of these website-only updates.
 

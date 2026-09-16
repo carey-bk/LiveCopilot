@@ -106,6 +106,12 @@ struct SettingsView: View {
                         }
                     }.pickerStyle(.segmented).accessibilityIdentifier("window-background")
                     Text(t(coordinator.settings.background.detail)).font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    fontSizeControl(b("Transcript text", "流式识别区字号"), value: $coordinator.settings.transcriptFontSize, identifier: "transcript-font-size",
+                                    preview: b("What was your role in this project?", "你在这个项目中具体负责什么？"))
+                    fontSizeControl(b("Answer text", "回答区字号"), value: $coordinator.settings.answerFontSize, identifier: "answer-font-size",
+                                    preview: b("I would start with the goal, then explain the approach.", "我会先说明目标，再介绍具体的方法。"))
+                    Text(b("Text sizes are independent and take effect immediately. The window reflows; longer content scrolls.", "两处字号独立保存、即时生效；窗口会重新排版，较长的内容可滚动阅读。")).font(.caption).foregroundStyle(.secondary)
                 }.padding(10)
             } label: { Label(t("Language & appearance"), systemImage: "paintpalette") }
             SettingsSection {
@@ -165,13 +171,9 @@ struct SettingsView: View {
                 AppleSpeechCard(manager: coordinator.appleSpeech, language: $coordinator.settings.appleSpeechLanguage, interfaceLanguage: coordinator.settings.language, locked: locked)
                 Text(b("Like FunASR, automatic suggestions use local question rules plus a pause. Recognition speed and accuracy depend on your language, microphone and vocabulary; neither engine is always better.", "与 FunASR 一样，自动建议通过本地提问规则与停顿触发。速度和准确率取决于语言、麦克风及术语，没有在所有场景都更好的引擎。")).font(.caption).foregroundStyle(.secondary)
             } else if let kind = coordinator.settings.listeningService.localModel {
-                Text(t(kind == .streamingSpeech
-                    ? "Audio stays on this Mac. Chinese and English captions update while you speak. Preview text can change; completed sentences are used for automatic suggestions."
-                    : "Audio stays on this Mac. Captions appear after a pause or a 12-second segment. Chinese, English, Japanese, Korean and Cantonese are detected automatically.")).font(.callout).foregroundStyle(.secondary)
+                Text(t("Audio stays on this Mac. Chinese and English captions update while you speak. Preview text can change; completed sentences are used for automatic suggestions.")).font(.callout).foregroundStyle(.secondary)
                 LocalModelCard(manager: coordinator.localModels, kind: kind, language: coordinator.settings.language, locked: locked)
-                if kind == .streamingSpeech {
-                    Text(t("English terminology can be misrecognized. Compare with SenseVoiceSmall for English-heavy conversations.")).font(.caption).foregroundStyle(.secondary)
-                }
+                Text(b("English terminology can be misrecognized. For English-heavy conversations, compare Apple English or GPT-Live-1 on your own audio.", "英文术语可能误识别。英文较多时，可用自己的音频对比 Apple 英语识别或 GPT-Live-1。")).font(.caption).foregroundStyle(.secondary)
                 Text(t("Automatic suggestions use conservative local question rules. Pauses alone do not trigger analysis; use the shortcut for missed questions.")).font(.caption).foregroundStyle(.secondary)
                 localCost
             } else {
@@ -217,7 +219,7 @@ struct SettingsView: View {
                 Label(t("Using the Live service credential."), systemImage: "link").font(.headline)
                 CredentialStatus(coordinator: coordinator, analysis: false)
                 Button(t("Manage OpenAI credential")) { showOpenAIKey = true }
-            } else if coordinator.settings.reasoningService != .compatible {
+            } else if coordinator.settings.reasoningService == .separateOpenAI || coordinator.settings.reasoningService == .deepSeek {
                 CredentialEditor(coordinator: coordinator, analysis: true).id(coordinator.settings.reasoningService)
             }
             switch coordinator.settings.reasoningService {
@@ -242,11 +244,13 @@ struct SettingsView: View {
                         Text("https://api.deepseek.com/chat/completions").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     }.padding(10)
                 } label: { Text("DeepSeek") }
+            case .qwen, .glm, .kimi:
+                PresetAnalysisSettings(coordinator: coordinator).id(coordinator.settings.reasoningService)
             case .compatible: customService
             }
             Text(b("Higher reasoning effort can improve complex answers but takes longer and can use more output tokens. Off disables optional thinking when the model supports it. A separate OpenAI key changes billing credentials, not the model's capability.", "更高思考强度可能改善复杂回答，但通常更慢、输出 token 更多；关闭表示不启用模型可选的思考。独立 OpenAI Key 仅改变计费凭据，不改变模型能力。")).font(.caption).foregroundStyle(.secondary)
             priceNote(ServiceGuide.analysisPrice(coordinator.settings.reasoningService, model: coordinator.settings.analysisModel, language: coordinator.settings.language),
-                      url: coordinator.settings.reasoningService == .compatible ? nil : (coordinator.settings.reasoningService == .deepSeek ? "https://api-docs.deepseek.com/quick_start/pricing/" : "https://developers.openai.com/api/docs/models/gpt-5.6-sol"))
+                      url: coordinator.settings.reasoningService.pricingURL)
             Text(t("Changes apply to the next answer. Existing knowledge vectors do not need re-indexing when you change only the analysis model.")).font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -294,13 +298,27 @@ struct SettingsView: View {
             Text(message).font(.callout).textSelection(.enabled)
             if let url, let destination = URL(string: url) {
                 HStack {
-                    Text(b("USD · checked ", "美元 · 核对于 ") + ServiceGuide.checked).font(.caption)
+                    Text(b("Reference checked ", "参考信息核对于 ") + ServiceGuide.checked).font(.caption)
                     Link(b("Official pricing", "官方价格"), destination: destination).font(.caption)
                 }.foregroundStyle(.secondary)
                 Text(b("Published list prices are a reference, not a bill. Provider updates, taxes and account discounts may change the amount.", "公布价格供参考，不是账单估算；厂商调价、税费和账户优惠可能影响实际费用。")).font(.caption2).foregroundStyle(.secondary)
             }
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+    }
+    private func fontSizeControl(_ title: String, value: Binding<Double>, identifier: String, preview: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text("\(Int(value.wrappedValue)) pt").monospacedDigit().foregroundStyle(.secondary)
+                Stepper(title, value: value, in: OverlayTypography.range, step: 1).labelsHidden()
+                    .accessibilityLabel(title).accessibilityIdentifier(identifier)
+            }
+            Slider(value: value, in: OverlayTypography.range, step: 1)
+                .accessibilityLabel(title).accessibilityIdentifier(identifier + "-slider")
+            Text(preview).font(.system(size: value.wrappedValue)).fixedSize(horizontal: false, vertical: true)
+        }
     }
     private func modelField(_ title: String, value: Binding<String>, prompt: String? = nil) -> some View {
         HStack {
@@ -438,7 +456,7 @@ private struct CredentialStatus: View {
     }
 }
 
-private struct CredentialEditor: View {
+struct CredentialEditor: View {
     @ObservedObject var coordinator: AppCoordinator
     let analysis: Bool
     @State private var editing = false
@@ -495,7 +513,7 @@ private struct CredentialEditor: View {
 }
 
 /// Explicit view grouping keeps section labels and controls accessible independently.
-private struct SettingsSection<Content: View, Heading: View>: View {
+struct SettingsSection<Content: View, Heading: View>: View {
     let content: Content
     let heading: Heading
     init(@ViewBuilder content: () -> Content, @ViewBuilder label: () -> Heading) {

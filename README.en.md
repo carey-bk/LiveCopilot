@@ -8,9 +8,11 @@ A native macOS conversation copilot for interviews, meetings, and academic discu
 
 Built with Swift/SwiftUI on the native macOS foundation of [Stealth](https://github.com/vortechron/stealth). No LiveCopilot account, developer-operated relay server, cloud vector database, or spoken AI responses.
 
+Version **1.4.0** adds independent transcript/answer font sizes (11–28 pt) and Qwen, GLM, and Kimi analysis presets. The retired SenseVoiceSmall selection migrates to Paraformer without resetting other preferences or deleting downloaded weights. See [release notes](docs/V1_4_0_UPDATE.md) and the [service guide](docs/SERVICE_GUIDE.md).
+
 ## Download
 
-[Download LiveCopilot 1.3.2 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v1.3.2/LiveCopilot-1.3.2-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v1.3.2)
+[Download LiveCopilot 1.4.0 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v1.4.0/LiveCopilot-1.4.0-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v1.4.0)
 
 Requires **macOS 14+**, on Apple Silicon or Intel. Apple Speech additionally requires **macOS 26+**, supported hardware, and a supported language. No Xcode, Python, Ollama, or developer tools are needed to use the packaged app.
 
@@ -22,14 +24,14 @@ This is an **ad-hoc signed community build, not Apple-notarized**. Verify the do
 
 | Stage | Options | Data and cost |
 |---|---|---|
-| Local speech | Apple SpeechAnalyzer / SpeechTranscriber; Paraformer streaming; SenseVoiceSmall + VAD | On-device recognition with no API usage fee. Initial model downloads require internet. |
+| Local speech | Apple SpeechAnalyzer / SpeechTranscriber; Paraformer streaming | On-device recognition with no API usage fee. Initial model downloads require internet. |
 | Cloud speech | OpenAI Live | Sends audio to OpenAI; billed to your account. Realtime transcription and semantic question detection. |
 | Embeddings | Local BGE-M3 or OpenAI Embeddings | BGE-M3 processes text on-device; OpenAI sends indexing/query text to its API. Retrieval stays local. |
-| Answers | OpenAI, DeepSeek, or a compatible streaming Chat Completions API | Receives the question, relevant conversation, and retrieved passages. Bring your own service key. |
+| Answers | OpenAI, DeepSeek, Qwen, GLM, Kimi, or a compatible streaming Chat Completions API | Receives the question, relevant conversation, and retrieved passages. Bring your own service key. |
 
 Choose local speech + BGE-M3 + DeepSeek to keep recognition and indexing on your Mac while using DeepSeek for answers. No OpenAI key is needed for that combination. Local models still use disk space, memory, and compute; analysis still sends relevant text to your chosen provider.
 
-Paraformer updates Chinese/English caption previews as you speak. SenseVoiceSmall transcribes completed speech segments. Apple streams supported languages using on-device models. Compare accuracy and latency using your own voice, accent, hardware, and audio conditions. Local automatic suggestions use conservative text-based question detection; pauses alone do not trigger an answer.
+Paraformer updates Chinese/English caption previews as you speak. Apple streams supported languages using on-device models. Compare accuracy and latency using your own voice, accent, hardware, and audio conditions. Local automatic suggestions use conservative text-based question detection; pauses alone do not trigger an answer.
 
 ## Get started
 
@@ -43,7 +45,7 @@ Keys are securely stored in the local macOS Keychain. Startup checks silently; a
 
 ## A small window for the conversation
 
-- Chinese and English UI; glass, soft frost, or white backgrounds.
+- Chinese and English UI; glass, soft frost, or white backgrounds. Separate transcript and answer font controls under General → Language & appearance, applied immediately and saved.
 - Compact when empty, taller as content arrives. Manual resize and right-edge reveal.
 - **Refresh** clears the current transcript, draft, answer, and context. Active listening starts fresh; knowledge and saved history remain.
 - Replies use spoken paragraphs, with evidence/notes below when useful. General knowledge and reasoning can extend the documents without inventing personal experience.
@@ -51,6 +53,8 @@ Keys are securely stored in the local macOS Keychain. Startup checks silently; a
 - **About** links to the author's GitHub, repository, and bilingual product guide.
 
 `Option + H` toggles the overlay. Reply, recap, and follow-up shortcuts are configurable. Screenshot/sharing exclusion is optional; its behavior depends on macOS and the capture application. Settings and History remain capturable.
+
+Qwen, GLM, and Kimi presets use streamed Chat Completions with provider-specific thinking controls. Defaults are `qwen-plus`, `glm-5.2`, and `kimi-k2.6` on domestic general API endpoints. Edit the base URL for a matching region/account, save, then configure its key. Keys are isolated by provider and endpoint. Protocol and mock tests passed; real account access has not been tested with Qwen, GLM, or Kimi credentials. No keys are needed for development/mock testing; enter yours only in the app to validate a real request.
 
 ## Privacy and limits
 

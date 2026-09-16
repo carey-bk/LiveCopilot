@@ -45,18 +45,7 @@ enum LocalModelInstaller {
             status("Verifying local model…")
             try await Task.detached(priority: .utility) { try item.verify(destination) }.value
             try Task.checkCancellation()
-            if item.name == ModelDownload.senseVoice.name {
-                status("Installing local model…")
-                try await Task.detached(priority: .utility) {
-                    let extraction = Process()
-                    extraction.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-                    let folder = "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17"
-                    extraction.arguments = ["-xjf", destination.path, "-C", payload.path, "--strip-components", "1", folder + "/model.int8.onnx", folder + "/tokens.txt"]
-                    extraction.standardOutput = FileHandle.nullDevice; extraction.standardError = FileHandle.nullDevice
-                    try extraction.run(); extraction.waitUntilExit()
-                    guard extraction.terminationStatus == 0 else { throw CopilotError.message("Local model installation failed. Retry the download.") }
-                }.value
-            } else { try fm.moveItem(at: destination, to: payload.appendingPathComponent(item.installedName ?? item.name)) }
+            try fm.moveItem(at: destination, to: payload.appendingPathComponent(item.installedName ?? item.name))
         }
         try Task.checkCancellation()
         var sizes: [String: Int64] = [:]

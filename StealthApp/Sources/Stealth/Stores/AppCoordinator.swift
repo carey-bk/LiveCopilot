@@ -49,7 +49,7 @@ final class AppCoordinator: ObservableObject {
                 }
             }
             if oldValue.reasoningService != settings.reasoningService ||
-                oldValue.compatibleBaseURL != settings.compatibleBaseURL || oldValue.compatiblePath != settings.compatiblePath {
+                (try? oldValue.analysisCredentialReference()) != (try? settings.analysisCredentialReference()) {
                 refreshAnalysisKeyState()
             }
         }
@@ -275,7 +275,7 @@ final class AppCoordinator: ObservableObject {
         if settings.listeningService == .apple, #available(macOS 26, *) {
             provider = AppleLiveProvider(speaker: speaker, language: settings.appleSpeechLanguage, sessionStart: sessionStartedAt ?? Date())
         } else if let kind = settings.listeningService.localModel {
-            provider = LocalLiveProvider(directory: kind.location(in: localModels.root), speaker: speaker, sessionStart: sessionStartedAt ?? Date(), streaming: kind == .streamingSpeech)
+            provider = LocalLiveProvider(directory: kind.location(in: localModels.root), speaker: speaker, sessionStart: sessionStartedAt ?? Date())
         } else { provider = OpenAILiveProvider(key: key, model: settings.liveModel, speaker: speaker, scenario: settings.scenario) }
         provider.onEvent = { [weak self] event in self?.receive(event, speaker: speaker, epoch: epoch) }
         return provider

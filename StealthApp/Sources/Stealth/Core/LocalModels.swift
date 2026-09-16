@@ -2,22 +2,30 @@ import Foundation
 import CryptoKit
 
 enum ListeningService: String, Codable, CaseIterable, Identifiable {
-    case openAI, apple, local, paraformer
+    case openAI, apple, paraformer
     var id: String { rawValue }
     var label: String {
         switch self {
         case .openAI: return "OpenAI · GPT-Live"
         case .apple: return "Apple · on-device speech"
-        case .local: return "Local · SenseVoiceSmall + VAD"
         case .paraformer: return "Local · Paraformer-zh-streaming"
         }
     }
     var localModel: LocalModelKind? {
         switch self {
         case .openAI, .apple: return nil
-        case .local: return .speech
         case .paraformer: return .streamingSpeech
         }
+    }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        // Preserve all other preferences when upgrading the retired sentence recognizer.
+        if value == "local" { self = .paraformer; return }
+        guard let service = Self(rawValue: value) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown listening service")
+        }
+        self = service
     }
     var isLocal: Bool { self != .openAI }
     var sampleRate: Double { isLocal ? 16000 : 24000 }
@@ -30,32 +38,28 @@ enum EmbeddingService: String, Codable, CaseIterable, Identifiable {
 }
 
 enum LocalModelKind: String, CaseIterable, Identifiable, Sendable {
-    case speech, streamingSpeech, embedding
+    case streamingSpeech, embedding
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .speech: return "SenseVoiceSmall + Silero VAD"
         case .streamingSpeech: return "Paraformer-zh-streaming + Silero VAD"
         case .embedding: return "BGE-M3 · Q8"
         }
     }
     var directory: String {
         switch self {
-        case .speech: return "sensevoice-int8-v1"
         case .streamingSpeech: return "paraformer-streaming-zh-en-int8-v1"
         case .embedding: return "bge-m3-q8-v1"
         }
     }
     var downloadSize: String {
         switch self {
-        case .speech: return "164 MB"
         case .streamingSpeech: return "238 MB"
         case .embedding: return "635 MB"
         }
     }
     var downloads: [ModelDownload] {
         switch self {
-        case .speech: return [.senseVoice, .vad]
         case .streamingSpeech: return [.paraformerEncoder, .paraformerDecoder, .paraformerTokens, .vad]
         case .embedding: return [.bge]
         }
@@ -63,7 +67,6 @@ enum LocalModelKind: String, CaseIterable, Identifiable, Sendable {
     static let embeddingIdentity = "local:bge-m3:q8_0:950f4a8e5e19:cls:l2:v1"
     var files: [String] {
         switch self {
-        case .speech: return ["model.int8.onnx", "tokens.txt", "silero_vad.onnx"]
         case .streamingSpeech: return ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt", "silero_vad.onnx"]
         case .embedding: return ["bge-m3-Q8_0.gguf"]
         }
@@ -100,9 +103,6 @@ struct ModelDownload: Sendable {
         url: URL(string: paraformerBase + "tokens.txt")!,
         sha256: "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6",
         name: "paraformer-tokens.txt", installedName: "tokens.txt")
-    static let senseVoice = Self(
-        url: URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2")!,
-        sha256: "7d1efa2138a65b0b488df37f8b89e3d91a60676e416f515b952358d83dfd347e", name: "sensevoice.tar.bz2")
     static let vad = Self(
         url: URL(string: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx")!,
         sha256: "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", name: "silero_vad.onnx")
