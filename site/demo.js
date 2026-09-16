@@ -7,3 +7,18 @@ controls.forEach(button => button.addEventListener('click', () => {
   title.textContent = button.dataset.title;
   content.textContent = document.querySelector(`#${button.dataset.example}`).content.textContent.trim();
 }));
+
+// Deep links reveal the corresponding secondary information. Native details
+// remain usable without JavaScript; do not expand them on ordinary page load.
+function revealLinkedDetails() {
+  const section = document.getElementById(location.hash.slice(1));
+  if (section instanceof HTMLDetailsElement) section.open = true;
+}
+window.addEventListener('hashchange', revealLinkedDetails);
+revealLinkedDetails();
+document.querySelectorAll('a[href="#install"], a[href="#services"]').forEach(link => {
+  link.addEventListener('click', () => {
+    const section = document.getElementById(link.hash.slice(1));
+    if (section instanceof HTMLDetailsElement) section.open = true;
+  });
+});

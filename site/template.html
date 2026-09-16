@@ -24,8 +24,8 @@
     <nav class="wrap nav" aria-label="$navigation">
       <a class="brand" href="$home"><img src="${prefix}assets/logo.svg" width="42" height="42" alt="">LiveCopilot</a>
       <div class="nav-links">
-        <a class="desktop" href="#features">$nav_features</a>
-        <a class="desktop" href="#services">$nav_services</a>
+        <a class="desktop" href="#steps">$nav_features</a>
+        <a class="desktop" href="#scenarios">$nav_services</a>
         <a class="desktop" href="https://github.com/carey-bk/LiveCopilot">GitHub</a>
         <div class="languages" aria-label="$language_label">
           <a href="$zh_url" lang="zh-CN" hreflang="zh-Hans" $zh_current>中文</a>
@@ -40,6 +40,7 @@
         <div class="hero-copy">
           <img src="${prefix}assets/logo.svg" alt="" width="96" height="96">
           <h1 id="hero-heading">$hero_title</h1>
+          <p class="hero-subtitle">$hero_subtitle</p>
           <p class="intro">$hero_intro</p>
           <div class="actions">
             <a class="primary" href="$download_url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg>$download_label</a>
@@ -69,22 +70,68 @@
           <template id="followup-example">$demo_followup</template>
         </div>
       </section>
-      <div class="uses"><strong>$uses_title</strong><span>$use_interview</span><span>$use_meeting</span><span>$use_defense</span><span>$use_questions</span></div>
-      <section id="features" class="section">
-        <div class="section-intro"><h2>$features_title</h2><p>$features_intro</p></div>
-        <div class="workflow">
-          <div class="quote-sheet"><p>$quote</p><small>$quote_note</small></div>
-          <ul>
-            <li><h3>$feature_one_title</h3><p>$feature_one_body</p></li>
-            <li><h3>$feature_two_title</h3><p>$feature_two_body</p></li>
-            <li><h3>$feature_three_title</h3><p>$feature_three_body</p></li>
-          </ul>
-        </div>
-      </section>
     </div>
-    <section id="services" class="section services-section">
+    <section class="remember section" id="why">
+      <div class="wrap editorial">
+        <h2>$remember_title</h2>
+        <div class="prose">
+          <p class="lead">$remember_intro</p>
+          <p>$remember_problem</p>
+          <p class="remember-conclusion">$remember_conclusion_rich</p>
+        </div>
+      </div>
+    </section>
+    <section class="wrap section materials" id="materials">
+      <div class="materials-copy">
+        <h2>$materials_title</h2>
+        <p class="lead">$materials_intro</p>
+        <p>$materials_import_rich</p>
+        <p>$materials_body</p>
+        <h3>$materials_closing</h3>
+        <p class="formats">$materials_formats</p>
+      </div>
+      <figure class="prepared-materials">
+        <figcaption>$materials_demo_label</figcaption>
+        <ul class="file-stack">
+          <li><span class="file-mark" aria-hidden="true">PDF</span><span>$material_resume</span></li>
+          <li><span class="file-mark rose" aria-hidden="true">MD</span><span>$material_project</span></li>
+          <li><span class="file-mark" aria-hidden="true">DOCX</span><span>$material_paper</span></li>
+        </ul>
+        <div class="retrieved-note">
+          <span class="note-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 3h14v19l-7-5-7 5V3Z"/></svg></span>
+          <h3>$material_snippet_title</h3>
+          <p>$material_snippet</p>
+        </div>
+      </figure>
+    </section>
+    <section class="steps-section section" id="steps">
       <div class="wrap">
-        <div class="section-intro"><h2>$services_title</h2><p>$services_intro</p></div>
+        <h2>$steps_title</h2>
+        <ol class="steps">
+          <li><span class="step-number" aria-hidden="true">01</span><h3>$step_1_title</h3><p>$step_1_body</p></li>
+          <li><span class="step-number" aria-hidden="true">02</span><h3>$step_2_title</h3><p>$step_2_body</p></li>
+          <li><span class="step-number" aria-hidden="true">03</span><h3>$step_3_title</h3><p>$step_3_body</p></li>
+        </ol>
+      </div>
+    </section>
+    <section class="wrap section scenarios" id="scenarios">
+      <h2>$scenarios_title</h2>
+      <div class="scenario-list">
+        <article><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="6" width="32" height="23" rx="3"/><circle cx="20" cy="15" r="4"/><path d="M12 27c0-8 16-8 16 0M20 29v6m-8 0h16"/></svg><h3>$scenario_1_title</h3><p>$scenario_1_body</p></article>
+        <article><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 13 20 6l16 7-16 7-16-7Zm6 3v12c6 5 14 5 20 0V16m6-3v15"/></svg><h3>$scenario_2_title</h3><p>$scenario_2_body</p></article>
+        <article><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="6" width="32" height="24" rx="3"/><path d="M14 36h12m-6-6v6"/><circle cx="13" cy="15" r="3"/><circle cx="27" cy="15" r="3"/><path d="M8 25c0-7 10-7 10 0m4 0c0-7 10-7 10 0"/></svg><h3>$scenario_3_title</h3><p>$scenario_3_body</p></article>
+      </div>
+    </section>
+    <section class="privacy-section section" id="privacy">
+      <div class="wrap">
+        <div class="editorial privacy-copy">
+          <div><svg class="privacy-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="8" y="9" width="48" height="34" rx="4"/><path d="M2 50h60l-5 5H7l-5-5Z"/><rect x="25" y="24" width="14" height="12" rx="2"/><path d="M28 24v-4a4 4 0 0 1 8 0v4"/></svg><h2>$privacy_title</h2></div>
+          <div class="prose"><p>$privacy_intro_rich</p><p>$privacy_account</p><p>$privacy_conclusion_rich</p><p class="privacy-caveat">$privacy_caveat</p><a class="text-link" href="https://github.com/carey-bk/LiveCopilot/blob/main/docs/PRIVACY.md">$privacy_link</a></div>
+        </div>
+        <details class="learn-more" id="services">
+          <summary>$learn_more</summary>
+          <div class="details-body">
+            <h3>$services_title</h3><p>$services_intro</p>
         <table class="service-table">
           <thead><tr><th scope="col">$table_service</th><th scope="col">$table_options</th><th scope="col">$table_choice</th></tr></thead>
           <tbody>
@@ -94,21 +141,28 @@
             <tr><td><strong>$analysis_title</strong><span class="scope">$analysis_scope</span></td><td><strong>OpenAI / DeepSeek</strong>$analysis_body <span class="tag">$paid_tag</span></td><td>$analysis_choice</td></tr>
           </tbody>
         </table>
-        <p class="service-note">$service_note</p>
+            <p class="service-note">$service_note</p>
+            <div class="window-features"><div><h3>$feature_two_title</h3><p>$feature_two_body</p></div><div><h3>$feature_three_title</h3><p>$feature_three_body</p></div></div>
+          </div>
+        </details>
       </div>
     </section>
-    <section class="wrap section privacy-layout" id="privacy">
-      <div><h2>$privacy_title</h2><p>$privacy_intro</p><a class="text-link" href="https://github.com/carey-bk/LiveCopilot/blob/main/docs/PRIVACY.md">$privacy_link</a></div>
-      <div class="data-path">
-        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg><section><h3>$privacy_local_title</h3><p>$privacy_local_body</p></section></div>
-        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6"/></svg><section><h3>$privacy_cloud_title</h3><p>$privacy_cloud_body</p></section></div>
-        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></svg><section><h3>$privacy_key_title</h3><p>$privacy_key_body</p></section></div>
-      </div>
-    </section>
-    <section class="wrap download-section" id="install">
+    <section class="wrap download-section" aria-labelledby="download-heading">
       <div class="download-box">
-        <div><h2>$install_title</h2><p>$install_intro</p><a class="primary" href="$download_url">$download_label</a><small>$download_details</small></div>
-        <div><ol class="install"><li>$install_one</li><li>$install_two</li><li>$install_three</li><li>$install_four</li></ol><p class="install-note">$signing_note <a href="https://support.apple.com/en-us/102445">$apple_link</a></p></div>
+        <div class="download-copy">
+          <img src="${prefix}assets/logo.svg" width="72" height="72" alt="">
+          <h2 id="download-heading">$install_title</h2>
+          <p>$install_intro</p>
+          <a class="primary" href="$download_url">$final_download_label</a>
+          <small>$final_platform</small>
+        </div>
+        <details class="installation" id="install">
+          <summary>$install_heading</summary>
+          <div class="details-body">
+            <ol class="install"><li>$install_one</li><li>$install_two</li><li>$install_three</li><li>$install_four</li></ol>
+          </div>
+        </details>
+        <p class="install-note">$signing_note <a href="https://support.apple.com/en-us/102445">$apple_link</a></p>
       </div>
     </section>
   </main>

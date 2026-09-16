@@ -4,6 +4,7 @@ from pathlib import Path
 from string import Template
 import html
 import json
+import re
 import shutil
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -16,7 +17,11 @@ template = Template((SOURCE / 'template.html').read_text())
 OUTPUT.mkdir(exist_ok=True)
 for language, copy in content.items():
     english = language == 'en'
-    data = {key: html.escape(value, quote=True) for key, value in copy.items()}
+    # Only explicitly marked display strings support Markdown emphasis. Escape
+    # first so supplied copy cannot introduce arbitrary HTML or attributes.
+    data = {key: (re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html.escape(value, quote=True))
+                  if key.endswith('_rich') else html.escape(value, quote=True))
+            for key, value in copy.items()}
     data.update(lang='en' if english else 'zh-CN', prefix='../' if english else '',
                 home='./', zh_url='../' if english else './', en_url='./' if english else 'en/',
                 zh_current='' if english else 'aria-current="page"',
