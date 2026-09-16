@@ -28,6 +28,15 @@ class BackupTests(unittest.TestCase):
             self.assertTrue((restored / app.name / 'Contents/link').is_symlink())
             self.assertTrue(app.exists(), 'archiving must not delete source')
 
+    def test_build_registration_cleanup_excludes_installed_and_development_apps(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            target, copy, debug = [root / name for name in ['Installed.app', 'Release.app', 'Debug.app']]
+            for path, identifier in [(target, installer.BUNDLE_ID), (copy, installer.BUNDLE_ID), (debug, 'com.livecopilot.development')]:
+                (path / 'Contents').mkdir(parents=True)
+                (path / 'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier': identifier}))
+            self.assertEqual(installer.production_copies([target, copy, copy, debug, root / 'missing'], target), [copy.resolve()])
+
     def test_unrelated_bundle_refused(self):
         with tempfile.TemporaryDirectory() as folder:
             app = Path(folder) / 'Other.app'

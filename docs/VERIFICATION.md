@@ -8,9 +8,13 @@ The latest exact results are maintained in `IMPLEMENTATION_PLAN.md`. Distinguish
 
 ## Deterministic checks (no API calls)
 
+### 2026-09-16 — installed 1.3.0 capture and GUI acceptance
+
+The last stale ScreenCapture requirement was traced to the Debug app's code hash, not the installed binary. Debug now has a distinct bundle ID. 19 native tests and 3 installer tests passed; same-ID development artifacts were unregistered and the unchanged installed app re-registered. After authorization, local browser synthetic Chinese audio appeared as Them through Apple speech, and microphone speech appeared as You. Stop/restart succeeded without another recording prompt. Long-content screenshots preserved header, footer and rounded corners. Apple service and DeepSeek price/key-status UI were inspected. Installed build/hash remain unchanged. See [detailed evidence and limits](V1_3_0_UPDATE.md#2026-09-16权限根因补充与实机验收完成).
+
 ### 2026-09-15 — Apple speech, overlay bounds and local updater (1.3.0)
 
-59 core checks, 19 native XCTest cases and 2 installer backup tests passed. Universal Release **1.3.0 / 20260915.153614** is installed. Apple on-device Chinese/English streaming, VAD/question routing, silence suppression and final drain passed on synthetic audio. SenseVoice and Paraformer regression passed with recorded accuracy limitations. The installer migrated 13 obsolete app bundles to verified archives and reset only this app's ScreenCapture grant. New installed GUI and hardware permission acceptance are pending because the Mac locked before relaunch. See [complete 1.3.0 evidence and prices](V1_3_0_UPDATE.md).
+59 core checks, 19 native XCTest cases and 2 installer backup tests passed. Universal Release **1.3.0 / 20260915.153614** is installed. Apple on-device Chinese/English streaming, VAD/question routing, silence suppression and final drain passed on synthetic audio. SenseVoice and Paraformer regression passed with recorded accuracy limitations. The installer migrated 13 obsolete app bundles to verified archives and reset only this app's ScreenCapture grant. At that point installed GUI and hardware permission acceptance were pending because the Mac locked; the September 16 entry above records completion. See [complete 1.3.0 evidence and prices](V1_3_0_UPDATE.md).
 
 ### 2026-09-14 — Paraformer bilingual streaming (1.2.2)
 

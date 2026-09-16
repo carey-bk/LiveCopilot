@@ -67,6 +67,21 @@ def requirement(app):
     return next(line.split('designated =>', 1)[1].strip() for line in (result.stdout + result.stderr).splitlines() if 'designated =>' in line)
 
 
+def production_copies(paths, target):
+    """Only unregister known build artifacts sharing the release identity."""
+    result = []
+    for path in paths:
+        path = path.resolve()
+        if path == target.resolve() or path in result:
+            continue
+        try:
+            identity(path)
+        except (OSError, ValueError, plistlib.InvalidFileException):
+            continue
+        result.append(path)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('app', type=Path, help='Already signed, validated application bundle')
@@ -80,6 +95,15 @@ def main():
     run('/usr/bin/codesign', '--verify', '--deep', '--strict', str(source))
     if source == target.resolve():
         raise ValueError('Use a separate validated build as the source')
+    repo = Path(__file__).resolve().parents[2]
+    copies = production_copies([
+        source,
+        repo / 'StealthApp/build/Build/Products/Debug/LiveCopilot.app',
+        repo / 'StealthApp/build/Build/Products/Release/LiveCopilot.app',
+        *repo.joinpath('dist').glob('LiveCopilot*.app'),
+        *Path(tempfile.gettempdir()).glob('LiveCopilot-*.app'),
+        *Path('/tmp').glob('LiveCopilot-*.app'),
+    ], target)
     previous = requirement(target) if target.exists() else None
     current = requirement(source)
     # Same ad-hoc signature -> no reset. A stable certificate requirement also
@@ -92,7 +116,8 @@ def main():
         identity(app)
     plan = {'target': str(target), 'version': info.get('CFBundleShortVersionString'),
             'build': info.get('CFBundleVersion'), 'legacy_backups': len(old_apps),
-            'screen_permission_reset': reset, 'backup_directory': str(backup_root)}
+            'screen_permission_reset': reset, 'backup_directory': str(backup_root),
+            'unregister_build_copies': [str(path) for path in copies]}
     print(json.dumps(plan, ensure_ascii=False), flush=True)
     if args.dry_run:
         return
@@ -128,7 +153,8 @@ def main():
                 shutil.move(str(rollback), target)
                 run(LSREGISTER, '-f', str(target), check=False)
             raise
-        run(LSREGISTER, '-u', str(source), check=False)
+        for copy in copies:
+            run(LSREGISTER, '-u', str(copy), check=False)
         run(LSREGISTER, '-f', str(target))
         if reset:
             # Only this application's screen/system-audio grant. macOS owns the

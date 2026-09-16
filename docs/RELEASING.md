@@ -54,3 +54,8 @@ The target is always `~/Applications/LiveCopilot.app`. The installer verifies th
 If the designated requirement changes, it resets only `ScreenCapture` for `com.livecopilot.app`, once after installation. `--repair-permissions` forces this repair for an already stale grant. It never changes Keychain ACLs, resets other applications, edits TCC databases or grants permission itself. A same-signature reinstall does not reset grants. The receipt `latest-install.json` records version/build, executable SHA-256 and archive paths, without credentials.
 
 After installation, the user requests access in General → System audio permission and allows the canonical LiveCopilot in macOS Privacy Settings, following any quit/reopen request. A changed ad-hoc signature can still prompt for existing Keychain access. Stable Developer ID signing is the long-term solution for upgrade identity continuity; this installer does not claim to solve that by weakening signature requirements.
+
+
+### Keep development identity separate
+
+Debug uses `com.livecopilot.development`; Release uses `com.livecopilot.app`. The prior shared bundle ID let a post-install Xcode test run register its Debug signature as the apparent production application, so a user could enable the right-looking permission switch for the wrong binary. Confirm the built Debug plist retains its distinct ID. Run validation **before** the final local install, then register the canonical app last. The installer unregisters known same-production-ID copies under build/dist/staging without deleting them; it leaves the separate development app alone. Do not run production-ID preview/test bundles after final installation.
