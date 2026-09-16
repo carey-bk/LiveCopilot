@@ -37,7 +37,11 @@ python3 -m http.server 18744 --directory _site
 ```
 
 Edit `content.json`, `template.html`, and `styles.css`. Keep assets consistent with
-`assets/brand/`. The builder requires matching translation keys and escapes all
+`assets/brand/`. Page images use the 512px transparent PNG at 29–72 CSS pixels
+to keep the icon crisp on high-density displays without browser SVG shadow-filter
+rasterization. The vector stays available for the favicon and editable master.
+The listening row owns both separators and centers its label/waveform together.
+The builder requires matching translation keys and escapes all
 content. Only display keys ending in `_rich` support `**strong emphasis**`; other
 HTML and Markdown are not interpreted.
 
