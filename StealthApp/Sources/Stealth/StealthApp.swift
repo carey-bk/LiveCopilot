@@ -100,8 +100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Rebind live whenever Settings records a new shortcut.
         coordinator.onHotkeysChanged = { [weak self] in self?.hotkeys.reload() }
 
-        // If there's no key yet, surface settings so the user can paste one.
-        if coordinator.settings.requiresOpenAIKey && !coordinator.hasAPIKey { openSettings() }
+        // Credential checks are asynchronous and silent. An empty startup cache is not
+        // evidence that the user has never configured a key; Settings stays user-initiated.
     }
 
     private func applyPreferences(_ settings: AppSettings) {

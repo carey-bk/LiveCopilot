@@ -44,7 +44,7 @@ final class AppCoordinator: ObservableObject {
             if oldValue.requiresOpenAIKey != settings.requiresOpenAIKey {
                 if settings.requiresOpenAIKey { refreshKeyState() }
                 else {
-                    credentialRevision = UUID(); isCheckingKey = false; cachedKey = nil; hasAPIKey = false
+                    credentialRevision = UUID(); isCheckingKey = false; cachedKey = nil; hasAPIKey = false; keyNeedsAuthorization = false
                     keyStatus = "OpenAI is not required by the selected local services."
                 }
             }
@@ -58,8 +58,10 @@ final class AppCoordinator: ObservableObject {
     @Published var isTransitioning = false
     @Published var hasAPIKey = false
     @Published var isCheckingKey = false
+    @Published var keyNeedsAuthorization = false
     @Published var hasAnalysisKey = false
     @Published var isCheckingAnalysisKey = false
+    @Published var analysisKeyNeedsAuthorization = false
     @Published var analysisKeyStatus = "No credential available."
     @Published var keyStatus = "No credential available."
     @Published var statusMessage = "Ready — type a question or start listening"
@@ -69,7 +71,7 @@ final class AppCoordinator: ObservableObject {
     @Published var knowledgeMessage = ""
     @Published var includeConversation = true
     @Published var micEnabled = true
-    @Published var tone = ReplyTone.professional
+    @Published private(set) var conversationGeneration = UUID()
     var onHotkeysChanged: (() -> Void)?
     var onOpenSettings: (() -> Void)?
     var onShowOverlay: ((_ automatic: Bool) -> Void)?
@@ -107,23 +109,26 @@ final class AppCoordinator: ObservableObject {
     }
     func updateHotkey(_ combo: HotkeyCombo, for mode: SuggestionMode) { hotkeys.set(combo, for: mode); onHotkeysChanged?() }
     func resetHotkey(_ mode: SuggestionMode) { hotkeys.reset(mode); onHotkeysChanged?() }
-    func refreshKeyState() {
+    func refreshKeyState(interactive: Bool = false) {
         if isMock { hasAPIKey = true; return }
         guard !isCheckingKey else { return }
         isCheckingKey = true
         cachedKey = nil; hasAPIKey = false
-        keyStatus = "Checking Keychain… Complete any macOS access prompt locally."
+        keyNeedsAuthorization = false
+        keyStatus = "Checking Keychain…"
         let revision = UUID(); credentialRevision = revision
         Task {
             defer { if credentialRevision == revision { isCheckingKey = false } }
             do {
                 // A locked Keychain or its access prompt must never freeze the native UI.
-                let key = try await Task.detached(priority: .userInitiated) { try KeychainStore.resolve() }.value
+                let result = try await CredentialVault.shared.read(.live, interactive: interactive)
+                let key = result.key
                 guard credentialRevision == revision else { return }
                 cachedKey = key; hasAPIKey = key != nil
                 DebugLog.log("credential.ready role=live available=\(hasAPIKey)")
-                keyStatus = key == nil ? "No credential available." : "Credential available. No API request made."
-                if key == nil { statusMessage = "No key available — open Settings to configure Keychain." }
+                keyNeedsAuthorization = result.needsAuthorization
+                keyStatus = result.message
+                if key == nil { statusMessage = result.needsAuthorization ? result.message : "No key available — open Settings to configure Keychain." }
                 if let key { runStartupCheckIfRequested(key: key) }
             } catch {
                 guard credentialRevision == revision else { return }
@@ -132,26 +137,26 @@ final class AppCoordinator: ObservableObject {
             }
         }
     }
-    func refreshAnalysisKeyState() {
+    func refreshAnalysisKeyState(interactive: Bool = false) {
         let revision = UUID(); analysisCredentialRevision = revision
-        cachedAnalysisKey = nil; hasAnalysisKey = false; isCheckingAnalysisKey = false
+        cachedAnalysisKey = nil; hasAnalysisKey = false; isCheckingAnalysisKey = false; analysisKeyNeedsAuthorization = false
         guard settings.reasoningService != .sharedOpenAI else { analysisKeyStatus = "Using the Live service credential."; return }
         guard !isMock else { hasAnalysisKey = true; analysisKeyStatus = "Mock providers — no credential needed."; return }
         do {
             let reference = try settings.analysisCredentialReference()
             analysisCredentialReference = reference
             isCheckingAnalysisKey = true
-            analysisKeyStatus = "Checking Keychain… Complete any macOS access prompt locally."
+            analysisKeyStatus = "Checking Keychain…"
             Task {
                 defer { if analysisCredentialRevision == revision { isCheckingAnalysisKey = false } }
                 do {
-                    let key = try await Task.detached(priority: .userInitiated) {
-                        try KeychainStore.read(service: reference.service, account: reference.account)
-                    }.value
+                    let result = try await CredentialVault.shared.read(reference, interactive: interactive)
+                    let key = result.key
                     guard analysisCredentialRevision == revision else { return }
                     cachedAnalysisKey = key; hasAnalysisKey = key != nil
                     DebugLog.log("credential.ready role=analysis available=\(hasAnalysisKey)")
-                    analysisKeyStatus = key == nil ? "No credential available." : "Credential available. No API request made."
+                    analysisKeyNeedsAuthorization = result.needsAuthorization
+                    analysisKeyStatus = result.message
                 } catch {
                     guard analysisCredentialRevision == revision else { return }
                     analysisKeyStatus = error.localizedDescription
@@ -163,23 +168,19 @@ final class AppCoordinator: ObservableObject {
         guard !isMock else { return }
         let reference = analysis ? try settings.analysisCredentialReference() : .live
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        try await Task.detached(priority: .userInitiated) {
-            try KeychainStore.save(value, service: reference.service, account: reference.account)
-        }.value
+        try await CredentialVault.shared.save(value, for: reference)
         if reference == .live {
             credentialRevision = UUID(); isCheckingKey = false
-            cachedKey = value; hasAPIKey = true; keyStatus = "Saved in macOS Keychain."
+            cachedKey = value; hasAPIKey = true; keyNeedsAuthorization = false; keyStatus = "Saved in macOS Keychain."
         } else if (try? settings.analysisCredentialReference()) == reference {
             analysisCredentialRevision = UUID(); isCheckingAnalysisKey = false
-            cachedAnalysisKey = value; hasAnalysisKey = true; analysisKeyStatus = "Saved in macOS Keychain."
+            cachedAnalysisKey = value; hasAnalysisKey = true; analysisKeyNeedsAuthorization = false; analysisKeyStatus = "Saved in macOS Keychain."
         }
     }
     func removeCredential(analysis: Bool) async throws {
         guard !isMock else { return }
         let reference = analysis ? try settings.analysisCredentialReference() : .live
-        try await Task.detached(priority: .userInitiated) {
-            try KeychainStore.clear(service: reference.service, account: reference.account)
-        }.value
+        try await CredentialVault.shared.remove(reference)
         if reference == .live { credentialRevision = UUID(); isCheckingKey = false; refreshKeyState() }
         else if (try? settings.analysisCredentialReference()) == reference { refreshAnalysisKeyState() }
     }
@@ -362,6 +363,32 @@ final class AppCoordinator: ObservableObject {
         saveSession()
         statusMessage = incompleteLocalStop ? "Listening stopped. The final local speech segment could not be completed." : "Listening stopped — manual questions remain available"
     }
+    /// Discard this session, including provider-side speech context and late buffered finals.
+    /// Listening continues with fresh providers if it was active before the reset.
+    func resetConversation() async {
+        guard !isTransitioning, !isShuttingDown else { return }
+        let resume = isRunning
+        isTransitioning = true
+        liveEpoch = UUID() // Invalidate old callbacks BEFORE disconnect can flush a final segment.
+        cancelAnswer(); answerTask = nil
+        questionTask?.cancel(); questionTask = nil; pendingAutomatic = nil
+        mockTask?.cancel(); mockTask = nil
+        sessionStartedAt = nil // This session was explicitly discarded, not archived.
+        isRunning = false
+        conversation.reset(); transcript.clear(); suggestion.reset()
+        activeDelegations = []; speakingSources = []
+        questionState = QuestionPhase.listening.rawValue
+        settings.overlayAutoHeight = true
+        conversationGeneration = UUID()
+        statusMessage = "Ready — type a question or start listening"
+        let a = systemLive, b = micLive; systemLive = nil; micLive = nil
+        await systemAudio.stop(); mic.stop()
+        async let closeA: Void = a?.disconnect() ?? ()
+        async let closeB: Void = b?.disconnect() ?? ()
+        _ = await (closeA, closeB)
+        isTransitioning = false
+        if resume && !isShuttingDown { await start() }
+    }
     func saveSession() {
         if let started = sessionStartedAt {
             _ = sessions.save(lines: transcript.lines, startedAt: started, fragments: conversation.fragments)
@@ -370,7 +397,7 @@ final class AppCoordinator: ObservableObject {
     }
     func toggle() async { if isRunning { await stop() } else { await start() } }
     func toggleMic() {
-        guard !isShuttingDown else { return }
+        guard !isShuttingDown, !isTransitioning else { return }
         guard settings.mode == .remote else { statusMessage = "Room mode uses the microphone. Stop listening to disable it."; return }
         micEnabled.toggle()
         guard isRunning, !isMock else { return }
@@ -382,7 +409,7 @@ final class AppCoordinator: ObservableObject {
                     guard mic.isCapturing, liveEpoch == epoch, isRunning, !isShuttingDown, micEnabled else { return }
                     micLive = makeLive(key: key, speaker: .you, epoch: liveEpoch); micLive?.connect(context: conversation.context())
                 } catch { statusMessage = error.localizedDescription }
-            } else { mic.stop(); await micLive?.disconnect(); micLive = nil }
+            } else { mic.stop(); let previous = micLive; micLive = nil; await previous?.disconnect() }
         }
     }
     func requestSuggestion(mode: SuggestionMode = .reply) {
@@ -405,7 +432,7 @@ final class AppCoordinator: ObservableObject {
     private func request(query: String, mode: SuggestionMode, speaker: Speaker? = nil,
                          delegationID: String? = nil, useContext: Bool = true) {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return }
+        guard !query.isEmpty, !isTransitioning, !isShuttingDown else { return }
         guard query.count <= 8000 else { suggestion.fail("Keep a manual question under 8,000 characters."); return }
         let reasoning: any ReasoningProvider
         let embedding: any EmbeddingProvider
@@ -445,7 +472,7 @@ final class AppCoordinator: ObservableObject {
                 self.suggestion.sources = sources
                 self.suggestion.retrievalMS = Int(Date().timeIntervalSince(started) * 1000)
                 DebugLog.log("rag.ready elapsed_ms=\(self.suggestion.retrievalMS) chunks=\(sources.count)")
-                let answer = AnswerRequest(query: normalized, conversation: context, scenario: settings.scenario, sources: sources)
+                let answer = AnswerRequest(query: normalized, conversation: context, scenario: settings.scenario, sources: sources, mode: mode)
                 var first = true
                 for try await delta in reasoning.stream(answer) {
                     try Task.checkCancellation(); guard self.requestID == id else { return }

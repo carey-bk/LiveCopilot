@@ -77,7 +77,7 @@ struct SettingsView: View {
                     }.pickerStyle(.segmented).accessibilityIdentifier("window-background")
                     Text(t(coordinator.settings.background.detail)).font(.caption).foregroundStyle(.secondary)
                 }.padding(10)
-            } label: { Label(t("Language & appearance"), systemImage: "textformat") }
+            } label: { Label(t("Language & appearance"), systemImage: "paintpalette") }
             SettingsSection {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle(t("Fit window height to content"), isOn: $coordinator.settings.overlayAutoHeight)
@@ -386,13 +386,14 @@ private struct CredentialStatus: View {
     let analysis: Bool
     private var available: Bool { analysis ? coordinator.hasAnalysisKey : coordinator.hasAPIKey }
     private var checking: Bool { analysis ? coordinator.isCheckingAnalysisKey : coordinator.isCheckingKey }
+    private var needsAuthorization: Bool { analysis ? coordinator.analysisKeyNeedsAuthorization : coordinator.keyNeedsAuthorization }
     private func t(_ value: String) -> String { L10n.text(value, language: coordinator.settings.language) }
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: available ? "checkmark.shield.fill" : "key.horizontal")
                 .font(.title2).foregroundStyle(available ? Color.green : .secondary)
             VStack(alignment: .leading, spacing: 5) {
-                Text(t(coordinator.isMock ? "Mock credential" : checking ? "Checking Keychain…" : available ? "API key configured" : "API key not configured")).font(.headline)
+                Text(t(coordinator.isMock ? "Mock credential" : checking ? "Checking Keychain…" : available ? "API key configured" : needsAuthorization ? "API key saved · authorization needed" : "API key not configured")).font(.headline)
                 if available && !coordinator.isMock {
                     Text("••••••••").font(.system(.body, design: .monospaced)).accessibilityLabel(t("Key hidden"))
                     Text(t("Credential ready. Its contents are never displayed here.")).font(.caption).foregroundStyle(.secondary)
@@ -416,27 +417,28 @@ private struct CredentialEditor: View {
     @State private var confirmingRemoval = false
     private var available: Bool { analysis ? coordinator.hasAnalysisKey : coordinator.hasAPIKey }
     private var checking: Bool { analysis ? coordinator.isCheckingAnalysisKey : coordinator.isCheckingKey }
+    private var needsAuthorization: Bool { analysis ? coordinator.analysisKeyNeedsAuthorization : coordinator.keyNeedsAuthorization }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     var body: some View {
         SettingsSection {
             VStack(alignment: .leading, spacing: 14) {
                 CredentialStatus(coordinator: coordinator, analysis: analysis)
-                if editing || (!available && !checking) {
+                if editing || (!available && !checking && !needsAuthorization) {
                     SecureField(t(available ? "Enter a replacement key" : "Enter a key to save in Keychain"), text: $value)
                         .textFieldStyle(.roundedBorder).accessibilityIdentifier("credential-input")
                     HStack {
                         Button(t("Save Key")) { save() }.disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || saving || coordinator.isMock)
-                        if available { Button(t("Cancel")) { editing = false; value = "" } }
+                        if available || needsAuthorization { Button(t("Cancel")) { editing = false; value = "" } }
                     }
                 }
                 HStack {
-                    if available && !editing { Button(t("Replace key…")) { editing = true; message = "" }.disabled(coordinator.isMock) }
-                    Button(t("Check Keychain")) { analysis ? coordinator.refreshAnalysisKeyState() : coordinator.refreshKeyState() }.disabled(checking || saving)
+                    if (available || needsAuthorization) && !editing { Button(t("Replace key…")) { editing = true; message = "" }.disabled(coordinator.isMock) }
+                    Button(t(needsAuthorization ? "Authorize saved key" : "Check saved key")) { analysis ? coordinator.refreshAnalysisKeyState(interactive: true) : coordinator.refreshKeyState(interactive: true) }.disabled(checking || saving)
                     Spacer()
-                    if available { Button(t("Remove"), role: .destructive) { confirmingRemoval = true }.disabled(saving || checking || coordinator.isMock) }
+                    if available || needsAuthorization { Button(t("Remove"), role: .destructive) { confirmingRemoval = true }.disabled(saving || checking || coordinator.isMock) }
                 }
                 if !message.isEmpty { Text(t(message)).font(.caption).textSelection(.enabled) }
-                if !analysis { Text(t("Uses your existing LiveCopilot-OpenAI Keychain item. No need to enter it again.")).font(.caption).foregroundStyle(.secondary) }
+                Text(t("Saved securely on this Mac and reused on launch. Existing development keys are imported once; startup never opens an authorization dialog.")).font(.caption).foregroundStyle(.secondary)
             }.padding(12)
         } label: { Text("API Key") }
         .confirmationDialog(t("Remove this service's saved key?"), isPresented: $confirmingRemoval) {

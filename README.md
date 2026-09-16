@@ -4,7 +4,7 @@
 
 V1.3.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别**、**本地 SenseVoiceSmall + VAD** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
-当前源码为 **1.3.0**：新增 Apple 本地流式识别（macOS 26+、支持的硬件），修复窗口高度变化时的裁切，增加服务差异和价格说明，提供清理旧应用注册的本地安装脚本。保留按内容调整高度、贴边隐藏与 **LIVE** 矢量图标。详见 [1.3.0 更新与验收](docs/V1_3_0_UPDATE.md)、[本地模型说明](docs/LOCAL_MODELS.md) 和 [窗口与图标更新](docs/V1_2_1_UPDATE.md)。当前公开 Release 仍为 1.1.0，公开旧安装包不含这些功能。
+当前源码为 **1.3.1**：新增一键刷新会话、可直接念出的口语回答，以及安全持久化密钥与静默启动检查。语言与外观使用调色盘图标。保留 Apple 本地流式识别、服务价格说明、动态窗口高度和贴边隐藏。详见 [1.3.1 更新与验收](docs/V1_3_1_UPDATE.md)、[1.3.0 更新](docs/V1_3_0_UPDATE.md) 和 [本地模型说明](docs/LOCAL_MODELS.md)。当前公开 Release 仍为 1.1.0，公开旧安装包不含这些功能。
 
 ## 下载与安装
 
@@ -18,9 +18,9 @@ V1.3.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 
 ## 首次配置与使用
 
-1. 点击悬浮窗齿轮，进入 **服务 → 实时服务**，选择“本地 · Paraformer 流式识别”（约 238 MB）或“本地 · SenseVoiceSmall + VAD”（约 164 MB）并下载模型，或选择 OpenAI Live 并配置 Key。OpenAI 密钥保存在 macOS Keychain：**Service `LiveCopilot-OpenAI`，Account 为当前 macOS 用户名**。已有该项目则无需再次粘贴。开发回退是 `OPENAI_API_KEY`。
+1. 点击悬浮窗齿轮，进入 **服务 → 实时服务**，选择本地识别并下载模型，或选择 OpenAI Live 并配置 Key。在软件中保存 Key 后，密钥保存在应用管理的 macOS Keychain 项（`LiveCopilot-Credentials-v1`），以后启动自动复用。兼容旧 `LiveCopilot-OpenAI` 项；如需授权，点击“授权已保存的密钥”完成一次迁移，无需重新粘贴。开发环境仍支持 `OPENAI_API_KEY`。
 
-   如果显示 `Checking Keychain…`，请在本机完成 macOS 的访问提示；密码只输入系统窗口。读取权限与 Key 是否有效是两项独立检查。重新打开已启动的 LiveCopilot 会恢复悬浮窗；`⌥H` 可隐藏它。
+   启动和切换服务只做静默检查，不主动弹出授权窗口。显示“API Key 已保存 · 待授权”时，在服务页点击授权按钮；系统密码只输入 macOS 窗口。读取权限与 Key 是否有效是两项独立检查。重新打开已启动的 LiveCopilot 会恢复悬浮窗；`⌥H` 可隐藏它。
 2. **服务 → 知识库服务** 选择“本地 · BGE-M3”并下载模型（约 635 MB），或保留 OpenAI Embeddings。**服务 → 分析服务** 可选择 DeepSeek 并配置独立密钥。语音与向量均选本地、分析选 DeepSeek 时，无需 OpenAI Key；模型下载后只有生成建议需要连接分析 API。旧配置升级时保持原有云端选择。
 3. 设置 → 知识库 → 导入文档，支持 PDF、Markdown、TXT 和 DOCX；扫描 PDF 需预先 OCR。本地向量模式不上传索引文本，OpenAI 模式会发送提取文本。切换向量模型后，点击“重建全部索引”，完成前旧资料仍可进行关键词检索。生成回答时，相关资料片段会发送至所选分析服务。
 4. 选择 Interview、Meeting 或 Academic Defense，以及 Remote Meeting / In-Person 模式。
@@ -29,6 +29,10 @@ V1.3.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 7. 直接在下方文本框输入问题，点击 **Ask** 或按 Return。可勾选是否附加近期对话；不要求正在监听。回答流式展示，`[S1]` 等对应可展开的本地来源。
 
 菜单栏波形图标可打开设置和历史。1.2.1 起悬浮窗默认隐藏于屏幕右侧，悬停右边缘可唤出，也可点击 Dock 或按 `⌥H`；固定按钮关闭贴边隐藏。空白窗口保持紧凑，内容增加后向下展开。四边具有 12 pt 缩放热区，四角为 28 × 28 pt；拖动上下边缘切换为手动高度，取消贴边隐藏后可从头部移动窗口。两个模式均可在 **通用 → 悬浮窗** 中切换。
+
+顶部 **↻ 刷新会话** 清空当前转写、输入草稿和回答上下文，窗口恢复紧凑并重新启用自动高度。正在监听时继续新会话，旧音频缓冲和旧回答不会回填。知识库、密钥与已保存历史不受影响；被丢弃的当前监听会话不归档。
+
+回答建议先给可直接念出的短段落，必要的依据、引用与补充单独放后面；可以使用相关常识和合理推理，但不得虚构个人经历或项目数据。总结、追问分别使用独立任务提示词。
 
 ## 语言、底色和服务配置
 
@@ -87,7 +91,7 @@ export OPENAI_API_KEY
 unset OPENAI_API_KEY
 ```
 
-通过 Finder / `open` 启动的 GUI 应用不保证继承当前终端环境变量，通常使用 Keychain 即可。优先级：指定的 Keychain 项 → 当前进程 `OPENAI_API_KEY`。
+通过 Finder / `open` 启动的 GUI 应用不保证继承当前终端环境变量，通常使用 Keychain 即可。优先级：应用管理的 Keychain 项 → 尚未迁移的旧 Keychain 项 → 当前进程 `OPENAI_API_KEY`（仅 OpenAI、无保存项时）。删除已保存密钥后不会回退并复活旧 Key。
 
 ## 边界与限制
 

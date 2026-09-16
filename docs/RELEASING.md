@@ -53,7 +53,7 @@ The target is always `~/Applications/LiveCopilot.app`. The installer verifies th
 
 If the designated requirement changes, it resets only `ScreenCapture` for `com.livecopilot.app`, once after installation. `--repair-permissions` forces this repair for an already stale grant. It never changes Keychain ACLs, resets other applications, edits TCC databases or grants permission itself. A same-signature reinstall does not reset grants. The receipt `latest-install.json` records version/build, executable SHA-256 and archive paths, without credentials.
 
-After installation, the user requests access in General → System audio permission and allows the canonical LiveCopilot in macOS Privacy Settings, following any quit/reopen request. A changed ad-hoc signature can still prompt for existing Keychain access. Stable Developer ID signing is the long-term solution for upgrade identity continuity; this installer does not claim to solve that by weakening signature requirements.
+After installation, the user requests access in General → System audio permission and allows the canonical LiveCopilot in macOS Privacy Settings, following any quit/reopen request. In 1.3.1, startup and service switching never prompt for Keychain access. A changed ad-hoc signature can show a saved credential as needing authorization; the user explicitly clicks the authorization button to access/import it. Keys saved by the app persist in the app-managed Keychain namespace. Stable Developer ID signing is the long-term solution for upgrade identity continuity; this installer does not claim to solve that by weakening signature requirements.
 
 
 ### Keep development identity separate

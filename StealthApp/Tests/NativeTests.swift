@@ -2,9 +2,116 @@ import XCTest
 import Combine
 import SwiftUI
 import Carbon.HIToolbox
+import Security
 @testable import LiveCopilot
 
 final class NativeTests: XCTestCase {
+    @MainActor func testResetDiscardsInFlightAnswerAndReturnsToEmptyState() async throws {
+        let coordinator = AppCoordinator(mock: true)
+        coordinator.settings.overlayAutoHeight = false
+        coordinator.transcript.setPartial("Old preview", speaker: .them)
+        let firstDelta = expectation(description: "answer is streaming")
+        let subscription = coordinator.suggestion.$text.filter { !$0.isEmpty }.prefix(1).sink { _ in firstDelta.fulfill() }
+        coordinator.askText("An obsolete synthetic request")
+        await fulfillment(of: [firstDelta], timeout: 5)
+        subscription.cancel()
+        let generation = coordinator.conversationGeneration
+        await coordinator.resetConversation()
+        XCTAssertNotEqual(generation, coordinator.conversationGeneration)
+        XCTAssertFalse(coordinator.isRunning)
+        XCTAssertFalse(coordinator.transcript.hasContent)
+        XCTAssertTrue(coordinator.suggestion.text.isEmpty)
+        XCTAssertTrue(coordinator.suggestion.question.isEmpty)
+        XCTAssertTrue(coordinator.suggestion.sources.isEmpty)
+        XCTAssertNil(coordinator.suggestion.firstTextMS)
+        XCTAssertFalse(coordinator.suggestion.isLoading)
+        XCTAssertTrue(coordinator.settings.overlayAutoHeight)
+        coordinator.requestSuggestion()
+        XCTAssertEqual(coordinator.statusMessage, "No conversation yet. Type a question below to ask directly.")
+        let noStaleAnswer = expectation(description: "no obsolete delta after reset")
+        noStaleAnswer.isInverted = true
+        let afterReset = coordinator.suggestion.$text.filter { !$0.isEmpty }.sink { _ in noStaleAnswer.fulfill() }
+        await fulfillment(of: [noStaleAnswer], timeout: 0.8)
+        afterReset.cancel()
+        await coordinator.shutdown()
+    }
+    @MainActor func testResetWhileListeningRestartsFreshAndAllowsSameQuestion() async throws {
+        let coordinator = AppCoordinator(mock: true)
+        coordinator.settings.automaticSuggestions = true
+        let first = expectation(description: "first conversation answer")
+        let firstSub = coordinator.suggestion.$isLoading.dropFirst().filter { !$0 }.prefix(1).sink { _ in first.fulfill() }
+        await coordinator.start()
+        await fulfillment(of: [first], timeout: 10)
+        firstSub.cancel()
+        let oldRow = try XCTUnwrap(coordinator.transcript.lines.first?.id)
+        await coordinator.resetConversation()
+        XCTAssertTrue(coordinator.isRunning)
+        XCTAssertFalse(coordinator.transcript.hasContent)
+        XCTAssertTrue(coordinator.suggestion.text.isEmpty)
+        let second = expectation(description: "same question in a new conversation is not suppressed")
+        let secondSub = coordinator.suggestion.$isLoading.dropFirst().filter { !$0 }.prefix(1).sink { _ in second.fulfill() }
+        await fulfillment(of: [second], timeout: 10)
+        secondSub.cancel()
+        XCTAssertEqual(coordinator.transcript.lines.count, 1)
+        XCTAssertNotEqual(coordinator.transcript.lines.first?.id, oldRow)
+        XCTAssertTrue(coordinator.suggestion.text.contains("Mock preview"))
+        await coordinator.shutdown()
+    }
+    func testCredentialMigrationIsSilentUntilExplicitAuthorizationAndPersists() async throws {
+        let suite = "LiveCopilot-Vault-Test-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let storage = FixtureCredentials()
+        try storage.save("legacy-fixture", service: CredentialReference.live.service, account: CredentialReference.live.account, interactive: true)
+        storage.requireLegacyAuthorization = true
+        let vault = CredentialVault(storage: storage, defaults: defaults, environmentKey: nil)
+        let initial = try await vault.read(.live)
+        XCTAssertTrue(initial.needsAuthorization)
+        XCTAssertNil(initial.key)
+        XCTAssertEqual(storage.interactiveReads, 0)
+        let authorized = try await vault.read(.live, interactive: true)
+        XCTAssertEqual(authorized.key, "legacy-fixture")
+        let reads = storage.legacyReads
+        let restarted = CredentialVault(storage: storage, defaults: defaults, environmentKey: nil)
+        let recovered = try await restarted.read(.live)
+        XCTAssertEqual(recovered.key, "legacy-fixture")
+        XCTAssertEqual(storage.legacyReads, reads, "restart must use the app-owned copy")
+        try await restarted.save("replacement-fixture", for: .live)
+        let replacement = try await vault.read(.live)
+        XCTAssertEqual(replacement.key, "replacement-fixture")
+        try await vault.remove(.live)
+        let removed = try await restarted.read(.live)
+        XCTAssertNil(removed.key, "legacy key must not reappear after removal")
+        XCTAssertEqual(storage.legacyReads, reads)
+        XCTAssertFalse(defaults.dictionaryRepresentation().values.contains { String(describing: $0).contains("fixture") })
+    }
+    func testManagedCredentialsRemainProviderAndEndpointScoped() async throws {
+        let suite = "LiveCopilot-Vault-Test-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let vault = CredentialVault(storage: FixtureCredentials(), defaults: defaults, environmentKey: nil)
+        let a = CredentialReference(service: "Compatible", accountSuffix: "|https://a.example/v1")
+        let b = CredentialReference(service: "Compatible", accountSuffix: "|https://b.example/v1")
+        try await vault.save("a-fixture", for: a)
+        try await vault.save("deepseek-fixture", for: .deepSeek)
+        let missing = try await vault.read(b), deepSeek = try await vault.read(.deepSeek)
+        XCTAssertNil(missing.key)
+        XCTAssertEqual(deepSeek.key, "deepseek-fixture")
+        try await vault.remove(a)
+        let retained = try await vault.read(.deepSeek)
+        XCTAssertEqual(retained.key, "deepseek-fixture")
+    }
+    func testSilentNativeKeychainReadRestoresInteractionPolicy() throws {
+        let service = "LiveCopilot-Silent-Test-" + UUID().uuidString
+        defer { try? KeychainStore.clear(service: service, account: "fixture") }
+        try KeychainStore.save("not-a-real-api-key", service: service, account: "fixture")
+        var before: DarwinBoolean = false, after: DarwinBoolean = false
+        XCTAssertEqual(SecKeychainGetUserInteractionAllowed(&before), errSecSuccess)
+        XCTAssertEqual(try KeychainStore.read(service: service, account: "fixture", interactive: false), "not-a-real-api-key")
+        XCTAssertNil(try KeychainStore.read(service: service, account: "missing", interactive: false))
+        XCTAssertEqual(SecKeychainGetUserInteractionAllowed(&after), errSecSuccess)
+        XCTAssertEqual(before.boolValue, after.boolValue)
+    }
     func testCoreAcceptanceChecks() async throws {
         let checks = try await CoreChecks.run()
         XCTAssertGreaterThanOrEqual(checks.count, 25)
@@ -336,4 +443,27 @@ private final class GatedChatTransport: HTTPTransport, @unchecked Sendable {
             c.yield("")
         }
     }
+}
+
+/// Synthetic storage only. Never reads the user's actual credentials.
+private final class FixtureCredentials: CredentialStorage, @unchecked Sendable {
+    private let lock = NSLock()
+    private var keys: [String: String] = [:]
+    var requireLegacyAuthorization = false
+    private(set) var interactiveReads = 0
+    private(set) var legacyReads = 0
+    func read(service: String, account: String, interactive: Bool) throws -> String? {
+        try lock.withLock {
+            if interactive { interactiveReads += 1 }
+            if service != CredentialVault.service {
+                legacyReads += 1
+                if requireLegacyAuthorization && !interactive { throw KeychainAccessError(status: errSecInteractionNotAllowed) }
+            }
+            return keys[service + "|" + account]
+        }
+    }
+    func save(_ key: String, service: String, account: String, interactive: Bool) throws {
+        lock.withLock { keys[service + "|" + account] = key }
+    }
+    func clear(service: String, account: String) throws { _ = lock.withLock { keys.removeValue(forKey: service + "|" + account) } }
 }

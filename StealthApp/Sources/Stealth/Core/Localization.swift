@@ -38,6 +38,15 @@ enum L10n {
         return text
     }
     static let chinese: [String: String] = [
+        "Start fresh": "刷新会话",
+        "Clear conversation and answers; keep listening if active": "清空转写与回答上下文，收起窗口；正在监听时会继续监听",
+        "Suggested answer": "可以这样说",
+        "Evidence & notes": "依据与补充",
+        "API key saved · authorization needed": "API Key 已保存 · 待授权",
+        "Authorize saved key": "授权已保存的密钥",
+        "Check saved key": "检查已保存的密钥",
+        "Saved key needs authorization. Click Authorize saved key to allow access.": "已有保存的密钥。点击“授权已保存的密钥”，在系统提示中允许访问即可，无需重新输入 Key。",
+        "Saved securely on this Mac and reused on launch. Existing development keys are imported once; startup never opens an authorization dialog.": "密钥安全保存在本机，重启后自动复用。旧开发密钥只需迁移一次；启动时不会主动弹出授权窗口。",
         "Apple · on-device speech": "Apple · 本地语音识别",
         "Apple speech requires macOS 26 and a supported Mac and language.": "Apple 语音识别需要 macOS 26、受支持的 Mac 与语言。",
         "Download the selected Apple speech language in Services first.": "请先在服务页面下载所选 Apple 识别语言。",

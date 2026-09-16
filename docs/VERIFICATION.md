@@ -158,3 +158,11 @@ The earlier 401 applied to the old credential and is resolved. The CLI helper's 
 4. 在实际会议软件的共享预览或另一台观看设备中检查悬浮窗排除效果。结束后停止监听。
 
 Physical audio and permission behavior, real network interruption, background global keypresses, full visual/resize checks and actual meeting-app sharing exclusion remain **manual checks, not passed automated evidence**. The longer checklist above covers these cases and expected behavior. This boundary follows the supplied requirement to prepare an interactive path for audio behaviors requiring user participation.
+
+## 1.3.1 refresh and credential persistence - 2026-09-16
+
+- Core acceptance: 60 deterministic checks; native XCTest: 24 cases, 0 failures.
+- New coverage: refresh during a streamed answer; discard the previous listening session and allow the same question in the next session; silent credential status, explicit legacy import, restart, replacement, removal without resurrecting the legacy copy, and provider/endpoint separation.
+- A native synthetic Keychain item verifies noninteractive reads and restoration of the process interaction policy. No real credentials or paid APIs are used by these tests. The legacy file-based Keychain UI-suppression calls intentionally produce SDK deprecation warnings; the current SDK documents a separate interaction policy from Data Protection Keychain.
+- Release built for x86_64 and arm64. Installed build 20260916.031556, executable SHA-256 c446d6dd74229ba9b1e0c88360d03e5c42d06b366c003546674c8f40993f99a9; strict signature verification passed. Mock preferences restored after tests. Debug retains its distinct development bundle ID.
+- Production GUI: refresh control present, General uses the palette glyph, existing analysis credential shows saved/authorization-needed without prompting at launch. Existing provider/model choices retained. After the user authorized the legacy DeepSeek item, migration succeeded. The app was fully quit and restarted: the managed key was read silently without another prompt. A real deepseek-flash generic-concept answer streamed to completion (first text about 4.3 s). Clearing the answer plus draft returned the real overlay from 480x768 to 480x240. Switching to OpenAI Live showed saved/authorization-needed without opening a dialog; Paraformer was then restored. Screen-recording renewal remains a separate system grant.

@@ -55,6 +55,11 @@ struct OverlayView: View {
             for key in ["top", "actions", "bottom"] { if let height = heights[key] { fixedHeights[key] = height } }
         }
         .onChange(of: desiredHeight) { _, _ in reportSize() }
+        .onChange(of: coordinator.conversationGeneration) { _, _ in
+            query = ""; showTranscript = true; followTranscript = true
+            transcriptHeight = 22; answerHeight = 28
+            reportSize()
+        }
         .onAppear { reportSize() }
     }
     private var top: some View {
@@ -110,8 +115,12 @@ struct OverlayView: View {
                 Image(systemName: coordinator.isRunning ? "stop.circle.fill" : "play.circle.fill")
                     .foregroundStyle(coordinator.isRunning ? Color.red : .green)
             }.disabled(coordinator.isTransitioning).help(t(coordinator.isRunning ? "Stop listening" : "Start listening"))
+            Button { Task { await coordinator.resetConversation() } } label: { Image(systemName: "arrow.clockwise") }
+                .disabled(coordinator.isTransitioning)
+                .help(t("Clear conversation and answers; keep listening if active"))
+                .accessibilityLabel(t("Start fresh")).accessibilityIdentifier("reset-conversation")
             Button { coordinator.toggleMic() } label: { Image(systemName: coordinator.micEnabled ? "mic.fill" : "mic.slash") }
-                .help(t("Toggle your microphone in Remote Meeting mode"))
+                .disabled(coordinator.isTransitioning).help(t("Toggle your microphone in Remote Meeting mode"))
             Button { coordinator.onOpenSettings?() } label: { Image(systemName: "gearshape") }.help(t("Settings and knowledge base"))
             Button { coordinator.settings.overlayEdgeHide.toggle() } label: {
                 Image(systemName: coordinator.settings.overlayEdgeHide ? "pin" : "pin.fill")

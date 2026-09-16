@@ -11,6 +11,17 @@ enum CoreChecks {
     static func run() async throws -> [String] {
         var passed: [String] = []
         func check(_ name: String, _ body: () throws -> Void) throws { try body(); passed.append(name) }
+        try check("spoken reply, recap and follow-up have distinct grounded task prompts") {
+            var request = AnswerRequest(query: .formulate(question: "Explain a tradeoff", context: ""), conversation: "", scenario: .interview, sources: [])
+            try expect(request.instructions.contains("actual words the user can say aloud"), "reply is not a spoken script")
+            try expect(request.instructions.contains("relevant general knowledge"), "answer is limited to retrieved evidence")
+            try expect(request.instructions.contains("Never") && request.instructions.contains("invent the user's experience"), "personal evidence guardrail missing")
+            try expect(request.instructions.contains("free of citation markers") && request.instructions.contains("[S1]"), "spoken script and cited notes not separated")
+            request.mode = .recap
+            try expect(request.instructions.contains("what was actually said") && !request.instructions.contains("Task: draft"), "recap uses reply instructions")
+            request.mode = .followUp
+            try expect(request.instructions.contains("ONE useful follow-up question") && !request.instructions.contains("Task: summarize"), "follow-up uses recap instructions")
+        }
         try check("local services migrate independently and do not require OpenAI for DeepSeek") {
             let old = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
             try expect(old.listeningService == .openAI && old.embeddingService == .openAI, "old route silently changed")

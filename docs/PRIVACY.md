@@ -1,4 +1,4 @@
-# Privacy boundary (V1.3)
+# Privacy boundary (V1.3.1)
 
 ## Stored locally
 
@@ -8,8 +8,10 @@
 - Optional local model weights live in `~/Library/Application Support/LiveCopilot/Models/`. SenseVoiceSmall or Paraformer streaming + Silero VAD processes audio locally; BGE-M3 generates document and query vectors locally. Workers communicate through private stdin/stdout pipes, open no network listener, inherit no API credentials, and do not log audio/text. Raw audio is held in bounded memory, not recorded to disk by this route.
 - Apple ASR uses on-device SpeechAnalyzer/SpeechTranscriber and SpeechDetector. Language assets are downloaded and managed by macOS; no fallback to Apple server dictation is implemented. Final captions enter the same local history and selected analysis context.
 - Session history is local JSON under `~/Library/Application Support/LiveCopilot/sessions/`. It includes timestamps, speaker labels and raw Live transcript fragments. History is retained until deleted.
-- Live/Embeddings key: macOS Keychain generic password, Service **LiveCopilot-OpenAI**, Account **current macOS username**. `OPENAI_API_KEY` is the existing development fallback.
-- Optional separate analysis keys: Services **LiveCopilot-Reasoning-OpenAI** and **LiveCopilot-Reasoning-DeepSeek**, Account current username. Compatible services use **LiveCopilot-Reasoning-Compatible**, Account current username plus the canonical endpoint. Changing the endpoint does not reuse another destination's key. There is no fallback from an external analysis service to the Live key.
+- Saved API keys use app-owned macOS login Keychain items in **LiveCopilot-Credentials-v1**. Their accounts include the original provider reference and username (and canonical endpoint for compatible services), preserving provider/destination isolation. No key is written to preferences, files or logs.
+- Existing **LiveCopilot-OpenAI**, **LiveCopilot-Reasoning-OpenAI**, **LiveCopilot-Reasoning-DeepSeek** and endpoint-scoped compatible items can be imported once. Startup/service changes perform noninteractive reads; denied access is shown as saved but requiring authorization. Only an explicit authorize/check/save/remove action can present authentication UI. A successful import creates an app-owned copy without changing the original item's ACL or deleting it.
+- Removing a managed key stores a non-secret migration marker so an old development copy cannot reappear on next launch. Users can remove original externally created items separately in Keychain Access. `OPENAI_API_KEY` remains an OpenAI-only development fallback before migration when no saved key exists; it is never persisted automatically.
+- Keychain is production credential storage. A locked login Keychain or changed ad-hoc signing identity can still require explicit authorization. Stable Developer ID signing is needed for upgrade identity continuity; no permissive ACL or bundle-ID-only signing requirement is used.
 - Settings persist provider/model/endpoint choices, language and background, never key bytes. The Services page displays credential availability and a fixed mask; it does not return the key to an editable field or reveal its length.
 - Metadata-only diagnostics: `~/Library/Logs/LiveCopilot/livecopilot.log`. The application does not log request bodies, authorization headers, transcript text, knowledge chunks or API key values.
 - Mock knowledge and history use the `LiveCopilot/Mock` subdirectory; Mock settings use a separate preferences suite.
@@ -29,6 +31,8 @@ Local private storage directories are created with user-only permissions where a
 OpenAI Live sessions and OpenAI Responses requests set `store: false`. Custom Chat Completions services receive only portable request fields; their storage/retention behavior depends on that provider. This is an API storage setting, **not a claim of zero provider retention**. OpenAI's account-level data controls and applicable policies still apply; see the [official data controls documentation](https://developers.openai.com/api/docs/guides/your-data).
 
 ## User controls
+
+Refresh clears the current transcript, draft, answer, pending triggers and provider-side session context, returning the overlay to automatic compact height. If listening was active, it starts fresh. The discarded active session is not archived; existing history and knowledge remain. Already-sent data cannot be withdrawn by refresh.
 
 Stop listening to end Live sessions; typed questions remain available independently. Select Remote Meeting or In-Person, mute the optional You microphone, disable automatic suggestions, and disable recent conversation for a typed query. Delete a knowledge document to remove its local copy, metadata, chunks, FTS terms and vectors; the original file outside the app stays untouched. Delete session history in History.
 

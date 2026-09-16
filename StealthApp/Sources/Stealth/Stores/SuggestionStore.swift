@@ -18,5 +18,5 @@ import Combine
     func appendDelta(_ delta: String) { text += delta }
     func finish() { isLoading = false }
     func fail(_ message: String) { isLoading = false; error = message }
-    func reset() { text = ""; question = ""; isLoading = false; error = nil; sources = []; warning = nil }
+    func reset() { text = ""; question = ""; isLoading = false; error = nil; sources = []; warning = nil; mode = .reply; retrievalMS = 0; firstTextMS = nil }
 }
