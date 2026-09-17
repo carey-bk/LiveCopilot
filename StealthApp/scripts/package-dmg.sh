@@ -60,7 +60,8 @@ ARCHITECTURES="$(lipo -archs "$EXECUTABLE")"
   echo "Release must contain both arm64 and x86_64." >&2; exit 1;
 }
 APP_SHA256="$(shasum -a 256 "$EXECUTABLE" | awk '{print $1}')"
-SIGNATURE="$(codesign -dv "$STAGED_APP" 2>&1 | sed -n 's/^Authority=Developer ID Application:/Developer ID Application:/p')"
+SIGNATURE="$(codesign -dv --verbose=4 "$STAGED_APP" 2>&1 | sed -n 's/^Authority=Developer ID Application:/Developer ID Application:/p')"
+[[ -n "$SIGNATURE" ]] || { echo 'Developer ID certificate name is missing from the signature.' >&2; exit 1; }
 TEAM="$(codesign -dv "$STAGED_APP" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
 DMG_NAME="LiveCopilot-$VERSION-macOS-universal.dmg"
 DMG_PATH="$OUTPUT_DIR/$DMG_NAME"
