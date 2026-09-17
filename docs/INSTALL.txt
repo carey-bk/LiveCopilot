@@ -1,4 +1,4 @@
-LiveCopilot 1.4.0 — 安装 / Installation
+LiveCopilot 1.4.1 — 安装 / Installation
 
 中文
 
@@ -8,9 +8,9 @@ Apple 本地语音另需 macOS 26+、受支持的设备和语言。
 
 1. 退出旧版，将 LiveCopilot.app 拖入 Applications（或 ~/Applications）。
    从固定位置启动，然后推出磁盘映像。不要把改名的旧应用放在旁边。
-2. 当前为临时签名、未经 Apple 公证的社区版。核对来源和 SHA256SUMS.txt。
-   如被 macOS 阻止，按 Apple 的单应用“仍要打开”说明操作，不要全局关闭安全保护。
-   https://support.apple.com/en-us/102445
+2. 本版由 Developer ID Application: Bokai Zhang (666N9BJMD7) 签名并通过 Apple 公证。
+   应用与 DMG 附带公证票据，正常安装无需“仍要打开”；首次下载仍可能显示系统确认。
+   可用 Release 中的 SHA256SUMS.txt 核对下载文件。
 3. 设置 → 服务：选择本地 Apple 或 Paraformer 语音并下载资源，
    或配置 OpenAI Live。知识库向量可选本地 BGE-M3 或 OpenAI Embeddings。
 4. 分析服务选择 OpenAI、DeepSeek、Qwen、GLM、Kimi 或兼容服务，保存自己的 API Key。
@@ -24,7 +24,8 @@ Apple 本地语音另需 macOS 26+、受支持的设备和语言。
    关于页可打开作者 GitHub、项目仓库和双语介绍页。
 
 安装包不含 API Key、个人文档、历史或知识库。升级不删除本地资料。
-临时签名变化的更新可能需要重新授权录屏或密钥访问。
+首次从旧临时签名版迁移，可能需要重新允许录屏或钥匙串访问。
+后续版本沿用同一开发者和应用身份；系统仍自行管理权限，不绕过授权。
 本地模型无 API 调用费，但占用本机资源；云端费用由自己的账户承担。
 截图排除可选，效果依赖 macOS 与捕获软件；设置和历史页允许截图。
 
@@ -36,9 +37,10 @@ Quit the old version, drag LiveCopilot.app into Applications (or ~/Applications)
 and launch from that consistent location. Eject the DMG. Avoid renamed app backups
 beside the current app.
 
-This community build is ad-hoc signed and not Apple-notarized. Verify the source
-and SHA256SUMS.txt. If blocked, follow Apple's per-app Open Anyway guidance:
-https://support.apple.com/en-us/102445
+Signed by Developer ID Application: Bokai Zhang (666N9BJMD7), notarized by Apple,
+with tickets stapled to the app and DMG. Normal installation does not require
+Open Anyway. A standard first-download confirmation can still appear. Verify
+the release download against SHA256SUMS.txt.
 
 In Settings > Services, download local speech resources or configure OpenAI Live.
 Choose BGE-M3 or OpenAI Embeddings for knowledge. Choose an analysis provider
@@ -55,7 +57,9 @@ active listening starts fresh. Knowledge and saved history stay intact.
 About links to the author, repository and bilingual guide.
 
 No credentials, documents, history or indexes are included. Data is retained on
-upgrade. Changed ad-hoc signatures can require renewed macOS permissions.
+upgrade. Migrating from an older ad-hoc build may require renewed macOS or
+Keychain permission. Subsequent versions retain the signing team and bundle ID;
+macOS still controls all permission decisions.
 
 中文介绍：https://carey-bk.github.io/LiveCopilot/
 English: https://carey-bk.github.io/LiveCopilot/en/

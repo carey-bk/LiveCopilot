@@ -10,15 +10,17 @@ Built with Swift/SwiftUI on the native macOS foundation of [Stealth](https://git
 
 Version **1.4.0** adds independent transcript/answer font sizes (11–28 pt) and Qwen, GLM, and Kimi analysis presets. The retired SenseVoiceSmall selection migrates to Paraformer without resetting other preferences or deleting downloaded weights. See [release notes](docs/V1_4_0_UPDATE.md) and the [service guide](docs/SERVICE_GUIDE.md).
 
+Version **1.4.1** retains these features and adds Developer ID signing, hardened runtime, and Apple notarization. Both the app and DMG include stapled tickets. See [distribution validation](docs/V1_4_1_UPDATE.md).
+
 ## Download
 
-[Download LiveCopilot 1.4.0 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v1.4.0/LiveCopilot-1.4.0-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v1.4.0)
+[Download LiveCopilot 1.4.1 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v1.4.1/LiveCopilot-1.4.1-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v1.4.1)
 
 Requires **macOS 14+**, on Apple Silicon or Intel. Apple Speech additionally requires **macOS 26+**, supported hardware, and a supported language. No Xcode, Python, Ollama, or developer tools are needed to use the packaged app.
 
 Quit the previous version, open the DMG, and drag `LiveCopilot.app` into Applications (or `~/Applications`). Keep the app at a consistent path.
 
-This is an **ad-hoc signed community build, not Apple-notarized**. Verify the download source and SHA-256 checksums. If blocked, follow [Apple's per-app Open Anyway instructions](https://support.apple.com/en-us/102445); do not disable Gatekeeper globally. Changed signing identities can require renewed permissions on updates.
+Version 1.4.1 is signed by **Developer ID Application: Bokai Zhang (666N9BJMD7)** and notarized by Apple. Both the app and DMG carry stapled tickets; normal installation does not require Open Anyway. macOS may still show its standard first-download confirmation. Migrating from an older ad-hoc build may require renewed audio or Keychain permission; later updates preserve the signing team and bundle identity without bypassing system policy.
 
 ## Choose your services
 
