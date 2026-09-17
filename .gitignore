@@ -1,10 +1,13 @@
 # ── Secrets (NEVER commit) ─────────────────────────────
 # Local code-signing identity: private keys + PKCS#12 bundle.
-# Regenerate with `sudo ./setup-signing.sh`.
+# Never export signing credentials into the repository.
 StealthApp/.signing/
 *.p12
 *.pem
 *.key
+*.p8
+*.mobileprovision
+*.provisionprofile
 
 # ── Xcode / build artifacts ────────────────────────────
 build/
