@@ -51,10 +51,10 @@ Keys are securely stored in the local macOS Keychain. Startup checks silently; a
 - Compact when empty, taller as content arrives. Manual resize and right-edge reveal.
 - **Refresh** clears the current transcript, draft, answer, and context. Active listening starts fresh; knowledge and saved history remain.
 - Replies use spoken paragraphs, with evidence/notes below when useful. General knowledge and reasoning can extend the documents without inventing personal experience.
-- Reply, recap, and follow-up have distinct task prompts. Source passages can be expanded.
+- Generate answer, recap, and follow-up have distinct task prompts. Source passages can be expanded.
 - **About** links to the author's GitHub, repository, and bilingual product guide.
 
-`Option + H` toggles the overlay. Reply, recap, and follow-up shortcuts are configurable. Screenshot/sharing exclusion is optional; its behavior depends on macOS and the capture application. Settings and History remain capturable.
+`Option + H` toggles the overlay. Generate answer, recap, and follow-up shortcuts are configurable. The 1.4.2 development defaults are Control–Option–Space, Control–Option–S and Control–Option–X; saved custom bindings are preserved. Recap and follow-up can be disabled independently in General, hiding their buttons and releasing their shortcuts. Screenshot/sharing exclusion is optional; its behavior depends on macOS and the capture application. Settings and History remain capturable.
 
 Qwen, GLM, and Kimi presets use streamed Chat Completions with provider-specific thinking controls. Defaults are `qwen-plus`, `glm-5.2`, and `kimi-k2.6` on domestic general API endpoints. Edit the base URL for a matching region/account, save, then configure its key. Keys are isolated by provider and endpoint. Protocol and mock tests passed; real account access has not been tested with Qwen, GLM, or Kimi credentials. No keys are needed for development/mock testing; enter yours only in the app to validate a real request.
 

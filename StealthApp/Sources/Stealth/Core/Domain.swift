@@ -33,6 +33,8 @@ struct AppSettings: Codable, Equatable {
     var mode = OperatingMode.remote
     var scenario = ScenarioProfile.interview
     var automaticSuggestions = true
+    var recapEnabled = true
+    var followUpEnabled = true
     var includeConversation = true
     var retrievalCount = 6
     var language = AppLanguage.system
@@ -53,9 +55,20 @@ struct AppSettings: Codable, Equatable {
     var compatibleModel = ""
     var requiresOpenAIKey: Bool { listeningService == .openAI || embeddingService == .openAI || reasoningService == .sharedOpenAI }
     var selectedEmbeddingIdentity: String { embeddingService == .local ? LocalModelKind.embeddingIdentity : embeddingModel }
+    var enabledSuggestionModes: [SuggestionMode] {
+        SuggestionMode.allCases.filter { isEnabled($0) }
+    }
+    func isEnabled(_ mode: SuggestionMode) -> Bool {
+        switch mode {
+        case .reply: return true
+        case .recap: return recapEnabled
+        case .followUp: return followUpEnabled
+        }
+    }
 
     init() {}
     private enum CodingKeys: String, CodingKey {
+        case recapEnabled, followUpEnabled
         case transcriptFontSize, answerFontSize, qwenConnection, glmConnection, kimiConnection
         case listeningService, appleSpeechLanguage, embeddingService, overlayAutoHeight, overlayEdgeHide
         case liveModel, reasoningModel, embeddingModel, reasoningEffort, mode, scenario, automaticSuggestions, includeConversation, retrievalCount, language, background, excludeOverlayFromCapture, reasoningService, deepSeekModel, deepSeekEffort, compatibleBaseURL, compatiblePath, compatibleModel
@@ -73,6 +86,8 @@ struct AppSettings: Codable, Equatable {
         mode = try c.decodeIfPresent(OperatingMode.self, forKey: .mode) ?? mode
         scenario = try c.decodeIfPresent(ScenarioProfile.self, forKey: .scenario) ?? scenario
         automaticSuggestions = try c.decodeIfPresent(Bool.self, forKey: .automaticSuggestions) ?? automaticSuggestions
+        recapEnabled = try c.decodeIfPresent(Bool.self, forKey: .recapEnabled) ?? recapEnabled
+        followUpEnabled = try c.decodeIfPresent(Bool.self, forKey: .followUpEnabled) ?? followUpEnabled
         includeConversation = try c.decodeIfPresent(Bool.self, forKey: .includeConversation) ?? includeConversation
         retrievalCount = try c.decodeIfPresent(Int.self, forKey: .retrievalCount) ?? retrievalCount
         language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? language

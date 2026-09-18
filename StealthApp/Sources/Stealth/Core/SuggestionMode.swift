@@ -11,7 +11,7 @@ enum SuggestionMode: String, CaseIterable, Identifiable {
     /// Short label for the overlay card header.
     var label: String {
         switch self {
-        case .reply: return "Reply"
+        case .reply: return "Generate answer"
         case .recap: return "Recap"
         case .followUp: return "Follow-up"
         }
@@ -26,4 +26,3 @@ enum SuggestionMode: String, CaseIterable, Identifiable {
         }
     }
 }
-

@@ -11,6 +11,16 @@ enum CoreChecks {
     static func run() async throws -> [String] {
         var passed: [String] = []
         func check(_ name: String, _ body: () throws -> Void) throws { try body(); passed.append(name) }
+        try check("optional conversation tools migrate on and persist independently") {
+            let legacy = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+            try expect(legacy.enabledSuggestionModes == [.reply, .recap, .followUp], "legacy settings disabled a tool")
+            var settings = legacy
+            settings.recapEnabled = false
+            try expect(settings.enabledSuggestionModes == [.reply, .followUp], "recap switch affected another tool")
+            settings.followUpEnabled = false
+            let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+            try expect(restored.enabledSuggestionModes == [.reply], "disabled tools did not survive settings round-trip")
+        }
         try check("spoken reply, recap and follow-up have distinct grounded task prompts") {
             var request = AnswerRequest(query: .formulate(question: "Explain a tradeoff", context: ""), conversation: "", scenario: .interview, sources: [])
             try expect(request.instructions.contains("actual words the user can say aloud"), "reply is not a spoken script")

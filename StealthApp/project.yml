@@ -12,6 +12,7 @@ settings:
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "-"
+    APP_DISPLAY_NAME: LiveCopilot
     ENABLE_HARDENED_RUNTIME: NO
     ENABLE_TESTABILITY: YES
     ENABLE_DEBUG_DYLIB: NO
@@ -38,6 +39,8 @@ targets:
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.livecopilot.development
+          APP_DISPLAY_NAME: LiveCopilot Dev
+          MARKETING_VERSION: "1.4.2"
         Release:
           ENABLE_HARDENED_RUNTIME: YES
   LiveCopilotTests:

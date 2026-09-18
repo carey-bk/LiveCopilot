@@ -9,7 +9,7 @@ struct LiveCopilotApp: App {
     var body: some Scene {
         // Keep the menu-bar controls alongside the normal Dock application.
         MenuBarExtra("LiveCopilot", systemImage: appDelegate.coordinator.isRunning ? "waveform" : "waveform.slash") {
-            MenuContent(coordinator: appDelegate.coordinator,
+            MenuContent(coordinator: appDelegate.coordinator, hotkeys: appDelegate.coordinator.hotkeys,
                         openSettings: appDelegate.openSettings,
                         openHistory: appDelegate.openHistory,
                         toggleOverlay: appDelegate.toggleOverlay)
@@ -20,6 +20,7 @@ struct LiveCopilotApp: App {
 /// The menu-bar dropdown.
 private struct MenuContent: View {
     @ObservedObject var coordinator: AppCoordinator
+    @ObservedObject var hotkeys: HotkeyStore
     let openSettings: () -> Void
     let openHistory: () -> Void
     let toggleOverlay: () -> Void
@@ -34,7 +35,7 @@ private struct MenuContent: View {
         }
         .disabled(coordinator.isTransitioning)
 
-        Button("\(t("Suggest Reply")) (\(coordinator.hotkeys.combo(for: .reply).display))") {
+        Button("\(t(SuggestionMode.reply.label)) (\(hotkeys.combo(for: .reply).display))") {
             coordinator.requestSuggestion(mode: .reply)
         }
         .disabled(coordinator.transcript.lines.isEmpty)
@@ -105,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyPreferences(_ settings: AppSettings) {
+        hotkeys.setEnabledModes(settings.enabledSuggestionModes)
         for window in [overlay, settingsWindow, historyWindow].compactMap({ $0 }) {
             applyAppearance(to: window, background: settings.background)
             if !(window is OverlayWindow) { window.sharingType = .readOnly }

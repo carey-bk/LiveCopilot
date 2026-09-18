@@ -19,7 +19,7 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 20) {
-                AppBrandTitle(iconSize: 26, titleFont: .title2.weight(.semibold))
+                AppBrandTitle(iconSize: 26, titleSize: 18)
                     .padding(.horizontal, 16).padding(.top, 22)
                 VStack(spacing: 5) {
                     ForEach(SettingsPage.allCases) { item in
@@ -63,10 +63,10 @@ struct SettingsView: View {
     }
     private var about: some View {
         VStack(alignment: .leading, spacing: 24) {
-            AppBrandTitle(iconSize: 64, titleFont: .system(size: 28, weight: .semibold))
+            AppBrandTitle(iconSize: 64, titleSize: 28)
             Text(AppInfo.display).foregroundStyle(.secondary).textSelection(.enabled)
             Text(b("A native macOS conversation copilot. Listen, find relevant knowledge, and get words you can say aloud.",
-                   "原生 macOS 对话助手。听取对话、查找相关资料，给你可以直接说出口的回答建议。"))
+                   "原生 macOS 对话助手。听取对话、查找相关资料，生成可以直接说出口的回答。"))
                 .font(.body).fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 18) {
                 Link(destination: URL(string: "https://github.com/carey-bk")!) {
@@ -138,6 +138,21 @@ struct SettingsView: View {
                     Toggle(t("Automatic suggestions for meaningful questions"), isOn: $coordinator.settings.automaticSuggestions)
                 }.padding(10)
             } label: { Label(t("Conversation"), systemImage: "waveform") }
+            SettingsSection {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle(t("Recap"), isOn: $coordinator.settings.recapEnabled)
+                        .accessibilityIdentifier("enable-recap")
+                    Text(t("Summarize recent topics, decisions and unresolved questions, including action items and owners when mentioned."))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Divider()
+                    Toggle(t("Follow-up"), isOn: $coordinator.settings.followUpEnabled)
+                        .accessibilityIdentifier("enable-follow-up")
+                    Text(.init(t("Suggest **one question you can ask next** to clarify information or explore the topic, phrased naturally to say aloud.")))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(t("Turning a tool off hides its button and disables its shortcut."))
+                        .font(.caption2).foregroundStyle(.secondary)
+                }.padding(10)
+            } label: { Label(t("Conversation tools"), systemImage: "list.bullet.rectangle") }
             CapturePermissionCard(language: coordinator.settings.language)
             VStack(alignment: .leading, spacing: 7) {
                 Label(t("Capture exclusion"), systemImage: "eye.slash").font(.headline)
@@ -328,10 +343,10 @@ struct SettingsView: View {
     }
     private var knowledge: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(t("Local knowledge base")).font(.headline); Spacer()
-                Button(t("Import documents…")) { selectDocuments() }.disabled(coordinator.isIndexing)
-            }
+            Text(t("Local knowledge base")).font(.headline)
+            KnowledgeImportDropZone(language: coordinator.settings.language, isIndexing: coordinator.isIndexing,
+                                    selectDocuments: selectDocuments, importDocuments: coordinator.importDocuments,
+                                    reportError: { coordinator.knowledgeMessage = $0 })
             Text(t(coordinator.settings.embeddingService == .local
                    ? "PDF, Markdown, TXT and DOCX · parsing, embeddings and retrieval stay on this Mac. Answer generation sends selected excerpts to your analysis service."
                    : "PDF, Markdown, TXT and DOCX · original copies remain local. Indexing sends extracted text to OpenAI.")).font(.caption).foregroundStyle(.secondary)
@@ -377,6 +392,9 @@ struct SettingsView: View {
                     Label(t(mode.label), systemImage: mode.systemImage).frame(width: 130, alignment: .leading)
                     KeyRecorderView(combo: hotkeys.combo(for: mode), language: coordinator.settings.language) { coordinator.updateHotkey($0, for: mode) }.frame(width: 140, height: 28)
                     Button(t("Reset")) { coordinator.resetHotkey(mode) }
+                }.disabled(!coordinator.settings.isEnabled(mode))
+                if !coordinator.settings.isEnabled(mode) {
+                    Text(t("Enable this tool in General to use its shortcut.")).font(.caption).foregroundStyle(.secondary)
                 }
             }
             Text(t("⌥H shows/hides the overlay. Click the text box to type; Return submits a question even when listening is off.")).font(.caption).foregroundStyle(.secondary)

@@ -41,6 +41,7 @@ final class AppCoordinator: ObservableObject {
     @Published var settings = AppSettings() {
         didSet {
             settings.save(defaults: settingsDefaults)
+            if suggestion.isLoading && !settings.isEnabled(suggestion.mode) { cancelAnswer() }
             if oldValue.requiresOpenAIKey != settings.requiresOpenAIKey {
                 if settings.requiresOpenAIKey { refreshKeyState() }
                 else {
@@ -78,7 +79,7 @@ final class AppCoordinator: ObservableObject {
 
     init(mock: Bool = ProcessInfo.processInfo.arguments.contains("--mock") || ProcessInfo.processInfo.environment["LIVECOPILOT_MOCK"] == "1") {
         isMock = mock
-        localModels = LocalModelManager(root: AppPaths.dataDirectory(mock: mock).appendingPathComponent("Models"))
+        localModels = LocalModelManager(root: AppPaths.modelsDirectory(mock: mock))
         settingsDefaults = mock ? UserDefaults(suiteName: "com.livecopilot.mock")! : .standard
         hotkeys = HotkeyStore(defaults: settingsDefaults)
         settings = AppSettings.load(defaults: settingsDefaults)
@@ -413,6 +414,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
     func requestSuggestion(mode: SuggestionMode = .reply) {
+        guard settings.isEnabled(mode) else { return }
         let context = conversation.context()
         guard !context.isEmpty else { statusMessage = "No conversation yet. Type a question below to ask directly."; onShowOverlay?(false); return }
         let query: String
@@ -503,13 +505,17 @@ final class AppCoordinator: ObservableObject {
     }
     func importDocuments(_ urls: [URL]) {
         guard !isIndexing, let knowledge else { return }
+        let documents: [URL]
+        do { documents = try DocumentImport.validate(urls) }
+        catch { knowledgeMessage = error.localizedDescription; return }
+        guard !documents.isEmpty else { return }
         isIndexing = true
         Task {
             defer { isIndexing = false }
             do {
                 if !isMock, settings.embeddingService == .openAI { _ = try credential() }
                 let provider = try embeddingProvider(requireReady: true)
-                for url in urls {
+                for url in documents {
                     knowledgeMessage = "Indexing \(url.lastPathComponent)…"
                     do { _ = try await knowledge.importDocument(url, provider: provider) }
                     catch { knowledgeMessage = error.localizedDescription; await refreshKnowledge(); return }

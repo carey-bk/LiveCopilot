@@ -6,9 +6,9 @@ import Carbon.HIToolbox
 /// permission, and it works even when our app is not focused (it never is — the call is).
 ///
 /// Defaults:
-///   ⌥Space → suggest a reply        (adjustable in Settings)
-///   ⌥R     → recap the conversation (adjustable in Settings)
-///   ⌥F     → follow-up question     (adjustable in Settings)
+///   ⌃⌥Space → generate an answer    (adjustable in Settings)
+///   ⌃⌥S     → recap the conversation (adjustable in Settings)
+///   ⌃⌥X     → follow-up question     (adjustable in Settings)
 ///   ⌥H     → show / hide the overlay (fixed)
 @MainActor
 final class HotkeyManager {
@@ -41,6 +41,7 @@ final class HotkeyManager {
     }()
 
     private var store: HotkeyStore?
+    private var enabledModes = SuggestionMode.allCases
     private var onSuggest: ((SuggestionMode) -> Void)?
     private var onToggleOverlay: (() -> Void)?
 
@@ -60,12 +61,18 @@ final class HotkeyManager {
         rebuild()
     }
 
+    func setEnabledModes(_ modes: [SuggestionMode]) {
+        guard enabledModes != modes else { return }
+        enabledModes = modes
+        rebuild()
+    }
+
     private func rebuild() {
         guard let store, let onSuggest, let onToggleOverlay else { return }
         unregisterAll()
         installDispatcher()
 
-        for mode in SuggestionMode.allCases {
+        for mode in enabledModes {
             let combo = store.combo(for: mode)
             add(id: id(for: mode), keyCode: combo.keyCode, modifiers: combo.modifiers) {
                 onSuggest(mode)
@@ -89,7 +96,7 @@ final class HotkeyManager {
         guard let store, event.type == .keyDown else { return false }
         let combo = HotkeyCombo(keyCode: UInt32(event.keyCode), modifiers: HotkeyCombo.carbonModifiers(from: event.modifierFlags))
         let matchedID = combo == store.toggleOverlay ? ID.toggleOverlay
-            : SuggestionMode.allCases.first(where: { store.combo(for: $0) == combo }).map { id(for: $0) }
+            : enabledModes.first(where: { store.combo(for: $0) == combo }).map { id(for: $0) }
         guard let matchedID, let action = handlers[matchedID] else { return false }
         if !event.isARepeat { action() }
         return true

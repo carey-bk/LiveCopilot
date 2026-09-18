@@ -84,9 +84,9 @@ final class HotkeyStore: ObservableObject {
     private static let storageKey = "hotkeyCombos.v1"
 
     static let defaultCombos: [SuggestionMode: HotkeyCombo] = [
-        .reply:    HotkeyCombo(keyCode: UInt32(kVK_Space),  modifiers: UInt32(optionKey)),
-        .recap:    HotkeyCombo(keyCode: UInt32(kVK_ANSI_R), modifiers: UInt32(optionKey)),
-        .followUp: HotkeyCombo(keyCode: UInt32(kVK_ANSI_F), modifiers: UInt32(optionKey)),
+        .reply:    HotkeyCombo(keyCode: UInt32(kVK_Space),  modifiers: UInt32(controlKey | optionKey)),
+        .recap:    HotkeyCombo(keyCode: UInt32(kVK_ANSI_S), modifiers: UInt32(controlKey | optionKey)),
+        .followUp: HotkeyCombo(keyCode: UInt32(kVK_ANSI_X), modifiers: UInt32(controlKey | optionKey)),
     ]
 
     init(defaults: UserDefaults = .standard) {

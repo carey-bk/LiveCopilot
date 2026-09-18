@@ -3,6 +3,7 @@ import Combine
 import SwiftUI
 import Carbon.HIToolbox
 import Security
+import UniformTypeIdentifiers
 @testable import LiveCopilot
 
 final class NativeTests: XCTestCase {
@@ -211,15 +212,100 @@ final class NativeTests: XCTestCase {
         var replies = 0, toggles = 0
         manager.register(store: store, onSuggest: { if $0 == .reply { replies += 1 } }, onToggleOverlay: { toggles += 1 })
         defer { manager.unregisterAll() }
-        func key(_ code: Int, repeatKey: Bool = false) -> NSEvent {
-            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .option, timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: repeatKey, keyCode: UInt16(code))!
+        func key(_ code: Int, repeatKey: Bool = false, modifiers: NSEvent.ModifierFlags = [.control, .option]) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: repeatKey, keyCode: UInt16(code))!
         }
         XCTAssertTrue(manager.handleOverlayKey(key(kVK_Space)))
         XCTAssertTrue(manager.handleOverlayKey(key(kVK_Space, repeatKey: true)))
         XCTAssertEqual(replies, 1)
-        XCTAssertTrue(manager.handleOverlayKey(key(kVK_ANSI_H)))
+        XCTAssertTrue(manager.handleOverlayKey(key(kVK_ANSI_H, modifiers: .option)))
         XCTAssertEqual(toggles, 1)
+        XCTAssertFalse(manager.handleOverlayKey(key(kVK_ANSI_X, modifiers: .option)))
+    }
+    @MainActor func testDisabledToolShortcutsPassThroughAndCanBeReenabled() {
+        let suite = "LiveCopilot-Tools-Test-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let manager = HotkeyManager(), store = HotkeyStore(defaults: defaults)
+        var received: [SuggestionMode] = []
+        manager.register(store: store, onSuggest: { received.append($0) }, onToggleOverlay: {})
+        defer { manager.unregisterAll() }
+        func key(_ code: Int) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.control, .option], timestamp: 0,
+                            windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: UInt16(code))!
+        }
+        manager.setEnabledModes([.reply])
+        XCTAssertFalse(manager.handleOverlayKey(key(kVK_ANSI_S)))
         XCTAssertFalse(manager.handleOverlayKey(key(kVK_ANSI_X)))
+        XCTAssertTrue(manager.handleOverlayKey(key(kVK_Space)))
+        manager.setEnabledModes([.reply, .followUp])
+        XCTAssertFalse(manager.handleOverlayKey(key(kVK_ANSI_S)))
+        XCTAssertTrue(manager.handleOverlayKey(key(kVK_ANSI_X)))
+        manager.setEnabledModes(SuggestionMode.allCases)
+        XCTAssertTrue(manager.handleOverlayKey(key(kVK_ANSI_S)))
+        XCTAssertEqual(received, [.reply, .followUp, .recap])
+    }
+    @MainActor func testNewShortcutDefaultsPreserveCustomBindingsAndResetIndividually() {
+        let suite = "LiveCopilot-Defaults-Test-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = HotkeyStore(defaults: defaults)
+        XCTAssertEqual(store.combo(for: .reply).display, "⌃⌥Space")
+        XCTAssertEqual(store.combo(for: .recap).keyCode, UInt32(kVK_ANSI_S))
+        XCTAssertEqual(store.combo(for: .followUp).keyCode, UInt32(kVK_ANSI_X))
+        let custom = HotkeyCombo(keyCode: UInt32(kVK_F8), modifiers: UInt32(controlKey | shiftKey))
+        store.set(custom, for: .reply)
+        let restarted = HotkeyStore(defaults: defaults)
+        XCTAssertEqual(restarted.combo(for: .reply), custom)
+        restarted.reset(.recap)
+        XCTAssertEqual(restarted.combo(for: .reply), custom)
+        restarted.reset(.reply)
+        XCTAssertEqual(restarted.combo(for: .reply), HotkeyStore.defaultCombos[.reply])
+    }
+    @MainActor func testDisabledToolCannotStartOrContinueAnAnswer() async throws {
+        let coordinator = AppCoordinator(mock: true)
+        let original = coordinator.settings
+        defer { coordinator.settings = original }
+        coordinator.settings.automaticSuggestions = false
+        coordinator.settings.recapEnabled = false
+        let status = coordinator.statusMessage
+        coordinator.requestSuggestion(mode: .recap)
+        XCTAssertEqual(coordinator.statusMessage, status, "disabled tool must not enter the request pipeline")
+        let transcribed = expectation(description: "mock conversation ready")
+        let subscription = coordinator.transcript.$lines.filter { !$0.isEmpty }.prefix(1).sink { _ in transcribed.fulfill() }
+        await coordinator.start()
+        await fulfillment(of: [transcribed], timeout: 8)
+        subscription.cancel()
+        coordinator.settings.recapEnabled = true
+        coordinator.requestSuggestion(mode: .recap)
+        XCTAssertTrue(coordinator.suggestion.isLoading)
+        coordinator.settings.recapEnabled = false
+        XCTAssertFalse(coordinator.suggestion.isLoading)
+        await coordinator.shutdown()
+    }
+    func testFinderDropDecodingValidationAndLocalIndexing() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = root.appendingPathComponent("会议 说明.TXT"), b = root.appendingPathComponent("notes.md")
+        try "Meeting decision: benchmark the local speech model before release.".write(to: a, atomically: true, encoding: .utf8)
+        try "# Next steps\nCompare transcript latency and document supported languages.".write(to: b, atomically: true, encoding: .utf8)
+        let urls = try await DocumentImport.load([
+            NSItemProvider(item: a as NSURL, typeIdentifier: UTType.fileURL.identifier),
+            NSItemProvider(item: b.dataRepresentation as NSData, typeIdentifier: UTType.fileURL.identifier),
+            NSItemProvider(item: a as NSURL, typeIdentifier: UTType.fileURL.identifier)
+        ])
+        XCTAssertEqual(urls, [a, b])
+        XCTAssertThrowsError(try DocumentImport.validate([a, root]))
+        XCTAssertThrowsError(try DocumentImport.validate([URL(string: "https://example.com/notes.txt")!]))
+        let invalid = root.appendingPathComponent("image.png")
+        try Data([0]).write(to: invalid)
+        XCTAssertThrowsError(try DocumentImport.validate([invalid]))
+        let index = try KnowledgeIndex(directory: root.appendingPathComponent("index"))
+        for url in urls { _ = try await index.importDocument(url, provider: MockEmbeddingProvider()) }
+        let documents = try await index.documents()
+        XCTAssertEqual(Set(documents.map(\.name)), Set([a.lastPathComponent, b.lastPathComponent]))
+        XCTAssertTrue(documents.allSatisfy { $0.status == "Ready" && $0.chunkCount > 0 })
     }
     @MainActor func testOverlayNativeProperties() {
         let panel = OverlayWindow(rootView: Text("Synthetic overlay check"))

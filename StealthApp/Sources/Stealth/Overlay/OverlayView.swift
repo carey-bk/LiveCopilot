@@ -4,8 +4,8 @@ struct OverlayView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var transcript: TranscriptStore
     @ObservedObject var suggestion: SuggestionStore
+    @ObservedObject var hotkeys: HotkeyStore
     @State private var query = ""
-    @State private var showTranscript = true
     @State private var followTranscript = true
     @State private var transcriptHeight: CGFloat = 22
     @State private var answerHeight: CGFloat = 28
@@ -13,14 +13,14 @@ struct OverlayView: View {
     var onContentHeight: (CGFloat) -> Void
     var onMinimumHeight: (CGFloat) -> Void
     init(coordinator: AppCoordinator, onContentHeight: @escaping (CGFloat) -> Void = { _ in }, onMinimumHeight: @escaping (CGFloat) -> Void = { _ in }) {
-        self.coordinator = coordinator; transcript = coordinator.transcript; suggestion = coordinator.suggestion
+        self.coordinator = coordinator; transcript = coordinator.transcript; suggestion = coordinator.suggestion; hotkeys = coordinator.hotkeys
         self.onContentHeight = onContentHeight; self.onMinimumHeight = onMinimumHeight
     }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     private var transcriptSize: CGFloat { OverlayTypography.clamped(coordinator.settings.transcriptFontSize, fallback: 12) }
     private var answerSize: CGFloat { OverlayTypography.clamped(coordinator.settings.answerFontSize, fallback: 14) }
     private var speakerWidth: CGFloat { max(35, transcriptSize * 2.8) }
-    private var hasTranscript: Bool { showTranscript && transcript.hasContent }
+    private var hasTranscript: Bool { transcript.hasContent }
     private var transcriptIdeal: CGFloat { hasTranscript ? min(145, max(44, transcriptHeight + 22)) : 0 }
     private var chromeHeight: CGFloat {
         // Padding, divider, and spacing between the fixed groups and content panes.
@@ -59,7 +59,7 @@ struct OverlayView: View {
         }
         .onChange(of: desiredHeight) { _, _ in reportSize() }
         .onChange(of: coordinator.conversationGeneration) { _, _ in
-            query = ""; showTranscript = true; followTranscript = true
+            query = ""; followTranscript = true
             transcriptHeight = 22; answerHeight = 28
             reportSize()
         }
@@ -76,7 +76,7 @@ struct OverlayView: View {
                     Toggle(t("Auto"), isOn: $coordinator.settings.automaticSuggestions)
                         .toggleStyle(OverlaySwitchStyle()).accessibilityIdentifier("automatic-suggestions")
                 }
-                if showTranscript && !transcript.hasContent {
+                if !transcript.hasContent {
                     Text(t("Listening — waiting for speech")).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -84,12 +84,11 @@ struct OverlayView: View {
     }
     private var actions: some View {
         HStack(spacing: 6) {
-            ForEach(SuggestionMode.allCases) { mode in
+            ForEach(coordinator.settings.enabledSuggestionModes) { mode in
                 Button { coordinator.requestSuggestion(mode: mode) } label: { Label(t(mode.label), systemImage: mode.systemImage).font(.caption) }
-                    .help(coordinator.hotkeys.combo(for: mode).display)
+                    .help(hotkeys.combo(for: mode).display).accessibilityIdentifier("action-" + mode.rawValue)
             }
             Spacer()
-            Button { showTranscript.toggle() } label: { Image(systemName: "text.bubble") }.help(t("Show/hide conversation"))
         }
     }
     private var bottom: some View {
@@ -173,7 +172,9 @@ struct OverlayView: View {
                     HStack { ProgressView().controlSize(.small); Text(t("Retrieving evidence and thinking…")).font(.caption) }
                 }
                 if suggestion.text.isEmpty && !suggestion.isLoading && suggestion.error == nil {
-                    Text(t("Ask a question below, or use ⌥Space for help with the conversation.")).font(.subheadline).foregroundStyle(.secondary)
+                    Text(t("Ask a question below, or press {shortcut} to generate an answer from the conversation.")
+                        .replacingOccurrences(of: "{shortcut}", with: hotkeys.combo(for: .reply).display))
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
                 ForEach(Array(SuggestionParser.sections(suggestion.text).enumerated()), id: \.offset) { _, section in
                     VStack(alignment: .leading, spacing: 3) {
