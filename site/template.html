@@ -1,193 +1,724 @@
 <!doctype html>
 <html lang="$lang">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>$page_title</title>
-  <meta name="description" content="$description">
-  <meta name="theme-color" content="#f5f8fc">
-  <meta property="og:title" content="$page_title">
-  <meta property="og:description" content="$description">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="$canonical">
-  <meta property="og:image" content="https://carey-bk.github.io/LiveCopilot/assets/logo.png">
-  <link rel="canonical" href="$canonical">
-  <link rel="alternate" hreflang="zh-Hans" href="https://carey-bk.github.io/LiveCopilot/">
-  <link rel="alternate" hreflang="en" href="https://carey-bk.github.io/LiveCopilot/en/">
-  <link rel="icon" type="image/svg+xml" href="${prefix}assets/logo.svg">
-  <link rel="stylesheet" href="${prefix}styles.css">
-  <script src="${prefix}demo.js" defer></script>
-</head>
-<body>
-  <a class="skip" href="#main">$skip</a>
-  <header class="site-header">
-    <nav class="wrap nav" aria-label="$navigation">
-      <a class="brand" href="$home"><img src="${prefix}assets/logo.png" width="42" height="42" alt="">LiveCopilot</a>
-      <div class="nav-links">
-        <a class="desktop" href="#steps">$nav_features</a>
-        <a class="desktop" href="#scenarios">$nav_services</a>
-        <a class="desktop" href="#services">$nav_ai</a>
-        <a class="desktop" href="https://github.com/carey-bk/LiveCopilot">GitHub</a>
-        <div class="languages" aria-label="$language_label">
-          <a href="$zh_url" lang="zh-CN" hreflang="zh-Hans" $zh_current>中文</a>
-          <a href="$en_url" lang="en" hreflang="en" $en_current>EN</a>
-        </div>
-      </div>
-    </nav>
-  </header>
-  <main id="main">
-    <div class="wrap">
-      <section class="hero" aria-labelledby="hero-heading">
-        <div class="hero-copy">
-          <img src="${prefix}assets/logo.png" alt="" width="72" height="72">
-          <h1 id="hero-heading">$hero_title</h1>
-          <p class="hero-subtitle">$hero_subtitle</p>
-          <p class="intro">$hero_intro</p>
-          <div class="actions">
-            <a class="primary" href="$download_url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></svg>$download_label</a>
-            <a class="text-link" href="#install">$install_link</a>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>$page_title</title>
+    <meta name="description" content="$description" />
+    <meta name="theme-color" content="#F6F7F9" />
+    <meta property="og:title" content="$page_title" />
+    <meta property="og:description" content="$description" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="$canonical" />
+    <meta
+      property="og:image"
+      content="https://carey-bk.github.io/LiveCopilot/assets/social-preview.png"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <link rel="canonical" href="$canonical" />
+    <link
+      rel="alternate"
+      hreflang="zh-Hans"
+      href="https://carey-bk.github.io/LiveCopilot/"
+    />
+    <link
+      rel="alternate"
+      hreflang="en"
+      href="https://carey-bk.github.io/LiveCopilot/en/"
+    />
+    <link rel="icon" type="image/svg+xml" href="${prefix}assets/logo.svg" />
+    <link rel="stylesheet" href="${prefix}styles.css" />
+    <script src="${prefix}demo.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">$skip</a>
+    <header class="site-header">
+      <nav class="nav glass" aria-label="$navigation">
+        <a class="brand" href="$home"
+          ><img
+            src="${prefix}assets/logo.png"
+            width="32"
+            height="32"
+            alt=""
+          />LiveCopilot</a
+        >
+        <button
+          class="menu-toggle"
+          aria-expanded="false"
+          aria-controls="nav-links"
+          aria-label="$nav_menu"
+        >
+          ☰
+        </button>
+        <div class="nav-links" id="nav-links">
+          <a href="#features">$nav_features</a
+          ><a href="#workflow">$nav_workflow</a
+          ><a href="#privacy">$nav_privacy</a
+          ><a href="https://github.com/carey-bk/LiveCopilot">GitHub</a>
+          <div class="languages" aria-label="$language_label">
+            <a href="$zh_url" lang="zh-CN" $zh_current>中文</a
+            ><a href="$en_url" lang="en" $en_current>EN</a>
           </div>
-          <small class="platform">$platform<br>$release_note</small>
+          <a class="nav-download" href="$download_url"
+            >$nav_download <span aria-hidden="true">↓</span></a
+          >
         </div>
-        <div class="hero-demo">
-          <div class="demo-caption"><span>$demo_caption</span><span>LiveCopilot 1.4.1</span></div>
-          <div class="app-demo">
-            <div class="demo-header"><img src="${prefix}assets/logo.png" alt="" width="29" height="29">LiveCopilot<div class="demo-controls" aria-hidden="true"><span>↻</span><span>⚙</span><span>−</span></div></div>
-            <div class="demo-status"><span class="live-dot" aria-hidden="true"></span>$demo_status</div>
-            <div class="utterance"><span class="speaker">$speaker_them</span><span>$demo_question</span></div>
-            <div class="utterance utterance-listening"><span class="speaker">$speaker_you</span><div class="waveform" aria-label="$thinking"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
-            <div class="demo-switch" role="group" aria-label="$demo_modes">
-              <button type="button" data-example="reply-example" data-title="$reply_title" aria-pressed="true">$reply_label</button>
-              <button type="button" data-example="recap-example" data-title="$recap_label" aria-pressed="false">$recap_label</button>
-              <button type="button" data-example="followup-example" data-title="$followup_label" aria-pressed="false">$followup_label</button>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero wrap" aria-labelledby="hero-heading">
+        <h1 id="hero-heading">$hero_title</h1>
+        <p class="hero-subtitle">$hero_subtitle</p>
+        <div class="actions">
+          <a class="primary" href="$download_url"
+            ><span aria-hidden="true">↓</span> $download_label</a
+          ><a class="secondary" href="https://github.com/carey-bk/LiveCopilot"
+            >GitHub <span aria-hidden="true">↗</span></a
+          >
+        </div>
+        <p class="platform">$hero_meta</p>
+        <div class="demo-stage">
+          <div
+            class="app-demo glass"
+            id="hero-demo"
+            data-state="complete"
+            data-listening="$listening"
+            data-understanding="$understanding"
+            data-retrieving="$retrieving"
+            data-organizing="$organizing"
+            data-answering="$answering"
+            data-complete="$complete"
+          >
+            <div class="window-title">
+              <span class="traffic" aria-hidden="true"
+                ><i></i><i></i><i></i></span
+              ><span
+                ><img
+                  src="${prefix}assets/logo.png"
+                  width="22"
+                  height="22"
+                  alt=""
+                />
+                LiveCopilot</span
+              ><button
+                class="demo-toggle"
+                aria-label="$pause_demo"
+                data-play="$play_demo"
+                data-pause="$pause_demo"
+              >
+                Ⅱ
+              </button>
             </div>
-            <div class="demo-response" aria-live="polite" aria-atomic="true"><h3 id="example-title">$reply_title</h3><p id="example-copy">$demo_reply</p></div>
-            <div class="demo-evidence">$demo_evidence</div>
-            <div class="demo-input">$demo_input</div>
+            <div class="demo-body">
+              <div class="conversation">
+                <div class="pane-label">
+                  <span>$demo_transcript</span
+                  ><span class="listening-indicator"
+                    ><b aria-hidden="true"></b> $listening</span
+                  >
+                </div>
+                <div class="transcript-area">
+                  <span class="speaker">$speaker_them</span>
+                  <p id="transcript">$demo_question</p>
+                  <span class="waveform" aria-hidden="true"
+                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                    ><i></i><i></i><i></i><i></i
+                  ></span>
+                </div>
+                <div class="answer-area">
+                  <div class="answer-label">
+                    <img
+                      src="${prefix}assets/logo.png"
+                      width="22"
+                      height="22"
+                      alt=""
+                    />
+                    <h2>$reply_title</h2>
+                    <span class="status-text" id="demo-status">$complete</span>
+                  </div>
+                  <p id="demo-answer">$demo_reply</p>
+                  <details class="sources" id="demo-sources">
+                    <summary>Sources <span>2</span></summary>
+                    <div>
+                      Product Strategy.md · § 4<br />Interview Notes.pdf · p. 2
+                    </div>
+                  </details>
+                </div>
+                <label class="demo-input"
+                  ><span class="sr-only">$demo_input_label</span
+                  ><input
+                    placeholder="$demo_input"
+                    aria-describedby="input-hint"
+                    maxlength="180"
+                  /><span aria-hidden="true">⌥ Space</span></label
+                ><span id="input-hint" class="input-hint"
+                  >$demo_input_hint</span
+                >
+              </div>
+              <aside class="knowledge-pane">
+                <div class="pane-label">$demo_knowledge <span>3</span></div>
+                <div class="document selected">
+                  <span class="file-mark">MD</span
+                  ><span>Product Strategy.md<small>$passage_found</small></span
+                  ><span aria-hidden="true">✓</span>
+                </div>
+                <div class="document">
+                  <span class="file-mark pdf">PDF</span
+                  ><span>Interview Notes.pdf</span>
+                </div>
+                <div class="document">
+                  <span class="file-mark docx">DOCX</span
+                  ><span>Roadmap.docx</span>
+                </div>
+                <blockquote class="retrieved">
+                  <span>Product Strategy.md · § 4</span>
+                  <p>$demo_passage</p>
+                </blockquote>
+                <div class="context-tags">
+                  <span>$impact</span><span>$cost_tag</span
+                  ><span>$dependency</span>
+                </div>
+                <div class="knowledge-footer">
+                  <span aria-hidden="true">⌘</span> $local_search
+                </div>
+              </aside>
+            </div>
           </div>
-          <p class="demo-note">$demo_note</p>
-          <template id="reply-example">$demo_reply</template>
-          <template id="recap-example">$demo_recap</template>
-          <template id="followup-example">$demo_followup</template>
+        </div>
+        <p class="demo-note">$demo_note</p>
+      </section>
+      <section class="section wrap" id="workflow">
+        <div class="section-heading">
+          <h2>$workflow_title</h2>
+          <p>$workflow_intro</p>
+        </div>
+        <ol class="workflow">
+          <li class="workflow-node">
+            <span class="step">01 / Hear</span>
+            <h3>$hear</h3>
+            <p>$hear_body</p>
+            <div class="workflow-visual">
+              <span class="waveform" aria-hidden="true"
+                ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                ><i></i><i></i><i></i
+              ></span>
+              <p>$demo_question</p>
+            </div>
+          </li>
+          <li class="workflow-node">
+            <span class="step">02 / Retrieve</span>
+            <h3>$retrieve</h3>
+            <p>$retrieve_body</p>
+            <div class="workflow-visual document-lines">
+              <span>thesis.pdf</span><span>README.md</span><span>notes.md</span
+              ><small>$passage_count</small>
+            </div>
+          </li>
+          <li class="workflow-node">
+            <span class="step">03 / Organize</span>
+            <h3>$think</h3>
+            <p>$think_body</p>
+            <div class="workflow-visual">
+              <div class="context-tags">
+                <span>$context_tag</span><span>$question_tag</span
+                ><span>$constraint_tag</span>
+              </div>
+              <small>$organizing</small>
+            </div>
+          </li>
+          <li class="workflow-node">
+            <span class="step">04 / Answer</span>
+            <h3>$answer</h3>
+            <p>$answer_body</p>
+            <div class="workflow-visual">
+              <strong>$reply_title</strong>
+              <p>$workflow_answer</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+      <section class="section feature-section" id="features">
+        <div class="wrap">
+          <div class="section-heading"><h2>$features_title</h2></div>
+          <div class="bento">
+            <article class="feature-card">
+              <h3>$feature_hear</h3>
+              <p>$feature_hear_body</p>
+              <div class="mini-transcript">
+                <div class="listening-indicator">
+                  <b aria-hidden="true"></b> $listening
+                  <span class="waveform" aria-hidden="true"
+                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
+                    ><i></i><i></i><i></i><i></i
+                  ></span>
+                </div>
+                <p>$demo_question</p>
+                <span class="transcript-cursor" aria-hidden="true"></span>
+              </div>
+            </article>
+            <article class="feature-card">
+              <h3>$feature_kb</h3>
+              <p>$feature_kb_body</p>
+              <div class="file-fan">
+                <div><span class="file-mark pdf">PDF</span>Research.pdf</div>
+                <div><span class="file-mark docx">DOCX</span>Roadmap.docx</div>
+                <div>
+                  <span class="file-mark">MD</span>Strategy.md<small
+                    >✓ $passage_found</small
+                  >
+                </div>
+                <span class="txt-note">+ TXT</span>
+              </div>
+            </article>
+            <article class="feature-card floating-card">
+              <h3>$feature_float</h3>
+              <p>$feature_float_body</p>
+              <div class="desktop-preview">
+                <span class="desktop-menubar"
+                  >Finder <span>LiveCopilot</span></span
+                ><button class="floating-preview glass" aria-pressed="false">
+                  <span class="edge-handle" aria-hidden="true"></span
+                  ><span class="floating-content"
+                    ><img
+                      src="${prefix}assets/logo.png"
+                      width="26"
+                      height="26"
+                      alt=""
+                    /><strong>LiveCopilot</strong><span>$reply_title</span
+                    ><span>$workflow_answer</span></span
+                  ><span class="sr-only">$edge_label</span></button
+                ><button class="edge-toggle">$edge_hint</button>
+              </div>
+            </article>
+            <article class="feature-card">
+              <h3>$feature_speak</h3>
+              <p>$feature_speak_body</p>
+              <div class="speak-preview">
+                <span class="answer-label"
+                  ><img
+                    src="${prefix}assets/logo.png"
+                    width="26"
+                    height="26"
+                    alt=""
+                  />$reply_title</span
+                >
+                <p>$workflow_answer</p>
+                <small>Product Strategy.md · § 4</small>
+              </div>
+            </article>
+          </div>
         </div>
       </section>
-    </div>
-    <section class="remember section" id="why">
-      <div class="wrap editorial">
-        <h2>$remember_title</h2>
-        <div class="prose">
-          <p class="lead">$remember_intro</p>
-          <p>$remember_problem</p>
-          <p class="remember-conclusion">$remember_conclusion_rich</p>
+      <section class="section wrap cases-section" id="scenarios">
+        <div class="section-heading"><h2>$cases_title</h2></div>
+        <div class="case-tabs" role="tablist" aria-label="$scenarios_title">
+          <button
+            id="tab-interview"
+            role="tab"
+            aria-selected="false"
+            aria-controls="case-panel"
+            tabindex="-1"
+            data-case="interview"
+          >
+            $case_interview</button
+          ><button
+            id="tab-meeting"
+            role="tab"
+            aria-selected="true"
+            aria-controls="case-panel"
+            data-case="meeting"
+          >
+            $case_meeting</button
+          ><button
+            id="tab-defense"
+            role="tab"
+            aria-selected="false"
+            aria-controls="case-panel"
+            tabindex="-1"
+            data-case="defense"
+          >
+            $case_defense</button
+          ><button
+            id="tab-manual"
+            role="tab"
+            aria-selected="false"
+            aria-controls="case-panel"
+            tabindex="-1"
+            data-case="manual"
+          >
+            $case_manual
+          </button>
         </div>
-      </div>
-    </section>
-    <section class="wrap section materials" id="materials">
-      <div class="materials-copy">
-        <h2>$materials_title</h2>
-        <p class="lead">$materials_intro</p>
-        <p>$materials_import_rich</p>
-        <p>$materials_body</p>
-        <h3>$materials_closing</h3>
-        <p class="formats">$materials_formats</p>
-      </div>
-      <figure class="prepared-materials">
-        <figcaption>$materials_demo_label</figcaption>
-        <ul class="file-stack">
-          <li><span class="file-mark" aria-hidden="true">PDF</span><span>$material_resume</span></li>
-          <li><span class="file-mark rose" aria-hidden="true">MD</span><span>$material_project</span></li>
-          <li><span class="file-mark" aria-hidden="true">DOCX</span><span>$material_paper</span></li>
-        </ul>
-        <div class="retrieved-note">
-          <span class="note-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 3h14v19l-7-5-7 5V3Z"/></svg></span>
-          <h3>$material_snippet_title</h3>
-          <p>$material_snippet</p>
+        <div
+          class="case-panel"
+          id="case-panel"
+          role="tabpanel"
+          aria-labelledby="tab-meeting"
+          tabindex="0"
+        >
+          <div class="case-context">
+            <span class="pane-label">$question_tag</span>
+            <h3 id="case-question">$demo_question</h3>
+            <div class="case-documents" id="case-documents">
+              <span>Product Strategy.md</span><span>Roadmap.docx</span>
+            </div>
+            <div class="case-passage">
+              <span class="pane-label">$case_passage</span>
+              <p id="case-passage">$demo_passage</p>
+            </div>
+          </div>
+          <div class="case-response">
+            <span class="answer-label"
+              ><img
+                src="${prefix}assets/logo.png"
+                width="27"
+                height="27"
+                alt=""
+              />$reply_title</span
+            >
+            <p id="case-answer">$demo_reply</p>
+            <span class="case-source" id="case-source"
+              >Product Strategy.md · § 4</span
+            >
+          </div>
         </div>
-      </figure>
-    </section>
-    <section class="steps-section section" id="steps">
-      <div class="wrap">
-        <h2>$steps_title</h2>
-        <ol class="steps">
-          <li><span class="step-number" aria-hidden="true">01</span><h3>$step_1_title</h3><p>$step_1_body</p></li>
-          <li><span class="step-number" aria-hidden="true">02</span><h3>$step_2_title</h3><p>$step_2_body</p></li>
-          <li><span class="step-number" aria-hidden="true">03</span><h3>$step_3_title</h3><p>$step_3_body</p></li>
-        </ol>
-      </div>
-    </section>
-    <section class="wrap section scenarios" id="scenarios">
-      <h2>$scenarios_title</h2>
-      <div class="scenario-list">
-        <article><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="6" width="32" height="23" rx="3"/><circle cx="20" cy="15" r="4"/><path d="M12 27c0-8 16-8 16 0M20 29v6m-8 0h16"/></svg><h3>$scenario_1_title</h3><p>$scenario_1_body</p></article>
-        <article><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 13 20 6l16 7-16 7-16-7Zm6 3v12c6 5 14 5 20 0V16m6-3v15"/></svg><h3>$scenario_2_title</h3><p>$scenario_2_body</p></article>
-        <article><svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="4" y="6" width="32" height="24" rx="3"/><path d="M14 36h12m-6-6v6"/><circle cx="13" cy="15" r="3"/><circle cx="27" cy="15" r="3"/><path d="M8 25c0-7 10-7 10 0m4 0c0-7 10-7 10 0"/></svg><h3>$scenario_3_title</h3><p>$scenario_3_body</p></article>
-      </div>
-    </section>
-    <section class="privacy-section section" id="privacy">
-      <div class="wrap">
-        <div class="editorial privacy-copy">
-          <div><svg class="privacy-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="8" y="9" width="48" height="34" rx="4"/><path d="M2 50h60l-5 5H7l-5-5Z"/><rect x="25" y="24" width="14" height="12" rx="2"/><path d="M28 24v-4a4 4 0 0 1 8 0v4"/></svg><h2>$privacy_title</h2></div>
-          <div class="prose"><p>$privacy_intro_rich</p><p>$privacy_account</p><p>$privacy_conclusion_rich</p><p class="privacy-caveat">$privacy_caveat</p><a class="text-link" href="https://github.com/carey-bk/LiveCopilot/blob/main/docs/PRIVACY.md">$privacy_link</a></div>
+        <p class="demo-note">$demo_note</p>
+      </section>
+      <section class="section local-section" id="local">
+        <div class="wrap local-layout">
+          <div class="local-copy">
+            <h2>$local_title</h2>
+            <p>$local_intro</p>
+            <p class="local-caption">$local_caption</p>
+            <a class="text-link" href="#services"
+              >$service_link <span aria-hidden="true">↗</span></a
+            >
+          </div>
+          <div class="architecture" role="group" aria-label="$local_title">
+            <div class="mac-boundary">
+              <div class="mac-label">
+                <span aria-hidden="true">▱</span> Your Mac
+                <span>$local_search</span>
+              </div>
+              <div class="local-lanes">
+                <div>
+                  <span>$local_audio</span><b aria-hidden="true">↓</b
+                  ><span>$local_transcription</span
+                  ><small>Apple / Paraformer</small><b aria-hidden="true">↓</b
+                  ><span>$local_transcript</span>
+                </div>
+                <div>
+                  <span>$local_docs</span><b aria-hidden="true">↓</b
+                  ><span>$local_embedding</span><small>BGE-M3</small
+                  ><b aria-hidden="true">↓</b><span>$local_search</span>
+                </div>
+              </div>
+            </div>
+            <div class="context-connector">
+              <span class="data-line" aria-hidden="true"></span
+              ><span>$local_context</span
+              ><span class="data-line" aria-hidden="true"></span>
+            </div>
+            <div class="provider-node">
+              <span aria-hidden="true">✧</span> $local_provider
+            </div>
+            <div class="answer-connector" aria-hidden="true">↓</div>
+            <div class="architecture-answer">$local_answer</div>
+          </div>
         </div>
+      </section>
 
-      </div>
-    </section>
-    <section class="services-section section" id="services" aria-labelledby="services-heading">
-      <div class="wrap">
-        <div class="service-heading"><h2 id="services-heading">$services_title</h2><p class="lead">$services_intro</p></div>
-        <div class="service-module">
-          <div class="module-intro"><h3>$speech_title</h3><p>$speech_scope</p></div>
-          <div class="service-options">
-            <article class="service-option"><div class="option-heading"><h4>Apple Speech</h4><span class="cost">$apple_cost</span></div><div class="option-copy"><p>$apple_benefit</p><p class="tradeoff">$apple_tradeoff</p></div></article>
-            <article class="service-option"><div class="option-heading"><h4>Paraformer</h4><span class="cost">$paraformer_cost</span></div><div class="option-copy"><p>$paraformer_benefit</p><p class="tradeoff">$paraformer_tradeoff</p></div></article>
-            <article class="service-option"><div class="option-heading"><h4>GPT-Live-1</h4><span class="cost">$live_cost</span></div><div class="option-copy"><p>$live_benefit</p><p class="tradeoff">$live_tradeoff <a href="https://developers.openai.com/api/docs/models/gpt-live-1">$official_link</a></p></div></article>
+      <section class="privacy-section section" id="privacy">
+        <div class="wrap">
+          <div class="privacy-heading">
+            <svg
+              width="44"
+              height="48"
+              viewBox="0 0 44 48"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <rect x="8" y="20" width="28" height="24" rx="6" />
+              <path d="M14 20V12a8 8 0 0 1 16 0v8M22 29v6" />
+            </svg>
+            <h2>Your conversation<br />is yours.</h2>
+            <p>$privacy_subtitle</p>
           </div>
-        </div>
-        <aside class="auto-guide" aria-labelledby="auto-heading"><h3 id="auto-heading">$auto_title</h3><div class="auto-columns"><div><h4>$auto_live_title</h4><p>$auto_live_body</p></div><div><h4>$auto_local_title</h4><p>$auto_local_body</p></div></div><p class="auto-footnote">$auto_note</p></aside>
-        <div class="service-module">
-          <div class="module-intro"><h3>$knowledge_title</h3><p>$knowledge_scope</p></div>
-          <div class="service-options">
-            <article class="service-option"><div class="option-heading"><h4>BGE-M3</h4><span class="cost">$bge_cost</span></div><div class="option-copy"><p>$bge_benefit</p><p class="tradeoff">$bge_tradeoff</p></div></article>
-            <article class="service-option"><div class="option-heading"><h4>OpenAI Embeddings</h4><span class="cost">$embed_cost</span></div><div class="option-copy"><p>$embed_benefit</p><p class="tradeoff">$embed_tradeoff <a href="https://developers.openai.com/api/docs/pricing">$official_link</a></p></div></article>
+          <div class="privacy-facts">
+            <p><span aria-hidden="true">✓</span>$privacy_no_account</p>
+            <p><span aria-hidden="true">✓</span>$privacy_no_cloud</p>
+            <p><span aria-hidden="true">✓</span>$privacy_local</p>
+            <p><span aria-hidden="true">✓</span>$privacy_keychain</p>
           </div>
-        </div>
-        <div class="service-module">
-          <div class="module-intro"><h3>$analysis_title</h3><p>$analysis_scope</p></div>
-          <div class="service-options"><p class="analysis-intro">$analysis_intro</p>
-            <article class="service-option"><div class="option-heading"><h4>OpenAI</h4><span class="cost">$openai_cost</span></div><div class="option-copy"><p>$openai_benefit</p><p class="tradeoff">$openai_tradeoff <a href="https://developers.openai.com/api/docs/models/gpt-5.6-sol">$official_link</a></p></div></article>
-            <article class="service-option"><div class="option-heading"><h4>DeepSeek</h4><span class="cost">$deepseek_cost</span></div><div class="option-copy"><p>$deepseek_benefit</p><p class="tradeoff">$deepseek_tradeoff <a href="https://api-docs.deepseek.com/quick_start/pricing/">$official_link</a></p></div></article>
-            <article class="service-option"><div class="option-heading"><h4>Qwen</h4><span class="cost">$qwen_cost</span></div><div class="option-copy"><p>$qwen_benefit</p><p class="tradeoff">$qwen_tradeoff <a href="https://help.aliyun.com/zh/model-studio/model-pricing">$official_link</a></p></div></article>
-            <article class="service-option"><div class="option-heading"><h4>GLM</h4><span class="cost">$glm_cost</span></div><div class="option-copy"><p>$glm_benefit</p><p class="tradeoff">$glm_tradeoff <a href="https://bigmodel.cn/pricing">$official_link</a></p></div></article>
-            <article class="service-option"><div class="option-heading"><h4>Kimi</h4><span class="cost">$kimi_cost</span></div><div class="option-copy"><p>$kimi_benefit</p><p class="tradeoff">$kimi_tradeoff <a href="https://platform.kimi.com/docs/pricing/chat">$official_link</a></p></div></article>
-            <p class="compatible-note">$compatible_note</p>
+          <div class="privacy-route">
+            <span>Your Mac</span><span aria-hidden="true">→</span
+            ><span>Relevant context</span><span aria-hidden="true">→</span
+            ><span>Your AI provider</span>
           </div>
+          <p class="privacy-boundary">$privacy_boundary</p>
+          <a
+            class="text-link"
+            href="https://github.com/carey-bk/LiveCopilot/blob/main/docs/PRIVACY.md"
+            >$privacy_link <span aria-hidden="true">↗</span></a
+          >
         </div>
-        <p class="service-note">$service_note</p>
-        <div class="window-features"><div><h3>$feature_two_title</h3><p>$feature_two_body</p></div><div><h3>$feature_three_title</h3><p>$feature_three_body</p></div></div>
-      </div>
-    </section>
-    <section class="wrap download-section" aria-labelledby="download-heading">
-      <div class="download-box">
-        <div class="download-copy">
-          <img src="${prefix}assets/logo.png" width="72" height="72" alt="">
-          <h2 id="download-heading">$install_title</h2>
-          <p>$install_intro</p>
-          <a class="primary" href="$download_url">$final_download_label</a>
-          <small>$final_platform</small>
-        </div>
+      </section>
+      <section class="wrap download-section" id="download">
+        <img src="${prefix}assets/logo.png" width="80" height="80" alt="" />
+        <h2>$install_title</h2>
+        <a class="primary" href="$download_url">↓ $download_label</a>
+        <p class="platform">$final_platform</p>
         <details class="installation" id="install">
           <summary>$install_heading</summary>
           <div class="details-body">
-            <ol class="install"><li>$install_one</li><li>$install_two</li><li>$install_three</li><li>$install_four</li></ol>
+            <ol class="install">
+              <li>$install_one</li>
+              <li>$install_two</li>
+              <li>$install_three</li>
+              <li>$install_four</li>
+            </ol>
           </div>
         </details>
-        <p class="install-note">$signing_note <a href="https://support.apple.com/en-us/102445">$apple_link</a></p>
+        <p class="install-note">
+          $signing_note
+          <a href="https://support.apple.com/en-us/102445">$apple_link</a>
+        </p>
+      </section>
+      <details class="service-disclosure wrap" id="services">
+        <summary>$service_link</summary>
+        <section
+          class="services-section section"
+          aria-labelledby="services-heading"
+        >
+          <div class="wrap">
+            <div class="service-heading">
+              <h2 id="services-heading">$services_title</h2>
+              <p class="lead">$services_intro</p>
+            </div>
+            <div class="service-module">
+              <div class="module-intro">
+                <h3>$speech_title</h3>
+                <p>$speech_scope</p>
+              </div>
+              <div class="service-options">
+                <article class="service-option">
+                  <div class="option-heading">
+                    <h4>Apple Speech</h4>
+                    <span class="cost">$apple_cost</span>
+                  </div>
+                  <div class="option-copy">
+                    <p>$apple_benefit</p>
+                    <p class="tradeoff">$apple_tradeoff</p>
+                  </div>
+                </article>
+                <article class="service-option">
+                  <div class="option-heading">
+                    <h4>Paraformer</h4>
+                    <span class="cost">$paraformer_cost</span>
+                  </div>
+                  <div class="option-copy">
+                    <p>$paraformer_benefit</p>
+                    <p class="tradeoff">$paraformer_tradeoff</p>
+                  </div>
+                </article>
+                <article class="service-option">
+                  <div class="option-heading">
+                    <h4>GPT-Live-1</h4>
+                    <span class="cost">$live_cost</span>
+                  </div>
+                  <div class="option-copy">
+                    <p>$live_benefit</p>
+                    <p class="tradeoff">
+                      $live_tradeoff
+                      <a
+                        href="https://developers.openai.com/api/docs/models/gpt-live-1"
+                        >$official_link</a
+                      >
+                    </p>
+                  </div>
+                </article>
+              </div>
+            </div>
+            <aside class="auto-guide" aria-labelledby="auto-heading">
+              <h3 id="auto-heading">$auto_title</h3>
+              <div class="auto-columns">
+                <div>
+                  <h4>$auto_live_title</h4>
+                  <p>$auto_live_body</p>
+                </div>
+                <div>
+                  <h4>$auto_local_title</h4>
+                  <p>$auto_local_body</p>
+                </div>
+              </div>
+              <p class="auto-footnote">$auto_note</p>
+            </aside>
+            <div class="service-module">
+              <div class="module-intro">
+                <h3>$knowledge_title</h3>
+                <p>$knowledge_scope</p>
+              </div>
+              <div class="service-options">
+                <article class="service-option">
+                  <div class="option-heading">
+                    <h4>BGE-M3</h4>
+                    <span class="cost">$bge_cost</span>
+                  </div>
+                  <div class="option-copy">
+                    <p>$bge_benefit</p>
+                    <p class="tradeoff">$bge_tradeoff</p>
+                  </div>
+                </article>
+                <article class="service-option">
+                  <div class="option-heading">
+                    <h4>OpenAI Embeddings</h4>
+                    <span class="cost">$embed_cost</span>
+                  </div>
+                  <div class="option-copy">
+                    <p>$embed_benefit</p>
+                    <p class="tradeoff">
+                      $embed_tradeoff
+                      <a href="https://developers.openai.com/api/docs/pricing"
+                        >$official_link</a
+                      >
+                    </p>
+                  </div>
+                </article>
+              </div>
+            </div>
+            <div class="service-module">
+              <div class="module-intro">
+                <h3>$analysis_title</h3>
+                <p>$analysis_scope</p>
+              </div>
+              <div class="service-options">
+                <p class="analysis-intro">$analysis_intro</p>
+                <article class="service-option">
+                  <div class="option-heading">
+                    <h4>OpenAI</h4>
+                    <span class="cost">$openai_cost</span>
+                  </div>
+                  <div class="option-copy">
+                    <p>$openai_benefit</p>
+                    <p class="tradeoff">
+                      $openai_tradeoff
+                      <a
+                        href="https://developers.openai.com/api/docs/models/gpt-5.6-sol"
+                        >$official_link</a
+                      >
+                    </p>
+                  </div>
+                </article>
+                <article class="service-option">
+                  <div class="option-heading">
+                    <h4>DeepSeek</h4>
+                    <span class="cost">$deepseek_cost</span>
+                  </div>
+                  <div class="option-copy">
+                    <p>$deepseek_benefit</p>
+                    <p class="tradeoff">
+                      $deepseek_tradeoff
+                      <a
+                        href="https://api-docs.deepseek.com/quick_start/pricing/"
+                        >$official_link</a
+                      >
+                    </p>
+                  </div>
+                </article>
+                <article class="service-option">
+                  <div class="option-heading">
+                    <h4>Qwen</h4>
+                    <span class="cost">$qwen_cost</span>
+                  </div>
+                  <div class="option-copy">
+                    <p>$qwen_benefit</p>
+                    <p class="tradeoff">
+                      $qwen_tradeoff
+                      <a
+                        href="https://help.aliyun.com/zh/model-studio/model-pricing"
+                        >$official_link</a
+                      >
+                    </p>
+                  </div>
+                </article>
+                <article class="service-option">
+                  <div class="option-heading">
+                    <h4>GLM</h4>
+                    <span class="cost">$glm_cost</span>
+                  </div>
+                  <div class="option-copy">
+                    <p>$glm_benefit</p>
+                    <p class="tradeoff">
+                      $glm_tradeoff
+                      <a href="https://bigmodel.cn/pricing">$official_link</a>
+                    </p>
+                  </div>
+                </article>
+                <article class="service-option">
+                  <div class="option-heading">
+                    <h4>Kimi</h4>
+                    <span class="cost">$kimi_cost</span>
+                  </div>
+                  <div class="option-copy">
+                    <p>$kimi_benefit</p>
+                    <p class="tradeoff">
+                      $kimi_tradeoff
+                      <a href="https://platform.kimi.com/docs/pricing/chat"
+                        >$official_link</a
+                      >
+                    </p>
+                  </div>
+                </article>
+                <p class="compatible-note">$compatible_note</p>
+              </div>
+            </div>
+            <p class="service-note">$service_note</p>
+            <div class="window-features">
+              <div>
+                <h3>$feature_two_title</h3>
+                <p>$feature_two_body</p>
+              </div>
+              <div>
+                <h3>$feature_three_title</h3>
+                <p>$feature_three_body</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </details>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-row">
+          <a class="brand" href="$home"
+            ><img
+              src="${prefix}assets/logo.png"
+              alt=""
+              width="42"
+              height="42"
+            />LiveCopilot</a
+          >
+          <div class="footer-links">
+            <a href="https://github.com/carey-bk">$author_link</a
+            ><a href="https://github.com/carey-bk/LiveCopilot">GitHub</a
+            ><a
+              href="https://github.com/carey-bk/LiveCopilot/releases/tag/v1.4.1"
+              >$release_link</a
+            ><a href="https://github.com/carey-bk/LiveCopilot/blob/main/LICENSE"
+              >MIT License</a
+            >
+          </div>
+        </div>
+        <div class="footer-credit">
+          $credit_prefix
+          <a href="https://github.com/vortechron/stealth">Stealth</a>.
+          $site_privacy
+        </div>
       </div>
-    </section>
-  </main>
-  <footer class="site-footer"><div class="wrap">
-    <div class="footer-row"><a class="brand" href="$home"><img src="${prefix}assets/logo.png" alt="" width="42" height="42">LiveCopilot</a><div class="footer-links"><a href="https://github.com/carey-bk">$author_link</a><a href="https://github.com/carey-bk/LiveCopilot">GitHub</a><a href="https://github.com/carey-bk/LiveCopilot/releases/tag/v1.4.1">$release_link</a><a href="https://github.com/carey-bk/LiveCopilot/blob/main/LICENSE">MIT License</a></div></div>
-    <div class="footer-credit">$credit_prefix <a href="https://github.com/vortechron/stealth">Stealth</a>. $site_privacy</div>
-  </div></footer>
-</body>
+    </footer>
+  </body>
 </html>
