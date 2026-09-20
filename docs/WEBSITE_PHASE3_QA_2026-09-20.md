@@ -51,4 +51,16 @@ Raw scripts, screenshots and results are archived outside the repository at:
 
 ## Publication
 
-Publication result and public-file verification are recorded after the Pages workflow completes.
+Published website commit: `1465705affd6acb710e8a850d56c251d0a7ec3af` (main Phase 3 implementation: `e1568ce5d49a72f3d36040d6ee65ca8ddeeb3b55`).
+
+GitHub Pages build and deployment succeeded:
+https://github.com/carey-bk/LiveCopilot/actions/runs/35507343164
+
+Public URLs: https://carey-bk.github.io/LiveCopilot/ and https://carey-bk.github.io/LiveCopilot/en/ .
+
+All 12 checked public files match the final production build by SHA-256: both HTML pages, base/product/cinematic CSS, demo/cinematic/scene JS, social image, and all three runtime modules. Raw evidence: `live-hashes.json`.
+
+Live Chinese/English mobile checks passed for Sources, edge hide/reveal, scenario switching and width; no uncaught page errors. Live progressive-enhancement checks passed for mobile, reduced motion, unavailable WebGL, leaving the viewport and pause.
+
+Cold-start testing caught a late module appearing after Pause. The final patch propagates playback state to async initialization; a deterministic delayed-import test confirms no scene initializes while paused and Resume initializes it once. The published patch passed the live pause regression.
+
