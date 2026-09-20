@@ -13,8 +13,8 @@ python3 -m http.server 18744 --directory _site
 
 Edit `content.json`, `template.html`, `styles.css`, `product.css`, `components/*.html`, and `demo.js`. The existing
 Python builder escapes translated copy and requires matching translation keys.
-The site has no frontend dependencies, external fonts, trackers, cookies, audio
-capture, or model requests. GitHub Pages publishes `_site/` through
+The site needs no frontend package installation. Its optional Three.js runtime is
+vendored locally; there are no external fonts, trackers, cookies, audio capture, or model requests. GitHub Pages publishes `_site/` through
 `.github/workflows/pages.yml` when website inputs change on `main`.
 
 ## Design and behavior
@@ -25,7 +25,7 @@ windows, native system typography, and a dark `#090A0C` privacy section. The
 product window is the main visual, with transcript, knowledge retrieval, answer,
 and associated sources. No internal reasoning is displayed.
 
-`demo.js` owns one 13.5-second hero timeline. It stops advancing when the window
+`demo.js` owns one finite 12-second hero timeline. It stops advancing when the window
 leaves the viewport, the document is hidden, the user pauses, or Sources opens.
 Focusing the mock input pauses the preview and shows its complete answer. No
 text is submitted. Reduced motion shows the complete answer immediately.
@@ -109,3 +109,29 @@ scales its native idle window independently. Reduced motion shows final results.
 Services now have a visible Hear / Retrieve / Respond overview leading to the
 existing detailed guide. Privacy remains a dark section. Social preview art uses
 the same product component and no longer shows the previous conceptual UI.
+
+## Phase 3: cinematic enhancement
+
+`cinematic.css` applies semantic colors to the explanatory layer only: blue = audio/input,
+pink = documents/context, purple = organizing. `product.css` remains the source of native
+product appearance. The navbar uses the app's Avenir Next heavy italic family, with the
+same icon-to-type proportion and spacing; no proprietary font files are distributed.
+
+`cinematic.js` progressively loads `cinematic-scene.js` on desktop. Three.js 0.180.0 and
+CSS3DRenderer are pinned and served locally under `assets/vendor/`, with the MIT license.
+The laptop is procedural geometry; the live product is the **same DOM element**, projected
+by CSS3DRenderer, then returned to normal DOM at matching dimensions after the camera push.
+No product text is painted to a texture. No analytics, microphone, model or CDN calls occur.
+
+The existing demo clock drives the camera and a single 12-second transcript/retrieval/answer
+sequence. There is no independent WebGL animation loop. Pausing, document visibility and
+intersection handling stop the clock; scrolling past 250px completes the story. The scene
+releases WebGL geometry/materials at handoff. It never restarts automatically.
+
+Mobile (≤900px), reduced motion, Save-Data, low CPU concurrency, failed/slow imports and
+WebGL context loss use the complete static product presentation. Initial enhancement has
+an 1800ms timeout. Title glyph visibility preserves its final geometry; Chinese glyphs
+reveal every 55ms and the cursor blinks three times. Narrow screens use explicit lines.
+
+Build remains `python3 StealthApp/scripts/build-site.py`; no npm install is required.
+QA and release evidence: `docs/WEBSITE_PHASE3_QA_2026-09-20.md`.

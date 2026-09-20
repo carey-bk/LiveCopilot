@@ -255,7 +255,8 @@
     "overview_cloud": "云端",
     "overview_hear_text": "将麦克风或系统音频转为文字。",
     "overview_find_text": "向量化可选本地或云端，资料检索在 Mac 上完成。",
-    "overview_answer_text": "将问题与相关片段发送给所选服务，生成回答。"
+    "overview_answer_text": "将问题与相关片段发送给所选服务，生成回答。",
+    "explore_label": "探索 LiveCopilot 的工作方式"
   },
   "en": {
     "page_title": "LiveCopilot — AI for the conversation in front of you",
@@ -513,6 +514,7 @@
     "overview_cloud": "Cloud",
     "overview_hear_text": "Turn microphone or system audio into text.",
     "overview_find_text": "Choose local or cloud embeddings; search stays on the Mac.",
-    "overview_answer_text": "Send the question and relevant passages to your provider for an answer."
+    "overview_answer_text": "Send the question and relevant passages to your provider for an answer.",
+    "explore_label": "Explore how LiveCopilot works"
   }
 }

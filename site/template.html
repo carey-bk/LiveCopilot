@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>$page_title</title>
     <meta name="description" content="$description" />
-    <meta name="theme-color" content="#F6F7F9" />
+    <meta name="theme-color" content="#07080B" />
     <meta property="og:title" content="$page_title" />
     <meta property="og:description" content="$description" />
     <meta property="og:type" content="website" />
@@ -31,7 +31,9 @@
     <link rel="icon" type="image/svg+xml" href="${prefix}assets/logo.svg" />
     <link rel="stylesheet" href="${prefix}styles.css" />
     <link rel="stylesheet" href="${prefix}product.css" />
+    <link rel="stylesheet" href="${prefix}cinematic.css" />
     <script src="${prefix}demo.js" defer></script>
+    <script type="module" src="${prefix}cinematic.js"></script>
   </head>
   <body>
     <a class="skip" href="#main">$skip</a>
@@ -69,8 +71,8 @@
       </nav>
     </header>
     <main id="main">
-      <section class="hero wrap" aria-labelledby="hero-heading">
-        <h1 id="hero-heading">$hero_title</h1>
+      <section class="hero" aria-labelledby="hero-heading">
+        <h1 id="hero-heading" aria-label="$hero_title">$hero_title_markup</h1>
         <p class="hero-subtitle">$hero_subtitle</p>
         <div class="actions">
           <a class="primary" href="$download_url"
@@ -102,43 +104,55 @@
               Ⅱ
             </button>
           </div>
-          <div class="hero-product-layout">
-            <div class="hero-product-slot">$product_hero</div>
-            <aside class="retrieval-story" aria-label="$story_label">
-              <p class="story-label">$story_label</p>
-              <div class="story-files">
-                <div class="document selected">
-                  <span class="file-mark">MD</span
-                  ><span>Product Strategy.md<small>$passage_found</small></span>
-                </div>
-                <div class="document">
-                  <span class="file-mark pdf">PDF</span
-                  ><span>Interview Notes.pdf</span>
-                </div>
-                <div class="document">
-                  <span class="file-mark docx">DOCX</span
-                  ><span>Roadmap.docx</span>
-                </div>
+          <div class="cinema-stage">
+            <div class="cinema-desktop">
+              <div class="desktop-menubar" aria-hidden="true">
+                <span>Finder　 File　 Edit　 View</span
+                ><span>LiveCopilot　 ◉</span>
               </div>
-              <div class="story-connection" aria-hidden="true"><i></i></div>
-              <blockquote class="story-passage">
-                <span>Product Strategy.md · § 4</span>
-                <p>$demo_passage</p>
-              </blockquote>
-              <p class="story-status" id="demo-status" aria-live="off">
-                $complete
-              </p>
-            </aside>
+              <div class="hero-product-layout">
+                <div class="hero-product-slot">$product_hero</div>
+                <aside class="retrieval-story" aria-label="$story_label">
+                  <p class="story-label">$story_label</p>
+                  <div class="story-files">
+                    <div class="document selected">
+                      <span class="file-mark">MD</span
+                      ><span
+                        >Product Strategy.md<small>$passage_found</small></span
+                      >
+                    </div>
+                    <div class="document">
+                      <span class="file-mark pdf">PDF</span
+                      ><span>Interview Notes.pdf</span>
+                    </div>
+                    <div class="document">
+                      <span class="file-mark docx">DOCX</span
+                      ><span>Roadmap.docx</span>
+                    </div>
+                  </div>
+                  <div class="story-connection" aria-hidden="true"><i></i></div>
+                  <blockquote class="story-passage">
+                    <span>Product Strategy.md · § 4</span>
+                    <p>$demo_passage</p>
+                  </blockquote>
+                  <p class="story-status" id="demo-status" aria-live="off">
+                    $complete
+                  </p>
+                </aside>
+              </div>
+            </div>
           </div>
         </div>
         <p class="demo-note">$demo_note</p>
+        <a class="hero-explore" href="#workflow"
+          >$explore_label <span aria-hidden="true">↓</span></a
+        >
       </section>
       <section class="section wrap" id="workflow">
         <div class="section-heading">
           <h2>$workflow_title</h2>
           <p>$workflow_intro</p>
         </div>
-        <p class="section-note">$workflow_story</p>
         <ol class="workflow">
           <li class="workflow-node">
             <span class="step">Hear</span>
@@ -310,6 +324,41 @@
         </div>
         <p class="demo-note">$demo_note</p>
       </section>
+      <section class="section wrap services-overview" id="service-overview">
+        <div class="section-heading">
+          <h2>$overview_title</h2>
+          <p>$overview_intro</p>
+        </div>
+        <div class="overview-grid">
+          <article>
+            <div>
+              <h3>$overview_hear</h3>
+              <span>$overview_local_cloud</span>
+            </div>
+            <strong>Apple · Paraformer · GPT-Live-1</strong>
+            <p>$overview_hear_text</p>
+          </article>
+          <article>
+            <div>
+              <h3>$overview_find</h3>
+              <span>$overview_local_cloud</span>
+            </div>
+            <strong>BGE-M3 · OpenAI</strong>
+            <p>$overview_find_text</p>
+          </article>
+          <article>
+            <div>
+              <h3>$overview_answer</h3>
+              <span>$overview_cloud</span>
+            </div>
+            <strong>OpenAI · DeepSeek · Qwen · GLM · Kimi</strong>
+            <p>$overview_answer_text</p>
+          </article>
+        </div>
+        <a href="#services" class="secondary service-overview-link"
+          >$service_link <span aria-hidden="true">↓</span></a
+        >
+      </section>
       <section class="section local-section" id="local">
         <div class="wrap local-layout">
           <div class="local-copy">
@@ -354,41 +403,6 @@
         </div>
       </section>
 
-      <section class="section wrap services-overview" id="service-overview">
-        <div class="section-heading">
-          <h2>$overview_title</h2>
-          <p>$overview_intro</p>
-        </div>
-        <div class="overview-grid">
-          <article>
-            <div>
-              <h3>$overview_hear</h3>
-              <span>$overview_local_cloud</span>
-            </div>
-            <strong>Apple · Paraformer · GPT-Live-1</strong>
-            <p>$overview_hear_text</p>
-          </article>
-          <article>
-            <div>
-              <h3>$overview_find</h3>
-              <span>$overview_local_cloud</span>
-            </div>
-            <strong>BGE-M3 · OpenAI</strong>
-            <p>$overview_find_text</p>
-          </article>
-          <article>
-            <div>
-              <h3>$overview_answer</h3>
-              <span>$overview_cloud</span>
-            </div>
-            <strong>OpenAI · DeepSeek · Qwen · GLM · Kimi</strong>
-            <p>$overview_answer_text</p>
-          </article>
-        </div>
-        <a href="#services" class="secondary service-overview-link"
-          >$service_link <span aria-hidden="true">↓</span></a
-        >
-      </section>
       <section class="privacy-section section" id="privacy">
         <div class="wrap">
           <div class="privacy-heading">

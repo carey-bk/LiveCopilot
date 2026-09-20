@@ -63,10 +63,9 @@
     { at: 5200, state: "organizing" },
     { at: 6000, state: "answering" },
     { at: 9000, state: "sources" },
-    { at: 10000, state: "complete" },
-    { at: 12500, state: "resetting" },
+    { at: 9500, state: "complete" },
   ];
-  const duration = 13500;
+  const duration = 12000;
   let heroTime = 0,
     heroVisible = false,
     paused = false;
@@ -75,6 +74,12 @@
     return [...timeline].reverse().find((item) => time >= item.at).state;
   }
   function renderHero(time) {
+    document.dispatchEvent(
+      new CustomEvent("hero-clock", {
+        detail: { time, running: heroVisible && !paused && !document.hidden },
+      }),
+    );
+    time = Math.max(0, time - 2500);
     const state = stateAt(time);
     demo.dataset.state = state;
     stream(transcript, questionChunks, (time - 500) / 2500);
@@ -107,16 +112,21 @@
     text(status, demo.dataset[key]);
   }
   function finalHero() {
-    renderHero(11000);
+    renderHero(12000);
     text(transcript, fullQuestion);
     text(answer, fullAnswer);
   }
   function tickHero(now) {
     if (heroClock.previous)
-      heroTime = (heroTime + now - heroClock.previous) % duration;
+      heroTime = Math.min(duration, heroTime + now - heroClock.previous);
     heroClock.previous = now;
     renderHero(heroTime);
-    heroClock.frame = requestAnimationFrame(tickHero);
+    if (heroTime < duration) heroClock.frame = requestAnimationFrame(tickHero);
+    else {
+      heroClock.frame = 0;
+      toggle.hidden = true;
+      finalHero();
+    }
   }
   function syncHero() {
     cancelAnimationFrame(heroClock.frame);
@@ -125,10 +135,18 @@
     const sourcesOpen = [...product.querySelectorAll("details")].some(
       (item) => item.open,
     );
-    if (reduced.matches) finalHero();
-    else if (heroVisible && !document.hidden && !paused && !sourcesOpen)
+    if (reduced.matches || matchMedia("(max-width: 900px)").matches) {
+      heroTime = duration;
+      finalHero();
+    } else if (
+      heroTime < duration &&
+      heroVisible &&
+      !document.hidden &&
+      !paused &&
+      !sourcesOpen
+    )
       heroClock.frame = requestAnimationFrame(tickHero);
-    toggle.hidden = reduced.matches;
+    toggle.hidden = reduced.matches || heroTime >= duration;
     toggle.textContent = paused ? "▶" : "Ⅱ";
     toggle.setAttribute(
       "aria-label",
@@ -144,7 +162,7 @@
     .forEach((item) => item.addEventListener("toggle", syncHero));
   product.querySelector("input").addEventListener("focus", () => {
     paused = true;
-    heroTime = 11000;
+    heroTime = 12000;
     finalHero();
     syncHero();
   });
@@ -154,7 +172,23 @@
       syncHero();
     },
     { threshold: 0 },
-  ).observe(product);
+  ).observe(demo);
+  document.addEventListener("hero-fallback", () => {
+    heroTime = duration;
+    finalHero();
+    syncHero();
+  });
+  window.addEventListener(
+    "scroll",
+    () => {
+      if (scrollY > 250 && heroTime < duration) {
+        heroTime = duration;
+        finalHero();
+        syncHero();
+      }
+    },
+    { passive: true },
+  );
   document.addEventListener("visibilitychange", syncHero);
   reduced.addEventListener("change", syncHero);
   // Native Copy has a real browser action; the remaining native chrome is a labeled visual replica.
