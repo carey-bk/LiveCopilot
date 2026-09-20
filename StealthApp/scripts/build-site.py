@@ -28,10 +28,28 @@ for language, copy in content.items():
                 en_current='aria-current="page"' if english else '',
                 canonical=BASE + ('en/' if english else ''),
                 download_url='https://github.com/carey-bk/LiveCopilot/releases/download/v1.4.1/LiveCopilot-1.4.1-macOS-universal.dmg')
+    # One product structure for every section; translated text is already escaped.
+    components = SOURCE / 'components'
+    answer_template = Template((components / 'product-answer.html').read_text())
+    transcript_template = Template((components / 'product-transcript.html').read_text())
+    product_template = Template((components / 'product-ui.html').read_text())
+    answer = answer_template.substitute(data)
+    transcript = transcript_template.substitute(data)
+    for instance in ['hero', 'edge']:
+        data['product_' + instance] = product_template.substitute(
+            data, variant=instance, instance=instance,
+            product_answer_fragment=answer, product_transcript_fragment=transcript)
+    data['product_edge'] = data['product_edge'].replace(data['product_status'], data['product_ready'])
+    data['product_edge'] = re.sub(r'(data-part="empty")\s+hidden', r'\1', data['product_edge'])
+    data['product_answer'] = '<div data-product="answer">' + answer + '</div>'
+    data['product_transcript'] = '<div data-product="transcript">' + transcript + '</div>'
+    short_copy = dict(data, demo_reply=data['workflow_answer'])
+    data['product_workflow_answer'] = '<div data-product="workflow">' + answer_template.substitute(short_copy) + '</div>'
+    data['product_case_answer'] = '<div data-product="case">' + answer + '</div>'
     destination = OUTPUT / ('en' if english else '')
     destination.mkdir(exist_ok=True)
     (destination / 'index.html').write_text(template.substitute(data))
-for name in ['styles.css', 'demo.js']:
+for name in ['styles.css', 'product.css', 'demo.js']:
     shutil.copyfile(SOURCE / name, OUTPUT / name)
 shutil.copytree(SOURCE / 'assets', OUTPUT / 'assets', dirs_exist_ok=True)
 (OUTPUT / '.nojekyll').write_text('')

@@ -30,6 +30,7 @@
     />
     <link rel="icon" type="image/svg+xml" href="${prefix}assets/logo.svg" />
     <link rel="stylesheet" href="${prefix}styles.css" />
+    <link rel="stylesheet" href="${prefix}product.css" />
     <script src="${prefix}demo.js" defer></script>
   </head>
   <body>
@@ -79,90 +80,36 @@
           >
         </div>
         <p class="platform">$hero_meta</p>
-        <div class="demo-stage">
-          <div
-            class="app-demo glass"
-            id="hero-demo"
-            data-state="complete"
-            data-listening="$listening"
-            data-understanding="$understanding"
-            data-retrieving="$retrieving"
-            data-organizing="$organizing"
-            data-answering="$answering"
-            data-complete="$complete"
-          >
-            <div class="window-title">
-              <span class="traffic" aria-hidden="true"
-                ><i></i><i></i><i></i></span
-              ><span
-                ><img
-                  src="${prefix}assets/logo.png"
-                  width="22"
-                  height="22"
-                  alt=""
-                />
-                LiveCopilot</span
-              ><button
-                class="demo-toggle"
-                aria-label="$pause_demo"
-                data-play="$play_demo"
-                data-pause="$pause_demo"
-              >
-                Ⅱ
-              </button>
-            </div>
-            <div class="demo-body">
-              <div class="conversation">
-                <div class="pane-label">
-                  <span>$demo_transcript</span
-                  ><span class="listening-indicator"
-                    ><b aria-hidden="true"></b> $listening</span
-                  >
-                </div>
-                <div class="transcript-area">
-                  <span class="speaker">$speaker_them</span>
-                  <p id="transcript">$demo_question</p>
-                  <span class="waveform" aria-hidden="true"
-                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
-                    ><i></i><i></i><i></i><i></i
-                  ></span>
-                </div>
-                <div class="answer-area">
-                  <div class="answer-label">
-                    <img
-                      src="${prefix}assets/logo.png"
-                      width="22"
-                      height="22"
-                      alt=""
-                    />
-                    <h2>$reply_title</h2>
-                    <span class="status-text" id="demo-status">$complete</span>
-                  </div>
-                  <p id="demo-answer">$demo_reply</p>
-                  <details class="sources" id="demo-sources">
-                    <summary>Sources <span>2</span></summary>
-                    <div>
-                      Product Strategy.md · § 4<br />Interview Notes.pdf · p. 2
-                    </div>
-                  </details>
-                </div>
-                <label class="demo-input"
-                  ><span class="sr-only">$demo_input_label</span
-                  ><input
-                    placeholder="$demo_input"
-                    aria-describedby="input-hint"
-                    maxlength="180"
-                  /><span aria-hidden="true">⌥ Space</span></label
-                ><span id="input-hint" class="input-hint"
-                  >$demo_input_hint</span
-                >
-              </div>
-              <aside class="knowledge-pane">
-                <div class="pane-label">$demo_knowledge <span>3</span></div>
+        <div
+          class="demo-stage"
+          id="hero-demo"
+          data-state="complete"
+          data-listening="$listening"
+          data-understanding="$understanding"
+          data-retrieving="$retrieving"
+          data-organizing="$organizing"
+          data-answering="$answering"
+          data-complete="$complete"
+        >
+          <div class="demo-toolbar">
+            <span>$product_label</span
+            ><button
+              class="demo-toggle"
+              data-play="$play_demo"
+              data-pause="$pause_demo"
+              aria-label="$pause_demo"
+            >
+              Ⅱ
+            </button>
+          </div>
+          <div class="hero-product-layout">
+            <div class="hero-product-slot">$product_hero</div>
+            <aside class="retrieval-story" aria-label="$story_label">
+              <p class="story-label">$story_label</p>
+              <div class="story-files">
                 <div class="document selected">
                   <span class="file-mark">MD</span
-                  ><span>Product Strategy.md<small>$passage_found</small></span
-                  ><span aria-hidden="true">✓</span>
+                  ><span>Product Strategy.md<small>$passage_found</small></span>
                 </div>
                 <div class="document">
                   <span class="file-mark pdf">PDF</span
@@ -172,19 +119,16 @@
                   <span class="file-mark docx">DOCX</span
                   ><span>Roadmap.docx</span>
                 </div>
-                <blockquote class="retrieved">
-                  <span>Product Strategy.md · § 4</span>
-                  <p>$demo_passage</p>
-                </blockquote>
-                <div class="context-tags">
-                  <span>$impact</span><span>$cost_tag</span
-                  ><span>$dependency</span>
-                </div>
-                <div class="knowledge-footer">
-                  <span aria-hidden="true">⌘</span> $local_search
-                </div>
-              </aside>
-            </div>
+              </div>
+              <div class="story-connection" aria-hidden="true"><i></i></div>
+              <blockquote class="story-passage">
+                <span>Product Strategy.md · § 4</span>
+                <p>$demo_passage</p>
+              </blockquote>
+              <p class="story-status" id="demo-status" aria-live="off">
+                $complete
+              </p>
+            </aside>
           </div>
         </div>
         <p class="demo-note">$demo_note</p>
@@ -194,9 +138,10 @@
           <h2>$workflow_title</h2>
           <p>$workflow_intro</p>
         </div>
+        <p class="section-note">$workflow_story</p>
         <ol class="workflow">
           <li class="workflow-node">
-            <span class="step">01 / Hear</span>
+            <span class="step">Hear</span>
             <h3>$hear</h3>
             <p>$hear_body</p>
             <div class="workflow-visual">
@@ -204,38 +149,36 @@
                 ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
                 ><i></i><i></i><i></i
               ></span>
-              <p>$demo_question</p>
+              <p data-workflow-transcript>$demo_question</p>
             </div>
           </li>
           <li class="workflow-node">
-            <span class="step">02 / Retrieve</span>
+            <span class="step">Retrieve</span>
             <h3>$retrieve</h3>
             <p>$retrieve_body</p>
             <div class="workflow-visual document-lines">
-              <span>thesis.pdf</span><span>README.md</span><span>notes.md</span
-              ><small>$passage_count</small>
+              <span class="workflow-hit">Product Strategy.md</span
+              ><span>Roadmap.docx</span><span>Interview Notes.pdf</span
+              ><small>$passage_found</small>
             </div>
           </li>
           <li class="workflow-node">
-            <span class="step">03 / Organize</span>
+            <span class="step">Think</span>
             <h3>$think</h3>
             <p>$think_body</p>
             <div class="workflow-visual">
               <div class="context-tags">
-                <span>$context_tag</span><span>$question_tag</span
+                <span>$question_tag</span><span>$context_tag</span
                 ><span>$constraint_tag</span>
               </div>
               <small>$organizing</small>
             </div>
           </li>
-          <li class="workflow-node">
-            <span class="step">04 / Answer</span>
+          <li class="workflow-node workflow-answer">
+            <span class="step">Answer</span>
             <h3>$answer</h3>
             <p>$answer_body</p>
-            <div class="workflow-visual">
-              <strong>$reply_title</strong>
-              <p>$workflow_answer</p>
-            </div>
+            <div class="product-detail">$product_workflow_answer</div>
           </li>
         </ol>
       </section>
@@ -246,21 +189,15 @@
             <article class="feature-card">
               <h3>$feature_hear</h3>
               <p>$feature_hear_body</p>
-              <div class="mini-transcript">
-                <div class="listening-indicator">
-                  <b aria-hidden="true"></b> $listening
-                  <span class="waveform" aria-hidden="true"
-                    ><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i
-                    ><i></i><i></i><i></i><i></i
-                  ></span>
-                </div>
-                <p>$demo_question</p>
-                <span class="transcript-cursor" aria-hidden="true"></span>
+              <p class="product-caption">$product_excerpt</p>
+              <div class="product-detail transcript-detail">
+                $product_transcript
               </div>
             </article>
             <article class="feature-card">
               <h3>$feature_kb</h3>
               <p>$feature_kb_body</p>
+              <p class="product-caption">$story_label</p>
               <div class="file-fan">
                 <div><span class="file-mark pdf">PDF</span>Research.pdf</div>
                 <div><span class="file-mark docx">DOCX</span>Roadmap.docx</div>
@@ -276,37 +213,34 @@
               <h3>$feature_float</h3>
               <p>$feature_float_body</p>
               <div class="desktop-preview">
-                <span class="desktop-menubar"
-                  >Finder <span>LiveCopilot</span></span
-                ><button class="floating-preview glass" aria-pressed="false">
-                  <span class="edge-handle" aria-hidden="true"></span
-                  ><span class="floating-content"
-                    ><img
-                      src="${prefix}assets/logo.png"
-                      width="26"
-                      height="26"
-                      alt=""
-                    /><strong>LiveCopilot</strong><span>$reply_title</span
-                    ><span>$workflow_answer</span></span
-                  ><span class="sr-only">$edge_label</span></button
-                ><button class="edge-toggle">$edge_hint</button>
+                <div class="edge-product-slot">$product_edge</div>
+                <button
+                  class="edge-reveal-zone"
+                  aria-label="$edge_reveal"
+                  tabindex="-1"
+                ></button>
+              </div>
+              <div class="edge-controls">
+                <span
+                  class="edge-note"
+                  data-visible="$edge_visible_note"
+                  data-hidden="$edge_hidden_note"
+                  >$edge_visible_note</span
+                ><button
+                  class="edge-toggle"
+                  aria-pressed="false"
+                  data-hide="$edge_hint"
+                  data-reveal="$edge_reveal"
+                >
+                  $edge_hint
+                </button>
               </div>
             </article>
             <article class="feature-card">
               <h3>$feature_speak</h3>
               <p>$feature_speak_body</p>
-              <div class="speak-preview">
-                <span class="answer-label"
-                  ><img
-                    src="${prefix}assets/logo.png"
-                    width="26"
-                    height="26"
-                    alt=""
-                  />$reply_title</span
-                >
-                <p>$workflow_answer</p>
-                <small>Product Strategy.md · § 4</small>
-              </div>
+              <p class="product-caption">$product_excerpt</p>
+              <div class="product-detail answer-detail">$product_answer</div>
             </article>
           </div>
         </div>
@@ -370,18 +304,8 @@
             </div>
           </div>
           <div class="case-response">
-            <span class="answer-label"
-              ><img
-                src="${prefix}assets/logo.png"
-                width="27"
-                height="27"
-                alt=""
-              />$reply_title</span
-            >
-            <p id="case-answer">$demo_reply</p>
-            <span class="case-source" id="case-source"
-              >Product Strategy.md · § 4</span
-            >
+            <p class="product-caption">$product_excerpt</p>
+            <div class="product-detail">$product_case_answer</div>
           </div>
         </div>
         <p class="demo-note">$demo_note</p>
@@ -430,6 +354,41 @@
         </div>
       </section>
 
+      <section class="section wrap services-overview" id="service-overview">
+        <div class="section-heading">
+          <h2>$overview_title</h2>
+          <p>$overview_intro</p>
+        </div>
+        <div class="overview-grid">
+          <article>
+            <div>
+              <h3>$overview_hear</h3>
+              <span>$overview_local_cloud</span>
+            </div>
+            <strong>Apple · Paraformer · GPT-Live-1</strong>
+            <p>$overview_hear_text</p>
+          </article>
+          <article>
+            <div>
+              <h3>$overview_find</h3>
+              <span>$overview_local_cloud</span>
+            </div>
+            <strong>BGE-M3 · OpenAI</strong>
+            <p>$overview_find_text</p>
+          </article>
+          <article>
+            <div>
+              <h3>$overview_answer</h3>
+              <span>$overview_cloud</span>
+            </div>
+            <strong>OpenAI · DeepSeek · Qwen · GLM · Kimi</strong>
+            <p>$overview_answer_text</p>
+          </article>
+        </div>
+        <a href="#services" class="secondary service-overview-link"
+          >$service_link <span aria-hidden="true">↓</span></a
+        >
+      </section>
       <section class="privacy-section section" id="privacy">
         <div class="wrap">
           <div class="privacy-heading">

@@ -11,7 +11,7 @@ python3 StealthApp/scripts/build-site.py
 python3 -m http.server 18744 --directory _site
 ```
 
-Edit `content.json`, `template.html`, `styles.css`, and `demo.js`. The existing
+Edit `content.json`, `template.html`, `styles.css`, `product.css`, `components/*.html`, and `demo.js`. The existing
 Python builder escapes translated copy and requires matching translation keys.
 The site has no frontend dependencies, external fonts, trackers, cookies, audio
 capture, or model requests. GitHub Pages publishes `_site/` through
@@ -25,7 +25,7 @@ windows, native system typography, and a dark `#090A0C` privacy section. The
 product window is the main visual, with transcript, knowledge retrieval, answer,
 and associated sources. No internal reasoning is displayed.
 
-`demo.js` owns one 14-second hero timeline. It stops advancing when the window
+`demo.js` owns one 13.5-second hero timeline. It stops advancing when the window
 leaves the viewport, the document is hidden, the user pauses, or Sources opens.
 Focusing the mock input pauses the preview and shows its complete answer. No
 text is submitted. Reduced motion shows the complete answer immediately.
@@ -49,8 +49,7 @@ than replacing service-specific caveats with a generic privacy promise.
 ## Product boundaries
 
 Current document imports support PDF, DOCX, Markdown, and TXT. The specification's
-XLSX example is represented as an exported PDF. Markdown sources use section
-references rather than invented PDF page numbers. Local speech and BGE-M3 can
+XLSX example is represented as an exported PDF. Native Markdown sources use chunk references; the external document illustration may also name a section. PDF sources use pages and chunks. Local speech and BGE-M3 can
 keep audio processing and indexing on the Mac; cloud speech/embeddings send the
 corresponding data to their services. Answer generation sends the question,
 relevant conversation, and retrieved passages to the selected analysis service.
@@ -67,7 +66,46 @@ canonical, and sitemap metadata.
 
 ## Verification
 
-See `docs/WEBSITE_REDESIGN_QA_2026-09-19.md` for browser, interaction, accessibility,
+See `docs/WEBSITE_PHASE2_QA_2026-09-20.md` for browser, interaction, accessibility,
 performance, backup, and deployment evidence. Browser QA tools are development
 utilities, not site dependencies. Native app changes and native app releases
 are independent of this website deployment.
+
+## Phase 2: product accuracy
+
+The website frame remains designed for the web. Product UI is now separate:
+`components/product-ui.html` contains the real single-column overlay hierarchy;
+`product-transcript.html` and `product-answer.html` are shared fragments used by
+Hero, feature cards, the workflow, and use cases. The Python builder renders
+these before substituting the page template. `product.css` has independent
+material, radius, padding, and typography tokens derived from `OverlayView.swift`.
+
+Reference sources are `OverlayView.swift`, `OverlayWindow.swift`,
+`OverlayLayout.swift`, `WindowBackgroundView.swift`, `AppBrandTitle.swift`,
+`SuggestionMode.swift`, `Localization.swift`, and current repository screenshots.
+A data-only native fixture renders the unchanged SwiftUI view for comparison;
+this is a source-rendered reference, not a screenshot of a production session.
+
+The overlay has no macOS traffic-light titlebar or document sidebar. It shows
+native header controls, automatic suggestions, transcript/follow state, actions,
+question, answer sections, individual `[S1]` / `[S2]` disclosures, manual input,
+recent-context checkbox, scenario, copy, shortcut, and resize glyph. Header
+controls and toggles are visual replicas rather than simulated app settings.
+Sources and Copy work; typing does not send a request. Answer and transcript
+updates occur by phrase, not by character.
+
+Document cards, the retrieval connection, phase labels, and playback controls
+are explicitly outside the product layer. The edge demo uses the actual idle
+state and fades the window completely out. The app has no persistent handle:
+`OverlayWindow.tuckAway` calls `orderOut`, while right-edge dwell calls `reveal`.
+A separate, labeled website button makes the demonstration usable with touch
+and keyboard. The website does not reproduce every native preference or action.
+
+Sources stay in the answer's scroll region; opening them cannot resize the Hero.
+A 24px minimum disclosure target is a web accessibility adaptation. Mobile
+product panes reflow within the available width; the desktop-miniature card
+scales its native idle window independently. Reduced motion shows final results.
+
+Services now have a visible Hear / Retrieve / Respond overview leading to the
+existing detailed guide. Privacy remains a dark section. Social preview art uses
+the same product component and no longer shows the previous conceptual UI.

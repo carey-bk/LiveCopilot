@@ -1,19 +1,18 @@
-// Entirely scripted, browser-local examples. Never records or calls a service.
+// Website-only demonstrations. No microphone, model, or provider requests.
 (() => {
   "use strict";
   document.documentElement.classList.add("js");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
-  const header = document.querySelector(".site-header");
+  const english = document.documentElement.lang === "en";
   const menu = document.querySelector(".menu-toggle");
   const links = document.querySelector(".nav-links");
   const closeMenu = () => {
     links.classList.remove("open");
     menu.setAttribute("aria-expanded", "false");
   };
-  menu.addEventListener("click", () => {
-    const open = links.classList.toggle("open");
-    menu.setAttribute("aria-expanded", String(open));
-  });
+  menu.addEventListener("click", () =>
+    menu.setAttribute("aria-expanded", String(links.classList.toggle("open"))),
+  );
   links.addEventListener("click", (event) => {
     if (event.target.closest("a")) closeMenu();
   });
@@ -23,152 +22,177 @@
       menu.focus();
     }
   });
+  const header = document.querySelector(".site-header");
   const updateHeader = () => header.classList.toggle("scrolled", scrollY > 20);
   window.addEventListener("scroll", updateHeader, { passive: true });
   updateHeader();
+  const part = (root, name) => root.querySelector(`[data-part="${name}"]`);
+  const text = (node, value) => {
+    if (node.textContent !== value) node.textContent = value;
+  };
+  // Chunk boundaries follow phrases, never individual characters.
+  function chunks(value) {
+    if (/[\u3400-\u9fff]/.test(value))
+      return value.match(/[^，。！？；]+[，。！？；]?/g) || [value];
+    return value.match(/(?:\S+\s*){1,5}/g) || [value];
+  }
+  function stream(node, parts, progress) {
+    text(
+      node,
+      parts
+        .slice(0, Math.ceil(Math.max(0, Math.min(1, progress)) * parts.length))
+        .join("") || "\u00a0",
+    );
+  }
   const demo = document.querySelector("#hero-demo");
-  const transcript = document.querySelector("#transcript");
-  const answer = document.querySelector("#demo-answer");
+  const product = document.querySelector('[data-product="hero"]');
+  const transcript = part(product, "transcript");
+  const answer = part(product, "answer");
+  const phaseText = part(product, "phase");
   const status = document.querySelector("#demo-status");
-  const source = document.querySelector("#demo-sources");
   const toggle = document.querySelector(".demo-toggle");
   const fullQuestion = transcript.textContent;
   const fullAnswer = answer.textContent;
-  // One declarative timeline; elapsed time only advances in a visible viewport.
+  const questionChunks = chunks(fullQuestion);
+  const answerChunks = chunks(fullAnswer);
   const timeline = [
     { at: 0, state: "listening" },
     { at: 500, state: "transcribing" },
     { at: 3000, state: "understanding" },
     { at: 3600, state: "retrieving" },
-    { at: 5300, state: "organizing" },
-    { at: 6200, state: "answering" },
-    { at: 9500, state: "sources" },
-    { at: 10500, state: "complete" },
-    { at: 13000, state: "resetting" },
+    { at: 5200, state: "organizing" },
+    { at: 6000, state: "answering" },
+    { at: 9000, state: "sources" },
+    { at: 10000, state: "complete" },
+    { at: 12500, state: "resetting" },
   ];
-  const cycle = 14000;
-  const answerChunks = fullAnswer.match(
-    /[^，。！？,.;!?]+[，。！？,.;!?]?\s*/g,
-  ) || [fullAnswer];
-  let elapsed = 0,
-    previous = 0,
-    lastPaint = -Infinity,
-    frame = 0,
-    visible = false,
+  const duration = 13500;
+  let heroTime = 0,
+    heroVisible = false,
     paused = false;
-  let currentState = "";
-  function setText(element, value) {
-    if (element.textContent !== value) element.textContent = value;
+  const heroClock = { previous: 0, frame: 0 };
+  function stateAt(time) {
+    return [...timeline].reverse().find((item) => time >= item.at).state;
   }
-  function render(time) {
-    const state = [...timeline]
-      .reverse()
-      .find((phase) => time >= phase.at).state;
-    if (state !== currentState) {
-      currentState = state;
-      demo.dataset.state = state;
-    }
-    const questionProgress = Math.max(0, Math.min(1, (time - 500) / 2500));
-    const answerProgress = Math.max(0, Math.min(1, (time - 6200) / 3300));
-    setText(
-      transcript,
-      fullQuestion.slice(
-        0,
-        Math.ceil(fullQuestion.length * questionProgress),
-      ) || "\u00a0",
+  function renderHero(time) {
+    const state = stateAt(time);
+    demo.dataset.state = state;
+    stream(transcript, questionChunks, (time - 500) / 2500);
+    stream(answer, answerChunks, (time - 6000) / 3000);
+    part(product, "empty").hidden = time >= 3000;
+    part(product, "question").hidden = time < 3000;
+    part(product, "loading").hidden = time < 3000 || time >= 6000;
+    part(product, "response").hidden = time < 6000;
+    part(product, "evidence").hidden = time < 9000;
+    part(product, "sources").hidden = time < 9000;
+    text(
+      phaseText,
+      time < 3000
+        ? english
+          ? "Listening"
+          : "正在监听"
+        : time < 9000
+          ? english
+            ? "Assistance in progress"
+            : "正在生成建议"
+          : english
+            ? "Question ready"
+            : "问题已完整",
     );
-    setText(
-      answer,
-      answerChunks
-        .slice(0, Math.ceil(answerChunks.length * answerProgress))
-        .join("") || "\u00a0",
-    );
-    const statusKey = ["sources", "complete", "resetting"].includes(state)
+    const key = ["complete", "sources", "resetting"].includes(state)
       ? "complete"
       : state === "transcribing"
         ? "listening"
         : state;
-    setText(status, demo.dataset[statusKey]);
-    source.style.visibility = time >= 9500 ? "visible" : "hidden";
-    // Opacity preserves layout through the whole sequence.
-    demo.querySelector(".context-tags").style.visibility =
-      time >= 5300 ? "visible" : "hidden";
+    text(status, demo.dataset[key]);
   }
-  function showFinal() {
-    currentState = "complete";
-    demo.dataset.state = "complete";
-    setText(transcript, fullQuestion);
-    setText(answer, fullAnswer);
-    setText(status, demo.dataset.complete);
-    source.style.visibility = "visible";
-    demo.querySelector(".context-tags").style.visibility = "visible";
+  function finalHero() {
+    renderHero(11000);
+    text(transcript, fullQuestion);
+    text(answer, fullAnswer);
   }
-  function tick(now) {
-    if (previous) elapsed = (elapsed + now - previous) % cycle;
-    previous = now;
-    if (now - lastPaint > 80) {
-      render(elapsed);
-      lastPaint = now;
-    }
-    frame = requestAnimationFrame(tick);
+  function tickHero(now) {
+    if (heroClock.previous)
+      heroTime = (heroTime + now - heroClock.previous) % duration;
+    heroClock.previous = now;
+    renderHero(heroTime);
+    heroClock.frame = requestAnimationFrame(tickHero);
   }
-  function sync() {
-    cancelAnimationFrame(frame);
-    frame = 0;
-    previous = 0;
-    const running =
-      visible &&
-      !document.hidden &&
-      !reduced.matches &&
-      !paused &&
-      !source.open;
-    demo.classList.toggle("motion-active", running);
-    if (running) frame = requestAnimationFrame(tick);
-    if (reduced.matches) showFinal();
-    toggle.textContent = paused || reduced.matches ? "▶" : "Ⅱ";
+  function syncHero() {
+    cancelAnimationFrame(heroClock.frame);
+    heroClock.frame = 0;
+    heroClock.previous = 0;
+    const sourcesOpen = [...product.querySelectorAll("details")].some(
+      (item) => item.open,
+    );
+    if (reduced.matches) finalHero();
+    else if (heroVisible && !document.hidden && !paused && !sourcesOpen)
+      heroClock.frame = requestAnimationFrame(tickHero);
+    toggle.hidden = reduced.matches;
+    toggle.textContent = paused ? "▶" : "Ⅱ";
     toggle.setAttribute(
       "aria-label",
-      paused || reduced.matches ? toggle.dataset.play : toggle.dataset.pause,
+      paused ? toggle.dataset.play : toggle.dataset.pause,
     );
-    toggle.hidden = reduced.matches;
   }
   toggle.addEventListener("click", () => {
     paused = !paused;
-    sync();
+    syncHero();
   });
-  source.addEventListener("toggle", sync);
-  // Keep typing and source inspection stable rather than resetting under focus.
-  demo.querySelector("input").addEventListener("focus", () => {
+  product
+    .querySelectorAll("details")
+    .forEach((item) => item.addEventListener("toggle", syncHero));
+  product.querySelector("input").addEventListener("focus", () => {
     paused = true;
-    showFinal();
-    sync();
+    heroTime = 11000;
+    finalHero();
+    syncHero();
   });
   new IntersectionObserver(
     (entries) => {
-      visible = entries[0].isIntersecting;
-      sync();
+      heroVisible = entries[0].isIntersecting;
+      syncHero();
     },
     { threshold: 0 },
-  ).observe(demo);
-  document.addEventListener("visibilitychange", sync);
-  reduced.addEventListener("change", sync);
-  // One visible-time animation for the workflow; retain the final state.
+  ).observe(product);
+  document.addEventListener("visibilitychange", syncHero);
+  reduced.addEventListener("change", syncHero);
+  // Native Copy has a real browser action; the remaining native chrome is a labeled visual replica.
+  document.querySelectorAll(".product-copy").forEach((button) =>
+    button.addEventListener("click", async () => {
+      const value = part(
+        button.closest("[data-product]"),
+        "answer",
+      ).textContent;
+      try {
+        await navigator.clipboard.writeText(value);
+        button.textContent = button.dataset.copied;
+      } catch {
+        button.textContent = button.dataset.label;
+      }
+    }),
+  );
+  // Workflow: one six-second sequence, paused offscreen, final state retained.
   const workflow = document.querySelector(".workflow");
   const nodes = [...workflow.children];
-  let workflowStarted = false,
-    workflowElapsed = 0,
+  const workflowTranscript = document.querySelector(
+    "[data-workflow-transcript]",
+  );
+  let workflowTime = 0,
+    workflowVisible = false,
+    workflowStarted = false,
     workflowPrevious = 0,
-    workflowFrame = 0,
-    workflowVisible = false;
+    workflowFrame = 0;
   if (!reduced.matches) workflow.classList.add("pending");
-  function workflowTick(now) {
-    if (workflowPrevious) workflowElapsed += now - workflowPrevious;
+  function tickWorkflow(now) {
+    if (workflowPrevious) workflowTime += now - workflowPrevious;
     workflowPrevious = now;
     nodes.forEach((node, index) =>
-      node.classList.toggle("active", workflowElapsed >= index * 1600),
+      node.classList.toggle("active", workflowTime >= index * 1500),
     );
-    if (workflowElapsed < 5600)
-      workflowFrame = requestAnimationFrame(workflowTick);
+    stream(workflowTranscript, questionChunks, workflowTime / 1300);
+    if (workflowTime < 6000)
+      workflowFrame = requestAnimationFrame(tickWorkflow);
     else {
       workflow.classList.remove("pending");
       workflowFrame = 0;
@@ -179,17 +203,16 @@
     workflowFrame = 0;
     workflowPrevious = 0;
     if (reduced.matches) {
-      workflowElapsed = 5600;
+      workflowTime = 6000;
       workflow.classList.remove("pending");
-      return;
-    }
-    if (
-      workflowStarted &&
+      text(workflowTranscript, fullQuestion);
+    } else if (
       workflowVisible &&
+      workflowStarted &&
       !document.hidden &&
-      workflowElapsed < 5600
+      workflowTime < 6000
     )
-      workflowFrame = requestAnimationFrame(workflowTick);
+      workflowFrame = requestAnimationFrame(tickWorkflow);
   }
   new IntersectionObserver(
     (entries) => {
@@ -201,89 +224,56 @@
   ).observe(workflow);
   document.addEventListener("visibilitychange", syncWorkflow);
   reduced.addEventListener("change", syncWorkflow);
-  const cards = document.querySelectorAll(".feature-card");
-  const cardObserver = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) =>
-        entry.target.classList.toggle("in-view", entry.isIntersecting),
-      );
-      syncCards();
-    },
-    { threshold: 0.2 },
-  );
-  cards.forEach((card) => cardObserver.observe(card));
-  function syncCards() {
-    cards.forEach((card) =>
-      card.classList.toggle(
-        "motion-active",
-        !document.hidden &&
-          !reduced.matches &&
-          card.classList.contains("in-view"),
-      ),
-    );
-  }
-  document.addEventListener("visibilitychange", syncCards);
-  reduced.addEventListener("change", syncCards);
-  const floating = document.querySelector(".floating-preview");
-  document
-    .querySelector(".edge-toggle")
-    .addEventListener("click", () =>
-      tuck(!floating.classList.contains("tucked")),
-    );
+  // The real OverlayWindow fades out completely. It leaves no persistent handle.
+  const desktop = document.querySelector(".desktop-preview");
+  const edgeButton = document.querySelector(".edge-toggle");
+  const edgeNote = document.querySelector(".edge-note");
+  const edgeSlot = document.querySelector(".edge-product-slot");
   function tuck(value) {
-    floating.classList.toggle("tucked", value);
-    floating.setAttribute("aria-pressed", String(value));
-    document
-      .querySelector(".edge-toggle")
-      .setAttribute("aria-pressed", String(value));
+    desktop.classList.toggle("tucked", value);
+    edgeSlot.inert = value;
+    edgeButton.setAttribute("aria-pressed", String(value));
+    edgeButton.textContent = value
+      ? edgeButton.dataset.reveal
+      : edgeButton.dataset.hide;
+    edgeNote.textContent = value
+      ? edgeNote.dataset.hidden
+      : edgeNote.dataset.visible;
   }
-  floating.addEventListener("click", () =>
-    tuck(!floating.classList.contains("tucked")),
+  edgeButton.addEventListener("click", () =>
+    tuck(!desktop.classList.contains("tucked")),
   );
-  floating
-    .closest(".desktop-preview")
-    .addEventListener("pointerenter", (event) => {
-      if (event.pointerType === "mouse") tuck(false);
+  const zone = document.querySelector(".edge-reveal-zone");
+  zone.addEventListener("pointerenter", (event) => {
+    if (event.pointerType === "mouse") tuck(false);
+  });
+  zone.addEventListener("click", () => tuck(false));
+  // Responsive scaling changes only the miniature desktop demonstration, not the Hero.
+  let edgeWidth = -1,
+    edgeResizeFrame = 0;
+  new ResizeObserver((entries) => {
+    const width = entries[0].contentRect.width;
+    if (Math.abs(width - edgeWidth) < 1) return;
+    edgeWidth = width;
+    cancelAnimationFrame(edgeResizeFrame);
+    edgeResizeFrame = requestAnimationFrame(() => {
+      const scale = Math.min(1, (width - 24) / 400);
+      edgeSlot.style.transform = `scale(${scale})`;
+      desktop.style.height = `${Math.ceil(240 * scale + 30)}px`;
     });
-  floating
-    .closest(".desktop-preview")
-    .addEventListener("pointerleave", (event) => {
-      if (event.pointerType === "mouse") tuck(true);
-    });
-  function revealLinkedDetails() {
-    const target = document.getElementById(location.hash.slice(1));
-    if (target instanceof HTMLDetailsElement) target.open = true;
-  }
-  window.addEventListener("hashchange", revealLinkedDetails);
-  revealLinkedDetails();
-  document.querySelectorAll('a[href^="#"]').forEach((link) =>
-    link.addEventListener("click", () => {
-      const target = document.getElementById(link.hash.slice(1));
-      if (target instanceof HTMLDetailsElement) target.open = true;
-    }),
-  );
-
-  // A single, three-second caption demonstration in the first feature card.
-  const caption = document.querySelector(".mini-transcript p");
-  const captionFull = caption.textContent;
+  }).observe(desktop);
+  // One finite caption example, using the same transcript fragment as the Hero.
+  const captionRoot = document.querySelector('[data-product="transcript"]');
+  const caption = part(captionRoot, "transcript");
   let captionTime = 0,
     captionLast = 0,
     captionFrame = 0,
     captionVisible = false;
-  function captionTick(now) {
+  function tickCaption(now) {
     if (captionLast) captionTime += now - captionLast;
     captionLast = now;
-    setText(
-      caption,
-      captionFull.slice(
-        0,
-        Math.max(
-          1,
-          Math.ceil(captionFull.length * Math.min(1, captionTime / 3000)),
-        ),
-      ),
-    );
-    if (captionTime < 3000) captionFrame = requestAnimationFrame(captionTick);
+    stream(caption, questionChunks, captionTime / 3000);
+    if (captionTime < 3000) captionFrame = requestAnimationFrame(tickCaption);
     else captionFrame = 0;
   }
   function syncCaption() {
@@ -291,10 +281,10 @@
     captionFrame = 0;
     captionLast = 0;
     if (reduced.matches) {
-      setText(caption, captionFull);
+      text(caption, fullQuestion);
       captionTime = 3000;
     } else if (captionVisible && !document.hidden && captionTime < 3000)
-      captionFrame = requestAnimationFrame(captionTick);
+      captionFrame = requestAnimationFrame(tickCaption);
   }
   new IntersectionObserver(
     (entries) => {
@@ -302,18 +292,34 @@
       syncCaption();
     },
     { threshold: 0.4 },
-  ).observe(caption.closest(".feature-card"));
+  ).observe(captionRoot);
   document.addEventListener("visibilitychange", syncCaption);
   reduced.addEventListener("change", syncCaption);
-  const architecture = document.querySelector(".architecture");
-  new IntersectionObserver(
-    (entries) => {
-      if (entries[0].isIntersecting && !reduced.matches)
-        architecture.classList.add("flow-shown");
-    },
+  const ambient = [
+    ...document.querySelectorAll(".architecture,.privacy-route"),
+  ];
+  const ambientObserver = new IntersectionObserver(
+    (entries) =>
+      entries.forEach((entry) => {
+        if (entry.isIntersecting && !reduced.matches)
+          entry.target.classList.add("flow-shown");
+      }),
     { threshold: 0.4 },
-  ).observe(architecture);
-
+  );
+  ambient.forEach((node) => ambientObserver.observe(node));
+  // Native disclosures work without JS. Deep links additionally open them.
+  function revealDetails() {
+    const target = document.getElementById(location.hash.slice(1));
+    if (target instanceof HTMLDetailsElement) target.open = true;
+  }
+  window.addEventListener("hashchange", revealDetails);
+  revealDetails();
+  document.querySelectorAll('a[href^="#"]').forEach((link) =>
+    link.addEventListener("click", () => {
+      const target = document.getElementById(link.hash.slice(1));
+      if (target instanceof HTMLDetailsElement) target.open = true;
+    }),
+  );
   const examples = {
     zh: {
       interview: {
@@ -393,9 +399,10 @@
       },
     },
   };
-  const cases = examples[document.documentElement.lang === "en" ? "en" : "zh"];
+  const cases = examples[english ? "en" : "zh"];
   const tabs = [...document.querySelectorAll("[data-case]")];
   const panel = document.querySelector("#case-panel");
+  const caseProduct = document.querySelector('[data-product="case"]');
   let panelAnimation;
   function selectCase(tab) {
     tabs.forEach((button) => {
@@ -406,8 +413,14 @@
     panel.setAttribute("aria-labelledby", tab.id);
     document.querySelector("#case-question").textContent = example.question;
     document.querySelector("#case-passage").textContent = example.passage;
-    document.querySelector("#case-answer").textContent = example.answer;
-    document.querySelector("#case-source").textContent = example.source;
+    part(caseProduct, "answer").textContent = example.answer;
+    part(caseProduct, "question").textContent = example.question;
+    part(caseProduct, "source-label").textContent =
+      "[S1] " + example.documents[0] + " · " + (english ? "chunk 1" : "片段 1");
+    part(caseProduct, "source-passage").textContent = example.passage;
+    caseProduct
+      .querySelectorAll("details")
+      .forEach((item) => (item.open = false));
     document.querySelector("#case-documents").replaceChildren(
       ...example.documents.map((name) => {
         const span = document.createElement("span");
@@ -417,13 +430,10 @@
     );
     panelAnimation?.cancel();
     if (!reduced.matches)
-      panelAnimation = panel.animate(
-        [
-          { opacity: 0.5, transform: "translateY(3px)" },
-          { opacity: 1, transform: "translateY(0)" },
-        ],
-        { duration: 280, easing: "cubic-bezier(.22,1,.36,1)" },
-      );
+      panelAnimation = panel.animate([{ opacity: 0.6 }, { opacity: 1 }], {
+        duration: 250,
+        easing: "ease-out",
+      });
   }
   tabs.forEach((tab, index) => {
     tab.addEventListener("click", () => selectCase(tab));
