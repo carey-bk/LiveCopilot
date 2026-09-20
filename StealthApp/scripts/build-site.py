@@ -2,6 +2,7 @@
 """Render two static language pages. No build dependencies or third-party requests."""
 from pathlib import Path
 from string import Template
+import hashlib
 import html
 import json
 import re
@@ -22,6 +23,7 @@ for language, copy in content.items():
     data = {key: (re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html.escape(value, quote=True))
                   if key.endswith('_rich') else html.escape(value, quote=True))
             for key, value in copy.items()}
+    data['asset_version'] = hashlib.sha256(b''.join((SOURCE / name).read_bytes() for name in ['demo.js', 'cinematic.js', 'cinematic.css'])).hexdigest()[:12]
     data.update(lang='en' if english else 'zh-CN', prefix='../' if english else '',
                 home='./', zh_url='../' if english else './', en_url='./' if english else 'en/',
                 zh_current='' if english else 'aria-current="page"',

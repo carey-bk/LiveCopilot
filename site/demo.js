@@ -68,7 +68,8 @@
   const duration = 12000;
   let heroTime = 0,
     heroVisible = false,
-    paused = false;
+    paused = false,
+    cinematicReady = false;
   const heroClock = { previous: 0, frame: 0 };
   function stateAt(time) {
     return [...timeline].reverse().find((item) => time >= item.at).state;
@@ -146,6 +147,7 @@
       heroTime = duration;
       finalHero();
     } else if (
+      cinematicReady &&
       heroTime < duration &&
       heroVisible &&
       !document.hidden &&
@@ -180,6 +182,10 @@
     },
     { threshold: 0 },
   ).observe(demo);
+  document.addEventListener("hero-ready", () => {
+    cinematicReady = true;
+    syncHero();
+  });
   document.addEventListener("hero-fallback", () => {
     heroTime = duration;
     finalHero();
@@ -188,7 +194,7 @@
   window.addEventListener(
     "scroll",
     () => {
-      if (scrollY > 250 && heroTime < duration) {
+      if (demo.getBoundingClientRect().bottom < 0 && heroTime < duration) {
         heroTime = duration;
         finalHero();
         syncHero();
@@ -196,6 +202,13 @@
     },
     { passive: true },
   );
+  setTimeout(() => {
+    if (!cinematicReady && heroTime < duration) {
+      heroTime = duration;
+      finalHero();
+      syncHero();
+    }
+  }, 15000);
   document.addEventListener("visibilitychange", syncHero);
   reduced.addEventListener("change", syncHero);
   // Native Copy has a real browser action; the remaining native chrome is a labeled visual replica.

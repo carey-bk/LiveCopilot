@@ -64,3 +64,11 @@ Live Chinese/English mobile checks passed for Sources, edge hide/reveal, scenari
 
 Cold-start testing caught a late module appearing after Pause. The final patch propagates playback state to async initialization; a deterministic delayed-import test confirms no scene initializes while paused and Resume initializes it once. The published patch passed the live pause regression.
 
+
+## Cold-load correction — 2026-09-20 follow-up
+
+A fresh public desktop session reproduced the user's missing MacBook: the page remained in `cinema-loading` until the old 1800ms timeout, then became static `complete`. The published source was correct; the initialization deadline was too short for real network loading. The old global `scrollY > 250` shortcut could also finish the story when scrolling down merely to see the laptop.
+
+Correction: the story clock waits for `hero-ready`; module fetching no longer consumes the camera opening. The 1.8-second eligibility cutoff is removed; a 12-second failure timeout preserves the visible static product. Scrolling completes the story only after the entire demo has left above the viewport. Entry script/style URLs carry a content version to avoid mixed cached assets. A separate 15-second watchdog handles a failed enhancement entry without leaving the demo stuck.
+
+Regression: Chrome and WebKit each passed delayed module loading (3 seconds), pause during delayed loading then resume, mobile, reduced motion, failed import, overflow and uncaught-error checks. The delayed-load test scrolls 300px before the module finishes and verifies the actual 3D scene still appears with its opening listening state. Screenshots were visually inspected. These targeted checks do not constitute a new Lighthouse or native Safari run.

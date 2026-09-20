@@ -92,10 +92,10 @@ const observer = new IntersectionObserver(
     )
       return fallback();
     stage.classList.add("cinema-loading");
-    const timeout = setTimeout(fallback, 1800);
+    const timeout = setTimeout(fallback, 12000);
     try {
       const { createScene } = await import("./cinematic-scene.js");
-      if (finished || reduced.matches || narrow.matches || time > 1800)
+      if (finished || reduced.matches || narrow.matches)
         return fallback();
       if (suspended) pendingFactory = createScene;
       else {
@@ -103,6 +103,7 @@ const observer = new IntersectionObserver(
         scene.render(time);
       }
       stage.classList.remove("cinema-loading");
+      document.dispatchEvent(new Event("hero-ready"));
     } catch {
       fallback();
     } finally {

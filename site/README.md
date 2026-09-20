@@ -125,12 +125,12 @@ No product text is painted to a texture. No analytics, microphone, model or CDN 
 
 The existing demo clock drives the camera and a single 12-second transcript/retrieval/answer
 sequence. There is no independent WebGL animation loop. Pausing, document visibility and
-intersection handling stop the clock; scrolling past 250px completes the story. The scene
+intersection handling stop the clock; scrolling past the entire Hero demo completes the story. The scene
 releases WebGL geometry/materials at handoff. It never restarts automatically.
 
 Mobile (≤900px), reduced motion, Save-Data, low CPU concurrency, failed/slow imports and
-WebGL context loss use the complete static product presentation. Initial enhancement has
-an 1800ms timeout. Title glyph visibility preserves its final geometry; Chinese glyphs
+WebGL context loss use the complete static product presentation. The product clock waits for scene readiness, rather than consuming the opening during network loading.
+Initial enhancement has a 12-second failure timeout; the static product stays visible while loading. Title glyph visibility preserves its final geometry; Chinese glyphs
 reveal every 55ms and the cursor blinks three times. Narrow screens use explicit lines.
 
 Build remains `python3 StealthApp/scripts/build-site.py`; no npm install is required.

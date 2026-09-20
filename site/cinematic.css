@@ -754,7 +754,7 @@ html[lang="en"] .title-line + .title-line:before {
   height: 0.8em;
 }
 .cinema-loading .cinema-desktop {
-  opacity: 0;
+  opacity: 1;
 }
 @media(min-width:901px){.cinema-stage:not(.desktop-scaled):not(.is-spatial){min-height:650px}}
 body{background:linear-gradient(#07080b 0 160px,#fff 160px)}
