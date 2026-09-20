@@ -6,7 +6,9 @@ const narrow = matchMedia("(max-width: 900px)");
 const desktop = stage.querySelector(".cinema-desktop");
 let time = 0,
   scene,
-  finished = false;
+  finished = false,
+  suspended = false,
+  pendingFactory;
 const sizeDesktop = () => {
   stage.style.setProperty("--desktop-scale", String(stage.clientWidth / 1200));
   stage.classList.toggle("desktop-scaled", !narrow.matches);
@@ -23,6 +25,7 @@ new ResizeObserver((entries) => {
 sizeDesktop();
 const fallback = () => {
   finished = true;
+  pendingFactory = undefined;
   scene?.dispose();
   scene = undefined;
   stage.classList.remove("cinema-loading", "is-spatial");
@@ -60,9 +63,20 @@ if (!reduced.matches) {
     }
   }, 55);
 }
+document.addEventListener("hero-playback", (event) => {
+  suspended = event.detail.suspended;
+});
 document.addEventListener("hero-clock", (event) => {
   time = event.detail.time;
   if (time >= 12000) finished = true;
+  if (pendingFactory && !suspended && !finished) {
+    try {
+      scene = pendingFactory(stage);
+    } catch {
+      fallback();
+    }
+    pendingFactory = undefined;
+  }
   scene?.render(time);
 });
 // No continuous WebGL loop: the finite product clock owns rendering.
@@ -83,8 +97,11 @@ const observer = new IntersectionObserver(
       const { createScene } = await import("./cinematic-scene.js");
       if (finished || reduced.matches || narrow.matches || time > 1800)
         return fallback();
-      scene = createScene(stage);
-      scene.render(time);
+      if (suspended) pendingFactory = createScene;
+      else {
+        scene = createScene(stage);
+        scene.render(time);
+      }
       stage.classList.remove("cinema-loading");
     } catch {
       fallback();

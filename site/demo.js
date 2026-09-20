@@ -135,6 +135,13 @@
     const sourcesOpen = [...product.querySelectorAll("details")].some(
       (item) => item.open,
     );
+    document.dispatchEvent(
+      new CustomEvent("hero-playback", {
+        detail: {
+          suspended: paused || sourcesOpen || document.hidden || !heroVisible,
+        },
+      }),
+    );
     if (reduced.matches || matchMedia("(max-width: 900px)").matches) {
       heroTime = duration;
       finalHero();
