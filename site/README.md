@@ -11,10 +11,9 @@ python3 StealthApp/scripts/build-site.py
 python3 -m http.server 18744 --directory _site
 ```
 
-Edit `content.json`, `template.html`, `styles.css`, `product.css`, `components/*.html`, and `demo.js`. The existing
+Edit `content.json`, `template.html`, `styles.css`, `phase5.css`, `product.css`, `components/*.html`, and `demo.js`. The existing
 Python builder escapes translated copy and requires matching translation keys.
-The site needs no frontend package installation. Its optional Three.js runtime is
-vendored locally; there are no external fonts, trackers, cookies, audio capture, or model requests. GitHub Pages publishes `_site/` through
+The site needs no frontend package installation. The Hero uses a static PNG hardware shell; there are no external fonts, trackers, cookies, audio capture, or model requests. GitHub Pages publishes `_site/` through
 `.github/workflows/pages.yml` when website inputs change on `main`.
 
 ## Design and behavior
@@ -110,28 +109,26 @@ Services now have a visible Hear / Retrieve / Respond overview leading to the
 existing detailed guide. Privacy remains a dark section. Social preview art uses
 the same product component and no longer shows the previous conceptual UI.
 
-## Phase 3: cinematic enhancement
+## Phase 5: static hardware, live software
 
-`cinematic.css` applies semantic colors to the explanatory layer only: blue = audio/input,
-pink = documents/context, purple = organizing. `product.css` remains the source of native
-product appearance. The navbar uses the app's Avenir Next heavy italic family, with the
-same icon-to-type proportion and spacing; no proprietary font files are distributed.
+`phase5.css` owns a fixed 60/40 desktop composition. The right half of the
+MacBook extends beyond the left viewport edge. `assets/hero-macbook-shell.png`
+is a local transparent hardware illustration, with a live HTML product window
+above a CSS desktop background. The hardware fades in once without movement.
+`demo.js` animates only the title and the finite software demonstration.
+Mobile reflows the copy above the hardware. Reduced motion shows the final state.
 
-`cinematic.js` progressively loads `cinematic-scene.js` on desktop. Three.js 0.180.0 and
-CSS3DRenderer are pinned and served locally under `assets/vendor/`, with the MIT license.
-The laptop is procedural geometry; the live product is the **same DOM element**, projected
-by CSS3DRenderer, then returned to normal DOM at matching dimensions after the camera push.
-No product text is painted to a texture. No analytics, microphone, model or CDN calls occur.
+The workflow has four aligned desktop columns; Answer receives 1.45 shares.
+Phase 4/4.1 runtime and vendor assets are preserved in `experiments/phase4-3d/`.
+They are excluded from the clean build and are never loaded in production.
 
-The existing demo clock drives the camera and a single 12-second transcript/retrieval/answer
-sequence. There is no independent WebGL animation loop. Pausing, document visibility and
-intersection handling stop the clock; scrolling past the entire Hero demo completes the story. The scene
-releases WebGL geometry/materials at handoff. It never restarts automatically.
+## Directory map
 
-Mobile (≤900px), reduced motion, Save-Data, low CPU concurrency, failed/slow imports and
-WebGL context loss use the complete static product presentation. The product clock waits for scene readiness, rather than consuming the opening during network loading.
-Initial enhancement has a 12-second failure timeout; the static product stays visible while loading. Title glyph visibility preserves its final geometry; Chinese glyphs
-reveal every 55ms and the cursor blinks three times. Narrow screens use explicit lines.
-
-Build remains `python3 StealthApp/scripts/build-site.py`; no npm install is required.
-QA and release evidence: `docs/WEBSITE_PHASE3_QA_2026-09-20.md`.
+- `site/`: sole editable website source, bilingual copy, shared native UI and assets.
+- `site/experiments/`: retired implementation references, excluded from publication.
+- `site/reference/`: original website copy documents, retained for reference.
+- `_site/`: disposable generated output; do not edit.
+- `StealthApp/scripts/build-site.py`: dependency-free website builder.
+- `docs/`: specifications and dated QA records.
+- `dist/website-backups/`: local source backups; not published.
+- Root `assets/`, `output/`, and `小红书图/`: app/promotion material, not website source.

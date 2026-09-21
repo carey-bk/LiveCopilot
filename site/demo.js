@@ -3,6 +3,37 @@
   "use strict";
   document.documentElement.classList.add("js");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  const hero = document.querySelector(".hero");
+// Reserve the final title geometry; only glyph visibility changes.
+if (!reduced.matches) {
+  const letters = [...document.querySelectorAll(".title-character")];
+  hero.classList.add("typing");
+  let count = 0;
+  const cursor = document.querySelector(".title-cursor");
+  const placeCursor = () => {
+    const glyph =
+      letters[
+        Math.max(0, Math.min(count - 1, letters.length - 1))
+      ].getBoundingClientRect();
+    const heading = document
+      .querySelector("#hero-heading")
+      .getBoundingClientRect();
+    cursor.style.transform = `translate(${(count ? glyph.right : glyph.left) - heading.left + 5}px, ${glyph.top - heading.top + glyph.height * 0.15}px)`;
+  };
+  placeCursor();
+  const interval = setInterval(() => {
+    if (reduced.matches || document.hidden) count = letters.length;
+    else count += document.documentElement.lang === "en" ? 3 : 1;
+    letters.slice(0, count).forEach((c) => c.classList.add("revealed"));
+    placeCursor();
+    if (count >= letters.length) {
+      clearInterval(interval);
+      hero.classList.remove("typing");
+      hero.classList.add("typed");
+    }
+  }, 55);
+}
+
   const english = document.documentElement.lang === "en";
   const menu = document.querySelector(".menu-toggle");
   const links = document.querySelector(".nav-links");
@@ -23,7 +54,7 @@
     }
   });
   const header = document.querySelector(".site-header");
-  const updateHeader = () => header.classList.toggle("scrolled", scrollY > 20);
+  const updateHeader = () => header.classList.toggle("scrolled", hero.getBoundingClientRect().bottom < 100);
   window.addEventListener("scroll", updateHeader, { passive: true });
   updateHeader();
   const part = (root, name) => root.querySelector(`[data-part="${name}"]`);
@@ -44,6 +75,14 @@
         .join("") || "\u00a0",
     );
   }
+  // Fit the native 540px panel into the fixed hardware screen; never animate geometry.
+  const screen = document.querySelector(".hero-screen");
+  new ResizeObserver(([entry]) => {
+    const nativeHeight = document.querySelector(".hero-product-live").offsetHeight;
+    const availableWidth = Math.min(entry.contentRect.width * 0.53, innerWidth - 74);
+    const scale = Math.min(availableWidth / 540, entry.contentRect.height * 0.86 / nativeHeight);
+    screen.style.setProperty("--screen-scale", String(scale));
+  }).observe(screen);
   const demo = document.querySelector("#hero-demo");
   const product = document.querySelector('[data-product="hero"]');
   const transcript = part(product, "transcript");
@@ -68,19 +107,12 @@
   const duration = 12000;
   let heroTime = 0,
     heroVisible = false,
-    paused = false,
-    cinematicReady = false;
+    paused = false;
   const heroClock = { previous: 0, frame: 0 };
   function stateAt(time) {
     return [...timeline].reverse().find((item) => time >= item.at).state;
   }
   function renderHero(time) {
-    document.dispatchEvent(
-      new CustomEvent("hero-clock", {
-        detail: { time, running: heroVisible && !paused && !document.hidden },
-      }),
-    );
-    time = Math.max(0, time - 2500);
     const state = stateAt(time);
     demo.dataset.state = state;
     stream(transcript, questionChunks, (time - 500) / 2500);
@@ -136,18 +168,10 @@
     const sourcesOpen = [...product.querySelectorAll("details")].some(
       (item) => item.open,
     );
-    document.dispatchEvent(
-      new CustomEvent("hero-playback", {
-        detail: {
-          suspended: paused || sourcesOpen || document.hidden || !heroVisible,
-        },
-      }),
-    );
-    if (reduced.matches || matchMedia("(max-width: 900px)").matches) {
+    if (reduced.matches) {
       heroTime = duration;
       finalHero();
     } else if (
-      cinematicReady &&
       heroTime < duration &&
       heroVisible &&
       !document.hidden &&
@@ -182,15 +206,6 @@
     },
     { threshold: 0 },
   ).observe(demo);
-  document.addEventListener("hero-ready", () => {
-    cinematicReady = true;
-    syncHero();
-  });
-  document.addEventListener("hero-fallback", () => {
-    heroTime = duration;
-    finalHero();
-    syncHero();
-  });
   window.addEventListener(
     "scroll",
     () => {
@@ -202,13 +217,6 @@
     },
     { passive: true },
   );
-  setTimeout(() => {
-    if (!cinematicReady && heroTime < duration) {
-      heroTime = duration;
-      finalHero();
-      syncHero();
-    }
-  }, 15000);
   document.addEventListener("visibilitychange", syncHero);
   reduced.addEventListener("change", syncHero);
   // Native Copy has a real browser action; the remaining native chrome is a labeled visual replica.

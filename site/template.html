@@ -31,9 +31,8 @@
     <link rel="icon" type="image/svg+xml" href="${prefix}assets/logo.svg" />
     <link rel="stylesheet" href="${prefix}styles.css" />
     <link rel="stylesheet" href="${prefix}product.css" />
-    <link rel="stylesheet" href="${prefix}cinematic.css?v=${asset_version}" />
+    <link rel="stylesheet" href="${prefix}phase5.css?v=${asset_version}" />
     <script src="${prefix}demo.js?v=${asset_version}" defer></script>
-    <script type="module" src="${prefix}cinematic.js?v=${asset_version}"></script>
   </head>
   <body>
     <a class="skip" href="#main">$skip</a>
@@ -72,81 +71,65 @@
     </header>
     <main id="main">
       <section class="hero" aria-labelledby="hero-heading">
-        <h1 id="hero-heading" aria-label="$hero_title">$hero_title_markup</h1>
-        <p class="hero-subtitle">$hero_subtitle</p>
-        <div class="actions">
-          <a class="primary" href="$download_url"
-            ><span aria-hidden="true">↓</span> $download_label</a
-          ><a class="secondary" href="https://github.com/carey-bk/LiveCopilot"
-            >GitHub <span aria-hidden="true">↗</span></a
+        <div class="hero-layout">
+          <div
+            class="demo-stage hero-visual"
+            id="hero-demo"
+            data-state="complete"
+            data-listening="$listening"
+            data-understanding="$understanding"
+            data-retrieving="$retrieving"
+            data-organizing="$organizing"
+            data-answering="$answering"
+            data-complete="$complete"
           >
-        </div>
-        <p class="platform">$hero_meta</p>
-        <div
-          class="demo-stage"
-          id="hero-demo"
-          data-state="complete"
-          data-listening="$listening"
-          data-understanding="$understanding"
-          data-retrieving="$retrieving"
-          data-organizing="$organizing"
-          data-answering="$answering"
-          data-complete="$complete"
-        >
-          <div class="demo-toolbar">
-            <span>$product_label</span
-            ><button
-              class="demo-toggle"
-              data-play="$play_demo"
-              data-pause="$pause_demo"
-              aria-label="$pause_demo"
-            >
-              Ⅱ
-            </button>
-          </div>
-          <div class="cinema-stage">
-            <div class="cinema-desktop">
-              <div class="desktop-menubar" aria-hidden="true">
-                <span>Finder　 File　 Edit　 View</span
-                ><span>LiveCopilot　 ◉</span>
+            <div class="hero-device" aria-label="$product_label">
+              <div class="hero-screen">
+                <div class="hero-screen-wallpaper" aria-hidden="true"></div>
+                <div class="hero-screen-menubar" aria-hidden="true">
+                  <span>Finder　 File　 Edit　 View</span>
+                  <span>LiveCopilot　 ◉</span>
+                </div>
+                <div class="hero-product-live">$product_hero</div>
               </div>
-              <div class="hero-product-layout">
-                <div class="hero-product-slot">$product_hero</div>
-                <aside class="retrieval-story" aria-label="$story_label">
-                  <p class="story-label">$story_label</p>
-                  <div class="story-files">
-                    <div class="document selected">
-                      <span class="file-mark">MD</span
-                      ><span
-                        >Product Strategy.md<small>$passage_found</small></span
-                      >
-                    </div>
-                    <div class="document">
-                      <span class="file-mark pdf">PDF</span
-                      ><span>Interview Notes.pdf</span>
-                    </div>
-                    <div class="document">
-                      <span class="file-mark docx">DOCX</span
-                      ><span>Roadmap.docx</span>
-                    </div>
-                  </div>
-                  <div class="story-connection" aria-hidden="true"><i></i></div>
-                  <blockquote class="story-passage">
-                    <span>Product Strategy.md · § 4</span>
-                    <p>$demo_passage</p>
-                  </blockquote>
-                  <p class="story-status" id="demo-status" aria-live="off">
-                    $complete
-                  </p>
-                </aside>
-              </div>
+              <img
+                class="hero-hardware"
+                src="${prefix}assets/hero-macbook-shell.png"
+                width="2200"
+                height="1500"
+                alt=""
+              />
             </div>
+            <div class="demo-toolbar">
+              <span>$product_label</span
+              ><button
+                class="demo-toggle"
+                data-play="$play_demo"
+                data-pause="$pause_demo"
+                aria-label="$pause_demo"
+              >
+                Ⅱ
+              </button>
+            </div>
+            <span id="demo-status" hidden>$complete</span>
+            <p class="demo-note">$demo_note</p>
+          </div>
+          <div class="hero-copy">
+            <h1 id="hero-heading" aria-label="$hero_title">$hero_title_markup</h1>
+            <p class="hero-subtitle">$hero_subtitle</p>
+            <div class="actions">
+              <a class="primary" href="$download_url"
+                ><span aria-hidden="true">↓</span> $download_label</a
+              ><a class="secondary" href="https://github.com/carey-bk/LiveCopilot"
+                >GitHub <span aria-hidden="true">↗</span></a
+              >
+            </div>
+            <p class="platform">$hero_meta</p>
+            <a class="hero-explore" href="#workflow"
+              >$explore_label <span aria-hidden="true">↓</span></a
+            >
           </div>
         </div>
-        <p class="demo-note">$demo_note</p>
-        <a class="hero-explore" href="#workflow"
-          >$explore_label <span aria-hidden="true">↓</span></a
-        >
       </section>
       <section class="section wrap" id="workflow">
         <div class="section-heading">

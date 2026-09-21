@@ -15,7 +15,10 @@ BASE = 'https://carey-bk.github.io/LiveCopilot/'
 content = json.loads((SOURCE / 'content.json').read_text())
 assert content['zh'].keys() == content['en'].keys(), 'Both language pages need matching content.'
 template = Template((SOURCE / 'template.html').read_text())
-OUTPUT.mkdir(exist_ok=True)
+# Output is disposable; clean it so retired runtime assets cannot ship.
+if OUTPUT.exists():
+    shutil.rmtree(OUTPUT)
+OUTPUT.mkdir()
 for language, copy in content.items():
     english = language == 'en'
     # Only explicitly marked display strings support Markdown emphasis. Escape
@@ -23,7 +26,7 @@ for language, copy in content.items():
     data = {key: (re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html.escape(value, quote=True))
                   if key.endswith('_rich') else html.escape(value, quote=True))
             for key, value in copy.items()}
-    data['asset_version'] = hashlib.sha256(b''.join((SOURCE / name).read_bytes() for name in ['demo.js', 'cinematic.js', 'cinematic.css'])).hexdigest()[:12]
+    data['asset_version'] = hashlib.sha256(b''.join((SOURCE / name).read_bytes() for name in ['demo.js', 'phase5.css', 'product.css', 'styles.css'])).hexdigest()[:12]
     data.update(lang='en' if english else 'zh-CN', prefix='../' if english else '',
                 home='./', zh_url='../' if english else './', en_url='./' if english else 'en/',
                 zh_current='' if english else 'aria-current="page"',
@@ -54,7 +57,7 @@ for language, copy in content.items():
     destination = OUTPUT / ('en' if english else '')
     destination.mkdir(exist_ok=True)
     (destination / 'index.html').write_text(template.substitute(data))
-for name in ['styles.css', 'product.css', 'demo.js', 'cinematic.css', 'cinematic.js', 'cinematic-scene.js']:
+for name in ['styles.css', 'product.css', 'phase5.css', 'demo.js']:
     shutil.copyfile(SOURCE / name, OUTPUT / name)
 shutil.copytree(SOURCE / 'assets', OUTPUT / 'assets', dirs_exist_ok=True)
 (OUTPUT / '.nojekyll').write_text('')
