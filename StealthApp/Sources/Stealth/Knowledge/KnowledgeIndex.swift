@@ -126,7 +126,7 @@ actor KnowledgeIndex {
         return VectorMath.fuse(lexical: lex, semantic: semantic, limit: limit)
     }
 
-    func importDocument(_ url: URL, provider: any EmbeddingProvider) async throws -> KnowledgeDocument {
+    func importDocument(_ url: URL, provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {
         let sections = try DocumentParser.extract(url)
         let id = UUID().uuidString
         let folder = directory.appendingPathComponent("originals/\(id)")
@@ -137,29 +137,32 @@ actor KnowledgeIndex {
         let document = KnowledgeDocument(id: id, name: url.lastPathComponent, importedAt: Date(), localPath: local.path,
                                          status: "Indexing", chunkCount: 0, embeddingModel: provider.model)
         try saveDocument(document)
-        return try await index(document, sections: sections, provider: provider)
+        return try await index(document, sections: sections, provider: provider, progress: progress)
     }
-    func reindex(_ document: KnowledgeDocument, provider: any EmbeddingProvider) async throws -> KnowledgeDocument {
+    func reindex(_ document: KnowledgeDocument, provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {
         let sections = try DocumentParser.extract(URL(fileURLWithPath: document.localPath))
-        return try await index(document, sections: sections, provider: provider)
+        return try await index(document, sections: sections, provider: provider, progress: progress)
     }
-    private func index(_ original: KnowledgeDocument, sections: [DocumentSection], provider: any EmbeddingProvider) async throws -> KnowledgeDocument {
+    private func index(_ original: KnowledgeDocument, sections: [DocumentSection], provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {
         var document = original
         do {
             var chunks = DocumentChunker.chunk(sections, documentID: document.id, name: document.name)
             guard chunks.count <= 4000 else { throw CopilotError.message("Document exceeds the V1 limit of 4,000 chunks; split it into smaller documents.") }
+            await progress?(document.id, 0)
             for start in stride(from: 0, to: chunks.count, by: 24) {
                 try Task.checkCancellation()
                 let end = min(start + 24, chunks.count)
                 let vectors = try await provider.embed(chunks[start..<end].map(\.text))
                 guard vectors.count == end - start else { throw CopilotError.message("Embedding API returned an incomplete batch.") }
                 for (i, vector) in vectors.enumerated() { chunks[start + i].vector = vector; chunks[start + i].embeddingModel = provider.model }
+                await progress?(document.id, 0.95 * Double(end) / Double(max(1, chunks.count)))
             }
             try Task.checkCancellation()
             // A deletion while awaiting the network must not resurrect the document.
             guard try documents().contains(where: { $0.id == document.id }) else { throw CancellationError() }
             document.status = "Ready"; document.chunkCount = chunks.count; document.embeddingModel = provider.model; document.error = nil
             try replaceChunks(chunks, document: document)
+            await progress?(document.id, 1)
             return document
         } catch {
             if (try? documents().contains(where: { $0.id == document.id })) == true {

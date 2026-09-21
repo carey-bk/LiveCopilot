@@ -138,7 +138,7 @@ struct SettingsView: View {
                     if locked { Text(t("Stop listening to change mode or scenario.")).font(.caption).foregroundStyle(.secondary) }
                     Toggle(t("Automatic suggestions for meaningful questions"), isOn: $coordinator.settings.automaticSuggestions)
                         .accessibilityIdentifier("automatic-suggestions")
-                    automaticTriggerSettings
+                    Button(b("Manage automatic triggers in Live services", "在实时服务中管理自动触发")) { page = .services; serviceRole = 0 }
                 }.padding(10)
             } label: { Label(t("Conversation"), systemImage: "waveform") }
             SettingsSection {
@@ -174,9 +174,13 @@ struct SettingsView: View {
             if coordinator.settings.automaticTriggerService == .provider {
                 Text(b("Uses the speech provider's trigger events. Local ASR uses question rules; GPT-Live-1 uses its existing delegation flow.", "沿用语音服务的触发事件：本地 ASR 使用问句规则，GPT-Live-1 使用已有的自动委托机制。"))
                     .font(.caption).foregroundStyle(.secondary)
-            } else {
+            }
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
                 Text(b("Laya evaluates streaming text locally, then requests an answer after the other speaker finishes and pauses. It uses your selected analysis model; that model may charge API fees. In-person mode cannot distinguish you from other speakers.", "Laya 在本地持续判断流式文字，等对方说完并停顿后，触发你选择的分析模型生成回答；分析模型仍可能产生 API 费用。现场模式无法区分自己与他人。"))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(b("Downloaded separately · local/free · about 678 MB for model files, plus runtime. The app includes the integration, not the model weights. Laya decides when to request an answer; it does not transcribe audio or generate the answer itself.", "额外下载 · 本地/免费 · 模型文件约 678 MB，另需运行环境。软件包包含接入代码，不包含模型权重。Laya 判断何时需要生成回答，本身不负责语音识别或撰写回答。"))
+                    .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Text(b("Trigger threshold", "触发阈值"))
                     Slider(value: $coordinator.settings.layaThreshold, in: 0.5...0.99, step: 0.01)
@@ -209,7 +213,8 @@ struct SettingsView: View {
                 if !laya.message.isEmpty { Text(t(laya.message)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
                 Text(b("Requires Apple Silicon and macOS 14+. Download once; detection runs offline without an API key. If unavailable, automatic Laya triggering pauses without switching to a paid service.", "需要 Apple Silicon 和 macOS 14+。首次下载后离线判断，无需 API Key；不可用时暂停 Laya 自动触发，不会悄悄改用付费服务。"))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
+                }
+            } label: { Label(b("Laya · local trigger model", "Laya · 本地触发模型"), systemImage: "bolt.circle") }
         }
     }
     private var layaStateTitle: String {
@@ -245,12 +250,12 @@ struct SettingsView: View {
             if coordinator.settings.listeningService == .apple {
                 Text(b("SpeechAnalyzer + SpeechTranscriber: offline streaming captions with revisable previews. Apple manages language downloads and inference. Requires macOS 26 and supported hardware; choose Mandarin or English before listening. This option does not automatically switch languages.", "SpeechAnalyzer + SpeechTranscriber：离线流式转写，预览文字会修正。语言模型与推理由 macOS 管理，需要 macOS 26 和受支持硬件；开始前选择普通话或英语，不自动切换语言。")).font(.callout).foregroundStyle(.secondary)
                 AppleSpeechCard(manager: coordinator.appleSpeech, language: $coordinator.settings.appleSpeechLanguage, interfaceLanguage: coordinator.settings.language, locked: locked)
-                Text(b("Like FunASR, automatic suggestions use local question rules plus a pause. Recognition speed and accuracy depend on your language, microphone and vocabulary; neither engine is always better.", "与 FunASR 一样，自动建议通过本地提问规则与停顿触发。速度和准确率取决于语言、麦克风及术语，没有在所有场景都更好的引擎。")).font(.caption).foregroundStyle(.secondary)
+                Text(b("Like FunASR, automatic suggestions can use question rules or the local Laya trigger below. Recognition speed and accuracy depend on your language, microphone and vocabulary; neither engine is always better.", "与 FunASR 一样，自动建议可使用问句规则或下方的本地 Laya 判断。速度和准确率取决于语言、麦克风及术语，没有在所有场景都更好的引擎。")).font(.caption).foregroundStyle(.secondary)
             } else if let kind = coordinator.settings.listeningService.localModel {
                 Text(t("Audio stays on this Mac. Chinese and English captions update while you speak. Preview text can change; completed sentences are used for automatic suggestions.")).font(.callout).foregroundStyle(.secondary)
                 LocalModelCard(manager: coordinator.localModels, kind: kind, language: coordinator.settings.language, locked: locked)
                 Text(b("English terminology can be misrecognized. For English-heavy conversations, compare Apple English or GPT-Live-1 on your own audio.", "英文术语可能误识别。英文较多时，可用自己的音频对比 Apple 英语识别或 GPT-Live-1。")).font(.caption).foregroundStyle(.secondary)
-                Text(t("Automatic suggestions use conservative local question rules. Pauses alone do not trigger analysis; use the shortcut for missed questions.")).font(.caption).foregroundStyle(.secondary)
+                Text(b("Choose question rules or local Laya below to trigger analysis. You can always generate an answer manually.", "可在下方选择问句规则或本地 Laya 来触发分析，也可随时手动生成回答。")).font(.caption).foregroundStyle(.secondary)
                 localCost
             } else {
                 Label("OpenAI", systemImage: "waveform").font(.title3.bold())
@@ -259,6 +264,8 @@ struct SettingsView: View {
                 modelField("Live model", value: $coordinator.settings.liveModel).disabled(locked)
                 priceNote(ServiceGuide.livePrice(coordinator.settings.liveModel, language: coordinator.settings.language), url: "https://developers.openai.com/api/docs/models/gpt-live-1")
             }
+            Divider()
+            automaticTriggerSettings
         }
     }
     private var embeddingService: some View {
@@ -419,13 +426,25 @@ struct SettingsView: View {
             }
             Stepper(t("Evidence chunks") + ": \(coordinator.settings.retrievalCount)", value: $coordinator.settings.retrievalCount, in: 3...8)
             Text(b("More evidence chunks provide more context but increase the analysis model's input tokens and may add irrelevant text.", "证据片段越多，分析模型可读的上下文越多，但输入 token 和无关信息也可能增加。")).font(.caption).foregroundStyle(.secondary)
-            if coordinator.isIndexing { ProgressView().controlSize(.small) }
+            if coordinator.isIndexing {
+                IndexingProgressView(progress: coordinator.indexingProgress, label: b("Building retrieval index…", "正在生成检索向量…"))
+                    .accessibilityIdentifier("knowledge-index-progress")
+            } else if coordinator.indexingSucceeded {
+                Label(b("Index established", "索引已建立"), systemImage: "checkmark.square.fill")
+                    .foregroundStyle(.green).accessibilityIdentifier("knowledge-index-complete")
+            }
             if !coordinator.knowledgeMessage.isEmpty { Text(t(coordinator.knowledgeMessage)).font(.caption).textSelection(.enabled) }
             List {
                 ForEach(coordinator.knowledgeDocuments) { document in
                     VStack(alignment: .leading, spacing: 5) {
                         Text(document.name).font(.headline)
-                        Text("\(t(document.status)) · \(document.chunkCount) \(t("chunks")) · \(document.embeddingModel)").font(.caption).foregroundStyle(.secondary)
+                        if coordinator.isIndexing && coordinator.indexingDocumentID == document.id {
+                            IndexingProgressView(progress: coordinator.documentIndexingProgress, label: b("Building index…", "正在建立索引…"))
+                        } else if document.status == "Ready" {
+                            Label(b("Index established", "索引已建立"), systemImage: "checkmark.square.fill")
+                                .font(.caption).foregroundStyle(.green)
+                        } else { Text(t(document.status)).font(.caption).foregroundStyle(.secondary) }
+                        Text("\(document.chunkCount) \(t("chunks")) · \(document.embeddingModel)").font(.caption).foregroundStyle(.secondary)
                         if let error = document.error { Text(t(error)).font(.caption).foregroundStyle(.red) }
                         HStack {
                             Button(t("Re-index")) { coordinator.reindex(document) }

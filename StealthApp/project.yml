@@ -55,6 +55,7 @@ targets:
       - path: Tests/LayaTriggerChecks.swift
       - path: Tests/LayaCoordinatorTests.swift
       - path: Tests/LayaWorkerTests.swift
+      - path: Tests/IndexingProgressTests.swift
     dependencies:
       - target: LiveCopilot
     settings:

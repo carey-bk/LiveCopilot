@@ -20,7 +20,7 @@ final class AppCoordinator: ObservableObject {
         }, onTrigger: { [weak self] input in self?.dispatchLaya(input) ?? true })
         gate.onError = { [weak self] _ in
             guard let self else { return }
-            self.statusMessage = ServiceGuide.text("Laya unavailable — manual generation remains available. Check Conversation settings.", "Laya 暂不可用，仍可手动生成回答。请检查“对话”设置。", self.settings.language)
+            self.statusMessage = ServiceGuide.text("Laya unavailable — manual generation remains available. Check Live services settings.", "Laya 暂不可用，仍可手动生成回答。请检查“实时服务”设置。", self.settings.language)
         }
         return gate
     }()
@@ -94,6 +94,10 @@ final class AppCoordinator: ObservableObject {
     @Published var questionState = QuestionPhase.listening.rawValue
     @Published var knowledgeDocuments: [KnowledgeDocument] = []
     @Published var isIndexing = false
+    @Published private(set) var indexingProgress = 0.0
+    @Published private(set) var documentIndexingProgress = 0.0
+    @Published private(set) var indexingDocumentID: String?
+    @Published private(set) var indexingSucceeded = false
     @Published var knowledgeMessage = ""
     @Published var includeConversation = true
     @Published var micEnabled = true
@@ -620,6 +624,18 @@ final class AppCoordinator: ObservableObject {
         do { knowledgeDocuments = try await knowledge.documents() }
         catch { knowledgeMessage = error.localizedDescription }
     }
+    private func indexingCallback(offset: Int, count: Int) -> @Sendable (String, Double) async -> Void {
+        { [weak self] id, value in
+            guard let self else { return }
+            await self.updateIndexing(id: id, value: value, offset: offset, count: count)
+        }
+    }
+    private func updateIndexing(id: String, value: Double, offset: Int, count: Int) async {
+        indexingDocumentID = id
+        documentIndexingProgress = value
+        indexingProgress = (Double(offset) + value) / Double(max(1, count))
+        if value == 0 || value == 1 { await refreshKnowledge() }
+    }
     func importDocuments(_ urls: [URL]) {
         guard !isIndexing, let knowledge else { return }
         let documents: [URL]
@@ -627,17 +643,19 @@ final class AppCoordinator: ObservableObject {
         catch { knowledgeMessage = error.localizedDescription; return }
         guard !documents.isEmpty else { return }
         isIndexing = true
+        indexingProgress = 0; documentIndexingProgress = 0; indexingSucceeded = false; indexingDocumentID = nil
         Task {
-            defer { isIndexing = false }
+            defer { isIndexing = false; indexingDocumentID = nil }
             do {
                 if !isMock, settings.embeddingService == .openAI { _ = try credential() }
                 let provider = try embeddingProvider(requireReady: true)
-                for url in documents {
+                for (offset, url) in documents.enumerated() {
                     knowledgeMessage = "Indexing \(url.lastPathComponent)…"
-                    do { _ = try await knowledge.importDocument(url, provider: provider) }
+                    do { _ = try await knowledge.importDocument(url, provider: provider, progress: indexingCallback(offset: offset, count: documents.count)) }
                     catch { knowledgeMessage = error.localizedDescription; await refreshKnowledge(); return }
                     await refreshKnowledge()
                 }
+                indexingSucceeded = true
                 knowledgeMessage = "Indexing complete. Retrieval is local."
             } catch { knowledgeMessage = error.localizedDescription }
         }
@@ -645,12 +663,14 @@ final class AppCoordinator: ObservableObject {
     func reindex(_ document: KnowledgeDocument) {
         guard !isIndexing, let knowledge else { return }
         isIndexing = true
+        indexingProgress = 0; documentIndexingProgress = 0; indexingSucceeded = false; indexingDocumentID = nil
         Task {
-            defer { isIndexing = false }
+            defer { isIndexing = false; indexingDocumentID = nil }
             do {
                 knowledgeMessage = "Re-indexing \(document.name)…"
                 if !isMock, settings.embeddingService == .openAI { _ = try credential() }
-                _ = try await knowledge.reindex(document, provider: embeddingProvider(requireReady: true))
+                _ = try await knowledge.reindex(document, provider: embeddingProvider(requireReady: true), progress: indexingCallback(offset: 0, count: 1))
+                indexingSucceeded = true
                 knowledgeMessage = "Re-indexing complete."
             } catch { knowledgeMessage = error.localizedDescription }
             await refreshKnowledge()
@@ -667,17 +687,20 @@ final class AppCoordinator: ObservableObject {
     func reindexAll() {
         guard !isIndexing, let knowledge else { return }
         let documents = knowledgeDocuments
+        guard !documents.isEmpty else { return }
         isIndexing = true
+        indexingProgress = 0; documentIndexingProgress = 0; indexingSucceeded = false; indexingDocumentID = nil
         Task {
-            defer { isIndexing = false }
+            defer { isIndexing = false; indexingDocumentID = nil }
             do {
                 if !isMock, settings.embeddingService == .openAI { _ = try credential() }
                 let provider = try embeddingProvider(requireReady: true)
-                for document in documents {
+                for (offset, document) in documents.enumerated() {
                     knowledgeMessage = "Re-indexing \(document.name)…"
-                    _ = try await knowledge.reindex(document, provider: provider)
+                    _ = try await knowledge.reindex(document, provider: provider, progress: indexingCallback(offset: offset, count: documents.count))
                     await refreshKnowledge()
                 }
+                indexingSucceeded = true
                 knowledgeMessage = "Re-indexing complete."
             } catch { knowledgeMessage = error.localizedDescription }
             await refreshKnowledge()
