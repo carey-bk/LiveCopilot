@@ -121,6 +121,9 @@ final class LocalEmbeddingProvider: EmbeddingProvider, @unchecked Sendable {
     private let worker: LocalInferenceWorker
     init(directory: URL, executable: URL? = nil) { worker = .init(mode: "embedding", modelDirectory: directory, executable: executable) }
     func embed(_ texts: [String]) async throws -> [[Float]] {
+        try await embed(texts, progress: { _ in })
+    }
+    func embed(_ texts: [String], progress: @Sendable (Int) async -> Void) async throws -> [[Float]] {
         var vectors: [[Float]] = []
         // One text per IPC request lets a new interactive query run between import chunks.
         for text in texts {
@@ -132,6 +135,7 @@ final class LocalEmbeddingProvider: EmbeddingProvider, @unchecked Sendable {
             let vector = numbers.map(\.floatValue)
             guard vector.allSatisfy(\.isFinite), vector.contains(where: { $0 != 0 }) else { throw CopilotError.message("Local model returned an invalid response.") }
             vectors.append(vector)
+            await progress(vectors.count)
         }
         return vectors
     }

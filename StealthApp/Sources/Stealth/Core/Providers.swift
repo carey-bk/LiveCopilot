@@ -3,6 +3,16 @@ import Foundation
 protocol EmbeddingProvider {
     var model: String { get }
     func embed(_ texts: [String]) async throws -> [[Float]]
+    func embed(_ texts: [String], progress: @Sendable (Int) async -> Void) async throws -> [[Float]]
+}
+
+extension EmbeddingProvider {
+    /// Cloud providers retain their batch request; only report work actually completed.
+    func embed(_ texts: [String], progress: @Sendable (Int) async -> Void) async throws -> [[Float]] {
+        let vectors = try await embed(texts)
+        await progress(vectors.count)
+        return vectors
+    }
 }
 protocol ReasoningProvider {
     func stream(_ request: AnswerRequest) -> AsyncThrowingStream<String, Error>

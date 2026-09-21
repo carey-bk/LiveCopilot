@@ -148,14 +148,18 @@ actor KnowledgeIndex {
         do {
             var chunks = DocumentChunker.chunk(sections, documentID: document.id, name: document.name)
             guard chunks.count <= 4000 else { throw CopilotError.message("Document exceeds the V1 limit of 4,000 chunks; split it into smaller documents.") }
+            let documentID = document.id
             await progress?(document.id, 0)
             for start in stride(from: 0, to: chunks.count, by: 24) {
                 try Task.checkCancellation()
                 let end = min(start + 24, chunks.count)
-                let vectors = try await provider.embed(chunks[start..<end].map(\.text))
+                let total = chunks.count
+                let vectors = try await provider.embed(chunks[start..<end].map(\.text)) { completed in
+                    let count = min(end - start, max(0, completed))
+                    await progress?(documentID, 0.95 * Double(start + count) / Double(max(1, total)))
+                }
                 guard vectors.count == end - start else { throw CopilotError.message("Embedding API returned an incomplete batch.") }
                 for (i, vector) in vectors.enumerated() { chunks[start + i].vector = vector; chunks[start + i].embeddingModel = provider.model }
-                await progress?(document.id, 0.95 * Double(end) / Double(max(1, chunks.count)))
             }
             try Task.checkCancellation()
             // A deletion while awaiting the network must not resurrect the document.

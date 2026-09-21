@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Real batch progress with an animated highlight while an embedding batch is running.
+/// Completed work is dark blue; remaining work stays pale blue.
 struct IndexingProgressView: View {
     let progress: Double
     let label: String
@@ -14,19 +14,23 @@ struct IndexingProgressView: View {
                 Spacer()
                 Text("\(Int(value * 100))%").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
-            TimelineView(.animation(minimumInterval: 0.08, paused: reduceMotion)) { timeline in
-                GeometryReader { geometry in
-                    let count = max(12, min(64, Int(geometry.size.width / 8)))
-                    let phase = Int(timeline.date.timeIntervalSinceReferenceDate * 12) % count
-                    HStack(spacing: 4) {
-                        ForEach(0..<count, id: \.self) { index in
-                            RoundedRectangle(cornerRadius: 1.5)
-                                .fill(Color.blue.opacity(index < Int(Double(count) * value) ? 1 :
-                                                        (!reduceMotion && index == phase ? 0.7 : 0.16)))
-                                .frame(maxWidth: .infinity)
-                        }
+            GeometryReader { geometry in
+                let count = max(12, min(64, Int(geometry.size.width / 8)))
+                HStack(spacing: 4) {
+                    ForEach(0..<count, id: \.self) { index in
+                        let fill = min(1, max(0, value * Double(count) - Double(index)))
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(Color.blue.opacity(0.16))
+                            .overlay(alignment: .leading) {
+                                GeometryReader { segment in
+                                    Color.blue.frame(width: segment.size.width * fill)
+                                }
+                                .clipShape(RoundedRectangle(cornerRadius: 1.5))
+                            }
+                            .frame(maxWidth: .infinity)
                     }
                 }
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: value)
             }.frame(height: 20)
         }
         .accessibilityElement(children: .ignore)
