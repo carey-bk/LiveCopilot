@@ -49,7 +49,7 @@ struct ConversationState {
         return String(rows.map { "\($0.0.rawValue): \($0.1)" }.joined(separator: "\n").suffix(limit))
     }
 
-    mutating func candidate(speaker: Speaker, now: Date, cooldown: TimeInterval, force: Bool = false) -> String? {
+    mutating func candidate(speaker: Speaker, now: Date, cooldown: TimeInterval, force: Bool = false, semanticDetection: Bool = false) -> String? {
         guard let last = fragments.last(where: { $0.speaker == speaker }) else { phase = .waiting; return nil }
         if !force, speaker == .them,
            let you = fragments.last(where: { $0.speaker == .you }), you.receivedAt > last.receivedAt {
@@ -67,10 +67,10 @@ struct ConversationState {
             eligible = Array(eligible.suffix(from: start))
         }
         let question = String(eligible.map(\.text).joined().suffix(2200)).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard question.count >= 5 else { phase = .waiting; return nil }
+        guard question.count >= (semanticDetection ? 2 : 5) else { phase = .waiting; return nil }
         let lower = question.lowercased().trimmingCharacters(in: .punctuationCharacters)
         let incomplete = [" and", " or", " because", " if", " but", " the", " of", " with", "以及", "因为", "如果"]
-        if !force && incomplete.contains(where: { lower.hasSuffix($0) }) { phase = .waiting; return nil }
+        if !force && !semanticDetection && incomplete.contains(where: { lower.hasSuffix($0) }) { phase = .waiting; return nil }
         handled.removeAll { now.timeIntervalSince($0.at) > 180 }
         if !force && handled.contains(where: { Self.similar($0.text, question) }) { phase = .duplicate; return nil }
         if !force, let at = lastTriggerAt, now.timeIntervalSince(at) < cooldown { phase = .waiting; return nil }

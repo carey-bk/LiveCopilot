@@ -38,6 +38,23 @@ enum L10n {
         return text
     }
     static let chinese: [String: String] = [
+        "Download Laya to enable offline question detection.": "下载 Laya 后即可在本地判断是否需要回答。",
+        "Laya requires Apple Silicon and macOS 14 or newer.": "Laya 需要 Apple Silicon 和 macOS 14 或更新版本。",
+        "Laya is installed. Load it to enable offline detection.": "Laya 已安装，加载后可启用本地判断。",
+        "Laya stopped. Reload the model; manual generation remains available.": "Laya 已停止，请重新加载；仍可手动生成回答。",
+        "Laya is stopped. Downloaded files are retained.": "Laya 已停止，下载文件已保留。",
+        "Download Laya before loading it.": "请先下载 Laya 模型。",
+        "Preparing the isolated Laya runtime…": "正在准备独立的 Laya 运行环境…",
+        "Loading Laya locally…": "正在加载本地 Laya 模型…",
+        "Creating the isolated Python environment…": "正在创建独立运行环境…",
+        "Downloading pinned runtime dependencies…": "正在下载运行依赖…",
+        "Installing the verified Laya runtime…": "正在安装 Laya 运行时…",
+        "Downloading the multilingual model…": "正在下载多语言模型…",
+        "Checking the local model…": "正在校验本地模型…",
+        "Local installation verified.": "本地安装已校验。",
+        "Installing Laya…": "正在安装 Laya…",
+        "Laya is ready. Detection runs offline.": "Laya 已就绪，判断将在本机离线运行。",
+        "Laya could not start. Check the installation and retry; manual generation remains available.": "Laya 启动失败，请检查安装后重试；仍可手动生成回答。",
         "About": "关于",
         "Start fresh": "刷新会话",
         "Clear conversation and answers; keep listening if active": "清空转写与回答上下文，收起窗口；正在监听时会继续监听",

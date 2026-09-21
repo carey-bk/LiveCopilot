@@ -33,6 +33,8 @@ struct AppSettings: Codable, Equatable {
     var mode = OperatingMode.remote
     var scenario = ScenarioProfile.interview
     var automaticSuggestions = true
+    var automaticTriggerService = AutomaticTriggerService.provider
+    var layaThreshold = 0.8
     var recapEnabled = true
     var followUpEnabled = true
     var includeConversation = true
@@ -68,6 +70,7 @@ struct AppSettings: Codable, Equatable {
 
     init() {}
     private enum CodingKeys: String, CodingKey {
+        case automaticTriggerService, layaThreshold
         case recapEnabled, followUpEnabled
         case transcriptFontSize, answerFontSize, qwenConnection, glmConnection, kimiConnection
         case listeningService, appleSpeechLanguage, embeddingService, overlayAutoHeight, overlayEdgeHide
@@ -86,6 +89,9 @@ struct AppSettings: Codable, Equatable {
         mode = try c.decodeIfPresent(OperatingMode.self, forKey: .mode) ?? mode
         scenario = try c.decodeIfPresent(ScenarioProfile.self, forKey: .scenario) ?? scenario
         automaticSuggestions = try c.decodeIfPresent(Bool.self, forKey: .automaticSuggestions) ?? automaticSuggestions
+        automaticTriggerService = try c.decodeIfPresent(AutomaticTriggerService.self, forKey: .automaticTriggerService) ?? automaticTriggerService
+        let threshold = try c.decodeIfPresent(Double.self, forKey: .layaThreshold) ?? layaThreshold
+        layaThreshold = threshold.isFinite ? min(0.99, max(0.5, threshold)) : 0.8
         recapEnabled = try c.decodeIfPresent(Bool.self, forKey: .recapEnabled) ?? recapEnabled
         followUpEnabled = try c.decodeIfPresent(Bool.self, forKey: .followUpEnabled) ?? followUpEnabled
         includeConversation = try c.decodeIfPresent(Bool.self, forKey: .includeConversation) ?? includeConversation

@@ -27,6 +27,9 @@ targets:
       - path: Resources/LocalRuntime
         type: folder
         buildPhase: resources
+      - path: Resources/LayaRuntime
+        type: folder
+        buildPhase: resources
       - path: Resources/ThirdPartyNotices.txt
         buildPhase: resources
     settings:
@@ -49,6 +52,9 @@ targets:
     sources:
       - path: Tests/CoreChecks.swift
       - path: Tests/NativeTests.swift
+      - path: Tests/LayaTriggerChecks.swift
+      - path: Tests/LayaCoordinatorTests.swift
+      - path: Tests/LayaWorkerTests.swift
     dependencies:
       - target: LiveCopilot
     settings:
@@ -64,5 +70,6 @@ schemes:
     test:
       environmentVariables:
         LIVECOPILOT_MOCK: "1"
+        LIVECOPILOT_TEST_REAL_LAYA: "$(LIVECOPILOT_TEST_REAL_LAYA)"
       targets:
         - LiveCopilotTests

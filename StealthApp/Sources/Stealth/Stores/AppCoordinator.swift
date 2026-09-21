@@ -8,6 +8,22 @@ final class AppCoordinator: ObservableObject {
     let sessions = SessionStore()
     let hotkeys: HotkeyStore
     let localModels: LocalModelManager
+    let laya: LayaRuntimeManager
+    private let layaPredictor: ((String, String) async throws -> Double)?
+    private let mockReasoning: (any ReasoningProvider)?
+    private let emitMockConversation: Bool
+    private lazy var layaGate: LayaTriggerController = {
+        let gate = LayaTriggerController(predict: { [weak self] text, context in
+            guard let self else { throw CancellationError() }
+            if let predict = self.layaPredictor { return try await predict(text, context) }
+            return try await self.laya.predict(text: text, context: context)
+        }, onTrigger: { [weak self] input in self?.dispatchLaya(input) ?? true })
+        gate.onError = { [weak self] _ in
+            guard let self else { return }
+            self.statusMessage = ServiceGuide.text("Laya unavailable — manual generation remains available. Check Conversation settings.", "Laya 暂不可用，仍可手动生成回答。请检查“对话”设置。", self.settings.language)
+        }
+        return gate
+    }()
     let appleSpeech = AppleSpeechManager()
     private var localEmbedding: LocalEmbeddingProvider?
     let systemAudio = AudioCaptureManager()
@@ -41,6 +57,15 @@ final class AppCoordinator: ObservableObject {
     @Published var settings = AppSettings() {
         didSet {
             settings.save(defaults: settingsDefaults)
+            if oldValue.automaticSuggestions != settings.automaticSuggestions ||
+                oldValue.automaticTriggerService != settings.automaticTriggerService ||
+                oldValue.scenario != settings.scenario ||
+                oldValue.mode != settings.mode || oldValue.listeningService != settings.listeningService {
+                invalidateAutomaticTrigger()
+                configureAutomaticTrigger()
+            } else if oldValue.layaThreshold != settings.layaThreshold {
+                configureAutomaticTrigger(prepare: false)
+            }
             if suggestion.isLoading && !settings.isEnabled(suggestion.mode) { cancelAnswer() }
             if oldValue.requiresOpenAIKey != settings.requiresOpenAIKey {
                 if settings.requiresOpenAIKey { refreshKeyState() }
@@ -77,10 +102,17 @@ final class AppCoordinator: ObservableObject {
     var onOpenSettings: (() -> Void)?
     var onShowOverlay: ((_ automatic: Bool) -> Void)?
 
-    init(mock: Bool = ProcessInfo.processInfo.arguments.contains("--mock") || ProcessInfo.processInfo.environment["LIVECOPILOT_MOCK"] == "1") {
+    init(mock: Bool = ProcessInfo.processInfo.arguments.contains("--mock") || ProcessInfo.processInfo.environment["LIVECOPILOT_MOCK"] == "1",
+         layaRoot: URL? = nil, layaPredictor: ((String, String) async throws -> Double)? = nil,
+         mockReasoning: (any ReasoningProvider)? = nil,
+         emitMockConversation: Bool = true, mockDefaults: UserDefaults? = nil) {
         isMock = mock
+        self.layaPredictor = mock ? layaPredictor : nil
+        self.mockReasoning = mock ? mockReasoning : nil
+        self.emitMockConversation = emitMockConversation
         localModels = LocalModelManager(root: AppPaths.modelsDirectory(mock: mock))
-        settingsDefaults = mock ? UserDefaults(suiteName: "com.livecopilot.mock")! : .standard
+        laya = LayaRuntimeManager(root: layaRoot ?? AppPaths.dataDirectory(mock: mock).appendingPathComponent("Laya", isDirectory: true))
+        settingsDefaults = mock ? (mockDefaults ?? UserDefaults(suiteName: "com.livecopilot.mock")!) : .standard
         hotkeys = HotkeyStore(defaults: settingsDefaults)
         settings = AppSettings.load(defaults: settingsDefaults)
         do { knowledge = try KnowledgeIndex(directory: AppPaths.dataDirectory(mock: mock).appendingPathComponent("knowledge")) }
@@ -97,16 +129,81 @@ final class AppCoordinator: ObservableObject {
             guard let self, !capturing, self.isRunning, !self.isTransitioning else { return }
             let provider = self.systemLive; self.systemLive = nil
             Task { await provider?.disconnect() }
-            if !self.mic.isCapturing { self.isRunning = false; self.saveSession() }
+            self.speakingSources.remove(.them)
+            self.layaGate.reset()
+            self.configureAutomaticTrigger(prepare: false)
+            if !self.mic.isCapturing { self.isRunning = false; self.invalidateAutomaticTrigger(); self.saveSession() }
         }.store(in: &cancellables)
         mic.$isCapturing.dropFirst().sink { [weak self] capturing in
             guard let self, !capturing, self.isRunning, !self.isTransitioning else { return }
             let provider = self.micLive; self.micLive = nil
             Task { await provider?.disconnect() }
-            if !self.systemAudio.isCapturing { self.isRunning = false; self.saveSession() }
+            self.speakingSources.remove(self.settings.mode == .inPerson ? .room : .you)
+            self.layaGate.reset()
+            self.configureAutomaticTrigger(prepare: false)
+            if !self.systemAudio.isCapturing { self.isRunning = false; self.invalidateAutomaticTrigger(); self.saveSession() }
         }.store(in: &cancellables)
         sessions.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
+        laya.$state.dropFirst().sink { [weak self] _ in
+            // Published sends before mutation; read readiness on the next actor turn.
+            Task { @MainActor [weak self] in self?.configureAutomaticTrigger(prepare: false) }
+        }.store(in: &cancellables)
         Task { await refreshKnowledge() }
+    }
+    private var usesLaya: Bool { settings.automaticTriggerService == .laya }
+    private func invalidateAutomaticTrigger(releaseRuntime: Bool = true) {
+        questionTask?.cancel(); questionTask = nil; pendingAutomatic = nil
+        layaGate.reset()
+        if releaseRuntime { laya.stop() }
+    }
+    private func configureAutomaticTrigger(prepare: Bool = true) {
+        let selected = isRunning && settings.automaticSuggestions && usesLaya && !isShuttingDown
+        layaGate.configure(enabled: selected && (laya.isReady || layaPredictor != nil),
+                           threshold: settings.layaThreshold, cooldown: settings.scenario.cooldown)
+        if selected {
+            for speaker in speakingSources { layaGate.setSpeaking(true, speaker: speaker) }
+            if prepare && layaPredictor == nil && !laya.isReady && !laya.isBusy { laya.prepare() }
+        }
+    }
+    private func manualIntervention() {
+        pendingAutomatic = nil; questionTask?.cancel(); questionTask = nil
+        layaGate.manualIntervention()
+    }
+    func cancelLayaRuntime() {
+        invalidateAutomaticTrigger(releaseRuntime: false)
+        laya.cancel()
+        configureAutomaticTrigger(prepare: false)
+    }
+    private func submitLaya(speaker: Speaker, partial: String? = nil) {
+        guard isRunning, settings.automaticSuggestions, usesLaya else { return }
+        guard isMock || (speaker == .them ? systemAudio.isCapturing : mic.isCapturing) else { return }
+        if speaker == .you { layaGate.manualIntervention(); return }
+        // Use the same caption grouping as dispatch, without mutating conversation state.
+        var snapshot = conversation
+        if let partial {
+            let now = Date()
+            let offset = Int(now.timeIntervalSince(sessionStartedAt ?? now) * 1000)
+            _ = snapshot.append(.init(id: "laya-preview", speaker: speaker, text: partial,
+                                      startMS: offset, endMS: offset, receivedAt: now))
+        }
+        guard let text = snapshot.candidate(speaker: speaker, now: Date(), cooldown: 0, force: partial != nil, semanticDetection: true) else {
+            layaGate.manualIntervention(); return
+        }
+        layaGate.submit(.init(text: text, context: snapshot.context(), speaker: speaker, isFinal: partial == nil))
+    }
+    private func dispatchLaya(_ input: LayaTriggerInput) -> Bool {
+        guard isRunning, !isTransitioning, !isShuttingDown, usesLaya, settings.automaticSuggestions else { return true }
+        guard !suggestion.isLoading else { return false }
+        guard let candidate = conversation.candidate(speaker: input.speaker, now: Date(), cooldown: settings.scenario.cooldown, semanticDetection: true),
+              candidate == input.text else { return true }
+        // No fabricated OpenAI tool-call ID: Laya is an independent automatic origin.
+        request(query: candidate, mode: .reply, speaker: input.speaker, automatic: true, contextOverride: input.context)
+        return true
+    }
+    /// Deterministic audio-free input for the existing mock mode and native integration tests.
+    func receiveMockEvent(_ event: LiveEvent, speaker: Speaker) {
+        guard isMock else { return }
+        receive(event, speaker: speaker, epoch: liveEpoch)
     }
     func updateHotkey(_ combo: HotkeyCombo, for mode: SuggestionMode) { hotkeys.set(combo, for: mode); onHotkeysChanged?() }
     func resetHotkey(_ mode: SuggestionMode) { hotkeys.reset(mode); onHotkeysChanged?() }
@@ -227,11 +324,14 @@ final class AppCoordinator: ObservableObject {
     func start() async {
         guard !isRunning, !isTransitioning, !isShuttingDown else { return }
         isTransitioning = true; defer { isTransitioning = false }
+        invalidateAutomaticTrigger(releaseRuntime: false)
         let epoch = UUID(); liveEpoch = epoch
         conversation.reset(); transcript.clear(); activeDelegations = []; speakingSources = []
         sessionStartedAt = Date()
         if isMock {
             isRunning = true; statusMessage = "MOCK listening — sample conversation"
+            configureAutomaticTrigger()
+            guard emitMockConversation else { return }
             let speaker: Speaker = settings.mode == .inPerson ? .room : .them
             mockTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 200_000_000)
@@ -263,6 +363,7 @@ final class AppCoordinator: ObservableObject {
                 sessionStartedAt = nil; return
             }
             isRunning = true
+            configureAutomaticTrigger()
             if systemAudio.isCapturing { systemLive = makeLive(key: key, speaker: .them, epoch: epoch); systemLive?.connect(context: "") }
             if mic.isCapturing {
                 let speaker: Speaker = settings.mode == .inPerson ? .room : .you
@@ -287,30 +388,37 @@ final class AppCoordinator: ObservableObject {
         case .speechActivity(let active):
             if active { speakingSources.insert(speaker); if pendingAutomatic?.speaker == speaker { questionTask?.cancel() } }
             else { speakingSources.remove(speaker); if pendingAutomatic != nil { scheduleAutomatic() } }
+            if usesLaya, isRunning { layaGate.setSpeaking(active, speaker: speaker) }
         case .partialTranscript(let text):
             transcript.setPartial(text, speaker: speaker)
             if !text.isEmpty { questionState = QuestionPhase.forming.rawValue }
+            if !text.isEmpty { submitLaya(speaker: speaker, partial: text) }
         case .transcript(let fragment):
             transcript.clearPartial(speaker)
             guard conversation.append(fragment) else { return }
             transcript.ingest(fragment)
             if speaker == .you { systemLive?.appendContext("You said: " + fragment.text, delegationID: nil) }
             questionState = conversation.phase.rawValue
-            if pendingAutomatic != nil { scheduleAutomatic() }
+            if usesLaya { submitLaya(speaker: speaker) }
+            else if pendingAutomatic != nil { scheduleAutomatic() }
         case .delegation(let id, _):
-            guard isRunning, settings.automaticSuggestions, speaker != .you, activeDelegations.insert(id).inserted else { return }
+            guard !usesLaya, isRunning, settings.automaticSuggestions, speaker != .you, activeDelegations.insert(id).inserted else { return }
             if activeDelegations.count > 400 { activeDelegations = [id] }
             pendingAutomatic = (speaker, id, Date().addingTimeInterval(25))
             scheduleAutomatic()
         case .ready: statusMessage = "Listening · \(settings.mode.rawValue) · \(speaker.rawValue) ready"
         case .status(let message): statusMessage = message
         case .failed(let message):
+            layaGate.reset()
             transcript.clearPartial(speaker)
             statusMessage = message
             if settings.listeningService.isLocal, isRunning, !isTransitioning {
                 Task { await stop(); statusMessage = message }
             }
         case .closed(let finalized):
+            speakingSources.remove(speaker)
+            layaGate.reset()
+            configureAutomaticTrigger(prepare: false)
             transcript.clearPartial(speaker)
             if !finalized, settings.listeningService.isLocal { incompleteLocalStop = true; DebugLog.log("local.close incomplete_flush") }
             else if !finalized { DebugLog.log("live.close final_usage_unconfirmed speaker=\(speaker.rawValue)") }
@@ -318,11 +426,12 @@ final class AppCoordinator: ObservableObject {
     }
     private func scheduleAutomatic() {
         questionTask?.cancel()
+        guard !usesLaya else { pendingAutomatic = nil; return }
         let epoch = liveEpoch
         questionTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 650_000_000)
             guard !Task.isCancelled, let self, self.liveEpoch == epoch, self.isRunning,
-                  self.settings.automaticSuggestions, let pending = self.pendingAutomatic else { return }
+                  !self.usesLaya, self.settings.automaticSuggestions, let pending = self.pendingAutomatic else { return }
             if Date() > pending.deadline { self.pendingAutomatic = nil; return }
             if self.speakingSources.contains(pending.speaker) { self.questionState = QuestionPhase.forming.rawValue; return }
             if self.suggestion.isLoading { return } // Latest follow-up remains queued until answer finishes.
@@ -336,7 +445,7 @@ final class AppCoordinator: ObservableObject {
                 self.pendingAutomatic = nil; self.questionState = QuestionPhase.waiting.rawValue; return
             }
             self.pendingAutomatic = nil
-            self.request(query: question, mode: .reply, speaker: pending.speaker, delegationID: pending.id)
+            self.request(query: question, mode: .reply, speaker: pending.speaker, delegationID: pending.id, automatic: true)
         }
     }
     func shutdown() async {
@@ -348,12 +457,15 @@ final class AppCoordinator: ObservableObject {
         localEmbedding?.close(); localEmbedding = nil
         await localModels.shutdown()
         await appleSpeech.shutdown()
+        await laya.shutdown()
     }
     func stop(force: Bool = false) async {
         guard force || !isTransitioning else { return }
         isTransitioning = true; defer { isTransitioning = false }
         incompleteLocalStop = false
         isRunning = false
+        invalidateAutomaticTrigger()
+        speakingSources = []
         questionTask?.cancel(); pendingAutomatic = nil; mockTask?.cancel()
         await systemAudio.stop(); mic.stop()
         let a = systemLive, b = micLive; systemLive = nil; micLive = nil
@@ -371,6 +483,7 @@ final class AppCoordinator: ObservableObject {
         let resume = isRunning
         isTransitioning = true
         liveEpoch = UUID() // Invalidate old callbacks BEFORE disconnect can flush a final segment.
+        invalidateAutomaticTrigger()
         cancelAnswer(); answerTask = nil
         questionTask?.cancel(); questionTask = nil; pendingAutomatic = nil
         mockTask?.cancel(); mockTask = nil
@@ -414,6 +527,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
     func requestSuggestion(mode: SuggestionMode = .reply) {
+        manualIntervention()
         guard settings.isEnabled(mode) else { return }
         let context = conversation.context()
         guard !context.isEmpty else { statusMessage = "No conversation yet. Type a question below to ask directly."; onShowOverlay?(false); return }
@@ -425,33 +539,35 @@ final class AppCoordinator: ObservableObject {
         }
         request(query: query, mode: mode, useContext: true)
     }
-    func askText(_ query: String) { request(query: query, mode: .reply, useContext: includeConversation) }
+    func askText(_ query: String) { manualIntervention(); request(query: query, mode: .reply, useContext: includeConversation) }
     func cancelAnswer() {
+        manualIntervention()
         requestID = UUID(); answerTask?.cancel(); suggestion.finish()
         conversation.finish(success: false, question: suggestion.question)
         questionState = conversation.phase.rawValue
     }
     private func request(query: String, mode: SuggestionMode, speaker: Speaker? = nil,
-                         delegationID: String? = nil, useContext: Bool = true) {
+                         delegationID: String? = nil, useContext: Bool = true,
+                         automatic: Bool = false, contextOverride: String? = nil) {
+        if !automatic { manualIntervention() }
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, !isTransitioning, !isShuttingDown else { return }
         guard query.count <= 8000 else { suggestion.fail("Keep a manual question under 8,000 characters."); return }
         let reasoning: any ReasoningProvider
         let embedding: any EmbeddingProvider
         do {
-            reasoning = isMock ? MockReasoningProvider() : try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
+            reasoning = isMock ? (mockReasoning ?? MockReasoningProvider()) : try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
             embedding = try embeddingProvider()
-        } catch { suggestion.fail(error.localizedDescription); onShowOverlay?(delegationID != nil); return }
-        if delegationID == nil { pendingAutomatic = nil; questionTask?.cancel() }
+        } catch { suggestion.fail(error.localizedDescription); onShowOverlay?(automatic); return }
         answerTask?.cancel()
         let id = UUID(); requestID = id
-        let context = useContext ? conversation.context() : ""
+        let context = useContext ? (contextOverride ?? conversation.context()) : ""
         let previous = useContext ? conversation.previousQuestion : nil
         let normalized = RetrievalQuery.formulate(question: query, context: context, previousQuestion: previous)
         conversation.begin(query, speaker: speaker, now: Date())
         questionState = conversation.phase.rawValue
         suggestion.begin(mode: mode, question: query)
-        onShowOverlay?(delegationID != nil)
+        onShowOverlay?(automatic)
         let settings = settings, epoch = liveEpoch, started = Date()
         answerTask = Task { [weak self] in
             guard let self else { return }
@@ -496,6 +612,7 @@ final class AppCoordinator: ObservableObject {
             }
             self.questionState = self.conversation.phase.rawValue
             if self.pendingAutomatic != nil { self.scheduleAutomatic() }
+            self.layaGate.retryPending()
         }
     }
     func refreshKnowledge() async {

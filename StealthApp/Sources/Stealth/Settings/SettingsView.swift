@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var hotkeys: HotkeyStore
+    @ObservedObject var laya: LayaRuntimeManager
     @State private var page = SettingsPage.general
     @State private var serviceRole = 0
     @State private var baseURL = ""
@@ -11,7 +12,7 @@ struct SettingsView: View {
     @State private var customModel = ""
     @State private var connectionMessage = ""
     @State private var showOpenAIKey = false
-    init(coordinator: AppCoordinator) { self.coordinator = coordinator; hotkeys = coordinator.hotkeys }
+    init(coordinator: AppCoordinator) { self.coordinator = coordinator; hotkeys = coordinator.hotkeys; laya = coordinator.laya }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     private func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
     private var locked: Bool { coordinator.isRunning || coordinator.isTransitioning }
@@ -136,6 +137,8 @@ struct SettingsView: View {
                     Text(b("Interview: personal experience and talking points. Meeting: decisions and next actions. Defense: methods, evidence and limitations. These change answer instructions and automatic-suggestion cooldown, not ASR accuracy.", "面试：个人经历与表达要点；会议：决策与后续行动；答辩：方法、证据与局限。场景改变回答提示词和自动建议冷却时间，不改变语音识别准确率。")).font(.caption).foregroundStyle(.secondary)
                     if locked { Text(t("Stop listening to change mode or scenario.")).font(.caption).foregroundStyle(.secondary) }
                     Toggle(t("Automatic suggestions for meaningful questions"), isOn: $coordinator.settings.automaticSuggestions)
+                        .accessibilityIdentifier("automatic-suggestions")
+                    automaticTriggerSettings
                 }.padding(10)
             } label: { Label(t("Conversation"), systemImage: "waveform") }
             SettingsSection {
@@ -161,6 +164,64 @@ struct SettingsView: View {
                 Text(t("Turn this off to capture the overlay. Settings and history can always be captured. Exclusion depends on macOS and your capture app.")).font(.caption).foregroundStyle(.secondary)
             }
         }.padding(.bottom, 4)
+    }
+    private var automaticTriggerSettings: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker(b("Automatic trigger", "自动触发方式"), selection: $coordinator.settings.automaticTriggerService) {
+                Text(b("Speech service / rules", "语音服务 / 规则判断")).tag(AutomaticTriggerService.provider)
+                Text(b("Laya · local detection (experimental)", "Laya · 本地判断（实验性）")).tag(AutomaticTriggerService.laya)
+            }.accessibilityIdentifier("automatic-trigger-service")
+            if coordinator.settings.automaticTriggerService == .provider {
+                Text(b("Uses the speech provider's trigger events. Local ASR uses question rules; GPT-Live-1 uses its existing delegation flow.", "沿用语音服务的触发事件：本地 ASR 使用问句规则，GPT-Live-1 使用已有的自动委托机制。"))
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                Text(b("Laya evaluates streaming text locally, then requests an answer after the other speaker finishes and pauses. It uses your selected analysis model; that model may charge API fees. In-person mode cannot distinguish you from other speakers.", "Laya 在本地持续判断流式文字，等对方说完并停顿后，触发你选择的分析模型生成回答；分析模型仍可能产生 API 费用。现场模式无法区分自己与他人。"))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Text(b("Trigger threshold", "触发阈值"))
+                    Slider(value: $coordinator.settings.layaThreshold, in: 0.5...0.99, step: 0.01)
+                        .accessibilityIdentifier("laya-threshold")
+                    Text(coordinator.settings.layaThreshold, format: .number.precision(.fractionLength(2)))
+                        .monospacedDigit().frame(width: 42)
+                }
+                Text(b("Higher values are more conservative. Start at 0.80; this score is not a measured accuracy rate. Manual generation is always available.", "阈值越高越保守，建议先用 0.80；该分数不代表实测准确率。任何时候都可手动生成回答。"))
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Label(layaStateTitle, systemImage: laya.isReady ? "checkmark.circle.fill" : "cpu")
+                        .accessibilityIdentifier("laya-runtime-status")
+                    Spacer()
+                    if laya.isBusy {
+                        Button(b("Cancel", "取消")) { coordinator.cancelLayaRuntime() }
+                    } else if laya.isInstalled {
+                        Button(b("Load / Retry", "加载 / 重试")) { laya.prepare() }.disabled(laya.isReady)
+                    } else {
+                        Button(b("Download and prepare", "下载并准备")) { laya.install() }
+                            .disabled(laya.state == .unsupported)
+                            .accessibilityIdentifier("install-laya")
+                    }
+                }
+                if laya.isBusy {
+                    if let progress = laya.progress { ProgressView(value: progress) }
+                    else { ProgressView().controlSize(.small) }
+                }
+                Text(b("Experimental: may misread quoted questions or unfinished speech. Keep manual generation available and adjust the threshold for your conversations.", "实验性功能：可能误判转述的问题或未说完的话。可按实际对话调整阈值，并随时使用手动生成。"))
+                    .font(.caption).foregroundStyle(.secondary)
+                if !laya.message.isEmpty { Text(t(laya.message)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+                Text(b("Requires Apple Silicon and macOS 14+. Download once; detection runs offline without an API key. If unavailable, automatic Laya triggering pauses without switching to a paid service.", "需要 Apple Silicon 和 macOS 14+。首次下载后离线判断，无需 API Key；不可用时暂停 Laya 自动触发，不会悄悄改用付费服务。"))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+    private var layaStateTitle: String {
+        switch laya.state {
+        case .unsupported: return b("Laya unavailable on this Mac", "此 Mac 不支持 Laya")
+        case .notInstalled: return b("Laya not downloaded", "Laya 尚未下载")
+        case .installed: return b("Laya downloaded", "Laya 已下载")
+        case .installing: return b("Preparing local runtime…", "正在准备本地运行环境…")
+        case .loading: return b("Loading Laya…", "正在加载 Laya…")
+        case .ready: return b("Laya ready · local", "Laya 已就绪 · 本地")
+        case .failed: return b("Laya needs attention", "Laya 需要处理")
+        }
     }
     private var services: some View {
         VStack(alignment: .leading, spacing: 20) {

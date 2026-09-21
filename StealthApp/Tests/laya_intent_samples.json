@@ -1,0 +1,14 @@
+[
+  {"id":"en-question","respond":true,"text":"Could you explain how you would improve this system's performance?"},
+  {"id":"zh-question","respond":true,"text":"请介绍一下你在这个项目中具体负责哪些工作？"},
+  {"id":"en-statement","respond":false,"text":"The meeting starts tomorrow at nine."},
+  {"id":"zh-statement","respond":false,"text":"今天我们先讨论项目进度，明天再看预算。"},
+  {"id":"short-zh-question","respond":true,"text":"为什么？"},
+  {"id":"en-request","respond":true,"text":"Tell me about your experience with distributed systems."},
+  {"id":"zh-request","respond":true,"text":"请谈谈你对这个方案的看法。"},
+  {"id":"en-thanks","respond":false,"text":"Thanks, that answers my question."},
+  {"id":"zh-thanks","respond":false,"text":"好的，谢谢你的介绍。"},
+  {"id":"unfinished","respond":false,"text":"I would like to ask you about"},
+  {"id":"reported-en","respond":false,"text":"He asked me why the service was slow yesterday."},
+  {"id":"reported-zh","respond":false,"text":"他昨天问我为什么服务很慢，我已经回答他了。"}
+]
