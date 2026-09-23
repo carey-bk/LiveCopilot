@@ -13,6 +13,12 @@ import sys
 import tarfile
 import urllib.request
 import uuid
+from urllib.parse import urlsplit
+
+SOURCE = "mirror"
+CURRENT_STAGE = "model"
+CURRENT_PROGRESS = 0.0
+PROGRESS_SPAN = 0.0
 
 
 def digest(path):
@@ -21,6 +27,8 @@ def digest(path):
 
 
 def emit(stage, progress):
+    global CURRENT_STAGE, CURRENT_PROGRESS
+    CURRENT_STAGE, CURRENT_PROGRESS = stage, progress
     print(json.dumps({'stage': stage, 'progress': progress}), flush=True)
 
 
@@ -30,7 +38,27 @@ def download(item, cache):
         return download_locked(item, cache)
 
 
+def candidates(url):
+    if SOURCE == 'original':
+        return [url]
+    host = urlsplit(url).hostname
+    if host == 'huggingface.co':
+        return [url.replace('https://huggingface.co/', 'https://hf-mirror.com/', 1), url]
+    if host == 'files.pythonhosted.org':
+        return [url.replace('https://files.pythonhosted.org/', 'https://mirrors.tuna.tsinghua.edu.cn/pypi/web/', 1), url]
+    return [url]
+
+
 def download_locked(item, cache):
+    for address in candidates(item['url']):
+        try:
+            return download_one(dict(item, url=address), cache)
+        except (ValueError, subprocess.CalledProcessError, OSError):
+            if address == candidates(item['url'])[-1]:
+                raise
+
+
+def download_one(item, cache):
     target = cache / item['sha256']
     if target.is_file() and digest(target) == item['sha256']:
         return target
@@ -83,7 +111,12 @@ def download_ranges(item, target, env):
         temporary.replace(part)
         return part
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
-        downloaded = list(pool.map(fetch, range(0, size, block)))
+        futures = [pool.submit(fetch, start) for start in range(0, size, block)]
+        completed = 0
+        for future in concurrent.futures.as_completed(futures):
+            completed += future.result().stat().st_size
+            print(json.dumps({'stage': CURRENT_STAGE, 'progress': CURRENT_PROGRESS + PROGRESS_SPAN * completed / size}), flush=True)
+        downloaded = [parts / str(start) for start in range(0, size, block)]
     with target.open('wb') as output:
         for part in downloaded:
             with part.open('rb') as source:
@@ -91,6 +124,7 @@ def download_ranges(item, target, env):
 
 
 def install(root, resources):
+    global PROGRESS_SPAN
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     pins = json.loads((resources / 'pins.json').read_text())
     with (root / 'install.lock').open('w') as lock:
@@ -126,8 +160,12 @@ def install(root, resources):
                     target = source.joinpath(*parts); target.parent.mkdir(parents=True, exist_ok=True)
                     with archive.extractfile(member) as incoming, target.open('wb') as outgoing:
                         shutil.copyfileobj(incoming, outgoing)
+            total = sum(item.get('size', 0) for item in pins['model'])
+            completed = 0
             for index, item in enumerate(pins['model']):
-                emit('model', 0.35 + 0.6 * index / len(pins['model']))
+                PROGRESS_SPAN = 0.6 * item.get('size', 0) / max(1, total)
+                emit('model', 0.35 + 0.6 * completed / max(1, total))
+                completed += item.get('size', 0)
                 name = Path(item['name'])
                 if name.is_absolute() or '..' in name.parts:
                     raise ValueError('invalid_pin')
@@ -153,7 +191,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--root', required=True)
     parser.add_argument('--resources', required=True)
+    parser.add_argument('--download-source', choices=['mirror', 'original'], default='mirror')
     args = parser.parse_args()
+    SOURCE = args.download_source
     try:
         os.setpgid(0, 0)
     except OSError:

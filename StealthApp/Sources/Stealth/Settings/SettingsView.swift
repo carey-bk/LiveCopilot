@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    @AppStorage("modelDownloadSource") private var downloadSource = "mirror"
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var hotkeys: HotkeyStore
     @ObservedObject var laya: LayaRuntimeManager
@@ -180,6 +181,12 @@ struct SettingsView: View {
                 Text(b("Laya evaluates streaming text locally, then requests an answer after the other speaker finishes and pauses. It uses your selected analysis model; that model may charge API fees. In-person mode cannot distinguish you from other speakers.", "Laya 在本地持续判断流式文字，等对方说完并停顿后，触发你选择的分析模型生成回答；分析模型仍可能产生 API 费用。现场模式无法区分自己与他人。"))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text(b("Downloaded separately · local/free · about 678 MB for model files, plus runtime. The app includes the integration, not the model weights. Laya decides when to request an answer; it does not transcribe audio or generate the answer itself.", "额外下载 · 本地/免费 · 模型文件约 678 MB，另需运行环境。软件包包含接入代码，不包含模型权重。Laya 判断何时需要生成回答，本身不负责语音识别或撰写回答。"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker(b("Download source", "下载源"), selection: $downloadSource) {
+                    Text(b("Mirror first, then original", "镜像优先，失败后尝试原站")).tag("mirror")
+                    Text(b("Original", "原站")).tag("original")
+                }.disabled(laya.isBusy)
+                Text(b("Models: HF-Mirror; Python packages: Tsinghua mirror. Python and source code still use GitHub. Mirrors may redirect overseas; availability varies.", "模型优先使用 HF-Mirror，Python 依赖优先使用清华镜像；Python 本体和源码仍来自 GitHub。镜像可能跳转境外地址，可用性取决于网络。"))
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Text(b("Trigger threshold", "触发阈值"))
@@ -498,6 +505,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
 }
 
 private struct LocalModelCard: View {
+    @AppStorage("modelDownloadSource") private var source = "mirror"
     @ObservedObject var manager: LocalModelManager
     let kind: LocalModelKind
     let language: AppLanguage
@@ -515,7 +523,17 @@ private struct LocalModelCard: View {
                       systemImage: manager.installed.contains(kind) ? "checkmark.circle.fill" : "arrow.down.circle")
                     .font(.caption).foregroundStyle(manager.installed.contains(kind) ? .green : .secondary)
             }
+            Picker(language == .english ? "Download source" : "下载源", selection: $source) {
+                Text(language == .english ? "Mirror first, then original" : "镜像优先，失败后尝试原站").tag("mirror")
+                Text(language == .english ? "Original" : "原站").tag("original")
+            }.disabled(manager.downloading != nil)
+            Text(language == .english ? "HF-Mirror is a third-party mirror and may redirect overseas. VAD uses GitHub. Progress is for the current file." : "HF-Mirror 为第三方镜像，可能跳转境外；VAD 仍使用 GitHub。进度显示当前文件的下载比例。")
+                .font(.caption).foregroundStyle(.secondary)
             if manager.downloading == kind {
+                if let value = manager.downloadProgress {
+                    ProgressView(value: value)
+                    Text("\(Int(value * 100))% · " + manager.transferStatus).font(.caption.monospacedDigit())
+                } else { Text(manager.transferStatus).font(.caption) }
                 HStack { ProgressView().controlSize(.small); Text(t(manager.message)).font(.caption); Spacer(); Button(t("Cancel")) { manager.cancel() } }
             } else {
                 Button(t(manager.installed.contains(kind) ? "Download again" : "Download model")) { manager.install(kind) }

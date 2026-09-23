@@ -2,31 +2,56 @@ import Foundation
 
 enum LocalModelInstaller {
     typealias Downloader = @Sendable (ModelDownload, URL) async throws -> Void
-    static func download(_ item: ModelDownload, to destination: URL) async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 60; configuration.timeoutIntervalForResource = 7200
-        let session = URLSession(configuration: configuration)
-        defer { session.invalidateAndCancel() }
-        var resumeData: Data?
-        var downloaded: (URL, URLResponse)?
-        for attempt in 0..<3 {
+    static func download(_ item: ModelDownload, to destination: URL,
+                         progress: @escaping @Sendable (Double?, String) -> Void = { _, _ in }) async throws {
+        var addresses = [item.url]
+        if UserDefaults.standard.string(forKey: "modelDownloadSource") != "original",
+           item.url.host == "huggingface.co",
+           var mirror = URLComponents(url: item.url, resolvingAgainstBaseURL: false) {
+            mirror.host = "hf-mirror.com"
+            if let url = mirror.url { addresses.insert(url, at: 0) }
+        }
+        for (index, address) in addresses.enumerated() {
+            try Task.checkCancellation()
+            let host = address.host ?? ""
+            progress(nil, host)
+            let observer = ModelDownloadObserver { value, rate in progress(value, item.name + " · " + host + " · " + rate) }
+            let config = URLSessionConfiguration.ephemeral
+            config.timeoutIntervalForRequest = 30; config.timeoutIntervalForResource = 1800
+            let session = URLSession(configuration: config, delegate: observer, delegateQueue: nil)
+            defer { session.invalidateAndCancel() }
             do {
-                if let resumeData { downloaded = try await session.download(resumeFrom: resumeData) }
-                else { downloaded = try await session.download(from: item.url) }
-                break
+                var resumeData: Data?
+                var result: (URL, URLResponse)?
+                for attempt in 0..<2 {
+                    do {
+                        if let data = resumeData { result = try await session.download(resumeFrom: data) }
+                        else { result = try await session.download(from: address) }
+                        break
+                    } catch {
+                        try Task.checkCancellation()
+                        guard attempt == 0, (error as? URLError)?.code != .cancelled else { throw error }
+                        resumeData = (error as NSError).userInfo["NSURLSessionDownloadTaskResumeData"] as? Data
+                    }
+                }
+                guard let (temporary, response) = result else { throw URLError(.cannotLoadFromNetwork) }
+                defer { try? FileManager.default.removeItem(at: temporary) }
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    throw CopilotError.message("HTTP download failed: " + host)
+                }
+                // Validate each source before accepting it, including mirror responses.
+                try await Task.detached { try item.verify(temporary) }.value
+                try Task.checkCancellation()
+                try FileManager.default.moveItem(at: temporary, to: destination)
+                return
             } catch {
                 try Task.checkCancellation()
                 if (error as? URLError)?.code == .cancelled { throw CancellationError() }
-                guard attempt < 2 else { throw CopilotError.message("Model download failed. Check the network and retry.") }
-                resumeData = (error as NSError).userInfo["NSURLSessionDownloadTaskResumeData"] as? Data
+                if index == addresses.count - 1 {
+                    throw CopilotError.message("Download failed: " + item.name + " (" + host + "). " + error.localizedDescription)
+                }
             }
         }
-        guard let (temporary, response) = downloaded else { throw CopilotError.message("Model download failed. Check the network and retry.") }
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
-            throw CopilotError.message("Model download failed. Check the network and retry.")
-        }
-        try Task.checkCancellation()
-        try FileManager.default.moveItem(at: temporary, to: destination)
     }
     static func install(_ kind: LocalModelKind, root: URL,
                         downloader: @escaping Downloader = { item, destination in try await download(item, to: destination) },
@@ -66,5 +91,22 @@ enum LocalModelInstaller {
         do { try fm.moveItem(at: payload, to: destination) }
         catch { if exists { try? fm.moveItem(at: previous, to: destination) }; throw error }
         if exists { try? fm.removeItem(at: previous) }
+    }
+}
+
+private final class ModelDownloadObserver: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    let update: @Sendable (Double?, String) -> Void
+    private var previousTime = Date()
+    private var previousBytes: Int64 = 0
+    init(update: @escaping @Sendable (Double?, String) -> Void) { self.update = update }
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
+                    totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        let elapsed = Date().timeIntervalSince(previousTime)
+        guard elapsed >= 0.3 else { return }
+        let speed = Double(totalBytesWritten - previousBytes) / elapsed / 1_000_000
+        previousTime = Date(); previousBytes = totalBytesWritten
+        let fraction = totalBytesExpectedToWrite > 0 ? Double(totalBytesWritten) / Double(totalBytesExpectedToWrite) : nil
+        update(fraction, String(format: "%.1f MB · %.1f MB/s", Double(totalBytesWritten) / 1_000_000, speed))
     }
 }

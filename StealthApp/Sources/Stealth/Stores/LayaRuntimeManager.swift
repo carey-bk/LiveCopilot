@@ -97,7 +97,7 @@ final class LayaRuntimeManager: ObservableObject {
                     let python = try await LayaBootstrap.prepare(root: self.root, resources: self.resources)
                     try Task.checkCancellation()
                     guard stamp == self.epoch else { throw CancellationError() }
-                    let installer = LayaWorker(executable: python, arguments: ["-I", "-B", self.resources.appendingPathComponent("install.py").path, "--root", self.root.path, "--resources", self.resources.path]) { [weak self] stage, value in
+                    let installer = LayaWorker(executable: python, arguments: ["-I", "-B", self.resources.appendingPathComponent("install.py").path, "--root", self.root.path, "--resources", self.resources.path, "--download-source", UserDefaults.standard.string(forKey: "modelDownloadSource") ?? "mirror"]) { [weak self] stage, value in
                         Task { @MainActor in
                             guard let self, self.epoch == stamp, self.state == .installing else { return }
                             self.progress = value
