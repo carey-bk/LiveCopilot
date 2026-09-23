@@ -51,3 +51,14 @@ html[lang=en] .hero h1{font-size:clamp(30px,3.35vw,59px)}
 @media(prefers-reduced-motion:reduce){.hero-device{animation:none}.hero.typing .title-character{visibility:visible}.title-cursor{display:none}.hero *,.workflow *{animation:none!important}}
 /* Playback controls sit above the decorative hardware, outside the product. */
 .hero .demo-toolbar,.hero .demo-note{z-index:4}
+
+/* Local preview: original LS Graphics front-view hardware. */
+.hero-device{--device-width:max(82vw,calc((100svh - 235px)*2.1));width:var(--device-width);aspect-ratio:4610/2669;left:calc(100% - var(--device-width)*.94 - 24px);top:0}
+.hero-hardware{z-index:0}
+.hero-screen{left:10.673%;top:2.136%;width:78.633%;height:86.587%;z-index:1;border-radius:12px 12px 0 0;clip-path:none;mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 640' preserveAspectRatio='none'%3E%3Cpath fill='white' fill-rule='evenodd' d='M0 0H1000V640H0Z M464 0V9Q464 14 469 14H531Q536 14 536 9V0Z'/%3E%3C/svg%3E");mask-size:100% 100%}
+.hero-product-live{top:7%;right:2.5%}
+.hero .demo-note{display:none}
+.hero-visual.demo-stage{height:max(500px,calc(100svh - 190px))}
+.hero-layout{min-height:0}
+@media(max-width:900px){.hero-device{--device-width:1000px;top:20px}.hero-visual.demo-stage{height:620px}}
+@media(max-width:600px){.hero-device{--device-width:780px;left:calc(100% - 730px);top:20px}.hero-visual.demo-stage{height:480px}}

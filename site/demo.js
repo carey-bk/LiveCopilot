@@ -78,9 +78,13 @@ if (!reduced.matches) {
   // Fit the native 540px panel into the fixed hardware screen; never animate geometry.
   const screen = document.querySelector(".hero-screen");
   new ResizeObserver(([entry]) => {
-    const nativeHeight = document.querySelector(".hero-product-live").offsetHeight;
-    const availableWidth = Math.min(entry.contentRect.width * 0.53, innerWidth - 74);
-    const scale = Math.min(availableWidth / 540, entry.contentRect.height * 0.86 / nativeHeight);
+    const panel = document.querySelector(".hero-product-live");
+    const nativeHeight = panel.offsetHeight;
+    const bounds = screen.getBoundingClientRect();
+    const right = bounds.right - entry.contentRect.width * .025;
+    const visibleWidth = right - Math.max(20, bounds.left + 20);
+    const availableWidth = Math.min(entry.contentRect.width * .76, visibleWidth - 18);
+    const scale = Math.min(availableWidth / 540, entry.contentRect.height * .86 / nativeHeight);
     screen.style.setProperty("--screen-scale", String(scale));
   }).observe(screen);
   const demo = document.querySelector("#hero-demo");
