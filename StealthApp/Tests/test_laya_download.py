@@ -10,6 +10,20 @@ spec.loader.exec_module(module)
 
 class DownloadTests(unittest.TestCase):
     def setUp(self): module.SOURCE = 'mirror'
+    def test_transfer_bytes_include_completed_and_partial_chunks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            chunks = root / ('a' * 64 + '.chunks'); chunks.mkdir()
+            (chunks / '0').write_bytes(b'x' * 100)
+            (chunks / '100.partial').write_bytes(b'x' * 50)
+            item = {'sha256': 'a' * 64, 'size': 32 * 1024 * 1024}
+            count, fraction = module.transfer_snapshot(item, root, root / 'temporary')
+            self.assertEqual(count, 150)
+            self.assertEqual(fraction, 150 / item['size'])
+    def test_unknown_size_reports_bytes_without_fake_percentage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); partial = root / 'partial'; partial.write_bytes(b'123')
+            self.assertEqual(module.transfer_snapshot({}, root, partial), (3, None))
     def test_pinned_path_preserved(self):
         url = 'https://huggingface.co/owner/model/resolve/abc/file'
         self.assertEqual(module.candidates(url), [url.replace('huggingface.co', 'hf-mirror.com'), url])

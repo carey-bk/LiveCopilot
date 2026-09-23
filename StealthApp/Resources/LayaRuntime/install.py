@@ -13,12 +13,20 @@ import sys
 import tarfile
 import urllib.request
 import uuid
+import threading
+import time
 from urllib.parse import urlsplit
 
+OUTPUT_LOCK = threading.Lock()
 SOURCE = "mirror"
 CURRENT_STAGE = "model"
 CURRENT_PROGRESS = 0.0
 PROGRESS_SPAN = 0.0
+
+
+def output(event):
+    with OUTPUT_LOCK:
+        print(json.dumps(event), flush=True)
 
 
 def digest(path):
@@ -29,7 +37,7 @@ def digest(path):
 def emit(stage, progress):
     global CURRENT_STAGE, CURRENT_PROGRESS
     CURRENT_STAGE, CURRENT_PROGRESS = stage, progress
-    print(json.dumps({'stage': stage, 'progress': progress}), flush=True)
+    output({'stage': stage, 'progress': progress})
 
 
 def download(item, cache):
@@ -58,6 +66,33 @@ def download_locked(item, cache):
                 raise
 
 
+def transfer_snapshot(item, cache, temporary):
+    if item.get('size', 0) > 16 * 1024 * 1024:
+        folder = cache / (item['sha256'] + '.chunks')
+        files = list(folder.glob('*')) if folder.exists() else []
+    else:
+        files = [temporary]
+    total = 0
+    for path in files:
+        try: total += path.stat().st_size
+        except FileNotFoundError: pass
+    size = item.get('size', 0)
+    return total, min(1, total / size) if size > 0 else None
+
+
+def monitor_transfer(item, cache, temporary, stop):
+    previous, _ = transfer_snapshot(item, cache, temporary)
+    then = time.monotonic()
+    while not stop.wait(0.5):
+        now = time.monotonic()
+        count, fraction = transfer_snapshot(item, cache, temporary)
+        speed = max(0, count - previous) / max(0.001, now - then) / 1_000_000
+        previous, then = count, now
+        percent = f'{fraction:.0%} · ' if fraction is not None else ''
+        detail = f"{item.get('name', 'Runtime')} · {percent}{count / 1_000_000:.1f} MB · {speed:.1f} MB/s"
+        output({'transfer': detail, 'fraction': fraction})
+
+
 def download_one(item, cache):
     target = cache / item['sha256']
     if target.is_file() and digest(target) == item['sha256']:
@@ -66,6 +101,9 @@ def download_one(item, cache):
     if not url.startswith('https://') or len(item['sha256']) != 64:
         raise ValueError('invalid_pin')
     temporary = cache / (uuid.uuid4().hex + '.part')
+    stop = threading.Event()
+    monitor = threading.Thread(target=monitor_transfer, args=(item, cache, temporary, stop), daemon=True)
+    monitor.start()
     try:
         # macOS system proxy settings are used when no environment override exists.
         env = dict(os.environ)
@@ -87,6 +125,7 @@ def download_one(item, cache):
         shutil.rmtree(cache / (item['sha256'] + '.chunks'), ignore_errors=True)
         return target
     finally:
+        stop.set(); monitor.join()
         temporary.unlink(missing_ok=True)
 
 
@@ -115,12 +154,12 @@ def download_ranges(item, target, env):
         completed = 0
         for future in concurrent.futures.as_completed(futures):
             completed += future.result().stat().st_size
-            print(json.dumps({'stage': CURRENT_STAGE, 'progress': CURRENT_PROGRESS + PROGRESS_SPAN * completed / size}), flush=True)
+            output({'stage': CURRENT_STAGE, 'progress': CURRENT_PROGRESS + PROGRESS_SPAN * completed / size})
         downloaded = [parts / str(start) for start in range(0, size, block)]
-    with target.open('wb') as output:
+    with target.open('wb') as stream:
         for part in downloaded:
             with part.open('rb') as source:
-                shutil.copyfileobj(source, output)
+                shutil.copyfileobj(source, stream)
 
 
 def install(root, resources):

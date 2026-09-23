@@ -12,6 +12,8 @@ final class LayaRuntimeManager: ObservableObject {
     @Published private(set) var state: State = .notInstalled
     @Published private(set) var message = "Download Laya to enable offline question detection."
     @Published private(set) var progress: Double?
+    @Published private(set) var transferProgress: Double?
+    @Published private(set) var transferStatus = ""
     private var task: Task<Void, Error>?
     private var worker: LayaWorker?
     private var installer: LayaWorker?
@@ -88,18 +90,27 @@ final class LayaRuntimeManager: ObservableObject {
         let stamp = epoch
         worker?.stop(); worker = nil
         state = download ? .installing : .loading
+        transferStatus = ""; transferProgress = nil
         progress = download ? 0 : nil
         message = download ? "Preparing the isolated Laya runtime…" : "Loading Laya locally…"
         task = Task { [weak self] in
             guard let self else { throw CancellationError() }
             do {
                 if download {
-                    let python = try await LayaBootstrap.prepare(root: self.root, resources: self.resources)
-                    try Task.checkCancellation()
-                    guard stamp == self.epoch else { throw CancellationError() }
-                    let installer = LayaWorker(executable: python, arguments: ["-I", "-B", self.resources.appendingPathComponent("install.py").path, "--root", self.root.path, "--resources", self.resources.path, "--download-source", UserDefaults.standard.string(forKey: "modelDownloadSource") ?? "mirror"]) { [weak self] stage, value in
+                    let transferUpdate: @Sendable (Double?, String) -> Void = { [weak self] value, detail in
                         Task { @MainActor in
                             guard let self, self.epoch == stamp, self.state == .installing else { return }
+                            self.transferProgress = value; self.transferStatus = detail
+                        }
+                    }
+                    let python = try await LayaBootstrap.prepare(root: self.root, resources: self.resources, progress: transferUpdate)
+                    transferUpdate(nil, "")
+                    try Task.checkCancellation()
+                    guard stamp == self.epoch else { throw CancellationError() }
+                    let installer = LayaWorker(executable: python, arguments: ["-I", "-B", self.resources.appendingPathComponent("install.py").path, "--root", self.root.path, "--resources", self.resources.path, "--download-source", "mirror"], transfer: transferUpdate) { [weak self] stage, value in
+                        Task { @MainActor in
+                            guard let self, self.epoch == stamp, self.state == .installing else { return }
+                            self.transferStatus = ""; self.transferProgress = nil
                             self.progress = value
                             let labels = ["python": "Creating the isolated Python environment…", "dependencies": "Downloading pinned runtime dependencies…", "source": "Installing the verified Laya runtime…", "model": "Downloading the multilingual model…", "verifying": "Checking the local model…", "complete": "Local installation verified."]
                             self.message = labels[stage] ?? "Installing Laya…"
@@ -148,7 +159,7 @@ final class LayaRuntimeManager: ObservableObject {
 }
 
 private enum LayaBootstrap {
-    static func prepare(root: URL, resources: URL) async throws -> URL {
+    static func prepare(root: URL, resources: URL, progress: @escaping @Sendable (Double?, String) -> Void) async throws -> URL {
         let data = try Data(contentsOf: resources.appendingPathComponent("pins.json"))
         guard let pins = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let python = pins["python"] as? [String: String], let digest = python["sha256"],
@@ -162,17 +173,8 @@ private enum LayaBootstrap {
         try fm.createDirectory(at: cache, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let archive = cache.appendingPathComponent(digest + ".tar.gz")
         if !(await matches(archive, digest: digest)) {
-            let config = URLSessionConfiguration.ephemeral
-            config.timeoutIntervalForRequest = 60; config.timeoutIntervalForResource = 1800
-            let session = URLSession(configuration: config)
-            defer { session.invalidateAndCancel() }
-            let (temporary, response) = try await session.download(from: url)
-            defer { try? fm.removeItem(at: temporary) }
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  await matches(temporary, digest: digest) else { throw LayaRuntimeError.installationFailed }
-            try Task.checkCancellation()
             if fm.fileExists(atPath: archive.path) { try fm.removeItem(at: archive) }
-            try fm.moveItem(at: temporary, to: archive)
+            try await LocalModelInstaller.download(ModelDownload(url: url, sha256: digest, name: "Python runtime"), to: archive, progress: progress)
         }
         try Task.checkCancellation()
         let staging = root.appendingPathComponent("bootstrap/staging-" + UUID().uuidString)

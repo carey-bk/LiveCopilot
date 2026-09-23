@@ -5,8 +5,7 @@ enum LocalModelInstaller {
     static func download(_ item: ModelDownload, to destination: URL,
                          progress: @escaping @Sendable (Double?, String) -> Void = { _, _ in }) async throws {
         var addresses = [item.url]
-        if UserDefaults.standard.string(forKey: "modelDownloadSource") != "original",
-           item.url.host == "huggingface.co",
+        if item.url.host == "huggingface.co",
            var mirror = URLComponents(url: item.url, resolvingAgainstBaseURL: false) {
             mirror.host = "hf-mirror.com"
             if let url = mirror.url { addresses.insert(url, at: 0) }

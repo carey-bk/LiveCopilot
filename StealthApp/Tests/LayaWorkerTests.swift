@@ -7,6 +7,23 @@ final class LayaWorkerTests: XCTestCase {
         LayaWorker(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: ["-I", "-B", "-c", body])
     }
     private let ready = "import sys,json,time,os\nprint(json.dumps({'ready':True,'protocol':1}),flush=True)\n"
+    func testInstallerTransferTelemetryAndInvalidProgress() async throws {
+        let received = expectation(description: "transfer")
+        let body = "import json\nprint(json.dumps({'transfer':'model · 50% · 2 MB/s','fraction':0.5}),flush=True)\nprint(json.dumps({'ready':True,'protocol':1}),flush=True)\n"
+        let process = LayaWorker(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: ["-c", body], transfer: { value, detail in
+            XCTAssertEqual(value, 0.5)
+            XCTAssertTrue(detail.contains("2 MB/s"))
+            received.fulfill()
+        })
+        defer { process.stop() }
+        try await process.prepare()
+        await fulfillment(of: [received], timeout: 1)
+        let bad = worker("import json\nprint(json.dumps({'transfer':'bad','fraction':2}),flush=True)\n")
+        defer { bad.stop() }
+        do { try await bad.prepare(); XCTFail("Invalid transfer accepted") }
+        catch LayaRuntimeError.invalidResponse { }
+    }
+
     func testTimeoutKillsWorkerAndDoesNotHang() async throws {
         let process = worker(ready + "time.sleep(30)\n")
         defer { process.stop() }
