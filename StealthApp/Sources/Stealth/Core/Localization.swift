@@ -105,6 +105,8 @@ enum L10n {
         "Downloading local model…": "正在下载本地模型…",
         "Verifying local model…": "正在校验模型文件…",
         "Installing local model…": "正在安装本地模型…",
+        "Local model deleted. Download it again to use it.": "本地模型已删除，下次使用需重新下载。",
+        "Laya model, runtime and download cache deleted.": "Laya 模型、运行环境和下载缓存已删除。",
         "Local model installed. It can run offline.": "本地模型已安装，可离线运行。",
         "Model download cancelled. The previous model was preserved.": "下载已取消，原有模型已保留。",
         "Model verification failed. Download it again; the previous model was preserved.": "模型校验失败，请重新下载；原有模型已保留。",

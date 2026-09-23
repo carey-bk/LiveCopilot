@@ -34,6 +34,17 @@ final class LocalModelManager: ObservableObject {
             catch { self.message = error is CopilotError ? error.localizedDescription : "Model download failed. Check the network and retry." }
         }
     }
+    func remove(_ kind: LocalModelKind) {
+        guard task == nil else { return }
+        messageKind = kind
+        do {
+            let directory = kind.location(in: root)
+            if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
+            downloadProgress = nil; transferStatus = ""
+            message = "Local model deleted. Download it again to use it."
+        } catch { message = error.localizedDescription }
+        refresh()
+    }
     func cancel() { task?.cancel() }
     func shutdown() async { task?.cancel(); await task?.value }
 }

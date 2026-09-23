@@ -316,6 +316,12 @@ final class AppCoordinator: ObservableObject {
         }
         return key
     }
+    func removeLocalModel(_ kind: LocalModelKind) {
+        guard !isRunning, !isTransitioning, !isIndexing, !suggestion.isLoading else { return }
+        if kind == .embedding { localEmbedding?.close(); localEmbedding = nil }
+        localModels.remove(kind)
+    }
+
     private func embeddingProvider(requireReady: Bool = false) throws -> any EmbeddingProvider {
         if isMock { return MockEmbeddingProvider() }
         if settings.embeddingService == .local {

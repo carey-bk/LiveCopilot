@@ -7,6 +7,32 @@ import UniformTypeIdentifiers
 @testable import LiveCopilot
 
 final class NativeTests: XCTestCase {
+    @MainActor func testDeletingModelsPreservesKnowledgeAndOtherModel() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let models = root.appendingPathComponent("Models")
+        for kind in LocalModelKind.allCases {
+            let dir = kind.location(in: models)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data("fixture".utf8).write(to: dir.appendingPathComponent("model"))
+        }
+        let knowledge = root.appendingPathComponent("knowledge")
+        try Data("retain".utf8).write(to: knowledge)
+        let manager = LocalModelManager(root: models)
+        manager.remove(.embedding)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: LocalModelKind.embedding.location(in: models).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: LocalModelKind.streamingSpeech.location(in: models).path))
+        let layaRoot = root.appendingPathComponent("Laya")
+        for folder in ["downloads", "bootstrap", "installs"] {
+            try FileManager.default.createDirectory(at: layaRoot.appendingPathComponent(folder), withIntermediateDirectories: true)
+        }
+        let laya = LayaRuntimeManager(root: layaRoot)
+        laya.removeDownloadedFiles()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: layaRoot.path))
+        XCTAssertEqual(laya.state, .notInstalled)
+        XCTAssertEqual(try Data(contentsOf: knowledge), Data("retain".utf8))
+    }
+
     @MainActor func testResetDiscardsInFlightAnswerAndReturnsToEmptyState() async throws {
         let coordinator = AppCoordinator(mock: true)
         coordinator.settings.overlayAutoHeight = false

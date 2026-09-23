@@ -5,6 +5,7 @@ struct SettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var hotkeys: HotkeyStore
     @ObservedObject var laya: LayaRuntimeManager
+    @State private var confirmLayaRemoval = false
     @State private var page = SettingsPage.general
     @State private var serviceRole = 0
     @State private var baseURL = ""
@@ -206,6 +207,11 @@ struct SettingsView: View {
                             .accessibilityIdentifier("install-laya")
                     }
                 }
+                Button(b("Delete local files…", "删除本地文件…"), role: .destructive) { confirmLayaRemoval = true }
+                    .disabled(laya.isBusy || locked)
+                    .confirmationDialog(b("Delete Laya model, runtime and download cache?", "删除 Laya 模型、运行环境和下载缓存？"), isPresented: $confirmLayaRemoval) {
+                        Button(b("Delete", "删除"), role: .destructive) { if !locked { laya.removeDownloadedFiles() } }
+                    } message: { Text(b("You will need to download again. Settings and knowledge documents are retained.", "下次使用需要重新下载；保留设置与知识库资料。")) }
                 if laya.isBusy {
                     if !laya.transferStatus.isEmpty {
                         if let value = laya.transferProgress { ProgressView(value: value) }
@@ -259,7 +265,7 @@ struct SettingsView: View {
                 Text(b("Like FunASR, automatic suggestions can use question rules or the local Laya trigger below. Recognition speed and accuracy depend on your language, microphone and vocabulary; neither engine is always better.", "与 FunASR 一样，自动建议可使用问句规则或下方的本地 Laya 判断。速度和准确率取决于语言、麦克风及术语，没有在所有场景都更好的引擎。")).font(.caption).foregroundStyle(.secondary)
             } else if let kind = coordinator.settings.listeningService.localModel {
                 Text(t("Audio stays on this Mac. Chinese and English captions update while you speak. Preview text can change; completed sentences are used for automatic suggestions.")).font(.callout).foregroundStyle(.secondary)
-                LocalModelCard(manager: coordinator.localModels, kind: kind, language: coordinator.settings.language, locked: locked)
+                LocalModelCard(manager: coordinator.localModels, kind: kind, language: coordinator.settings.language, locked: locked || coordinator.isIndexing || coordinator.suggestion.isLoading, remove: { coordinator.removeLocalModel(kind) })
                 Text(b("English terminology can be misrecognized. For English-heavy conversations, compare Apple English or GPT-Live-1 on your own audio.", "英文术语可能误识别。英文较多时，可用自己的音频对比 Apple 英语识别或 GPT-Live-1。")).font(.caption).foregroundStyle(.secondary)
                 Text(b("Choose question rules or local Laya below to trigger analysis. You can always generate an answer manually.", "可在下方选择问句规则或本地 Laya 来触发分析，也可随时手动生成回答。")).font(.caption).foregroundStyle(.secondary)
                 localCost
@@ -283,7 +289,7 @@ struct SettingsView: View {
             }.disabled(coordinator.isIndexing || coordinator.suggestion.isLoading).accessibilityIdentifier("embedding-provider")
             if coordinator.settings.embeddingService == .local {
                 Text(t("Document and query embeddings run on this Mac. No OpenAI key or network is needed after downloading the model.")).font(.callout).foregroundStyle(.secondary)
-                LocalModelCard(manager: coordinator.localModels, kind: .embedding, language: coordinator.settings.language, locked: coordinator.isIndexing || coordinator.suggestion.isLoading)
+                LocalModelCard(manager: coordinator.localModels, kind: .embedding, language: coordinator.settings.language, locked: locked || coordinator.isIndexing || coordinator.suggestion.isLoading, remove: { coordinator.removeLocalModel(.embedding) })
             } else {
                 Text(t("Extracted document text and retrieval queries are sent to OpenAI Embeddings using the shared OpenAI credential.")).font(.callout).foregroundStyle(.secondary)
                 CredentialEditor(coordinator: coordinator, analysis: false)
@@ -504,10 +510,12 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
 }
 
 private struct LocalModelCard: View {
+    @State private var confirmRemoval = false
     @ObservedObject var manager: LocalModelManager
     let kind: LocalModelKind
     let language: AppLanguage
     let locked: Bool
+    let remove: () -> Void
     private func t(_ text: String) -> String { L10n.text(text, language: language) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -532,6 +540,13 @@ private struct LocalModelCard: View {
             } else {
                 Button(t(manager.installed.contains(kind) ? "Download again" : "Download model")) { manager.install(kind) }
                     .disabled(locked || manager.downloading != nil).accessibilityIdentifier("download-" + kind.rawValue)
+                if manager.installed.contains(kind) {
+                    Button(language == .english ? "Delete local model…" : "删除本地模型…", role: .destructive) { confirmRemoval = true }
+                        .disabled(locked || manager.downloading != nil)
+                        .confirmationDialog(language == .english ? "Delete this local model?" : "删除此本地模型？", isPresented: $confirmRemoval) {
+                            Button(language == .english ? "Delete" : "删除", role: .destructive, action: remove)
+                        } message: { Text(language == .english ? "Download again to use it. Knowledge documents, indexes and settings are retained." : "下次使用需要重新下载。知识库文档、索引和设置均保留。") }
+                }
                 if manager.downloading == nil, manager.messageKind == kind, !manager.message.isEmpty { Text(t(manager.message)).font(.caption).foregroundStyle(.secondary) }
             }
             Text(t("Downloaded once, stored on this Mac. No Python, Ollama or Docker installation is required.")).font(.caption).foregroundStyle(.secondary)

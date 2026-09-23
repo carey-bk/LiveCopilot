@@ -62,6 +62,15 @@ final class LayaRuntimeManager: ObservableObject {
             throw error
         }
     }
+    func removeDownloadedFiles() {
+        guard !isBusy else { return }
+        stop()
+        do {
+            if FileManager.default.fileExists(atPath: root.path) { try FileManager.default.removeItem(at: root) }
+            state = .notInstalled; progress = nil; transferProgress = nil; transferStatus = ""
+            message = "Laya model, runtime and download cache deleted."
+        } catch { state = .failed; message = error.localizedDescription }
+    }
     func cancel() { stop() }
     func stop() {
         epoch &+= 1
