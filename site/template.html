@@ -33,6 +33,7 @@
     <link rel="stylesheet" href="${prefix}product.css" />
     <link rel="stylesheet" href="${prefix}phase5.css?v=${asset_version}" />
     <script src="${prefix}demo.js?v=${asset_version}" defer></script>
+    <link rel="preload" as="image" href="${prefix}assets/ls-front-hardware.webp" fetchpriority="high" />
   </head>
   <body>
     <a class="skip" href="#main">$skip</a>
@@ -94,9 +95,11 @@
               </div>
               <img
                 class="hero-hardware"
-                src="${prefix}assets/ls-front-hardware.png"
-                width="2200"
-                height="1500"
+                fetchpriority="high"
+                loading="eager"
+                src="${prefix}assets/ls-front-hardware.webp"
+                width="4610"
+                height="2669"
                 alt=""
               />
             </div>
