@@ -1,0 +1,82 @@
+/* Phase 5: a stationary hardware image. Only software content and opacity animate. */
+:root{--accent-listen:#78a7ff;--accent-context:#f19bc2;--accent-think:#b69af8;--hero-bg:#07080b}
+body{background:linear-gradient(#07080b 0 160px,#fff 160px)}
+.brand{font-family:"Avenir Next",-apple-system,BlinkMacSystemFont,sans-serif;font-weight:800;font-style:italic;letter-spacing:-.4px;gap:6px;font-size:20px}
+.brand img{width:32px;height:32px}
+.hero{position:relative;isolation:isolate;margin-top:-88px;padding:150px 0 45px;background:var(--hero-bg);color:#f6f7fb;overflow:hidden;text-align:left}
+.hero-layout{display:grid;grid-template-columns:minmax(0,60fr) minmax(0,40fr);align-items:center;max-width:1920px;margin:auto;min-height:680px}
+.hero-visual.demo-stage{position:relative;width:100%;max-width:none;margin:0;min-width:0;height:clamp(620px,52vw,880px)}
+.hero-device{--device-width:clamp(1030px,96vw,1700px);position:absolute;width:var(--device-width);aspect-ratio:22/15;left:calc(100% - var(--device-width)*.80);top:-25px;animation:hardware-reveal 1.6s ease-out both}
+.hero-hardware{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+.hero-screen{position:absolute;left:6%;top:10%;width:69.5%;height:59.3%;overflow:hidden;background:#12213c;border-radius:10px}
+.hero-screen-wallpaper{position:absolute;inset:0;background:radial-gradient(ellipse at 12% 125%,#0a1021 40%,#38609b 40.3%,#152b52 41%,transparent 69%),radial-gradient(ellipse at 0% 5%,#244b7b,transparent 63%),linear-gradient(125deg,#172d51,#0a1226 75%)}
+.hero-screen-menubar{position:absolute;inset:0 0 auto;display:flex;justify-content:space-between;padding:7px 16px;background:#ffffff0a;color:#c4cddd;font-size:10px}
+.hero-product-live{position:absolute;right:2.5%;top:8%;width:540px;transform:scale(var(--screen-scale,1));transform-origin:top right;z-index:3}
+.hero-product-live .product-ui--hero{min-height:0}
+.hero-product-live .product-answer{height:310px}
+.hero-product-live .product-transcript{height:44px}
+.hero-copy{position:relative;z-index:4;padding:0 38px 40px 10px;max-width:670px}
+.hero h1{position:relative;font-size:clamp(34px,4.05vw,70px);line-height:1.3;letter-spacing:-.045em;margin:0;max-width:none;white-space:normal}
+.title-line{display:block;white-space:nowrap}
+html[lang=en] .hero h1{font-size:clamp(30px,3.35vw,59px)}
+.title-character{visibility:visible}.hero.typing .title-character{visibility:hidden}.hero.typing .title-character.revealed{visibility:visible}
+.title-cursor{position:absolute;left:0;top:0;width:2px;height:.8em;background:#b8c9ec;opacity:0}.hero.typing .title-cursor{opacity:1}.hero.typed .title-cursor{animation:title-blink .65s step-end 3 forwards}
+@keyframes title-blink{0%,45%{opacity:1}46%,100%{opacity:0}}
+@keyframes hardware-reveal{from{opacity:0}to{opacity:1}}
+.hero-subtitle{color:#b3b7c4;font-size:clamp(15px,1.3vw,20px);line-height:1.9;margin:28px 0 32px;max-width:540px}
+.hero .actions{justify-content:flex-start;gap:14px}.hero .primary{background:#f5f6fa;color:#141820;border-color:#f5f6fa}.hero .secondary{color:#e0e4ee;background:#ffffff09;border-color:#ffffff30}
+.hero .platform{color:#aab1bf;font-size:12px;text-align:left;margin-top:24px}
+.hero-explore{display:inline-flex;gap:16px;color:#b5bece;font-size:12px;margin-top:14px;padding:10px 0}
+.hero .demo-toolbar{position:absolute;bottom:4px;left:8%;right:8%;max-width:none;justify-content:flex-end;gap:12px;color:#929ba9;margin:0;font-size:10px}
+.hero .demo-toggle{color:#e8edf7;background:#ffffff0b;border-color:#ffffff35;min-width:36px;min-height:32px}
+.hero .demo-note{position:absolute;bottom:-24px;left:8%;right:8%;font-size:10px;color:#929ba9;text-align:right;margin:0}
+.site-header:not(.scrolled) .nav{background:#171b24d9;border-color:#ffffff24;color:#eef0f5;box-shadow:0 12px 45px #00000020}
+.site-header:not(.scrolled) .nav-links>a:not(.nav-download){color:#c0c7d5}.site-header:not(.scrolled) .languages a[aria-current]{color:#171b24}.site-header:not(.scrolled) .nav-download{background:#f4f5f8;color:#171b24}
+#workflow{padding-block:100px}.workflow{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.45fr);gap:24px;align-items:start}
+.workflow-node:nth-child(1){--stage-color:var(--accent-listen)}.workflow-node:nth-child(2){--stage-color:var(--accent-context)}.workflow-node:nth-child(3),.workflow-node:nth-child(4){--stage-color:var(--accent-think)}
+.workflow .step{display:flex;gap:10px;align-items:center;color:#596272;font-size:12px;letter-spacing:.04em}
+.workflow .step:before{content:"";width:8px;height:8px;border-radius:50%;background:var(--stage-color);box-shadow:0 0 0 5px color-mix(in srgb,var(--stage-color) 12%,transparent)}
+.workflow-node:not(:last-child):after{left:94px;right:-14px;top:8px;border-color:color-mix(in srgb,var(--stage-color) 45%,transparent);transform:none}
+.workflow-node>p{min-height:64px;margin:0 0 20px}.workflow-answer{padding:0}
+.workflow-visual{min-height:200px;border-color:color-mix(in srgb,var(--stage-color) 25%,white);background:linear-gradient(145deg,color-mix(in srgb,var(--stage-color) 6%,white),white);border-radius:16px}
+.workflow-answer .product-detail{min-height:250px;box-shadow:0 18px 54px -25px #8c7bab35}
+.workflow-answer [data-product=workflow] .product-answer-text{font-size:14px;line-height:1.8}.workflow-answer [data-product=workflow] .product-evidence{display:block}.workflow-answer [data-product=workflow] .product-answer h4{font-size:12px}
+.workflow .workflow-node.active .workflow-hit{background:#f19bc210;border-color:#c48aa7}.workflow .workflow-node.active .document-lines:after{background:var(--accent-context)}
+.workflow-visual small{color:#64537c}.workflow-node:first-child .waveform i{background:#5a84ba}
+.feature-section{background:#faf9f7}.feature-card{background:#ffffffbd}.file-fan .file-mark{background:#fdf6fa;border-color:#e9c5d7;color:#86566e}.file-fan small,.workflow-node:nth-child(2) .workflow-visual small{color:#945d79}
+.case-documents span{border-color:#f19bc24d;background:#f19bc208}.local-section{background:#f3f7fc}.local-lanes>div:first-child{border-color:#78a7ff30}.local-lanes>div:nth-child(2){border-color:#f19bc235}.context-connector{color:#776494}.privacy-section{background:#101114}.privacy-route span,.privacy-facts span{color:#ced1d8}.download-section{background:#fff}
+@media(max-width:1100px) and (min-width:901px){.hero-layout{grid-template-columns:57fr 43fr}.hero-copy{padding-right:24px}.hero h1{font-size:38px}.hero .actions a{padding:14px 17px;font-size:13px}.workflow{gap:16px}.workflow h3{font-size:17px}}
+@media(max-width:900px){.hero{padding:145px 0 30px}.hero-layout{grid-template-columns:1fr}.hero-copy{grid-row:1;max-width:640px;margin:auto;padding:0 28px 25px;width:100%;text-align:center}.hero h1{font-size:clamp(34px,6vw,52px)}html[lang=en] .hero h1{font-size:clamp(30px,5vw,46px)}.hero-subtitle{margin:22px auto;max-width:500px}.hero .actions{justify-content:center}.hero .platform{text-align:center}.hero-visual.demo-stage{height:640px}.hero-device{--device-width:1180px;left:calc(100% - 950px);top:-30px}.hero .demo-toolbar{bottom:34px}.workflow{grid-template-columns:repeat(2,minmax(0,1fr));gap:36px 24px}.workflow-node:nth-child(2):after{display:none}.workflow-node>p{min-height:48px}}
+@media(max-width:600px){.brand{font-size:17px}.brand img{width:28px;height:28px}.hero{margin-top:-84px;padding-top:132px}.hero-copy{padding-inline:22px}.hero-subtitle{font-size:14px}.hero .platform{font-size:10px}.hero .actions a{font-size:12px;padding:12px 16px}.hero-visual.demo-stage{height:540px}.hero-device{--device-width:1000px;left:calc(100% - 792px);top:-25px}.hero-screen-menubar{font-size:8px}.hero .demo-toolbar{bottom:37px}.hero .demo-note{left:20px;right:20px;font-size:9px;bottom:0;text-align:center}.hero-explore{margin-top:0}.workflow{grid-template-columns:1fr;padding-left:0;gap:30px}.workflow-node{display:block;padding:0;border:0}.workflow-node:before,.workflow-node:not(:last-child):after{display:none}.workflow-node>.step{position:static}.workflow-node>p{min-height:0;margin-bottom:18px}.workflow-visual{min-height:150px}.workflow-answer .product-detail{min-height:0;padding:16px}.workflow-answer .product-sources details{font-size:11px}#workflow{padding-block:70px}.site-header:not(.scrolled) .nav-links.open{background:#20242c;color:white}.site-header:not(.scrolled) .nav-links.open a{color:#edf0f6}.site-header:not(.scrolled) .nav-links.open .languages a[aria-current],.site-header:not(.scrolled) .nav-links.open .nav-download{color:#171b24}}
+@media(prefers-reduced-motion:reduce){.hero-device{animation:none}.hero.typing .title-character{visibility:visible}.title-cursor{display:none}.hero *,.workflow *{animation:none!important}}
+/* Playback controls sit above the decorative hardware, outside the product. */
+.hero .demo-toolbar,.hero .demo-note{z-index:4}
+
+/* Local preview: original LS Graphics front-view hardware. */
+.hero-device{--device-width:max(82vw,calc((100svh - 235px)*2.1));width:var(--device-width);aspect-ratio:4610/2669;left:calc(100% - var(--device-width)*.94 - 24px);top:0}
+.hero-hardware{z-index:0}
+.hero-screen{left:10.673%;top:2.136%;width:78.633%;height:86.587%;z-index:1;border-radius:12px 12px 0 0;clip-path:none;mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 640' preserveAspectRatio='none'%3E%3Cpath fill='white' fill-rule='evenodd' d='M0 0H1000V640H0Z M464 0V9Q464 14 469 14H531Q536 14 536 9V0Z'/%3E%3C/svg%3E");mask-size:100% 100%}
+.hero-product-live{top:7%;right:2.5%}
+.hero .demo-note{display:none}
+.hero-visual.demo-stage{height:max(500px,calc(100svh - 190px))}
+.hero-layout{min-height:0}
+@media(max-width:900px){.hero-device{--device-width:1000px;top:20px}.hero-visual.demo-stage{height:620px}}
+@media(max-width:600px){.hero-device{--device-width:780px;left:calc(100% - 730px);top:20px}.hero-visual.demo-stage{height:480px}}
+
+/* Keep the English headline inside the copy column at every width. */
+html[lang=en] .title-line{white-space:normal;overflow-wrap:normal;text-wrap:balance}
+html[lang=en] .hero h1{font-size:clamp(30px,3vw,52px)}
+@media(max-width:900px){html[lang=en] .hero h1{font-size:clamp(30px,5vw,46px)}}
+@media(max-width:600px){html[lang=en] .hero h1{font-size:clamp(28px,7vw,38px)}}
+
+/* The opened mobile menu shares the navigation surface instead of adding a square panel. */
+@media(max-width:680px){.site-header:not(.scrolled) .nav-links.open{background:transparent}.site-header:not(.scrolled) .nav-links{border-top-color:#ffffff24}}
+.workflow-hear-status{display:block;margin-top:6px}
+.document-lines span small{display:block;font-size:9px;line-height:1.35;color:#8b6680}
+.workflow-extract{display:block;margin-top:9px}
+@media(max-width:600px){.workflow-extract{display:none}}
+
+/* Each scene cites the two files that support its answer. */
+.case-response .product-sources details:nth-of-type(2),
+[data-product="workflow"] .product-sources details:nth-of-type(2){display:block}
+.case-response .product-sources details{overflow-wrap:anywhere}
