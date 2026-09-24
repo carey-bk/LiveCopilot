@@ -1,4 +1,4 @@
-LiveCopilot 1.4.1 — 安装 / Installation
+LiveCopilot 2.0.0 — 安装 / Installation
 
 中文
 
@@ -13,6 +13,8 @@ Apple 本地语音另需 macOS 26+、受支持的设备和语言。
    可用 Release 中的 SHA256SUMS.txt 核对下载文件。
 3. 设置 → 服务：选择本地 Apple 或 Paraformer 语音并下载资源，
    或配置 OpenAI Live。知识库向量可选本地 BGE-M3 或 OpenAI Embeddings。
+   本地语音可下载 Laya 并在 Jev Mode 中启用自动分析；GPT-Live-1 自行判断。
+   模型默认从公开 ModelScope 下载并校验 SHA-256，失败时尝试备用源。
 4. 分析服务选择 OpenAI、DeepSeek、Qwen、GLM、Kimi 或兼容服务，保存自己的 API Key。
    密钥安全保存在 macOS Keychain，启动静默读取。旧密钥若显示待授权，
    点击“授权已保存的密钥”完成导入。系统密码只输入 macOS 窗口。
@@ -43,6 +45,9 @@ Open Anyway. A standard first-download confirmation can still appear. Verify
 the release download against SHA256SUMS.txt.
 
 In Settings > Services, download local speech resources or configure OpenAI Live.
+Local speech can use the downloaded Laya model for automatic analysis. GPT-Live-1
+decides when to delegate on its own. Models default to a public ModelScope source,
+verify SHA-256, and fall back to other sources when needed.
 Choose BGE-M3 or OpenAI Embeddings for knowledge. Choose an analysis provider
 (OpenAI, DeepSeek, Qwen, GLM, Kimi, or a compatible API) and save your key. Keys stay in Keychain.
 Startup reads silently; explicitly authorize an old saved key to import it.
