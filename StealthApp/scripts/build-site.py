@@ -51,7 +51,8 @@ for language, copy in content.items():
     data['product_edge'] = re.sub(r'(data-part="empty")\s+hidden', r'\1', data['product_edge'])
     data['product_answer'] = '<div data-product="answer">' + answer + '</div>'
     data['product_transcript'] = '<div data-product="transcript">' + transcript + '</div>'
-    short_copy = dict(data, demo_reply=data['demo_reply'])
+    short_copy = dict(data, demo_reply=data['demo_reply'],
+                      product_evidence_text=data['workflow_evidence_text'])
     data['product_workflow_answer'] = '<div data-product="workflow">' + answer_template.substitute(short_copy) + '</div>'
     data['product_case_answer'] = '<div data-product="case">' + answer + '</div>'
     destination = OUTPUT / ('en' if english else '')

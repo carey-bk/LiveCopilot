@@ -149,6 +149,7 @@
                 ><i></i><i></i><i></i
               ></span>
               <p data-workflow-transcript>$demo_question</p>
+              <small class="workflow-hear-status">$workflow_hear_status</small>
             </div>
           </li>
           <li class="workflow-node">
@@ -156,8 +157,8 @@
             <h3>$retrieve</h3>
             <p>$retrieve_body</p>
             <div class="workflow-visual document-lines">
-              <span class="workflow-hit">Product Strategy.md</span
-              ><span>Roadmap.docx</span><span>Interview Notes.pdf</span
+              <span class="workflow-hit">Product Strategy.md <small>$workflow_doc_strategy</small></span
+              ><span>Roadmap.docx <small>$workflow_doc_roadmap</small></span><span>Interview Notes.pdf <small>$workflow_doc_notes</small></span
               ><small>$passage_found</small>
             </div>
           </li>
@@ -171,6 +172,7 @@
                 ><span>$constraint_tag</span>
               </div>
               <small>$organizing</small>
+              <small class="workflow-extract">$workflow_extract</small>
             </div>
           </li>
           <li class="workflow-node workflow-answer">
@@ -303,7 +305,7 @@
             </div>
           </div>
           <div class="case-response">
-            <p class="product-caption">$product_excerpt</p>
+            <p class="product-caption" id="case-response-title">$case_meeting_title</p>
             <div class="product-detail">$product_case_answer</div>
           </div>
         </div>
