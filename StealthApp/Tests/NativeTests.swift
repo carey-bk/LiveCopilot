@@ -64,6 +64,7 @@ final class NativeTests: XCTestCase {
     }
     @MainActor func testResetWhileListeningRestartsFreshAndAllowsSameQuestion() async throws {
         let coordinator = AppCoordinator(mock: true)
+        coordinator.settings.listeningService = .openAI
         coordinator.settings.automaticSuggestions = true
         let first = expectation(description: "first conversation answer")
         let firstSub = coordinator.suggestion.$isLoading.dropFirst().filter { !$0 }.prefix(1).sink { _ in first.fulfill() }
@@ -172,6 +173,7 @@ final class NativeTests: XCTestCase {
     }
     @MainActor func testLiveMockDelegationKeepsListeningWhileReasoningRuns() async throws {
         let coordinator = AppCoordinator(mock: true)
+        coordinator.settings.listeningService = .openAI
         coordinator.settings.automaticSuggestions = true
         let completed = expectation(description: "automatic answer completes")
         var started = false

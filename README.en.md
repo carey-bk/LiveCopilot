@@ -12,15 +12,17 @@ Version **1.4.0** adds independent transcript/answer font sizes (11–28 pt) and
 
 Version **1.4.1** retains these features and adds Developer ID signing, hardened runtime, and Apple notarization. Both the app and DMG include stapled tickets. See [distribution validation](docs/V1_4_1_UPDATE.md).
 
+Version **2.0.0** adds Jev Mode local Laya triggering, SHA-256 verified ModelScope model delivery with fallback sources, real download progress and speed, GPT-Live-1 transcription language preferences, and caption/UI fixes. Laya requires Apple Silicon and macOS 14+. Updating preserves downloaded models, settings, and user data.
+
 ## Download
 
-[Download LiveCopilot 1.4.1 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v1.4.1/LiveCopilot-1.4.1-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v1.4.1)
+[Download LiveCopilot 2.0.0 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v2.0.0/LiveCopilot-2.0.0-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.0.0)
 
 Requires **macOS 14+**, on Apple Silicon or Intel. Apple Speech additionally requires **macOS 26+**, supported hardware, and a supported language. No Xcode, Python, Ollama, or developer tools are needed to use the packaged app.
 
 Quit the previous version, open the DMG, and drag `LiveCopilot.app` into Applications (or `~/Applications`). Keep the app at a consistent path.
 
-Version 1.4.1 is signed by **Developer ID Application: Bokai Zhang (666N9BJMD7)** and notarized by Apple. Both the app and DMG carry stapled tickets; normal installation does not require Open Anyway. macOS may still show its standard first-download confirmation. Migrating from an older ad-hoc build may require renewed audio or Keychain permission; later updates preserve the signing team and bundle identity without bypassing system policy.
+Version 2.0.0 is signed by **Developer ID Application: Bokai Zhang (666N9BJMD7)** and notarized by Apple. Both the app and DMG carry stapled tickets; normal installation does not require Open Anyway. macOS may still show its standard first-download confirmation. Migrating from an older ad-hoc build may require renewed audio or Keychain permission; later updates preserve the signing team and bundle identity without bypassing system policy.
 
 ## Choose your services
 
@@ -33,7 +35,7 @@ Version 1.4.1 is signed by **Developer ID Application: Bokai Zhang (666N9BJMD7)*
 
 Choose local speech + BGE-M3 + DeepSeek to keep recognition and indexing on your Mac while using DeepSeek for answers. No OpenAI key is needed for that combination. Local models still use disk space, memory, and compute; analysis still sends relevant text to your chosen provider.
 
-Paraformer updates Chinese/English caption previews as you speak. Apple streams supported languages using on-device models. Compare accuracy and latency using your own voice, accent, hardware, and audio conditions. Local automatic suggestions use conservative text-based question detection; pauses alone do not trigger an answer.
+Paraformer updates Chinese/English caption previews as you speak. Apple streams supported languages using on-device models. Compare accuracy and latency using your own voice, accent, hardware, and audio conditions. Local automatic suggestions use Laya to assess completed questions after speech pauses. GPT-Live-1 delegates questions using its own semantic judgment.
 
 ## Get started
 
@@ -54,7 +56,7 @@ Keys are securely stored in the local macOS Keychain. Startup checks silently; a
 - Generate answer, recap, and follow-up have distinct task prompts. Source passages can be expanded.
 - **About** links to the author's GitHub, repository, and bilingual product guide.
 
-`Option + H` toggles the overlay. Generate answer, recap, and follow-up shortcuts are configurable. The 1.4.2 development defaults are Control–Option–Space, Control–Option–S and Control–Option–X; saved custom bindings are preserved. Recap and follow-up can be disabled independently in General, hiding their buttons and releasing their shortcuts. Screenshot/sharing exclusion is optional; its behavior depends on macOS and the capture application. Settings and History remain capturable.
+`Option + H` toggles the overlay. Generate answer, recap, and follow-up shortcuts are configurable. The 2.0.0 defaults are Control–Option–Space, Control–Option–S and Control–Option–X; saved custom bindings are preserved. Recap and follow-up can be disabled independently in General, hiding their buttons and releasing their shortcuts. Screenshot/sharing exclusion is optional; its behavior depends on macOS and the capture application. Settings and History remain capturable.
 
 Qwen, GLM, and Kimi presets use streamed Chat Completions with provider-specific thinking controls. Defaults are `qwen-plus`, `glm-5.2`, and `kimi-k2.6` on domestic general API endpoints. Edit the base URL for a matching region/account, save, then configure its key. Keys are isolated by provider and endpoint. Protocol and mock tests passed; real account access has not been tested with Qwen, GLM, or Kimi credentials. No keys are needed for development/mock testing; enter yours only in the app to validate a real request.
 

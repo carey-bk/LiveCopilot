@@ -6,18 +6,20 @@
 
 基于 [vortechron/stealth](https://github.com/vortechron/stealth) 的原生 macOS 个人 AI 助手，面向面试、会议和学术答辩。保留 Swift/SwiftUI、ScreenCaptureKit 系统音频、AVAudioEngine 麦克风、菜单栏、悬浮窗、全局快捷键和本地历史。
 
-V1.4.1 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别** 或 OpenAI Live 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek、Qwen、GLM、Kimi 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
+V2.0.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别** 或 GPT-Live-1 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek、Qwen、GLM、Kimi 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
 **1.4.0** 移除非流式 SenseVoiceSmall，保留 Apple、Paraformer 和 GPT-Live-1 三种流式识别；新增转写区与回答区独立字号（11–28 pt）以及 Qwen、GLM、Kimi 分析服务预设。旧 SenseVoice 配置自动迁移至 Paraformer，其他偏好与已有模型文件保留。详见 [1.4.0 更新与验收](docs/V1_4_0_UPDATE.md) 和 [服务选择指南](docs/SERVICE_GUIDE.md)。
 
 **1.4.1** 为 Developer ID 正式签名与 Apple 公证版，保留 1.4.0 的功能。应用、本地推理组件和 DMG 使用同一开发者身份；公证票据随包附带。详见 [1.4.1 发布验证](docs/V1_4_1_UPDATE.md)。
 
+**2.0.0** 增加 Jev Mode 本地 Laya 自动触发、ModelScope 固定修订模型分发（失败后尝试其他来源）、真实下载进度与速度、GPT-Live-1 识别语言偏好，以及流式字幕和界面修复。Laya 需要 Apple Silicon 与 macOS 14+。升级保留已下载模型、设置和用户数据。
+
 ## 下载与安装
 
-从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/tag/v1.4.1) 下载 **LiveCopilot-1.4.1-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**；Apple 本地识别另需 macOS 26+ 和受支持的设备。直接安装无需 Xcode。
+从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.0.0) 下载 **LiveCopilot-2.0.0-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**；Apple 本地识别另需 macOS 26+ 和受支持的设备。直接安装无需 Xcode。
 
 1. 打开 DMG，将 `LiveCopilot.app` 拖到 `Applications`，然后从应用程序文件夹启动。没有管理员权限时可复制到 `~/Applications`。
-2. 1.4.1 已由 **Developer ID Application: Bokai Zhang (666N9BJMD7)** 签名并通过 Apple 公证，应用与 DMG 均附带公证票据。正常安装无需使用“仍要打开”。首次从互联网下载打开时，macOS 仍可能显示标准确认提示。
+2. 2.0.0 已由 **Developer ID Application: Bokai Zhang (666N9BJMD7)** 签名并通过 Apple 公证，应用与 DMG 均附带公证票据。正常安装无需使用“仍要打开”。首次从互联网下载打开时，macOS 仍可能显示标准确认提示。
 3. 点击菜单栏波形图标打开设置，`⌥H` 显示或隐藏悬浮窗。1.1.1 起也显示 Dock 图标，点击可恢复悬浮窗。
 
 安装包不含 API Key、个人文档、会话历史或知识库。已有用户升级前先退出旧版，替换应用不会自动删除本地数据；macOS 可能重新询问权限。完整说明见 [安装说明](docs/INSTALL.txt)。
@@ -31,7 +33,7 @@ V1.4.1 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 3. 设置 → 知识库 → 导入文档，支持 PDF、Markdown、TXT 和 DOCX；扫描 PDF 需预先 OCR。本地向量模式不上传索引文本，OpenAI 模式会发送提取文本。切换向量模型后，点击“重建全部索引”，完成前旧资料仍可进行关键词检索。生成回答时，相关资料片段会发送至所选分析服务。
 4. 选择 Interview、Meeting 或 Academic Defense，以及 Remote Meeting / In-Person 模式。
 5. 点击播放开始监听，按系统提示允许所需音频权限。远程模式使用系统音频 `Them` 和麦克风 `You`；现场模式仅使用麦克风，标为 `Room`，不承诺说话人分离。
-6. 自动建议响应 Live 语义判断或本地中英文问题规则；不会仅因 VAD 停顿就请求分析。Apple 与 Paraformer 都会在说话时更新字幕预览，自动建议基于完成的转写。本地规则可能漏判含蓄问题；Live 语义委派也不保证每次都正确。默认 `⌃⌥Space` 根据对话生成回答，`⌃⌥S` 总结，`⌃⌥X` 追问，`⌥H` 显示/隐藏悬浮窗（1.4.2 开发版默认值；已保存的自定义组合保留）。总结与追问可在通用设置中独立关闭，关闭后按钮隐藏、快捷键停用。
+6. GPT-Live-1 自行决定何时委派完整问题；Apple 与 Paraformer 使用本地 Laya 在语段结束后判断，Jev Mode 可调阈值。两种方式都可能漏判或误触发。默认 `⌃⌥Space` 根据对话生成回答，`⌃⌥S` 总结，`⌃⌥X` 追问，`⌥H` 显示/隐藏悬浮窗（已保存的自定义组合保留）。总结与追问可在通用设置中独立关闭，关闭后按钮隐藏、快捷键停用。
 7. 直接在下方文本框输入问题，点击 **Ask** 或按 Return。可勾选是否附加近期对话；不要求正在监听。回答流式展示，`[S1]` 等对应可展开的本地来源。
 
 菜单栏波形图标可打开设置和历史。1.2.1 起悬浮窗默认隐藏于屏幕右侧，悬停右边缘可唤出，也可点击 Dock 或按 `⌥H`；固定按钮关闭贴边隐藏。空白窗口保持紧凑，内容增加后向下展开。四边具有 12 pt 缩放热区，四角为 28 × 28 pt；拖动上下边缘切换为手动高度，取消贴边隐藏后可从头部移动窗口。两个模式均可在 **通用 → 悬浮窗** 中切换。
