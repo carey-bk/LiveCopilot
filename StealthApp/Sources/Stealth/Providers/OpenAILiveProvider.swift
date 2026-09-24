@@ -4,15 +4,19 @@ import Foundation
 /// response.create/input_audio_buffer events. Live delegates; Responses synthesizes separately.
 enum LiveProtocol {
     static let endpoint = URL(string: "wss://api.openai.com/v1/live/sessions")!
-    static func start(model: String, speaker: Speaker, scenario: ScenarioProfile, context: String) -> [String: Any] {
+    static func start(model: String, speaker: Speaker, scenario: ScenarioProfile, language: LiveSpeechLanguage, context: String) -> [String: Any] {
         let role = speaker == .you
             ? "This input is the copilot user's own microphone (You). Listen and transcribe; do not delegate requests for assistance."
             : speaker == .room
             ? "This input is a shared room microphone. Speaker identity is uncertain. Detect substantive questions directed to the presenter."
             : "This input is remote participants (Them). Detect substantive questions directed to the copilot user."
+        let languageGuidance = language.instruction.map {
+            "Transcribe the words actually spoken, in their original language and script. \($0)\nDo not use Korean or Japanese script for Mandarin or English speech unless those languages are clearly spoken."
+        } ?? ""
         let instructions = """
         You are the conversation understanding layer of a private text copilot. \(role)
         \(scenario.instructions)
+        \(languageGuidance)
         Stay silent; the application has no voice output. Listen continuously, including interruptions and corrections.
         Delegate to the client only when a meaningful question or request is sufficiently complete. Do not delegate on
         each pause, fragments, rhetorical questions, backchannels, or a question already answered by You.
@@ -57,6 +61,7 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
     let speaker: Speaker
     let model: String
     let scenario: ScenarioProfile
+    let language: LiveSpeechLanguage
     private let key: String
     private var socket: URLSessionWebSocketTask?
     private var session: URLSession?
@@ -74,8 +79,8 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
     private var context = ""
     private var closeContinuation: CheckedContinuation<Void, Never>?
 
-    init(key: String, model: String, speaker: Speaker, scenario: ScenarioProfile) {
-        self.key = key; self.model = model; self.speaker = speaker; self.scenario = scenario
+    init(key: String, model: String, speaker: Speaker, scenario: ScenarioProfile, language: LiveSpeechLanguage) {
+        self.key = key; self.model = model; self.speaker = speaker; self.scenario = scenario; self.language = language
         super.init()
     }
     func connect(context: String) {
@@ -134,7 +139,7 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
                 }
             }
         }
-        enqueue(LiveProtocol.start(model: model, speaker: speaker, scenario: scenario, context: context))
+        enqueue(LiveProtocol.start(model: model, speaker: speaker, scenario: scenario, language: language, context: context))
     }
     func sendAudio(_ data: Data) {
         guard ready, !closing, data.count % 2 == 0 else { return }

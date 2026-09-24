@@ -40,19 +40,30 @@ import AVFoundation
                 pcm.append(Data(repeating: 0, count: 16000 * 2))
                 let provider = LocalLiveProvider(directory: speechKind.location(in: root), speaker: speaker, executable: executable)
                 var transcript = "", delegations = 0, failure: String?
-                var partials = Set<String>(), firstPartialMS: Int?, sentBytes = 0, prematureDelegation = false
+                var partials = Set<String>(), firstPartialMS: Int?, sentBytes = 0
                 var finalCount = 0, preview = "", finalized = false
                 var firstFinalAudioMS: Int?
+                var layaDecisions = 0
+                let gate = LayaTriggerController(predict: { _, _ in 0.95 }, onTrigger: { _ in layaDecisions += 1; return true },
+                                                 timing: .init(quiet: 0.5))
+                gate.configure(enabled: true, threshold: 0.8, cooldown: 0)
                 provider.onEvent = { event in
                     switch event {
-                    case .transcript(let fragment): transcript += fragment.text; finalCount += 1; if firstFinalAudioMS == nil { firstFinalAudioMS = sentBytes / 32 }
+                    case .speechActivity(let speaking): gate.setSpeaking(speaking, speaker: speaker)
+                    case .transcript(let fragment):
+                        transcript += fragment.text; finalCount += 1
+                        if firstFinalAudioMS == nil { firstFinalAudioMS = sentBytes / 32 }
+                        if speaker != .you {
+                            gate.submit(.init(text: transcript.trimmingCharacters(in: .whitespacesAndNewlines), context: "",
+                                              speaker: speaker, isFinal: true))
+                        }
                     case .partialTranscript(let text):
                         preview = text
                         if !text.isEmpty {
                             partials.insert(text)
                             if firstPartialMS == nil { firstPartialMS = sentBytes / 32 }
                         }
-                    case .delegation: delegations += 1; if finalCount == 0 { prematureDelegation = true }
+                    case .delegation: delegations += 1
                     case .closed(let complete): finalized = complete
                     case .failed(let message): failure = message
                     default: break
@@ -67,16 +78,16 @@ import AVFoundation
                     try await Task.sleep(nanoseconds: 250_000_000)
                 }
                 let deadline = Date().addingTimeInterval(25)
-                while (transcript.isEmpty || (speaker != .you && delegations == 0)) && failure == nil && Date() < deadline { try await Task.sleep(nanoseconds: 100_000_000) }
-                if speaker == .you { try await Task.sleep(nanoseconds: 1_200_000_000) }
+                while transcript.isEmpty && failure == nil && Date() < deadline { try await Task.sleep(nanoseconds: 100_000_000) }
+                try await Task.sleep(nanoseconds: 1_200_000_000)
                 await provider.disconnect()
                 // Keyword fidelity is diagnostic; preview/finalization is the contract.
                 let keywordMatch = transcript.lowercased().contains(expected)
                 print("QUALITY \(speechKind.rawValue) \(name): reference_keyword=\(expected), matched=\(keywordMatch), first_final_audio_ms=\(firstFinalAudioMS ?? -1)")
-                guard failure == nil, finalized, !prematureDelegation, preview.isEmpty, !transcript.isEmpty,
-                      delegations == (speaker == .you ? 0 : 1) else {
-                    print("Synthetic transcript: \(transcript); delegations=\(delegations)")
-                    throw CopilotError.message(failure ?? "Local ASR/trigger acceptance failed.")
+                guard failure == nil, finalized, preview.isEmpty, !transcript.isEmpty,
+                      delegations == 0, layaDecisions == (speaker == .you ? 0 : 1) else {
+                    print("Synthetic transcript: \(transcript); delegations=\(delegations); laya_decisions=\(layaDecisions)")
+                    throw CopilotError.message(failure ?? "Local ASR/transcript acceptance failed.")
                 }
                 do {
                     guard partials.count >= 2, let first = firstPartialMS, first < (pcm.count - 32000) / 32 else {
@@ -84,7 +95,7 @@ import AVFoundation
                     }
                     print("PASS streaming previews=\(partials.count); first_preview_audio_ms=\(first); committed_segments=\(finalCount)")
                 }
-                print("PASS \(speechKind.rawValue) \(name) local ASR + VAD + question trigger; load_ms=\(Int(loaded.timeIntervalSince(start)*1000)), total_ms=\(Int(Date().timeIntervalSince(start)*1000)); synthetic transcript: \(transcript)")
+                print("PASS \(speechKind.rawValue) \(name) local ASR + VAD without provider rule trigger; load_ms=\(Int(loaded.timeIntervalSince(start)*1000)), total_ms=\(Int(Date().timeIntervalSince(start)*1000)); synthetic transcript: \(transcript)")
             }
             let flushWorker = LocalInferenceWorker(mode: "paraformer", modelDirectory: speechKind.location(in: root), executable: executable)
             let silence = try await flushWorker.call(["op": "audio", "pcm": Data(repeating: 0, count: 32000).base64EncodedString()])

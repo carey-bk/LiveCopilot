@@ -24,6 +24,7 @@ enum ScenarioProfile: String, Codable, CaseIterable, Identifiable {
 
 struct AppSettings: Codable, Equatable {
     var listeningService = ListeningService.openAI
+    var liveSpeechLanguage = LiveSpeechLanguage.mixed
     var appleSpeechLanguage = AppleSpeechLanguage.chinese
     var embeddingService = EmbeddingService.openAI
     var liveModel = "gpt-live-1"
@@ -33,7 +34,6 @@ struct AppSettings: Codable, Equatable {
     var mode = OperatingMode.remote
     var scenario = ScenarioProfile.interview
     var automaticSuggestions = true
-    var automaticTriggerService = AutomaticTriggerService.provider
     var layaThreshold = 0.8
     var recapEnabled = true
     var followUpEnabled = true
@@ -70,16 +70,17 @@ struct AppSettings: Codable, Equatable {
 
     init() {}
     private enum CodingKeys: String, CodingKey {
-        case automaticTriggerService, layaThreshold
+        case layaThreshold
         case recapEnabled, followUpEnabled
         case transcriptFontSize, answerFontSize, qwenConnection, glmConnection, kimiConnection
-        case listeningService, appleSpeechLanguage, embeddingService, overlayAutoHeight, overlayEdgeHide
+        case listeningService, liveSpeechLanguage, appleSpeechLanguage, embeddingService, overlayAutoHeight, overlayEdgeHide
         case liveModel, reasoningModel, embeddingModel, reasoningEffort, mode, scenario, automaticSuggestions, includeConversation, retrievalCount, language, background, excludeOverlayFromCapture, reasoningService, deepSeekModel, deepSeekEffort, compatibleBaseURL, compatiblePath, compatibleModel
     }
     init(from decoder: Decoder) throws {
         self.init()
         let c = try decoder.container(keyedBy: CodingKeys.self)
         listeningService = try c.decodeIfPresent(ListeningService.self, forKey: .listeningService) ?? listeningService
+        liveSpeechLanguage = try c.decodeIfPresent(LiveSpeechLanguage.self, forKey: .liveSpeechLanguage) ?? liveSpeechLanguage
         appleSpeechLanguage = try c.decodeIfPresent(AppleSpeechLanguage.self, forKey: .appleSpeechLanguage) ?? appleSpeechLanguage
         embeddingService = try c.decodeIfPresent(EmbeddingService.self, forKey: .embeddingService) ?? embeddingService
         liveModel = try c.decodeIfPresent(String.self, forKey: .liveModel) ?? liveModel
@@ -89,7 +90,6 @@ struct AppSettings: Codable, Equatable {
         mode = try c.decodeIfPresent(OperatingMode.self, forKey: .mode) ?? mode
         scenario = try c.decodeIfPresent(ScenarioProfile.self, forKey: .scenario) ?? scenario
         automaticSuggestions = try c.decodeIfPresent(Bool.self, forKey: .automaticSuggestions) ?? automaticSuggestions
-        automaticTriggerService = try c.decodeIfPresent(AutomaticTriggerService.self, forKey: .automaticTriggerService) ?? automaticTriggerService
         let threshold = try c.decodeIfPresent(Double.self, forKey: .layaThreshold) ?? layaThreshold
         layaThreshold = threshold.isFinite ? min(0.99, max(0.5, threshold)) : 0.8
         recapEnabled = try c.decodeIfPresent(Bool.self, forKey: .recapEnabled) ?? recapEnabled

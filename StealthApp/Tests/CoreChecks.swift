@@ -94,6 +94,8 @@ enum CoreChecks {
                     try expect(panes.transcript >= 0 && panes.answer >= 0 && panes.transcript + panes.answer <= room, "content overflowed reserved bounds")
                 }
             }
+            let fitted = OverlayLayout.panes(available: 104, transcriptIdeal: 76, answerIdeal: 28, automatic: true)
+            try expect(fitted.transcript == 76 && fitted.answer == 28, "one transcript row was clipped in an auto-fitted window")
         }
         try check("prices match official model and provider, never a compatible proxy") {
             try expect(ServiceGuide.livePrice("gpt-live-1", language: .english).contains("$0.10"), "dual-session charge omitted")
@@ -143,6 +145,50 @@ enum CoreChecks {
             for text in ["", "好的。", "Thank you.", "Method B is faster.", "Why did you choose the", "请介绍这个实验，因为", "我不知道为什么失败。", "Why did you choose B? Never mind, no need to answer."] {
                 try expect(!LocalQuestionDetector.isQuestion(text), "false trigger: " + text)
             }
+        }
+        try check("Laya restores missing question punctuation only for clear ASR questions") {
+            try expect(LayaPredictionText.normalized("你讲一下这个机制是怎么做的") == "你讲一下这个机制是怎么做的？", "Chinese question cue lost")
+            try expect(LayaPredictionText.normalized("Could you explain the mechanism") == "Could you explain the mechanism?", "English question cue lost")
+            try expect(LayaPredictionText.variants("请问这个实验为什么选择方法比它的延迟是多少毫秒") ==
+                       ["请问这个实验为什么选择方法比它的延迟是多少毫秒？", "请问这个实验为什么选择方法比？"],
+                       "joined Chinese questions were not offered to Laya separately")
+            for statement in ["今天讨论机制的实现", "好的谢谢你的介绍", "他昨天问我为什么服务很慢"] {
+                try expect(LayaPredictionText.normalized(statement) == statement, "statement was punctuated as a question")
+                try expect(LayaPredictionText.variants(statement) == [statement], "statement was split into question candidates")
+            }
+        }
+        try check("configured distribution URLs precede mirrors and original sources") {
+            let base = URL(string: "https://modelscope.cn/models/livecopilot/artifacts/resolve/master")!
+            let urls = LocalModelInstaller.candidateURLs(.paraformerTokens, distributionBase: base)
+            try expect(urls.count == 3, "missing a download fallback")
+            try expect(urls[0].absoluteString == base.absoluteString + "/local/paraformer-tokens.txt", "wrong distribution object key")
+            try expect(urls[1].host == "hf-mirror.com" && urls[2].host == "huggingface.co", "wrong fallback order")
+            let python = ModelDownload(url: URL(string: "https://github.com/python.tar.gz")!, sha256: String(repeating: "a", count: 64), name: "Python runtime", ossObjectKey: "laya/python/a.tar.gz")
+            let runtimeURLs = LocalModelInstaller.candidateURLs(python, distributionBase: base)
+            try expect(runtimeURLs.map(\.host) == [base.host, "github.com"], "runtime fallback order changed")
+            try expect(runtimeURLs[0].path.hasSuffix("/laya/python/a.tar.gz"), "runtime distribution key changed")
+        }
+        try check("GitHub and ModelScope routes are reachable without a proxy") {
+            // A pinned mirror wins over the generic host rewrite: ModelScope serves this file byte-for-byte.
+            let bgeWithoutDistribution = LocalModelInstaller.candidateURLs(.bge, distributionBase: nil)
+            try expect(bgeWithoutDistribution.map(\.host) == ["modelscope.cn", "hf-mirror.com", "huggingface.co"], "wrong BGE route order")
+            try expect(bgeWithoutDistribution[0].absoluteString.hasSuffix("/models/gpustack/bge-m3-GGUF/resolve/master/bge-m3-Q8_0.gguf"), "wrong ModelScope path")
+            // GitHub release assets must never stand alone: the origin stalled at ~13 KB/s.
+            let vad = LocalModelInstaller.candidateURLs(.vad, distributionBase: nil)
+            try expect(vad.map(\.host) == ["gh-proxy.com", "hk.gh-proxy.com", "ghproxy.net", "github.com"], "wrong VAD route order")
+            try expect(vad[0].absoluteString == "https://gh-proxy.com/" + ModelDownload.vad.url.absoluteString, "accelerator must embed the origin URL")
+            try expect(vad.filter { $0.absoluteString == ModelDownload.vad.url.absoluteString }.count == 1, "origin must appear exactly once as the last resort")
+            let source = LocalModelInstaller.candidateURLs(ModelDownload(url: URL(string: "https://codeload.github.com/o/r/tar.gz/abc")!, sha256: String(repeating: "b", count: 64), name: "source"), distributionBase: nil)
+            try expect(source.map(\.host) == ["hk.gh-proxy.com", "codeload.github.com"], "wrong source archive route order")
+            let pinned = "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14%2B20260901-aarch64-apple-darwin-install_only_stripped.tar.gz"
+            let runtime = LocalModelInstaller.candidateURLs(ModelDownload(url: URL(string: pinned)!, sha256: String(repeating: "d", count: 64), name: "Python runtime"), distributionBase: nil)
+            try expect(runtime[0].absoluteString == "https://mirrors.ustc.edu.cn/github-release/astral-sh/python-build-standalone/20260901/cpython-3.12.14%2B20260901-aarch64-apple-darwin-install_only_stripped.tar.gz", "university mirror path changed")
+            try expect(runtime[1].host == "mirror.nju.edu.cn", "second university mirror missing")
+            try expect(runtime.contains { $0.host == "gh-proxy.com" }, "accelerator fallback missing")
+            try expect(runtime.last?.absoluteString == pinned, "origin must stay last")
+            // Unlisted hosts keep a single route instead of inventing mirrors.
+            let other = LocalModelInstaller.candidateURLs(ModelDownload(url: URL(string: "https://example.org/a.bin")!, sha256: String(repeating: "c", count: 64), name: "other"), distributionBase: nil)
+            try expect(other.map(\.host) == ["example.org"], "unexpected mirror for an unlisted host")
         }
         let localFixture = FileManager.default.temporaryDirectory.appendingPathComponent("LiveCopilot-Local-Core-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: localFixture, withIntermediateDirectories: true)
@@ -263,13 +309,32 @@ enum CoreChecks {
             try expect(state.candidate(speaker: .room, now: now.addingTimeInterval(1), cooldown: 7) != nil, "failure blocked retry")
         }
         try check("official Live session startup and no obsolete fields") {
-            let body = LiveProtocol.start(model: "gpt-live-1", speaker: .room, scenario: .defense, context: "Prior topic")
+            let body = LiveProtocol.start(model: "gpt-live-1", speaker: .room, scenario: .defense, language: .mixed, context: "Prior topic")
             let session = body["session"] as! [String: Any]
             let audio = session["audio"] as! [String: Any]
             try expect(body["type"] as? String == "session.start", "wrong startup")
             try expect(LiveProtocol.endpoint.path == "/v1/live/sessions" && LiveProtocol.endpoint.query == nil, "old endpoint")
             try expect(audio["format"] != nil && audio["input"] == nil && session["output_modalities"] == nil, "Realtime fields leaked")
             try expect((session["delegation"] as? [String: String])?["type"] == "client", "wrong delegation")
+        }
+        try check("GPT-Live language preference persists and only steers its instructions") {
+            let old = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+            try expect(old.liveSpeechLanguage == .mixed, "legacy settings lost mixed-language default")
+            for language in LiveSpeechLanguage.allCases {
+                var settings = old; settings.liveSpeechLanguage = language
+                let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+                try expect(restored.liveSpeechLanguage == language, "language preference did not persist")
+                let session = LiveProtocol.start(model: "gpt-live-1", speaker: .room, scenario: .interview, language: language, context: "")["session"] as! [String: Any]
+                let prompt = session["instructions"] as! String
+                if let guidance = language.instruction {
+                    try expect(prompt.contains(guidance), "chosen language not sent to GPT-Live")
+                    try expect(prompt.contains("Do not use Korean or Japanese script"), "unrelated scripts not discouraged")
+                } else {
+                    try expect(!prompt.contains("Transcribe the words actually spoken") &&
+                               !prompt.contains("Do not use Korean or Japanese script"), "unrestricted option still steers language")
+                }
+                try expect(session["language"] == nil && (session["audio"] as? [String: Any])?["language"] == nil, "unsupported hard language field sent")
+            }
         }
         try check("Live delegation uses opaque ID and not invented question text") {
             let event = LiveProtocol.parse(["type": "session.delegation.created", "offset_ms": 1500, "delegation": ["id": "opaque_X", "target": "client"]], speaker: .them)

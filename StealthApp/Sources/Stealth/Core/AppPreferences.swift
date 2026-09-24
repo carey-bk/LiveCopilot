@@ -13,6 +13,25 @@ enum AppLanguage: String, Codable, CaseIterable, Identifiable {
     var locale: Locale { Locale(identifier: usesChinese ? "zh-Hans" : "en") }
 }
 
+/// GPT-Live-1 has no hard input-transcript language selector. This preference
+/// steers its session instructions; unrestricted sends no language guidance.
+enum LiveSpeechLanguage: String, Codable, CaseIterable, Identifiable {
+    case chinese, english, mixed, unrestricted
+    var id: String { rawValue }
+    var instruction: String? {
+        switch self {
+        case .chinese:
+            return "Expect primarily Mandarin Chinese. Write spoken Mandarin in Simplified Chinese. Preserve English names and technical terms only when actually spoken. Do not translate or invent words to fit this preference."
+        case .english:
+            return "Expect primarily English, including accented English. Write spoken English in English. Preserve Mandarin only when it is clearly spoken. Do not translate or invent words to fit this preference."
+        case .mixed:
+            return "Expect Mandarin Chinese and English, possibly alternating within one sentence. Write each spoken span in its original language: Simplified Chinese for Mandarin and English for English. Keep actually spoken English names and technical terms. Do not translate."
+        case .unrestricted:
+            return nil
+        }
+    }
+}
+
 enum AppBackground: String, Codable, CaseIterable, Identifiable {
     case glass, frosted, white
     var id: String { rawValue }

@@ -6,7 +6,10 @@ enum OverlayLayout {
     /// scrolled or oversized hosting view. Header/footer measurements are fixed.
     static func panes(available: CGFloat, transcriptIdeal: CGFloat, answerIdeal: CGFloat, automatic: Bool) -> (transcript: CGFloat, answer: CGFloat) {
         let room = max(0, available)
-        let transcript = min(transcriptIdeal, max(0, room - 28), room * 0.45)
+        // Give captions their measured height before allocating the answer pane.
+        // The old 45% cap clipped even a single line when the window had fitted
+        // itself to exactly transcriptIdeal + the 28-point empty answer.
+        let transcript = min(transcriptIdeal, max(0, room - 28))
         let answer = automatic ? min(max(28, answerIdeal), max(0, room - transcript)) : max(0, room - transcript)
         return (transcript, answer)
     }

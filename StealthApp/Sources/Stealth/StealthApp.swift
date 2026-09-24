@@ -122,8 +122,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyAppearance(to window: NSWindow, background: AppBackground) {
         window.appearance = background.usesLightAppearance ? NSAppearance(named: .aqua) : nil
         if !(window is OverlayWindow) {
+            // The SwiftUI material covers the content area, not AppKit's titlebar.
+            // A nearly opaque window backing keeps the titlebar legible while
+            // retaining the frosted content's small amount of translucency.
             window.isOpaque = background != .frosted
-            window.backgroundColor = background == .frosted ? .clear : .windowBackgroundColor
+            window.backgroundColor = background == .frosted
+                ? NSColor(calibratedRed: 0.94, green: 0.96, blue: 0.99, alpha: 0.96)
+                : .windowBackgroundColor
         }
     }
 

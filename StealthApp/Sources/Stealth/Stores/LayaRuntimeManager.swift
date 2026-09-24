@@ -14,6 +14,8 @@ final class LayaRuntimeManager: ObservableObject {
     @Published private(set) var progress: Double?
     @Published private(set) var transferProgress: Double?
     @Published private(set) var transferStatus = ""
+    @Published private(set) var downloadFileIndex: Int?
+    @Published private(set) var downloadFileTotal: Int?
     private var task: Task<Void, Error>?
     private var worker: LayaWorker?
     private var installer: LayaWorker?
@@ -68,6 +70,7 @@ final class LayaRuntimeManager: ObservableObject {
         do {
             if FileManager.default.fileExists(atPath: root.path) { try FileManager.default.removeItem(at: root) }
             state = .notInstalled; progress = nil; transferProgress = nil; transferStatus = ""
+            downloadFileIndex = nil; downloadFileTotal = nil
             message = "Laya model, runtime and download cache deleted."
         } catch { state = .failed; message = error.localizedDescription }
     }
@@ -77,7 +80,7 @@ final class LayaRuntimeManager: ObservableObject {
         task?.cancel(); task = nil
         worker?.stop(); worker = nil
         installer?.stop(); installer = nil
-        progress = nil
+        progress = nil; downloadFileIndex = nil; downloadFileTotal = nil
         if !Self.supported { state = .unsupported }
         else {
             state = isInstalled ? .installed : .notInstalled
@@ -100,6 +103,7 @@ final class LayaRuntimeManager: ObservableObject {
         worker?.stop(); worker = nil
         state = download ? .installing : .loading
         transferStatus = ""; transferProgress = nil
+        downloadFileIndex = nil; downloadFileTotal = nil
         progress = download ? 0 : nil
         message = download ? "Preparing the isolated Laya runtime…" : "Loading Laya locally…"
         task = Task { [weak self] in
@@ -112,15 +116,30 @@ final class LayaRuntimeManager: ObservableObject {
                             self.transferProgress = value; self.transferStatus = detail
                         }
                     }
-                    let python = try await LayaBootstrap.prepare(root: self.root, resources: self.resources, progress: transferUpdate)
+                    let fileUpdate: @Sendable (Int, Int) -> Void = { [weak self] index, total in
+                        Task { @MainActor in
+                            guard let self, self.epoch == stamp, self.state == .installing else { return }
+                            self.downloadFileIndex = index; self.downloadFileTotal = total
+                        }
+                    }
+                    let python = try await LayaBootstrap.prepare(root: self.root, resources: self.resources,
+                                                                  progress: transferUpdate, file: fileUpdate)
                     transferUpdate(nil, "")
                     try Task.checkCancellation()
                     guard stamp == self.epoch else { throw CancellationError() }
-                    let installer = LayaWorker(executable: python, arguments: ["-I", "-B", self.resources.appendingPathComponent("install.py").path, "--root", self.root.path, "--resources", self.resources.path, "--download-source", "mirror"], transfer: transferUpdate) { [weak self] stage, value in
+                    var arguments = ["-I", "-B", self.resources.appendingPathComponent("install.py").path, "--root", self.root.path, "--resources", self.resources.path]
+                    if let base = ModelDistribution.baseURL {
+                        arguments += ["--download-source", "distribution", "--distribution-base", base.absoluteString]
+                    } else { arguments += ["--download-source", "mirror"] }
+                    let installer = LayaWorker(executable: python, arguments: arguments, transfer: transferUpdate,
+                                               file: fileUpdate) { [weak self] stage, value in
                         Task { @MainActor in
                             guard let self, self.epoch == stamp, self.state == .installing else { return }
                             self.transferStatus = ""; self.transferProgress = nil
                             self.progress = value
+                            if stage == "python" || stage == "verifying" || stage == "complete" {
+                                self.downloadFileIndex = nil; self.downloadFileTotal = nil
+                            }
                             let labels = ["python": "Creating the isolated Python environment…", "dependencies": "Downloading pinned runtime dependencies…", "source": "Installing the verified Laya runtime…", "model": "Downloading the multilingual model…", "verifying": "Checking the local model…", "complete": "Local installation verified."]
                             self.message = labels[stage] ?? "Installing Laya…"
                         }
@@ -132,6 +151,7 @@ final class LayaRuntimeManager: ObservableObject {
                 try Task.checkCancellation()
                 guard stamp == self.epoch, self.isInstalled else { throw LayaRuntimeError.unavailable }
                 self.state = .loading; self.progress = nil; self.message = "Loading Laya locally…"
+                self.downloadFileIndex = nil; self.downloadFileTotal = nil
                 let worker = LayaWorker(installation: self.root.appendingPathComponent("current").resolvingSymlinksInPath(), resources: self.resources)
                 self.worker = worker
                 try await worker.prepare()
@@ -143,7 +163,10 @@ final class LayaRuntimeManager: ObservableObject {
                     self.worker?.stop(); self.worker = nil
                     self.installer?.stop(); self.installer = nil
                     self.task = nil; self.progress = nil; self.state = .failed
-                    self.message = "Laya could not start. Check the installation and retry; manual generation remains available."
+                    self.downloadFileIndex = nil; self.downloadFileTotal = nil
+                    self.message = self.isInstalled
+                        ? "Laya was downloaded but could not start. Retry loading it; manual generation remains available."
+                        : "Laya installation failed. Check the connection and retry; manual generation remains available."
                 }
                 throw error
             }
@@ -167,13 +190,28 @@ final class LayaRuntimeManager: ObservableObject {
     }
 }
 
-private enum LayaBootstrap {
-    static func prepare(root: URL, resources: URL, progress: @escaping @Sendable (Double?, String) -> Void) async throws -> URL {
-        let data = try Data(contentsOf: resources.appendingPathComponent("pins.json"))
+enum LayaBootstrap {
+    static func pythonPin(from data: Data) throws -> (url: URL, digest: String) {
         guard let pins = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let python = pins["python"] as? [String: String], let digest = python["sha256"],
-              digest.count == 64, let address = python["url"], let url = URL(string: address), url.scheme == "https"
+              let python = pins["python"] as? [String: Any],
+              let digest = python["sha256"] as? String, digest.count == 64,
+              let address = python["url"] as? String, let url = URL(string: address), url.scheme == "https"
         else { throw LayaRuntimeError.installationFailed }
+        return (url, digest)
+    }
+    static func downloadFileTotal(from data: Data) throws -> Int {
+        guard let pins = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let wheels = pins["wheels"] as? [[String: Any]],
+              let model = pins["model"] as? [[String: Any]],
+              !wheels.isEmpty, !model.isEmpty, wheels.count + model.count <= 998
+        else { throw LayaRuntimeError.installationFailed }
+        return 2 + wheels.count + model.count
+    }
+    static func prepare(root: URL, resources: URL, progress: @escaping @Sendable (Double?, String) -> Void,
+                        file: @escaping @Sendable (Int, Int) -> Void) async throws -> URL {
+        let data = try Data(contentsOf: resources.appendingPathComponent("pins.json"))
+        let (url, digest) = try pythonPin(from: data)
+        let fileTotal = try downloadFileTotal(from: data)
         let fm = FileManager.default
         let directory = root.appendingPathComponent("bootstrap/" + digest)
         let executable = directory.appendingPathComponent("python/bin/python3")
@@ -183,7 +221,8 @@ private enum LayaBootstrap {
         let archive = cache.appendingPathComponent(digest + ".tar.gz")
         if !(await matches(archive, digest: digest)) {
             if fm.fileExists(atPath: archive.path) { try fm.removeItem(at: archive) }
-            try await LocalModelInstaller.download(ModelDownload(url: url, sha256: digest, name: "Python runtime"), to: archive, progress: progress)
+            file(1, fileTotal)
+            try await LocalModelInstaller.download(ModelDownload(url: url, sha256: digest, name: "Python runtime", ossObjectKey: "laya/python/" + digest + ".tar.gz"), to: archive, progress: progress)
         }
         try Task.checkCancellation()
         let staging = root.appendingPathComponent("bootstrap/staging-" + UUID().uuidString)

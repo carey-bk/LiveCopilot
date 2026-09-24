@@ -1,0 +1,19 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": ["*"],
+      "Action": ["oss:GetObject"],
+      "Resource": [
+        "acs:oss:*:*:livecopilot-models-cn-7b4f/models/local/*",
+        "acs:oss:*:*:livecopilot-models-cn-7b4f/models/laya/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "acs:SecureTransport": ["true"]
+        }
+      }
+    }
+  ]
+}

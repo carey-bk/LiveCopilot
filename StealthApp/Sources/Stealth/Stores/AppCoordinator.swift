@@ -15,13 +15,21 @@ final class AppCoordinator: ObservableObject {
     private lazy var layaGate: LayaTriggerController = {
         let gate = LayaTriggerController(predict: { [weak self] text, context in
             guard let self else { throw CancellationError() }
-            if let predict = self.layaPredictor { return try await predict(text, context) }
-            return try await self.laya.predict(text: text, context: context)
-        }, onTrigger: { [weak self] input in self?.dispatchLaya(input) ?? true })
+            var highest = 0.0
+            for variant in LayaPredictionText.variants(text) {
+                try Task.checkCancellation()
+                let score: Double
+                if let predict = self.layaPredictor { score = try await predict(variant, context) }
+                else { score = try await self.laya.predict(text: variant, context: context) }
+                highest = max(highest, score)
+            }
+            return highest
+        }, onTrigger: { [weak self] input in self?.dispatchLaya(input) ?? true }, ruleNearMissMargin: 0.1)
         gate.onError = { [weak self] _ in
             guard let self else { return }
             self.statusMessage = ServiceGuide.text("Laya unavailable — manual generation remains available. Check Live services settings.", "Laya 暂不可用，仍可手动生成回答。请检查“实时服务”设置。", self.settings.language)
         }
+        gate.onDecision = { [weak self] score in self?.layaLastScore = score }
         return gate
     }()
     let appleSpeech = AppleSpeechManager()
@@ -58,7 +66,6 @@ final class AppCoordinator: ObservableObject {
         didSet {
             settings.save(defaults: settingsDefaults)
             if oldValue.automaticSuggestions != settings.automaticSuggestions ||
-                oldValue.automaticTriggerService != settings.automaticTriggerService ||
                 oldValue.scenario != settings.scenario ||
                 oldValue.mode != settings.mode || oldValue.listeningService != settings.listeningService {
                 invalidateAutomaticTrigger()
@@ -92,6 +99,7 @@ final class AppCoordinator: ObservableObject {
     @Published var keyStatus = "No credential available."
     @Published var statusMessage = "Ready — type a question or start listening"
     @Published var questionState = QuestionPhase.listening.rawValue
+    @Published private(set) var layaLastScore: Double?
     @Published var knowledgeDocuments: [KnowledgeDocument] = []
     @Published var isIndexing = false
     @Published private(set) var indexingProgress = 0.0
@@ -154,9 +162,11 @@ final class AppCoordinator: ObservableObject {
         }.store(in: &cancellables)
         Task { await refreshKnowledge() }
     }
-    private var usesLaya: Bool { settings.automaticTriggerService == .laya }
+    /// Local transcribers use Laya; GPT-Live-1 owns its client delegation decisions.
+    private var usesLaya: Bool { settings.listeningService.isLocal }
     private func invalidateAutomaticTrigger(releaseRuntime: Bool = true) {
         questionTask?.cancel(); questionTask = nil; pendingAutomatic = nil
+        layaLastScore = nil
         layaGate.reset()
         if releaseRuntime { laya.stop() }
     }
@@ -182,6 +192,9 @@ final class AppCoordinator: ObservableObject {
         guard isRunning, settings.automaticSuggestions, usesLaya else { return }
         guard isMock || (speaker == .them ? systemAudio.isCapturing : mic.isCapturing) else { return }
         if speaker == .you { layaGate.manualIntervention(); return }
+        // Very short ASR previews are often noise or an unfinished syllable.
+        // They must not retire a complete question while the pause timer runs.
+        if let partial, partial.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 { return }
         // Use the same caption grouping as dispatch, without mutating conversation state.
         var snapshot = conversation
         if let partial {
@@ -190,9 +203,7 @@ final class AppCoordinator: ObservableObject {
             _ = snapshot.append(.init(id: "laya-preview", speaker: speaker, text: partial,
                                       startMS: offset, endMS: offset, receivedAt: now))
         }
-        guard let text = snapshot.candidate(speaker: speaker, now: Date(), cooldown: 0, force: partial != nil, semanticDetection: true) else {
-            layaGate.manualIntervention(); return
-        }
+        guard let text = snapshot.candidate(speaker: speaker, now: Date(), cooldown: 0, force: partial != nil, semanticDetection: true) else { return }
         layaGate.submit(.init(text: text, context: snapshot.context(), speaker: speaker, isFinal: partial == nil))
     }
     private func dispatchLaya(_ input: LayaTriggerInput) -> Bool {
@@ -388,7 +399,7 @@ final class AppCoordinator: ObservableObject {
             provider = AppleLiveProvider(speaker: speaker, language: settings.appleSpeechLanguage, sessionStart: sessionStartedAt ?? Date())
         } else if let kind = settings.listeningService.localModel {
             provider = LocalLiveProvider(directory: kind.location(in: localModels.root), speaker: speaker, sessionStart: sessionStartedAt ?? Date())
-        } else { provider = OpenAILiveProvider(key: key, model: settings.liveModel, speaker: speaker, scenario: settings.scenario) }
+        } else { provider = OpenAILiveProvider(key: key, model: settings.liveModel, speaker: speaker, scenario: settings.scenario, language: settings.liveSpeechLanguage) }
         provider.onEvent = { [weak self] event in self?.receive(event, speaker: speaker, epoch: epoch) }
         return provider
     }
@@ -439,7 +450,7 @@ final class AppCoordinator: ObservableObject {
         guard !usesLaya else { pendingAutomatic = nil; return }
         let epoch = liveEpoch
         questionTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 650_000_000)
+            try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled, let self, self.liveEpoch == epoch, self.isRunning,
                   !self.usesLaya, self.settings.automaticSuggestions, let pending = self.pendingAutomatic else { return }
             if Date() > pending.deadline { self.pendingAutomatic = nil; return }
@@ -450,9 +461,6 @@ final class AppCoordinator: ObservableObject {
                 if self.conversation.phase == .duplicate || self.conversation.phase == .answered { self.pendingAutomatic = nil }
                 else { self.scheduleAutomatic() }
                 return
-            }
-            if self.settings.listeningService.isLocal, !LocalQuestionDetector.isQuestion(question) {
-                self.pendingAutomatic = nil; self.questionState = QuestionPhase.waiting.rawValue; return
             }
             self.pendingAutomatic = nil
             self.request(query: question, mode: .reply, speaker: pending.speaker, delegationID: pending.id, automatic: true)

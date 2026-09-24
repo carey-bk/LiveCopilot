@@ -139,7 +139,7 @@ struct SettingsView: View {
                     if locked { Text(t("Stop listening to change mode or scenario.")).font(.caption).foregroundStyle(.secondary) }
                     Toggle(t("Automatic suggestions for meaningful questions"), isOn: $coordinator.settings.automaticSuggestions)
                         .accessibilityIdentifier("automatic-suggestions")
-                    Button(b("Manage automatic triggers in Live services", "在实时服务中管理自动触发")) { page = .services; serviceRole = 0 }
+                    Button(b("View automatic analysis in Live services", "在实时服务中查看自动分析")) { page = .services; serviceRole = 0 }
                 }.padding(10)
             } label: { Label(t("Conversation"), systemImage: "waveform") }
             SettingsSection {
@@ -168,21 +168,18 @@ struct SettingsView: View {
     }
     private var automaticTriggerSettings: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker(b("Automatic trigger", "自动触发方式"), selection: $coordinator.settings.automaticTriggerService) {
-                Text(b("Speech service / rules", "语音服务 / 规则判断")).tag(AutomaticTriggerService.provider)
-                Text(b("Laya · local detection (experimental)", "Laya · 本地判断（实验性）")).tag(AutomaticTriggerService.laya)
-            }.accessibilityIdentifier("automatic-trigger-service")
-            if coordinator.settings.automaticTriggerService == .provider {
-                Text(b("Uses the speech provider's trigger events. Local ASR uses question rules; GPT-Live-1 uses its existing delegation flow.", "沿用语音服务的触发事件：本地 ASR 使用问句规则，GPT-Live-1 使用已有的自动委托机制。"))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            Text("Jev Mode")
+                .font(.custom(AppBrandTitle.fontName, size: 24))
+                .accessibilityAddTraits(.isHeader)
+            Text(b("With automatic suggestions enabled, Laya decides when completed local speech needs analysis.", "开启自动建议后，Laya 判断已完成的本地语音是否需要分析。"))
+                .font(.caption).foregroundStyle(.secondary)
             GroupBox {
                 VStack(alignment: .leading, spacing: 12) {
                 Text(b("Laya evaluates streaming text locally, then requests an answer after the other speaker finishes and pauses. It uses your selected analysis model; that model may charge API fees. In-person mode cannot distinguish you from other speakers.", "Laya 在本地持续判断流式文字，等对方说完并停顿后，触发你选择的分析模型生成回答；分析模型仍可能产生 API 费用。现场模式无法区分自己与他人。"))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text(b("Downloaded separately · local/free · about 678 MB for model files, plus runtime. The app includes the integration, not the model weights. Laya decides when to request an answer; it does not transcribe audio or generate the answer itself.", "额外下载 · 本地/免费 · 模型文件约 678 MB，另需运行环境。软件包包含接入代码，不包含模型权重。Laya 判断何时需要生成回答，本身不负责语音识别或撰写回答。"))
                     .font(.caption).foregroundStyle(.secondary)
-                Text(b("Downloads automatically try available sources. If retries fail, try another network.", "自动尝试可用下载线路，无需选择下载源。如果重试仍失败，可尝试切换网络。"))
+                Text(b("Downloads automatically try available sources, including mainland mirrors. If retries fail, try another network.", "自动尝试可用下载线路（含国内镜像），无需选择下载源。如果重试仍失败，可尝试切换网络。"))
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Text(b("Trigger threshold", "触发阈值"))
@@ -234,7 +231,10 @@ struct SettingsView: View {
         case .unsupported: return b("Laya unavailable on this Mac", "此 Mac 不支持 Laya")
         case .notInstalled: return b("Laya not downloaded", "Laya 尚未下载")
         case .installed: return b("Laya downloaded", "Laya 已下载")
-        case .installing: return b("Preparing local runtime…", "正在准备本地运行环境…")
+        case .installing:
+            let title = b("Preparing local runtime…", "正在准备本地运行环境…")
+            guard let index = laya.downloadFileIndex, let total = laya.downloadFileTotal else { return title }
+            return title + " · " + b("Downloading", "正在下载") + " \(index)/\(total)"
         case .loading: return b("Loading Laya…", "正在加载 Laya…")
         case .ready: return b("Laya ready · local", "Laya 已就绪 · 本地")
         case .failed: return b("Laya needs attention", "Laya 需要处理")
@@ -262,22 +262,44 @@ struct SettingsView: View {
             if coordinator.settings.listeningService == .apple {
                 Text(b("SpeechAnalyzer + SpeechTranscriber: offline streaming captions with revisable previews. Apple manages language downloads and inference. Requires macOS 26 and supported hardware; choose Mandarin or English before listening. This option does not automatically switch languages.", "SpeechAnalyzer + SpeechTranscriber：离线流式转写，预览文字会修正。语言模型与推理由 macOS 管理，需要 macOS 26 和受支持硬件；开始前选择普通话或英语，不自动切换语言。")).font(.callout).foregroundStyle(.secondary)
                 AppleSpeechCard(manager: coordinator.appleSpeech, language: $coordinator.settings.appleSpeechLanguage, interfaceLanguage: coordinator.settings.language, locked: locked)
-                Text(b("Like FunASR, automatic suggestions can use question rules or the local Laya trigger below. Recognition speed and accuracy depend on your language, microphone and vocabulary; neither engine is always better.", "与 FunASR 一样，自动建议可使用问句规则或下方的本地 Laya 判断。速度和准确率取决于语言、麦克风及术语，没有在所有场景都更好的引擎。")).font(.caption).foregroundStyle(.secondary)
+                Text(b("Automatic analysis uses the local Laya trigger below. Recognition speed and accuracy depend on your language, microphone and vocabulary.", "自动分析使用下方的本地 Laya 判断。识别速度和准确率取决于语言、麦克风及术语。")).font(.caption).foregroundStyle(.secondary)
             } else if let kind = coordinator.settings.listeningService.localModel {
                 Text(t("Audio stays on this Mac. Chinese and English captions update while you speak. Preview text can change; completed sentences are used for automatic suggestions.")).font(.callout).foregroundStyle(.secondary)
                 LocalModelCard(manager: coordinator.localModels, kind: kind, language: coordinator.settings.language, locked: locked || coordinator.isIndexing || coordinator.suggestion.isLoading, remove: { coordinator.removeLocalModel(kind) })
                 Text(b("English terminology can be misrecognized. For English-heavy conversations, compare Apple English or GPT-Live-1 on your own audio.", "英文术语可能误识别。英文较多时，可用自己的音频对比 Apple 英语识别或 GPT-Live-1。")).font(.caption).foregroundStyle(.secondary)
-                Text(b("Choose question rules or local Laya below to trigger analysis. You can always generate an answer manually.", "可在下方选择问句规则或本地 Laya 来触发分析，也可随时手动生成回答。")).font(.caption).foregroundStyle(.secondary)
+                Text(b("Automatic analysis uses the local Laya trigger below. You can always generate an answer manually.", "自动分析使用下方的本地 Laya 判断，也可随时手动生成回答。")).font(.caption).foregroundStyle(.secondary)
                 localCost
             } else {
-                Label("OpenAI", systemImage: "waveform").font(.title3.bold())
+                HStack(spacing: 10) {
+                    if let url = Bundle.main.url(forResource: "OpenAI-Logomark", withExtension: "svg"),
+                       let logo = NSImage(contentsOf: url) {
+                        Image(nsImage: logo)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 22, height: 22)
+                            .frame(width: 30, height: 30)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+                            .accessibilityHidden(true)
+                    }
+                    Text("OpenAI")
+                }.font(.title3.bold()).accessibilityElement(children: .combine)
                 Text(t("Audio is sent to OpenAI Live for transcription and semantic question detection.")).font(.callout).foregroundStyle(.secondary)
+                Picker(b("Recognition language preference", "识别语言偏好"), selection: $coordinator.settings.liveSpeechLanguage) {
+                    Text(b("Chinese first", "中文优先")).tag(LiveSpeechLanguage.chinese)
+                    Text(b("English first", "英文优先")).tag(LiveSpeechLanguage.english)
+                    Text(b("Chinese + English", "中英混合")).tag(LiveSpeechLanguage.mixed)
+                    Text(b("Any language (auto-detect)", "不限语言（自动识别）")).tag(LiveSpeechLanguage.unrestricted)
+                }.disabled(locked).accessibilityIdentifier("live-speech-language")
+                Text(b("The first three options guide GPT-Live-1 but cannot lock its language. Any language sends no language hint, so the model decides from the audio. Choose before listening; changes apply to the next session.", "前三项仅引导 GPT-Live-1，不会强制锁定语言。选择“不限语言”则不发送语言提示，由模型根据音频自行判断。请在开始监听前选择，下次会话生效。"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(b("GPT-Live-1 decides when to delegate a complete question for analysis. Laya settings apply only to local speech recognition.", "GPT-Live-1 自行判断何时把完整问题委托给分析模型；Laya 设置仅用于本地语音识别。"))
+                    .font(.caption).foregroundStyle(.secondary)
                 CredentialEditor(coordinator: coordinator, analysis: false)
                 modelField("Live model", value: $coordinator.settings.liveModel).disabled(locked)
                 priceNote(ServiceGuide.livePrice(coordinator.settings.liveModel, language: coordinator.settings.language), url: "https://developers.openai.com/api/docs/models/gpt-live-1")
             }
             Divider()
-            automaticTriggerSettings
+            if coordinator.settings.listeningService.isLocal { automaticTriggerSettings }
         }
     }
     private var embeddingService: some View {

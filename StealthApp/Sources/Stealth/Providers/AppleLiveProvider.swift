@@ -32,7 +32,7 @@ enum AppleSpeechSupport {
 }
 
 /// Apple owns inference and downloaded assets; this provider never falls back to
-/// server recognition. The app still owns source labels and question detection.
+/// server recognition. Laya decides whether a final local transcript needs analysis.
 @available(macOS 26, *)
 @MainActor final class AppleLiveProvider: LiveProvider {
     var onEvent: ((LiveEvent) -> Void)?
@@ -44,15 +44,14 @@ enum AppleSpeechSupport {
     private var resultTask: Task<Void, Never>?
     private var detectorTask: Task<Void, Never>?
     private var loading: Task<Void, Never>?
-    private var trigger: Task<Void, Never>?
     private var inputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
     private var targetFormat: AVAudioFormat?
     private var converter: AVAudioConverter?
     private var pending = Data()
     private var active = false, ready = false, closing = false, failed = false, speaking = false
-    private var audioFrames: Int64 = 0, offsetMS = 0, lastEndMS = -10000
+    private var heardSpeech = false
+    private var audioFrames: Int64 = 0, offsetMS = 0
     private var textState = SpeechPreviewState()
-    private var question = "", lastSegmentID = ""
 
     init(speaker: Speaker, language: AppleSpeechLanguage, sessionStart: Date = Date()) {
         self.speaker = speaker; self.language = language; self.sessionStart = sessionStart
@@ -92,9 +91,8 @@ enum AppleSpeechSupport {
                 for try await result in detector.results {
                     guard let self, !Task.isCancelled else { return }
                     self.speaking = result.speechDetected
+                    if self.speaking { self.heardSpeech = true }
                     self.onEvent?(.speechActivity(self.speaking))
-                    if self.speaking { self.trigger?.cancel(); self.trigger = nil }
-                    else { self.considerQuestion() }
                 }
             } catch { if let self, self.active || self.closing { self.fail() } }
         }
@@ -103,6 +101,7 @@ enum AppleSpeechSupport {
     func connect(context: String) {
         guard !active else { return }
         active = true
+        heardSpeech = false
         offsetMS = max(0, Int(Date().timeIntervalSince(sessionStart) * 1000))
         loading = Task { [weak self] in
             guard let self else { return }
@@ -152,39 +151,25 @@ enum AppleSpeechSupport {
         let start = max(0, Int(result.range.start.seconds * 1000))
         let end = max(start, Int(CMTimeRangeGetEnd(result.range).seconds * 1000))
         let text = String(result.text.characters)
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { heardSpeech = true }
         if let part = textState.accept(startMS: start, endMS: end, text: text, final: result.isFinal) {
             let id = "apple-\(speaker.rawValue)-\(part.startMS)-\(part.endMS)"
             let stable = part.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            question = part.startMS - lastEndMS > 1800 ? stable : String((question + " " + stable).suffix(2200))
-            lastEndMS = part.endMS; lastSegmentID = id
             onEvent?(.transcript(.init(id: id, speaker: speaker, text: " " + stable, startMS: offsetMS + part.startMS,
                                       endMS: offsetMS + part.endMS, receivedAt: Date())))
-            considerQuestion()
         }
         onEvent?(.partialTranscript(textState.preview))
-        if !textState.preview.isEmpty { trigger?.cancel(); trigger = nil }
-    }
-    private func considerQuestion() {
-        guard active, !closing, !speaking, textState.preview.isEmpty, speaker != .you, trigger == nil,
-              LocalQuestionDetector.isQuestion(question) else { return }
-        let id = lastSegmentID
-        trigger = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 900_000_000)
-            guard !Task.isCancelled, let self, self.active, !self.closing, !self.speaking,
-                  self.textState.preview.isEmpty, self.lastSegmentID == id else { return }
-            self.onEvent?(.delegation(id: "question-" + id, offsetMS: self.offsetMS + self.lastEndMS))
-        }
     }
     private func fail(message: String? = nil) {
         guard !failed else { return }
-        failed = true; active = false; trigger?.cancel(); pending.removeAll()
+        failed = true; active = false; pending.removeAll()
         continuation?.finish(); onEvent?(.partialTranscript(""))
         onEvent?(.failed(message ?? "Apple speech stopped unexpectedly. Stop/start listening to retry."))
         if let analyzer { Task { await analyzer.cancelAndFinishNow() } }
     }
     func appendContext(_ text: String, delegationID: String?) {}
     func disconnect() async {
-        closing = true; active = false; trigger?.cancel()
+        closing = true; active = false
         if !ready { loading?.cancel(); await loading?.value }
         continuation?.finish()
         var finalized = ready && !failed && pending.isEmpty
@@ -196,7 +181,12 @@ enum AppleSpeechSupport {
             }
             if ready {
                 do { try await analyzer.finalizeAndFinishThroughEndOfInput(); await resultTask?.value }
-                catch { finalized = false }
+                catch {
+                    let recognition = error as NSError
+                    // Apple's recognizer rejects a genuinely silent stream when
+                    // finalizing it. No speech and no transcript is a valid stop.
+                    finalized = !heardSpeech && recognition.domain == "SFSpeechErrorDomain" && recognition.code == 1
+                }
             } else { await analyzer.cancelAndFinishNow() }
             deadline.cancel()
         }

@@ -15,10 +15,11 @@ import urllib.request
 import uuid
 import threading
 import time
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 OUTPUT_LOCK = threading.Lock()
 SOURCE = "mirror"
+DISTRIBUTION_BASE = None
 CURRENT_STAGE = "model"
 CURRENT_PROGRESS = 0.0
 PROGRESS_SPAN = 0.0
@@ -30,8 +31,11 @@ def output(event):
 
 
 def digest(path):
+    sha = hashlib.sha256()
     with path.open('rb') as stream:
-        return hashlib.file_digest(stream, 'sha256').hexdigest()
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            sha.update(chunk)
+    return sha.hexdigest()
 
 
 def emit(stage, progress):
@@ -40,13 +44,52 @@ def emit(stage, progress):
     output({'stage': stage, 'progress': progress})
 
 
+def announce_file(index, total):
+    output({'file_index': index, 'file_total': total})
+
+
 def download(item, cache):
     with (cache / (item['sha256'] + '.lock')).open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         return download_locked(item, cache)
 
 
-def candidates(url):
+def oss_key(item):
+    if item.get('name', '').endswith('.whl'):
+        return 'laya/wheels/' + item['name']
+    if item.get('name') in MODEL_NAMES:
+        return 'laya/model/' + item['name']
+    if 'codeload.github.com/' in item['url']:
+        return 'laya/source/' + item['sha256'] + '.tar.gz'
+    return 'laya/python/' + item['sha256'] + '.tar.gz'
+
+
+MODEL_NAMES = set()
+
+
+def candidates(url, item=None):
+    if SOURCE in ('oss', 'distribution') and DISTRIBUTION_BASE and item:
+        key = '/'.join(quote(part, safe='') for part in oss_key(item).split('/'))
+        return [DISTRIBUTION_BASE.rstrip('/') + '/' + key] + fallback_candidates(url)
+    return fallback_candidates(url)
+
+
+# Mirrors reachable from a mainland connection without a proxy. University mirrors are far
+# faster for the pinned CPython archive than any GitHub accelerator, so they come first.
+UNIVERSITY_RELEASE_MIRRORS = [
+    'https://mirrors.ustc.edu.cn/github-release',
+    'https://mirror.nju.edu.cn/github-release',
+]
+RELEASE_ACCELERATORS = ['gh-proxy.com', 'hk.gh-proxy.com', 'ghproxy.net']
+SOURCE_ACCELERATORS = ['hk.gh-proxy.com']
+PYTHON_RELEASE_REPO = 'astral-sh/python-build-standalone'
+
+
+def accelerated(accelerator, url):
+    return 'https://' + accelerator + '/' + url
+
+
+def fallback_candidates(url):
     if SOURCE == 'original':
         return [url]
     host = urlsplit(url).hostname
@@ -54,22 +97,41 @@ def candidates(url):
         return [url.replace('https://huggingface.co/', 'https://hf-mirror.com/', 1), url]
     if host == 'files.pythonhosted.org':
         return [url.replace('https://files.pythonhosted.org/', 'https://mirrors.tuna.tsinghua.edu.cn/pypi/web/', 1), url]
+    marker = '/releases/download/'
+    if host == 'github.com' and marker in url:
+        owner_repo, tail = url.split('github.com/', 1)[1].split(marker, 1)
+        mirrors = []
+        if owner_repo == PYTHON_RELEASE_REPO:
+            mirrors = [base + '/' + owner_repo + '/' + tail for base in UNIVERSITY_RELEASE_MIRRORS]
+        return mirrors + [accelerated(name, url) for name in RELEASE_ACCELERATORS] + [url]
+    if host == 'codeload.github.com':
+        return [accelerated(name, url) for name in SOURCE_ACCELERATORS] + [url]
     return [url]
 
 
 def download_locked(item, cache):
-    for address in candidates(item['url']):
+    addresses = candidates(item['url'], item)
+    for index, address in enumerate(addresses):
         try:
             return download_one(dict(item, url=address), cache)
         except (ValueError, subprocess.CalledProcessError, OSError):
-            if address == candidates(item['url'])[-1]:
+            # A failed origin may have left incomplete or incorrect range chunks.
+            if item.get('sha256'):
+                shutil.rmtree(cache / (item['sha256'] + '.chunks'), ignore_errors=True)
+            output({'transfer': item.get('name', 'Runtime') + ' · source failed; trying next source', 'fraction': None})
+            if index == len(addresses) - 1:
                 raise
 
 
 def transfer_snapshot(item, cache, temporary):
     if item.get('size', 0) > 16 * 1024 * 1024:
         folder = cache / (item['sha256'] + '.chunks')
-        files = list(folder.glob('*')) if folder.exists() else []
+        files = []
+        if folder.exists():
+            for part in folder.glob('*'):
+                if part.suffix == '.partial' and (folder / part.stem).exists():
+                    continue
+                files.append(part)
     else:
         files = [temporary]
     total = 0
@@ -89,7 +151,8 @@ def monitor_transfer(item, cache, temporary, stop):
         speed = max(0, count - previous) / max(0.001, now - then) / 1_000_000
         previous, then = count, now
         percent = f'{fraction:.0%} · ' if fraction is not None else ''
-        detail = f"{item.get('name', 'Runtime')} · {percent}{count / 1_000_000:.1f} MB · {speed:.1f} MB/s"
+        rate = f'{speed:.2f} MB/s' if speed >= 0.1 else f'{speed * 1000:.0f} KB/s'
+        detail = f"{item.get('name', 'Runtime')} · {urlsplit(item['url']).hostname} · {percent}{count / 1_000_000:.1f} MB · {rate}"
         output({'transfer': detail, 'fraction': fraction})
 
 
@@ -105,6 +168,7 @@ def download_one(item, cache):
     monitor = threading.Thread(target=monitor_transfer, args=(item, cache, temporary, stop), daemon=True)
     monitor.start()
     try:
+        output({'transfer': item.get('name', 'Runtime') + ' · ' + str(urlsplit(url).hostname) + ' · 0.0 MB · 0.0 MB/s', 'fraction': 0})
         # macOS system proxy settings are used when no environment override exists.
         env = dict(os.environ)
         for scheme, proxy in urllib.request.getproxies().items():
@@ -123,6 +187,7 @@ def download_one(item, cache):
             raise ValueError('checksum')
         temporary.replace(target)
         shutil.rmtree(cache / (item['sha256'] + '.chunks'), ignore_errors=True)
+        output({'transfer': item.get('name', 'Runtime') + ' · ' + str(urlsplit(url).hostname) + ' · verified', 'fraction': 1})
         return target
     finally:
         stop.set(); monitor.join()
@@ -163,9 +228,10 @@ def download_ranges(item, target, env):
 
 
 def install(root, resources):
-    global PROGRESS_SPAN
+    global PROGRESS_SPAN, MODEL_NAMES
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     pins = json.loads((resources / 'pins.json').read_text())
+    MODEL_NAMES = {item['name'] for item in pins['model']}
     with (root / 'install.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         cache = root / 'downloads'; cache.mkdir(exist_ok=True, mode=0o700)
@@ -173,6 +239,7 @@ def install(root, resources):
         location.mkdir(parents=True, mode=0o700)
         committed = False
         try:
+            total_files = 2 + len(pins['wheels']) + len(pins['model'])  # Python bootstrap, wheels, source, model.
             emit('python', 0.02)
             subprocess.run([sys.executable, '-I', '-m', 'venv', str(location / 'venv')],
                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -180,6 +247,7 @@ def install(root, resources):
             wheels = location / 'wheels'; wheels.mkdir()
             for index, item in enumerate(pins['wheels']):
                 emit('dependencies', 0.05 + 0.25 * index / len(pins['wheels']))
+                announce_file(index + 2, total_files)
                 shutil.copyfile(download(item, cache), wheels / item['name'])
             subprocess.run([str(python), '-I', '-m', 'pip', 'install', '--isolated',
                             '--no-index', '--no-deps', '--disable-pip-version-check',
@@ -188,6 +256,7 @@ def install(root, resources):
             shutil.rmtree(wheels)
             emit('source', 0.32)
             source = location / 'source'; source.mkdir()
+            announce_file(len(pins['wheels']) + 2, total_files)
             with tarfile.open(download(pins['source'], cache)) as archive:
                 # Copy regular source/license files only; never extract links or execute setup.
                 for member in archive.getmembers():
@@ -204,6 +273,7 @@ def install(root, resources):
             for index, item in enumerate(pins['model']):
                 PROGRESS_SPAN = 0.6 * item.get('size', 0) / max(1, total)
                 emit('model', 0.35 + 0.6 * completed / max(1, total))
+                announce_file(len(pins['wheels']) + 3 + index, total_files)
                 completed += item.get('size', 0)
                 name = Path(item['name'])
                 if name.is_absolute() or '..' in name.parts:
@@ -230,9 +300,17 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--root', required=True)
     parser.add_argument('--resources', required=True)
-    parser.add_argument('--download-source', choices=['mirror', 'original'], default='mirror')
+    parser.add_argument('--download-source', choices=['oss', 'distribution', 'mirror', 'original'], default='mirror')
+    parser.add_argument('--oss-base')
+    parser.add_argument('--distribution-base')
     args = parser.parse_args()
     SOURCE = args.download_source
+    distribution_base = args.distribution_base or args.oss_base
+    if distribution_base:
+        parsed = urlsplit(distribution_base)
+        if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise SystemExit(2)
+        DISTRIBUTION_BASE = distribution_base
     try:
         os.setpgid(0, 0)
     except OSError:

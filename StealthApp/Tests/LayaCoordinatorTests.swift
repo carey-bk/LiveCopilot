@@ -30,7 +30,7 @@ final class LayaCoordinatorTests: XCTestCase {
         let app = AppCoordinator(mock: true, layaRoot: root, layaPredictor: predictor,
                                  mockReasoning: reasoning, emitMockConversation: false, mockDefaults: defaults)
         app.settings.automaticSuggestions = true
-        app.settings.automaticTriggerService = .laya
+        app.settings.listeningService = .paraformer
         app.settings.mode = .remote
         app.settings.layaThreshold = 0.8
         return app
@@ -178,11 +178,21 @@ final class LayaCoordinatorTests: XCTestCase {
             .appendingPathComponent("Library/Application Support/LiveCopilot/Development/Laya")
         let runtime = LayaRuntimeManager(root: root)
         try await runtime.prepareAndWait()
-        for text in ["Could you explain your approach to solving this problem?", "请介绍一下你在这个项目中具体负责哪些工作？"] {
+        for (text, speaker) in [
+            ("Could you explain your approach to solving this problem?", Speaker.them),
+            ("请介绍一下你在这个项目中具体负责哪些工作？", .them),
+            ("你好你讲一下这个机制的实现是怎么做的", .room),
+            ("你这个早退机制是怎么确定时间的", .room),
+            // Exact final captions produced by this Mac's synthetic Paraformer
+            // and Apple speech probes, including their missing punctuation.
+            ("请问这个实验为什么选择方法比它的延迟是多少毫秒", .room),
+            ("why did we choose method be and what is its lenc", .them),
+        ] {
             let reasoning = CountingLayaReasoning()
-            let app = make(reasoning) { text, context in try await runtime.predict(text: text, context: context) }
+            let app = make(reasoning) { text, context in try await runtime.predict(text: LayaPredictionText.normalized(text), context: context) }
+            if speaker == .room { app.settings.mode = .inPerson }
             await app.start()
-            final(app, text: text)
+            final(app, text: text, speaker: speaker)
             let deadline = Date().addingTimeInterval(15)
             while reasoning.requests.isEmpty && Date() < deadline { await pause(0.1) }
             XCTAssertEqual(reasoning.requests.count, 1)
@@ -200,17 +210,79 @@ final class LayaCoordinatorTests: XCTestCase {
         }
         await runtime.shutdown()
     }
-    @MainActor func testProviderRouteStillHandlesDelegationWithoutLaya() async {
+    @MainActor func testGPTLiveDelegationTriggersWithoutLaya() async {
         let reasoning = CountingLayaReasoning()
         var predictions = 0
         let app = make(reasoning) { _, _ in predictions += 1; return 0.95 }
-        app.settings.automaticTriggerService = .provider
+        app.settings.listeningService = .openAI
         await app.start()
         final(app, text: "What is the latency of method B?")
+        await pause(0.65)
+        XCTAssertTrue(reasoning.requests.isEmpty, "GPT-Live-1 must decide when to delegate")
         app.receiveMockEvent(.delegation(id: "provider-route", offsetMS: 1000), speaker: .them)
         await pause()
         XCTAssertEqual(reasoning.requests.count, 1)
         XCTAssertEqual(predictions, 0)
+        await app.shutdown()
+    }
+    @MainActor func testLocalSpeechAlwaysUsesLayaAndIgnoresProviderDelegation() async {
+        let reasoning = CountingLayaReasoning()
+        var predictions = 0
+        let app = make(reasoning) { _, _ in predictions += 1; return 0.57 }
+        app.settings.mode = .inPerson
+        app.settings.listeningService = .paraformer
+        await app.start()
+        let question = "你讲一下这个机制是怎么实现的"
+        final(app, text: question, id: "room-question", speaker: .room)
+        await pause()
+        XCTAssertGreaterThan(predictions, 0)
+        XCTAssertTrue(reasoning.requests.isEmpty)
+        app.receiveMockEvent(.delegation(id: "question-room-question", offsetMS: 1000), speaker: .room)
+        await pause()
+        XCTAssertTrue(reasoning.requests.isEmpty, "local provider delegation must not bypass Laya")
+        await app.shutdown()
+    }
+    @MainActor func testAppleSpeechRoutesFinalTranscriptThroughLaya() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning)
+        app.settings.mode = .inPerson
+        app.settings.listeningService = .apple
+        await app.start()
+        app.receiveMockEvent(.speechActivity(true), speaker: .room)
+        app.receiveMockEvent(.partialTranscript("你这个机制是怎么确定时间的"), speaker: .room)
+        final(app, text: "你这个机制是怎么确定时间的", id: "apple-final", speaker: .room)
+        app.receiveMockEvent(.partialTranscript(""), speaker: .room)
+        app.receiveMockEvent(.speechActivity(false), speaker: .room)
+        await pause()
+        XCTAssertEqual(reasoning.requests.count, 1)
+        XCTAssertEqual(app.suggestion.question, "你这个机制是怎么确定时间的")
+        await app.shutdown()
+    }
+    @MainActor func testRoomLayaShowsScoreBelowThreshold() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning) { _, _ in 0.57 }
+        app.settings.mode = .inPerson
+        await app.start()
+        final(app, text: "你讲一下这个机制是怎么实现的", speaker: .room)
+        await pause()
+        XCTAssertEqual(app.layaLastScore, 0.57)
+        XCTAssertTrue(reasoning.requests.isEmpty)
+        await app.shutdown()
+    }
+    @MainActor func testRoomLayaNearMissQuestionTriggersAfterSpeechGap() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning) { _, _ in 0.76 }
+        app.settings.mode = .inPerson
+        await app.start()
+        app.receiveMockEvent(.speechActivity(true), speaker: .room)
+        final(app, text: "你这个机制是怎么确定时间的", speaker: .room)
+        await pause()
+        XCTAssertTrue(reasoning.requests.isEmpty)
+        app.receiveMockEvent(.speechActivity(false), speaker: .room)
+        app.receiveMockEvent(.partialTranscript("气"), speaker: .room)
+        await pause()
+        XCTAssertEqual(reasoning.requests.count, 1)
+        XCTAssertEqual(app.layaLastScore, 0.76)
         await app.shutdown()
     }
 }

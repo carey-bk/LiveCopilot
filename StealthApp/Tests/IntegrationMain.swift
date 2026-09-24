@@ -10,7 +10,18 @@ import AVFoundation
             }
             print("PASS credential available (value never displayed)")
             if CommandLine.arguments.contains("--keychain-check") { return }
-            let settings = AppSettings.load()
+            var settings = AppSettings.load()
+            if let index = CommandLine.arguments.firstIndex(of: "--live-language") {
+                guard CommandLine.arguments.indices.contains(index + 1),
+                      let language = LiveSpeechLanguage(rawValue: CommandLine.arguments[index + 1]) else {
+                    throw CopilotError.message("Use --live-language chinese, english or mixed.")
+                }
+                settings.liveSpeechLanguage = language
+            }
+            if CommandLine.arguments.contains("--live-only") {
+                try await verifyLive(key: key, settings: settings)
+                return
+            }
             let embedding = OpenAIEmbeddingProvider(key: key, model: settings.embeddingModel)
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("livecopilot-api-test-" + UUID().uuidString)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

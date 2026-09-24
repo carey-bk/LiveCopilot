@@ -21,14 +21,14 @@ struct OverlayView: View {
     private var answerSize: CGFloat { OverlayTypography.clamped(coordinator.settings.answerFontSize, fallback: 14) }
     private var speakerWidth: CGFloat { max(35, transcriptSize * 2.8) }
     private var hasTranscript: Bool { transcript.hasContent }
-    private var transcriptIdeal: CGFloat { hasTranscript ? min(145, max(44, transcriptHeight + 22)) : 0 }
+    private var transcriptIdeal: CGFloat { hasTranscript ? min(145, max(76, transcriptHeight + 28)) : 0 }
     private var chromeHeight: CGFloat {
         // Padding, divider, and spacing between the fixed groups and content panes.
         (fixedHeights["top"] ?? 66) + (fixedHeights["actions"] ?? 24) + (fixedHeights["bottom"] ?? 84) + 29 + (hasTranscript ? 50 : 40)
     }
     private var desiredHeight: CGFloat { chromeHeight + transcriptIdeal + max(28, answerHeight) }
     private func reportSize() {
-        onMinimumHeight(chromeHeight + 28 + (hasTranscript ? 44 : 0))
+        onMinimumHeight(chromeHeight + 28 + (hasTranscript ? 76 : 0))
         onContentHeight(desiredHeight)
     }
     var body: some View {
@@ -75,6 +75,16 @@ struct OverlayView: View {
                     Spacer()
                     Toggle(t("Auto"), isOn: $coordinator.settings.automaticSuggestions)
                         .toggleStyle(OverlaySwitchStyle()).accessibilityIdentifier("automatic-suggestions")
+                }
+                if coordinator.settings.automaticSuggestions,
+                   coordinator.settings.listeningService.isLocal {
+                    Text(coordinator.layaLastScore.map {
+                        String(format: "Laya %@ %.2f / %@ %.2f", t("Latest score"), $0,
+                               t("Threshold"), coordinator.settings.layaThreshold)
+                    } ?? String(format: "Laya %@ · %@ %.2f", t("Waiting for a decision"),
+                                       t("Threshold"), coordinator.settings.layaThreshold))
+                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        .lineLimit(1).frame(height: 16, alignment: .leading)
                 }
                 if !transcript.hasContent {
                     Text(t("Listening — waiting for speech")).font(.caption).foregroundStyle(.secondary)

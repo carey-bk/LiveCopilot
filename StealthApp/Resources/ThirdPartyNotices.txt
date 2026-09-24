@@ -1,5 +1,12 @@
 LiveCopilot local inference third-party notices
 
+OpenAI logomark (service identification only)
+The OpenAI name and logomark belong to OpenAI. Their appearance identifies the
+selected OpenAI service and does not imply sponsorship or endorsement.
+Unmodified vector source: https://github.com/openai/openai-cookbook/blob/5986832a554169dc87285b1b0b396941f235a62e/examples/agents_sdk/deployment_manager/frontend/src/openai-logomark.svg
+Brand guidelines: https://openai.com/brand/
+SHA-256: a41e8e53b14ef686319ed1529066d6a3391aca77d7f6eaaa9f0783acc717375f
+
 Native runtime versions: sherpa-onnx v1.13.8; llama.cpp b10955.
 Models are downloaded separately, not included in the app bundle.
 SenseVoiceSmall: https://github.com/FunAudioLLM/SenseVoice

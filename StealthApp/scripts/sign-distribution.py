@@ -19,7 +19,7 @@ def metadata(path, arch):
     return result.stdout + result.stderr
 
 
-def verify(app):
+def verify(app, require_universal=True):
     run('/usr/bin/codesign', '--verify', '--deep', '--strict', str(app))
     main = metadata(app, 'arm64')
     team = next(line.removeprefix('TeamIdentifier=') for line in main.splitlines() if line.startswith('TeamIdentifier='))
@@ -32,7 +32,10 @@ def verify(app):
             continue
         binaries.append(path)
         arches = run('/usr/bin/lipo', '-archs', str(path)).stdout.split()
-        assert set(arches) == {'arm64', 'x86_64'}, f'Not universal: {path}'
+        if require_universal:
+            assert set(arches) == {'arm64', 'x86_64'}, f'Not universal: {path}'
+        else:
+            assert 'arm64' in arches, f'Missing Apple Silicon slice: {path}'
         run('/usr/bin/codesign', '--verify', '--strict', str(path))
         for arch in arches:
             info = metadata(path, arch)
@@ -46,7 +49,7 @@ def verify(app):
                             'com.apple.security.cs.allow-unsigned-executable-memory', 'com.apple.security.cs.allow-jit'):
                     assert not entitlements.get(key, False), f'Unexpected exception {key}: {path}'
     assert len(binaries) == 5, f'Review changed embedded executable inventory ({len(binaries)})'
-    print(f'Verified {len(binaries)} universal binaries: Developer ID, team {team}, secure timestamps, hardened runtime.')
+    print(f'Verified {len(binaries)} binaries: Developer ID, team {team}, secure timestamps, hardened runtime.')
 
 
 def main():
@@ -55,8 +58,16 @@ def main():
     parser.add_argument('--output', type=Path)
     parser.add_argument('--identity', help='Developer ID Application certificate name or SHA-1')
     parser.add_argument('--verify-only', action='store_true')
+    parser.add_argument('--verify-dev-only', action='store_true', help='Verify a development bundle, including every embedded Mach-O')
     args = parser.parse_args()
     source = args.app.resolve()
+    if args.verify_dev_only:
+        if args.verify_only or args.output or args.identity:
+            parser.error('--verify-dev-only does not take signing or release verification options')
+        info = plistlib.loads((source / 'Contents/Info.plist').read_bytes())
+        assert info['CFBundleIdentifier'] == 'com.livecopilot.development', 'Expected Development bundle ID'
+        verify(source, require_universal=False)
+        return
     if args.verify_only:
         if args.output or args.identity:
             parser.error('--verify-only does not take output or identity')

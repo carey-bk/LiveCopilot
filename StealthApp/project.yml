@@ -6,7 +6,7 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "1.4.1"
+    MARKETING_VERSION: "2.0.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: ""
@@ -23,6 +23,8 @@ targets:
     sources:
       - path: Sources
       - path: Resources/AppIcon.icns
+        buildPhase: resources
+      - path: Resources/OpenAI-Logomark.svg
         buildPhase: resources
       - path: Resources/LocalRuntime
         type: folder
@@ -43,7 +45,7 @@ targets:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.livecopilot.development
           APP_DISPLAY_NAME: LiveCopilot Dev
-          MARKETING_VERSION: "1.4.2"
+          MARKETING_VERSION: "2.0.0"
         Release:
           ENABLE_HARDENED_RUNTIME: YES
   LiveCopilotTests:

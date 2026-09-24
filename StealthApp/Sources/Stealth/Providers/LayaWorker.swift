@@ -24,6 +24,7 @@ final class LayaWorker: @unchecked Sendable {
     private let executable: URL
     private let arguments: [String]
     private let transfer: (@Sendable (Double?, String) -> Void)?
+    private let file: (@Sendable (Int, Int) -> Void)?
     private let status: (@Sendable (String, Double?) -> Void)?
     private var process: Process?
     private var input: FileHandle?
@@ -36,8 +37,9 @@ final class LayaWorker: @unchecked Sendable {
     private var ready = false
     private let maxLine = 131072
 
-    init(executable: URL, arguments: [String], transfer: (@Sendable (Double?, String) -> Void)? = nil, status: (@Sendable (String, Double?) -> Void)? = nil) {
-        self.executable = executable; self.arguments = arguments; self.status = status; self.transfer = transfer
+    init(executable: URL, arguments: [String], transfer: (@Sendable (Double?, String) -> Void)? = nil,
+         file: (@Sendable (Int, Int) -> Void)? = nil, status: (@Sendable (String, Double?) -> Void)? = nil) {
+        self.executable = executable; self.arguments = arguments; self.status = status; self.transfer = transfer; self.file = file
     }
     convenience init(installation: URL, resources: URL) {
         self.init(executable: installation.appendingPathComponent("venv/bin/python3"),
@@ -155,6 +157,16 @@ final class LayaWorker: @unchecked Sendable {
         _ = fcntl(input!.fileDescriptor, F_SETNOSIGPIPE, noSignal)
         for _ in 0..<10000 {
             let response = try read(id, epoch: epoch, deadline: deadline)
+            if response["file_index"] != nil || response["file_total"] != nil {
+                guard let index = response["file_index"] as? NSNumber,
+                      let total = response["file_total"] as? NSNumber,
+                      CFGetTypeID(index) != CFBooleanGetTypeID(), CFGetTypeID(total) != CFBooleanGetTypeID(),
+                      index.doubleValue.rounded() == index.doubleValue,
+                      total.doubleValue.rounded() == total.doubleValue,
+                      (1...1000).contains(total.intValue), (1...total.intValue).contains(index.intValue)
+                else { throw LayaRuntimeError.invalidResponse }
+                file?(index.intValue, total.intValue); continue
+            }
             if let detail = response["transfer"] as? String {
                 guard detail.utf8.count <= 1024 else { throw LayaRuntimeError.invalidResponse }
                 let value = (response["fraction"] as? NSNumber)?.doubleValue

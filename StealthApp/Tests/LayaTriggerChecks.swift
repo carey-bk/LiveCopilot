@@ -70,14 +70,16 @@ import Foundation
 
         init(score: Double? = nil, throttle: TimeInterval = 0.02,
              quiet: TimeInterval = 0.04, expiry: TimeInterval = 1,
-             cooldown: TimeInterval = 0, threshold: Double = 0.8) {
+             cooldown: TimeInterval = 0, threshold: Double = 0.8,
+             ruleNearMissMargin: Double = 0) {
             let predictor = Predictor(), sink = Sink()
             predictor.automaticScore = score
             self.predictor = predictor
             self.sink = sink
             controller = LayaTriggerController(predict: { try await predictor.predict($0, $1) },
                                                onTrigger: { sink.receive($0) },
-                                               timing: .init(throttle: throttle, quiet: quiet, expiry: expiry))
+                                               timing: .init(throttle: throttle, quiet: quiet, expiry: expiry),
+                                               ruleNearMissMargin: ruleNearMissMargin)
             controller.onDecision = { sink.decisions.append($0) }
             controller.onError = { sink.errors.append($0) }
             controller.configure(enabled: true, threshold: threshold, cooldown: cooldown)
@@ -119,14 +121,9 @@ import Foundation
             catch { throw Failure(description: name + ": " + String(describing: error)) }
         }
 
-        try await check("service identifiers, production timing and scenario cooldowns") {
-            try expect(AutomaticTriggerService.allCases.map(\.id) == ["provider", "laya"], "service IDs changed")
-            for service in AutomaticTriggerService.allCases {
-                let decoded = try JSONDecoder().decode(AutomaticTriggerService.self, from: JSONEncoder().encode(service))
-                try expect(decoded == service, "service does not round-trip")
-            }
+        try await check("production timing and scenario cooldowns") {
             let timing = LayaTriggerController.Timing()
-            try expect(timing.throttle == 0.35 && timing.quiet == 0.65 && timing.expiry == 25, "production timing changed")
+            try expect(timing.throttle == 0.35 && timing.quiet == 0.5 && timing.expiry == 25, "production timing changed")
             try expect(ScenarioProfile.interview.cooldown == 7 && ScenarioProfile.meeting.cooldown == 12, "scenario cooldown changed")
         }
 
@@ -195,6 +192,22 @@ import Foundation
             h.controller.submit(input("Explain the result in plain language."))
             try await until("threshold-inclusive dispatch") { h.sink.attempts.count == 1 }
             try expect(h.sink.accepted.count == 1, "inclusive default threshold rejected a model decision")
+        }
+
+        try await check("near-threshold explicit question waits for silence and dispatches once") {
+            let h = Harness(score: 0.76, ruleNearMissMargin: 0.1); defer { h.close() }
+            h.controller.setSpeaking(true, speaker: .room)
+            h.controller.submit(input("你这个机制是怎么确定时间的", speaker: .room))
+            try await until("near-threshold score") { h.sink.decisions.count == 1 }
+            try await pause(0.06)
+            try expect(h.sink.attempts.isEmpty, "active speech triggered analysis")
+            h.controller.setSpeaking(false, speaker: .room)
+            try await until("quiet near-threshold dispatch") { h.sink.attempts.count == 1 }
+            try expect(h.sink.accepted.count == 1, "explicit question did not dispatch once")
+            h.controller.submit(input("今天讨论这个机制的实现", speaker: .room))
+            try await until("statement score") { h.sink.decisions.count == 2 }
+            try await pause(0.06)
+            try expect(h.sink.attempts.count == 1, "ordinary statement used near-miss fallback")
         }
 
         try await check("own transcripts are excluded and all active speakers must become quiet") {

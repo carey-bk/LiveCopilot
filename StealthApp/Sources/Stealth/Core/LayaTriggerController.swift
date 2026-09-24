@@ -1,8 +1,38 @@
 import Foundation
 
-enum AutomaticTriggerService: String, Codable, CaseIterable, Identifiable {
-    case provider, laya
-    var id: String { rawValue }
+/// Local ASR often omits terminal punctuation. Restore only an explicit
+/// question cue for Laya's classifier input; the transcript and answer query
+/// retain the exact recognized words.
+enum LayaPredictionText {
+    static func normalized(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !"?？!！.。".contains(trimmed.last!),
+              !trimmed.hasPrefix("他") || !trimmed.contains("问我"),
+              !trimmed.hasPrefix("她") || !trimmed.contains("问我"),
+              LocalQuestionDetector.isQuestion(trimmed) else { return text }
+        let chinese = trimmed.unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) }
+        return trimmed + (chinese ? "？" : "?")
+    }
+
+    /// ASR may omit punctuation between two Chinese questions. Score the full
+    /// utterance and a bounded first question with Laya; never shorten the text
+    /// sent to the answer model. No rule alone can dispatch an answer here.
+    static func variants(_ text: String) -> [String] {
+        let full = normalized(text)
+        guard LocalQuestionDetector.isQuestion(text) else { return [full] }
+        var results = [full]
+        for connector in ["它的", "他的", "她的", "它们的", "他们的"] {
+            guard let range = text.range(of: connector),
+                  text.distance(from: text.startIndex, to: range.lowerBound) >= 8 else { continue }
+            let first = String(text[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard LocalQuestionDetector.isQuestion(first) else { continue }
+            let variant = normalized(first)
+            if variant != full { results.append(variant) }
+            break
+        }
+        return results
+    }
 }
 
 struct LayaTriggerInput: Equatable, Sendable {
@@ -20,9 +50,9 @@ struct LayaTriggerInput: Equatable, Sendable {
         let quiet: TimeInterval
         let expiry: TimeInterval
 
-        init(throttle: TimeInterval = 0.35, quiet: TimeInterval = 0.65, expiry: TimeInterval = 25) {
+        init(throttle: TimeInterval = 0.35, quiet: TimeInterval = 0.5, expiry: TimeInterval = 25) {
             self.throttle = Self.valid(throttle, fallback: 0.35)
-            self.quiet = Self.valid(quiet, fallback: 0.65)
+            self.quiet = Self.valid(quiet, fallback: 0.5)
             self.expiry = Self.valid(expiry, fallback: 25)
         }
 
@@ -54,6 +84,7 @@ struct LayaTriggerInput: Equatable, Sendable {
     private let predict: (String, String) async throws -> Double
     private let onTrigger: (LayaTriggerInput) -> Bool
     private let timing: Timing
+    private let ruleNearMissMargin: Double
     private var enabled = false
     private var threshold = 0.8
     private var cooldown: TimeInterval = 7
@@ -76,10 +107,11 @@ struct LayaTriggerInput: Equatable, Sendable {
     /// Timing is injectable for regression checks; ordinary callers use the two closures.
     init(predict: @escaping (String, String) async throws -> Double,
          onTrigger: @escaping (LayaTriggerInput) -> Bool,
-         timing: Timing = Timing()) {
+         timing: Timing = Timing(), ruleNearMissMargin: Double = 0) {
         self.predict = predict
         self.onTrigger = onTrigger
         self.timing = timing
+        self.ruleNearMissMargin = max(0, min(0.2, ruleNearMissMargin))
     }
 
     deinit {
@@ -313,7 +345,10 @@ struct LayaTriggerInput: Equatable, Sendable {
         guard !expireIfNeeded(), enabled, !dispatching, speaking.isEmpty,
               let current = candidate, current.input.speaker != .you,
               current.input.isFinal, let finalAt = current.finalAt,
-              let score = current.score, score >= threshold,
+              let score = current.score,
+              (score >= threshold ||
+               (ruleNearMissMargin > 0 && score >= threshold - ruleNearMissMargin &&
+                LocalQuestionDetector.isQuestion(current.input.text))),
               !current.deferred, !handled.contains(current.key) else { return }
         let due = max(max(finalAt, lastActivityAt) + timing.quiet,
                       lastTriggerAt.map { $0 + cooldown } ?? 0)

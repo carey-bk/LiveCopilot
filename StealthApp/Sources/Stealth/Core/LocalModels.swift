@@ -90,6 +90,11 @@ struct ModelDownload: Sendable {
     let sha256: String
     let name: String
     var installedName: String? = nil
+    var ossObjectKey: String? = nil
+    /// Pinned extra sources for this file, tried after the configured distribution and before generic host mirrors.
+    /// Used when a mirror serves the identical object under a different host and path.
+    var mirrors: [URL] = []
+    var ossKey: String { ossObjectKey ?? "local/" + name }
     private static let paraformerBase = "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/8e40c43232a1c5c66c82111efc5820d3accca11b/"
     static let paraformerEncoder = Self(
         url: URL(string: paraformerBase + "encoder.int8.onnx")!,
@@ -108,7 +113,8 @@ struct ModelDownload: Sendable {
         sha256: "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", name: "silero_vad.onnx")
     static let bge = Self(
         url: URL(string: "https://huggingface.co/gpustack/bge-m3-GGUF/resolve/2d48f1737679ad900d5c26c5aad5410e9c70fdca/bge-m3-Q8_0.gguf")!,
-        sha256: "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167", name: "bge-m3-Q8_0.gguf")
+        sha256: "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167", name: "bge-m3-Q8_0.gguf",
+        mirrors: [URL(string: "https://modelscope.cn/models/gpustack/bge-m3-GGUF/resolve/master/bge-m3-Q8_0.gguf")!])
     func verify(_ file: URL) throws {
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
@@ -119,6 +125,30 @@ struct ModelDownload: Sendable {
         guard hash.finalize().map({ String(format: "%02x", $0) }).joined() == sha256 else {
             throw CopilotError.message("Model verification failed. Download it again; the previous model was preserved.")
         }
+    }
+}
+
+/// Public, read-only HTTPS origin. No distribution credentials are stored in the app.
+enum ModelDistribution {
+    /// Public, immutable ModelScope snapshot used by release builds without a local config file.
+    /// A user-specific HTTPS source can override it; no credentials are embedded in the app.
+    private static let defaultBaseURL = URL(string: "https://modelscope.cn/models/careybk/livecopilot-model-assets/resolve/a5ba0b9be08e7d8f7438e3762791ac5b62c1e253")!
+    static var baseURL: URL? {
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let variant = Bundle.main.bundleIdentifier == "com.livecopilot.development" ? "Development" : ""
+        let file = root.appendingPathComponent("LiveCopilot").appendingPathComponent(variant)
+            .appendingPathComponent("model-distribution.json")
+        guard let data = try? Data(contentsOf: file),
+              let config = try? JSONDecoder().decode(Configuration.self, from: data),
+              let address = config.modelScopeBaseURL ?? config.ossBaseURL,
+              let url = URL(string: address), let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              parts.scheme == "https", parts.host != nil, parts.user == nil, parts.password == nil,
+              parts.query == nil, parts.fragment == nil else { return defaultBaseURL }
+        return url
+    }
+    private struct Configuration: Decodable {
+        let modelScopeBaseURL: String?
+        let ossBaseURL: String?
     }
 }
 

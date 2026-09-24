@@ -3,6 +3,35 @@ import Foundation
 @testable import LiveCopilot
 
 final class LayaWorkerTests: XCTestCase {
+    func testBootstrapAcceptsPinnedPythonWithNumericSize() throws {
+        let digest = String(repeating: "a", count: 64)
+        let data = try JSONSerialization.data(withJSONObject: ["python": [
+            "url": "https://example.com/python.tar.gz", "sha256": digest, "size": 24_981_445
+        ]])
+        let pin = try LayaBootstrap.pythonPin(from: data)
+        XCTAssertEqual(pin.url.absoluteString, "https://example.com/python.tar.gz")
+        XCTAssertEqual(pin.digest, digest)
+        let resources = try XCTUnwrap(Bundle.main.resourceURL).appendingPathComponent("LayaRuntime/pins.json")
+        XCTAssertEqual(try LayaBootstrap.downloadFileTotal(from: Data(contentsOf: resources)), 32)
+    }
+
+    func testInstallerFileCountTelemetryAndValidation() async throws {
+        let counted = expectation(description: "file count")
+        let body = "import json\nprint(json.dumps({'file_index':9,'file_total':32}),flush=True)\nprint(json.dumps({'ready':True,'protocol':1}),flush=True)\n"
+        let process = LayaWorker(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: ["-c", body], file: { index, total in
+            XCTAssertEqual(index, 9)
+            XCTAssertEqual(total, 32)
+            counted.fulfill()
+        })
+        defer { process.stop() }
+        try await process.prepare()
+        await fulfillment(of: [counted], timeout: 1)
+        let bad = worker("import json\nprint(json.dumps({'file_index':33,'file_total':32}),flush=True)\n")
+        defer { bad.stop() }
+        do { try await bad.prepare(); XCTFail("Invalid file count accepted") }
+        catch LayaRuntimeError.invalidResponse { }
+    }
+
     private func worker(_ body: String) -> LayaWorker {
         LayaWorker(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: ["-I", "-B", "-c", body])
     }

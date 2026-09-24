@@ -15,11 +15,7 @@ final class LocalLiveProvider: LiveProvider {
     private var pending = Data()
     private var pump: Task<Void, Never>?
     private var loading: Task<Void, Never>?
-    private var trigger: Task<Void, Never>?
-    private var question = ""
-    private var lastEndMS = -10000
     private var speaking = false
-    private var lastSegmentID = ""
     private var inferenceFailed = false
     private var partial = ""
 
@@ -45,7 +41,7 @@ final class LocalLiveProvider: LiveProvider {
         guard active, !closing else { return }
         // At most 12 seconds. Never silently drop audio then pretend the transcript is complete.
         guard pending.count + data.count <= 16000 * 2 * 12 else {
-            active = false; inferenceFailed = true; trigger?.cancel(); pending.removeAll(); worker.close()
+            active = false; inferenceFailed = true; pending.removeAll(); worker.close()
             partial = ""; onEvent?(.partialTranscript(""))
             onEvent?(.failed("Local recognition fell behind. Stop/start listening and reduce other heavy workloads.")); return
         }
@@ -70,38 +66,26 @@ final class LocalLiveProvider: LiveProvider {
         let wasSpeaking = speaking
         speaking = response["speaking"] as? Bool ?? false
         if wasSpeaking != speaking { onEvent?(.speechActivity(speaking)) }
-        if speaking { trigger?.cancel(); trigger = nil }
         for row in response["segments"] as? [[String: Any]] ?? [] {
             guard let raw = row["text"] as? String, let start = row["start_ms"] as? Int, let end = row["end_ms"] as? Int else { continue }
             let text = raw.replacingOccurrences(of: #"<\|[^>]+\|>"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
             let id = "local-" + UUID().uuidString
-            if start - lastEndMS > 1800 { question = text } else { question = String((question + " " + text).suffix(2200)) }
-            lastEndMS = end; lastSegmentID = id
             onEvent?(.transcript(.init(id: id, speaker: speaker, text: " " + text, startMS: offsetMS + start,
                                       endMS: offsetMS + end, receivedAt: Date())))
         }
         if let preview = response["partial"] as? String, preview != partial {
             partial = preview; onEvent?(.partialTranscript(preview))
         }
-        if !speaking, active, !closing, speaker != .you, trigger == nil, LocalQuestionDetector.isQuestion(question) {
-            let id = lastSegmentID
-            trigger = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 900_000_000)
-                guard !Task.isCancelled, let self, self.active, !self.closing, !self.speaking, self.lastSegmentID == id else { return }
-                self.onEvent?(.delegation(id: "question-" + id, offsetMS: self.offsetMS + self.lastEndMS))
-                // Keep this completed task until speech resumes so silence cannot redelegate.
-            }
-        }
     }
     private func fail() {
-        active = false; trigger?.cancel(); pending.removeAll(); worker.close()
+        active = false; pending.removeAll(); worker.close()
         partial = ""; onEvent?(.partialTranscript(""))
         onEvent?(.failed("Local model stopped unexpectedly or timed out. Retry after checking model files."))
     }
     func appendContext(_ text: String, delegationID: String?) { /* The app owns local conversation context. */ }
     func disconnect() async {
-        closing = true; active = false; trigger?.cancel(); loading?.cancel()
+        closing = true; active = false; loading?.cancel()
         let worker = self.worker
         let deadline = Task {
             try? await Task.sleep(nanoseconds: 15_000_000_000)
