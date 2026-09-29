@@ -11,6 +11,8 @@ final class OverlayWindow: NSPanel {
     private(set) var autoHeight = true
     private(set) var edgeHide = false
     private(set) var edgeHidden = false
+    var guidanceActive = false { didSet { hover.reset() } }
+    var setupWindowVisible = false { didSet { hover.reset() } }
     var onManualHeight: (() -> Void)?
     private var desiredHeight: CGFloat = 280
     private var edgeTimer: Timer?
@@ -159,7 +161,7 @@ final class OverlayWindow: NSPanel {
     }
 
     func updatePointer(_ point: NSPoint, now: TimeInterval, interacting: Bool) {
-        guard edgeHide else { return }
+        guard edgeHide, !setupWindowVisible else { return }
         if edgeHidden || !isVisible {
             let hit = NSScreen.screens.first { OverlayLayout.atRightEdge(point, screen: $0.frame, visible: $0.visibleFrame) }
             if hover.shouldReveal(atEdge: hit != nil, now: now), let hit {
@@ -167,6 +169,7 @@ final class OverlayWindow: NSPanel {
                 reveal()
             }
         } else {
+            guard !guidanceActive else { return }
             if hover.shouldHide(inside: frame.insetBy(dx: -12, dy: -12).contains(point), interacting: interacting || now < holdUntil, now: now) {
                 tuckAway()
             }

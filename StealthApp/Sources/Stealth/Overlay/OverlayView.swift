@@ -5,6 +5,7 @@ struct OverlayView: View {
     @ObservedObject var transcript: TranscriptStore
     @ObservedObject var suggestion: SuggestionStore
     @ObservedObject var hotkeys: HotkeyStore
+    @ObservedObject var onboarding: OnboardingStore
     @State private var query = ""
     @State private var followTranscript = true
     @State private var transcriptHeight: CGFloat = 22
@@ -14,6 +15,7 @@ struct OverlayView: View {
     var onMinimumHeight: (CGFloat) -> Void
     init(coordinator: AppCoordinator, onContentHeight: @escaping (CGFloat) -> Void = { _ in }, onMinimumHeight: @escaping (CGFloat) -> Void = { _ in }) {
         self.coordinator = coordinator; transcript = coordinator.transcript; suggestion = coordinator.suggestion; hotkeys = coordinator.hotkeys
+        onboarding = coordinator.onboarding
         self.onContentHeight = onContentHeight; self.onMinimumHeight = onMinimumHeight
     }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
@@ -68,6 +70,9 @@ struct OverlayView: View {
     private var top: some View {
         VStack(alignment: .leading, spacing: 10) {
             header.padding(.trailing, 16)
+            if onboarding.visibleTip == .start && !onboarding.state.prefersTyping {
+                OverlayFirstUseTip(step: .start, coordinator: coordinator)
+            }
             Text(t(coordinator.statusMessage)).font(.caption).foregroundStyle(.secondary).lineLimit(3).textSelection(.enabled)
             if coordinator.isRunning {
                 HStack {
@@ -93,12 +98,18 @@ struct OverlayView: View {
         }
     }
     private var actions: some View {
-        HStack(spacing: 6) {
-            ForEach(coordinator.settings.enabledSuggestionModes) { mode in
-                Button { coordinator.requestSuggestion(mode: mode) } label: { Label(t(mode.label), systemImage: mode.systemImage).font(.caption) }
-                    .help(hotkeys.combo(for: mode).display).accessibilityIdentifier("action-" + mode.rawValue)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                ForEach(coordinator.settings.enabledSuggestionModes) { mode in
+                    Button { coordinator.requestSuggestion(mode: mode) } label: { Label(t(mode.label), systemImage: mode.systemImage).font(.caption) }
+                        .help(hotkeys.combo(for: mode).display).accessibilityIdentifier("action-" + mode.rawValue)
+                        .onboardingHighlight(onboarding.visibleTip == .answer && mode == .reply)
+                }
+                Spacer()
             }
-            Spacer()
+            if onboarding.visibleTip == .answer {
+                OverlayFirstUseTip(step: .answer, coordinator: coordinator)
+            }
         }
     }
     private var bottom: some View {
@@ -107,14 +118,21 @@ struct OverlayView: View {
                 TextField(t("Ask anything — listening can be off"), text: $query, axis: .vertical)
                     .textFieldStyle(.roundedBorder).lineLimit(1...3)
                     .onSubmit { submit() }.accessibilityIdentifier("manual-query")
+                    .onboardingHighlight(onboarding.visibleTip == .start && onboarding.state.prefersTyping)
                 Button(t("Ask")) { submit() }.disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+            if onboarding.visibleTip == .start && onboarding.state.prefersTyping {
+                OverlayFirstUseTip(step: .start, coordinator: coordinator)
+            }
             HStack {
-                Toggle(t("Use recent conversation"), isOn: $coordinator.includeConversation).font(.caption2).toggleStyle(.checkbox)
+                Toggle(t("Use recent conversation"), isOn: $coordinator.includeConversation).font(.caption2).toggleStyle(OverlaySwitchStyle())
                 Spacer()
                 if suggestion.isLoading { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption) }
             }
             footer.padding(.trailing, 20)
+            if let tip = onboarding.visibleTip, tip == .visibility || tip == .captureExclusion {
+                OverlayFirstUseTip(step: tip, coordinator: coordinator)
+            }
         }
     }
     private func submit() { let value = query; query = ""; coordinator.askText(value) }
@@ -127,6 +145,8 @@ struct OverlayView: View {
                 Image(systemName: coordinator.isRunning ? "stop.circle.fill" : "play.circle.fill")
                     .foregroundStyle(coordinator.isRunning ? Color.red : .green)
             }.disabled(coordinator.isTransitioning).help(t(coordinator.isRunning ? "Stop listening" : "Start listening"))
+                .accessibilityIdentifier("overlay-toggle-listening")
+                .onboardingHighlight(onboarding.visibleTip == .start && !onboarding.state.prefersTyping)
             Button { Task { await coordinator.resetConversation() } } label: { Image(systemName: "arrow.clockwise") }
                 .disabled(coordinator.isTransitioning)
                 .help(t("Clear conversation and answers; keep listening if active"))
@@ -134,11 +154,13 @@ struct OverlayView: View {
             Button { coordinator.toggleMic() } label: { Image(systemName: coordinator.micEnabled ? "mic.fill" : "mic.slash") }
                 .disabled(coordinator.isTransitioning).help(t("Toggle your microphone in Remote Meeting mode"))
             Button { coordinator.onOpenSettings?() } label: { Image(systemName: "gearshape") }.help(t("Settings and knowledge base"))
+                .onboardingHighlight(onboarding.visibleTip == .captureExclusion)
             Button { coordinator.settings.overlayEdgeHide.toggle() } label: {
                 Image(systemName: coordinator.settings.overlayEdgeHide ? "pin" : "pin.fill")
                     .foregroundStyle(coordinator.settings.overlayEdgeHide ? Color.secondary : .blue)
             }.help(t(coordinator.settings.overlayEdgeHide ? "Pin window" : "Unpin and hide at right edge"))
                 .accessibilityIdentifier("overlay-pin")
+                .onboardingHighlight(onboarding.visibleTip == .visibility)
             Button { (NSApp.windows.first(where: { $0 is OverlayWindow }) as? OverlayWindow)?.tuckAway() } label: { Image(systemName: "minus") }.help(t("Hide (⌥H)"))
         }.buttonStyle(.borderless)
     }
@@ -163,7 +185,7 @@ struct OverlayView: View {
                 }.onChange(of: transcript.lines) { _, _ in if followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
                     .onChange(of: transcript.partialThem) { _, _ in if followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
                     .onChange(of: transcript.partialYou) { _, _ in if followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
-                Toggle(t("Follow transcript"), isOn: $followTranscript).font(.caption2).toggleStyle(.checkbox).frame(maxWidth: .infinity, alignment: .trailing)
+                Toggle(t("Follow transcript"), isOn: $followTranscript).font(.caption2).toggleStyle(OverlaySwitchStyle()).frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
@@ -221,7 +243,8 @@ struct OverlayView: View {
             if !suggestion.text.isEmpty {
                 Button(t("Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(suggestion.text, forType: .string) }.font(.caption2)
             }
-            Text(t("⌥H")).font(.caption2).foregroundStyle(.tertiary)
+            Text(hotkeys.toggleOverlay.display).font(.caption2).foregroundStyle(.tertiary)
+                .onboardingHighlight(onboarding.visibleTip == .visibility)
         }
     }
     private var resizeHandle: some View {

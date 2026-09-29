@@ -21,6 +21,7 @@ struct ChatCompletionsProvider: ReasoningProvider {
             if !effort.isEmpty && effort != "none" { body["reasoning_effort"] = effort }
         }
         // Do not send another vendor's optional fields or fixed sampling parameters.
+        let thinking = service.normalizedThinking(thinking, model: model)
         if thinking != .modelDefault {
             switch service {
             case .qwen: body["enable_thinking"] = thinking == .enabled

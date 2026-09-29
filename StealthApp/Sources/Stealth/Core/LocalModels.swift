@@ -58,6 +58,14 @@ enum LocalModelKind: String, CaseIterable, Identifiable, Sendable {
         case .embedding: return "635 MB"
         }
     }
+    /// Known object sizes from the pinned distribution manifest. Estimates only;
+    /// download progress always uses actual URLSession transfer measurements.
+    var estimatedDownloadBytes: Int64 {
+        switch self {
+        case .streamingSpeech: return 165_462_184 + 71_664_561 + 75_756 + 643_854
+        case .embedding: return 634_553_760
+        }
+    }
     var downloads: [ModelDownload] {
         switch self {
         case .streamingSpeech: return [.paraformerEncoder, .paraformerDecoder, .paraformerTokens, .vad]

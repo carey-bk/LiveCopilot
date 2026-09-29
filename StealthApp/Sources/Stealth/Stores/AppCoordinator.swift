@@ -8,6 +8,7 @@ final class AppCoordinator: ObservableObject {
     let sessions = SessionStore()
     let hotkeys: HotkeyStore
     let localModels: LocalModelManager
+    let onboarding: OnboardingStore
     let laya: LayaRuntimeManager
     private let layaPredictor: ((String, String) async throws -> Double)?
     private let mockReasoning: (any ReasoningProvider)?
@@ -96,6 +97,9 @@ final class AppCoordinator: ObservableObject {
     @Published var isCheckingAnalysisKey = false
     @Published var analysisKeyNeedsAuthorization = false
     @Published var analysisKeyStatus = "No credential available."
+    @Published private(set) var answerCredentialRevision = UUID()
+    @Published private(set) var verifiedAnalysisSettings: AppSettings?
+    private var verifiedCredentialRevision: UUID?
     @Published var keyStatus = "No credential available."
     @Published var statusMessage = "Ready — type a question or start listening"
     @Published var questionState = QuestionPhase.listening.rawValue
@@ -112,9 +116,11 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var conversationGeneration = UUID()
     var onHotkeysChanged: (() -> Void)?
     var onOpenSettings: (() -> Void)?
+    var onOpenOnboarding: (() -> Void)?
+    var onShowOverlayTips: (() -> Void)?
     var onShowOverlay: ((_ automatic: Bool) -> Void)?
 
-    init(mock: Bool = ProcessInfo.processInfo.arguments.contains("--mock") || ProcessInfo.processInfo.environment["LIVECOPILOT_MOCK"] == "1",
+    init(mock: Bool = AppPaths.isMock,
          layaRoot: URL? = nil, layaPredictor: ((String, String) async throws -> Double)? = nil,
          mockReasoning: (any ReasoningProvider)? = nil,
          emitMockConversation: Bool = true, mockDefaults: UserDefaults? = nil) {
@@ -124,9 +130,18 @@ final class AppCoordinator: ObservableObject {
         self.emitMockConversation = emitMockConversation
         localModels = LocalModelManager(root: AppPaths.modelsDirectory(mock: mock))
         laya = LayaRuntimeManager(root: layaRoot ?? AppPaths.dataDirectory(mock: mock).appendingPathComponent("Laya", isDirectory: true))
-        settingsDefaults = mock ? (mockDefaults ?? UserDefaults(suiteName: "com.livecopilot.mock")!) : .standard
+        let preview = AppPaths.isOnboardingPreview
+        settingsDefaults = mock ? (mockDefaults ?? UserDefaults(suiteName: preview ? "com.livecopilot.onboarding-preview.preferences" : "com.livecopilot.mock")!) : .standard
+        onboarding = OnboardingStore(defaults: settingsDefaults, dataDirectory: AppPaths.dataDirectory(mock: mock))
         hotkeys = HotkeyStore(defaults: settingsDefaults)
         settings = AppSettings.load(defaults: settingsDefaults)
+        if onboarding.isNewInstall && (!mock || preview) {
+            settings.listeningService = .paraformer
+            settings.embeddingService = .local
+            settings.reasoningService = .separateOpenAI
+            settings.automaticSuggestions = laya.state != .unsupported
+            settings.save(defaults: settingsDefaults)
+        }
         do { knowledge = try KnowledgeIndex(directory: AppPaths.dataDirectory(mock: mock).appendingPathComponent("knowledge")) }
         catch { knowledgeMessage = error.localizedDescription }
         if mock { hasAPIKey = true; keyStatus = "Mock providers — no credential needed."; statusMessage = "MOCK MODE — no API calls" }
@@ -225,6 +240,7 @@ final class AppCoordinator: ObservableObject {
     func refreshKeyState(interactive: Bool = false) {
         if isMock { hasAPIKey = true; return }
         guard !isCheckingKey else { return }
+        answerCredentialRevision = UUID()
         isCheckingKey = true
         cachedKey = nil; hasAPIKey = false
         keyNeedsAuthorization = false
@@ -251,6 +267,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
     func refreshAnalysisKeyState(interactive: Bool = false) {
+        answerCredentialRevision = UUID()
         let revision = UUID(); analysisCredentialRevision = revision
         cachedAnalysisKey = nil; hasAnalysisKey = false; isCheckingAnalysisKey = false; analysisKeyNeedsAuthorization = false
         guard settings.reasoningService != .sharedOpenAI else { analysisKeyStatus = "Using the Live service credential."; return }
@@ -282,6 +299,7 @@ final class AppCoordinator: ObservableObject {
         let reference = analysis ? try settings.analysisCredentialReference() : .live
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         try await CredentialVault.shared.save(value, for: reference)
+        answerCredentialRevision = UUID()
         if reference == .live {
             credentialRevision = UUID(); isCheckingKey = false
             cachedKey = value; hasAPIKey = true; keyNeedsAuthorization = false; keyStatus = "Saved in macOS Keychain."
@@ -290,10 +308,42 @@ final class AppCoordinator: ObservableObject {
             cachedAnalysisKey = value; hasAnalysisKey = true; analysisKeyNeedsAuthorization = false; analysisKeyStatus = "Saved in macOS Keychain."
         }
     }
+    var hasAnswerCredential: Bool { settings.reasoningService == .sharedOpenAI ? hasAPIKey : hasAnalysisKey }
+    var isAnalysisConnectionVerified: Bool {
+        guard let verifiedAnalysisSettings, verifiedCredentialRevision == answerCredentialRevision else { return false }
+        return settings.reasoningService == verifiedAnalysisSettings.reasoningService &&
+            settings.analysisModel == verifiedAnalysisSettings.analysisModel &&
+            (try? settings.analysisCredentialReference()) == (try? verifiedAnalysisSettings.analysisCredentialReference()) &&
+            settings.reasoningEffort == verifiedAnalysisSettings.reasoningEffort &&
+            settings.deepSeekEffort == verifiedAnalysisSettings.deepSeekEffort &&
+            settings.presetConnection == verifiedAnalysisSettings.presetConnection
+    }
+
+    /// Only invoked by the explicit onboarding test button; never includes user data.
+    func testAnalysisConnection() async throws {
+        let testedSettings = settings, credentialRevision = answerCredentialRevision
+        verifiedAnalysisSettings = nil
+        let provider: any ReasoningProvider = isMock ? (mockReasoning ?? MockReasoningProvider()) :
+            try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
+        try await AnalysisConnectionProbe.run(provider: provider)
+        try Task.checkCancellation()
+        guard credentialRevision == answerCredentialRevision else { return }
+        verifiedCredentialRevision = credentialRevision
+        verifiedAnalysisSettings = testedSettings
+    }
+    func onboardingAnswer(_ question: String) throws -> AsyncThrowingStream<String, Error> {
+        guard question.count <= 8000 else { throw CopilotError.message("Keep a manual question under 8,000 characters.") }
+        let provider: any ReasoningProvider = isMock ? (mockReasoning ?? MockReasoningProvider()) :
+            try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
+        let request = AnswerRequest(query: RetrievalQuery.formulate(question: question, context: "", previousQuestion: nil),
+                                    conversation: "", scenario: settings.scenario, sources: [], mode: .reply)
+        return provider.stream(request)
+    }
     func removeCredential(analysis: Bool) async throws {
         guard !isMock else { return }
         let reference = analysis ? try settings.analysisCredentialReference() : .live
         try await CredentialVault.shared.remove(reference)
+        answerCredentialRevision = UUID()
         if reference == .live { credentialRevision = UUID(); isCheckingKey = false; refreshKeyState() }
         else if (try? settings.analysisCredentialReference()) == reference { refreshAnalysisKeyState() }
     }

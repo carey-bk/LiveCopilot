@@ -22,11 +22,11 @@ SenseVoiceSmall 整句识别入口在 1.4.0 移除。旧选择迁移到 Paraform
 
 | 预设 | 默认模型 | 默认 Base URL | 思考字段 |
 | --- | --- | --- | --- |
-| Qwen / 阿里云百炼 | `qwen-plus` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `enable_thinking` |
-| GLM / 智谱 | `glm-5.2` | `https://open.bigmodel.cn/api/paas/v4` | `thinking.type` |
+| Qwen / 阿里云百炼 | `qwen3.8-flash` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `enable_thinking`，默认关闭 |
+| GLM / 智谱 | `glm-5.3-flash` | `https://open.bigmodel.cn/api/paas/v4` | 必须开启思考，默认交给模型 |
 | Kimi / Moonshot | `kimi-k2.6` | `https://api.moonshot.cn/v1` | `thinking.type` |
 
-三者使用 `/chat/completions` 流式接口，支持修改模型、Base URL 和思考模式。Qwen/Kimi 默认关闭可选思考以缩短临场等待；GLM 默认遵循模型设置。换到必须思考的模型时选择“模型默认”；并非每个模型都允许关闭思考。更换分析模型不需要重建知识库。
+三者使用 `/chat/completions` 流式接口，支持修改模型、Base URL 和思考模式。Qwen/Kimi 默认关闭可选思考以缩短临场等待；GLM-5.3-Flash/FlashX 不支持关闭思考，界面仅提供“模型默认”和“开启”。OpenAI 分析默认 `gpt-6-sol`，DeepSeek 默认 `deepseek-flash`，使用较低思考强度。新默认值只用于新设置；已有保存的模型、Key、文档和向量索引不会被覆盖或清除。更换分析模型不需要重建知识库。
 
 Qwen Key 必须与地域匹配，新业务空间可从控制台复制新域名；北京旧域名是预填起点。国际 Z.AI 可改用 `https://api.z.ai/api/paas/v4` 并选择账户可用模型；Kimi 国际账户使用 `https://api.moonshot.ai/v1`。国际/国内账户密钥、模型及价格不一定通用。Coding Plan 订阅不等于通用 API 额度。
 
@@ -34,13 +34,13 @@ Qwen Key 必须与地域匹配，新业务空间可从控制台复制新域名�
 
 ## 费用与来源
 
-核对日期：2026-09-16。价格可能变更，实际以账户所属平台账单为准。未能从可读取官方价格页核实的具体价格不填猜测数字。
+模型默认值和 OpenAI/DeepSeek 价格核对日期：2026-09-25。价格可能变更，实际以账户所属平台账单为准。未能从可读取官方价格页核实的具体价格不填猜测数字。
 
 - GPT-Live-1：每路 $0.05/分钟，按秒。系统音频 + 麦克风为两路，约 $0.10/分钟，连接静音也计时。分析另计。[官方说明](https://developers.openai.com/api/docs/models/gpt-live-1)
 - OpenAI Embeddings：Small $0.02、Large $0.13 / 百万输入 token，建库和查询都计费。[Small](https://developers.openai.com/api/docs/models/text-embedding-3-small)、[Large](https://developers.openai.com/api/docs/models/text-embedding-3-large)
-- OpenAI、DeepSeek 的已核对模型报价在设置中显示；其他模型/代理不可套用同一报价。[OpenAI Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)、[DeepSeek](https://api-docs.deepseek.com/quick_start/pricing/)
+- OpenAI、DeepSeek 的已核对模型报价在设置中显示；其他模型/代理不可套用同一报价。[OpenAI Sol](https://developers.openai.com/api/docs/models/gpt-6-sol)、[DeepSeek](https://api-docs.deepseek.com/quick_start/pricing/)
 - Qwen 的模型、地域、上下文档位、思考模式会影响价格。[计费](https://help.aliyun.com/zh/model-studio/model-pricing)、[接入与地域](https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope)、[思考参数](https://www.alibabacloud.com/help/en/model-studio/deep-thinking)
-- GLM 使用通用 API 计费；Z.AI 与国内平台分别核对。[智谱价格](https://bigmodel.cn/pricing)、[GLM-5.2](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.2)、[Z.AI 通用端点](https://docs.z.ai/guides/overview/quick-start)
+- GLM 使用通用 API 计费；Z.AI 与国内平台分别核对。[智谱价格](https://bigmodel.cn/pricing)、[GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash)、[Z.AI 通用端点](https://docs.z.ai/guides/overview/quick-start)
 - Kimi 按输入/输出及缓存命中计费，思考也消耗输出 token。[计费](https://platform.kimi.com/docs/pricing/chat)、[K2.6 参数](https://platform.kimi.com/docs/guide/kimi-k2-6-quickstart)
 
 ## English

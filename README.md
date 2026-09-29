@@ -48,8 +48,8 @@ V2.0.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 - **通用 → 语言与外观 → 字号**：流式识别区与回答区分别调节，11–28 pt，即时生效并独立保存；长内容自动换行并可滚动。
 - **通用 → 窗口底色**：半透明毛玻璃／微透磨砂／纯白底色。微透与白底使用浅色控件与深色文字。
 - **服务 → 实时服务／知识库服务**：独立选择本地或 OpenAI。选择 OpenAI 时，Live 和 Embeddings 共用现有 Key；界面显示固定掩码，点击“更换密钥”才打开输入框，不回填真实 Key。
-- **服务 → 分析服务**：选择分析供应商。默认沿用实时服务的 OpenAI；DeepSeek 使用独立 Key，默认模型 `deepseek-v4-pro`，可修改。兼容服务填写 HTTPS Base URL、Chat Completions 路径和模型，先保存连接，再配置该地址的 Key。
-- **Qwen / GLM / Kimi**：分别预填 `qwen-plus`、`glm-5.2`、`kimi-k2.6` 和国内通用 API 地址，可修改模型、地域/业务空间 Base URL 和思考模式。先保存连接，再输入自己的 Key。厂商与端点之间的密钥互相隔离，不会继承 OpenAI Key。GLM Coding Plan 不等同于通用 API；Qwen 的 Key 必须与地域对应。
+- **服务 → 分析服务**：选择分析供应商。默认沿用实时服务的 OpenAI；DeepSeek 使用独立 Key，默认模型 `deepseek-flash`，优先考虑速度和费用，也可自行修改。兼容服务填写 HTTPS Base URL、Chat Completions 路径和模型，先保存连接，再配置该地址的 Key。
+- **Qwen / GLM / Kimi**：分别预填 `qwen3.8-flash`、`glm-5.3-flash`、`kimi-k2.6` 和国内通用 API 地址，优先考虑临场回答的速度与费用；OpenAI 分析默认 `gpt-6-sol`，DeepSeek 默认 `deepseek-flash`。可修改模型、地域/业务空间 Base URL 和思考模式。先保存连接，再输入自己的 Key。厂商与端点之间的密钥互相隔离，不会继承 OpenAI Key。GLM Coding Plan 不等同于通用 API；Qwen 的 Key 必须与地域对应。
 - 更换分析模型不需要重建知识库。自定义 API 地址改变后不会沿用旧地址的密钥。新三家服务已完成协议及 Mock 测试，未使用真实 Qwen、GLM、Kimi Key 联调；实际账户权限、余额、模型可用性需在本机验证。不要把 Key 发到聊天或写入仓库。
 
 早期版本通过 `NSWindow.sharingType = .none` 对全部窗口请求截图排除。1.1.1 起设置和历史页允许截图；**通用 → 在截图和屏幕共享中隐藏悬浮窗** 控制悬浮窗，默认保留隐藏，关闭后可截图。实际排除效果仍依赖 macOS 和具体会议软件。

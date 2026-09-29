@@ -1,9 +1,9 @@
 import Foundation
 
-/// Published list prices, checked 2026-09-16. Match exact official model IDs only;
+/// Published list prices, checked 2026-09-25. Match exact official model IDs only;
 /// a compatible endpoint can have a completely different billing policy.
 enum ServiceGuide {
-    static let checked = "2026-09-16"
+    static let checked = "2026-09-25"
     static func text(_ en: String, _ zh: String, _ language: AppLanguage) -> String { language.usesChinese ? zh : en }
     static func listening(_ service: ListeningService, language: AppLanguage) -> String {
         switch service {
@@ -36,9 +36,18 @@ enum ServiceGuide {
             return text("Kimi is billed per input/output token, with different rates for cached input. Thinking consumes output tokens too. China and international accounts have separate endpoints and billing; check the current model price on your platform.",
                         "Kimi 按输入/输出 token 计费，缓存命中输入另有价格；思考也消耗输出 token。国内与国际平台的端点和计费不同，请查看账户所属平台的当前模型报价。", language)
         case .sharedOpenAI, .separateOpenAI:
-            guard model == "gpt-5.6-sol" else { return unknown(language) }
-            return text("GPT-5.6 Sol: per 1M tokens, input $4 · cached input $0.40 · output $20. Current promotional price, guaranteed at least through Nov 21, 2026. Cost depends on context and answer length, not minutes.",
-                        "GPT-5.6 Sol：每百万 token，输入 $4 · 缓存命中输入 $0.40 · 输出 $20。当前优惠价至少持续至 2026-11-21。按上下文和回答长度计费，不按分钟。", language)
+            switch model {
+            case "gpt-6-sol":
+                return text("GPT-6 Sol (checked Sep 29, 2026): standard processing, up to 272K input tokens, per 1M tokens input $2 · cached input $0.20 · cache writes $2.50 · output $10. Longer prompts and other tiers have different rates.",
+                            "GPT-6 Sol（2026-09-29 核对）：标准处理、输入不超过 272K token 时，每百万 token 输入 $2 · 缓存命中 $0.20 · 缓存写入 $2.50 · 输出 $10。更长上下文及其他处理档位另有报价。", language)
+            case "gpt-6-luna":
+                return text("GPT-6 Luna: per 1M tokens, input $0.10 · cached input $0.01 · output $0.50 for standard processing and up to 272K input tokens. Longer prompts and other processing tiers cost more.",
+                            "GPT-6 Luna：标准处理、输入不超过 272K token 时，每百万 token 输入 $0.10 · 缓存命中输入 $0.01 · 输出 $0.50。更长上下文或其他处理档位费用更高。", language)
+            case "gpt-5.6-sol":
+                return text("GPT-5.6 Sol: per 1M tokens, input $4 · cached input $0.40 · output $20. Current promotional price, guaranteed at least through Nov 21, 2026. Cost depends on context and answer length, not minutes.",
+                            "GPT-5.6 Sol：每百万 token，输入 $4 · 缓存命中输入 $0.40 · 输出 $20。当前优惠价至少持续至 2026-11-21。按上下文和回答长度计费，不按分钟。", language)
+            default: return unknown(language)
+            }
         case .deepSeek:
             let rates: String
             switch model {

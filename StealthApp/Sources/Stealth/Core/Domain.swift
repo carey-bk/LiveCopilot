@@ -28,7 +28,7 @@ struct AppSettings: Codable, Equatable {
     var appleSpeechLanguage = AppleSpeechLanguage.chinese
     var embeddingService = EmbeddingService.openAI
     var liveModel = "gpt-live-1"
-    var reasoningModel = "gpt-5.6-sol"
+    var reasoningModel = "gpt-6-sol"
     var embeddingModel = "text-embedding-3-small"
     var reasoningEffort = "low"
     var mode = OperatingMode.remote
@@ -50,7 +50,7 @@ struct AppSettings: Codable, Equatable {
     var qwenConnection = AnalysisConnection.qwen
     var glmConnection = AnalysisConnection.glm
     var kimiConnection = AnalysisConnection.kimi
-    var deepSeekModel = "deepseek-v4-pro"
+    var deepSeekModel = "deepseek-flash"
     var deepSeekEffort = "low"
     var compatibleBaseURL = ""
     var compatiblePath = "chat/completions"

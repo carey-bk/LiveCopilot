@@ -368,7 +368,9 @@ enum L10n {
         "Assistance in progress": "正在生成建议",
         "Follow-up question": "追问",
         "Duplicate question": "重复问题",
-        "Already answered": "已回答"
+        "Already answered": "已回答",
+        "The service returned no text. Check the model and retry.": "服务未返回文本，请检查模型并重试。",
+        "Connection test timed out. Check the network and retry.": "连接测试超时，请检查网络并重试。"
     ]
 }
 

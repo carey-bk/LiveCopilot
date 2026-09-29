@@ -67,10 +67,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: OverlayWindow?
     private var settingsWindow: NSWindow?
     private var historyWindow: NSWindow?
+    private var onboardingWindow: NSWindow?
     private var terminationSignal: DispatchSourceSignal?
     private var terminationInProgress = false
     private var readyToTerminate = false
     private var settingsObservation: AnyCancellable?
+    private var onboardingObservation: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGTERM, SIG_IGN)
@@ -78,6 +80,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminationSignal?.setEventHandler { NSApp.terminate(nil) }
         terminationSignal?.resume()
         NSApp.setActivationPolicy(.regular)
+        if AppPaths.isOnboardingPreview && ProcessInfo.processInfo.arguments.contains("--onboarding-dark") {
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
 
         let overlay = OverlayWindow(rootView: OverlayView(coordinator: coordinator, onContentHeight: { [weak self] height in
             // Hosting can measure synchronously inside OverlayWindow.init, before self.overlay is assigned.
@@ -85,11 +90,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }, onMinimumHeight: { [weak self] height in
             DispatchQueue.main.async { self?.overlay?.minimumContentHeightChanged(height) }
         }))
-        overlay.orderFrontRegardless()
+        if !coordinator.onboarding.state.shouldPresent || coordinator.isMock {
+            coordinator.onboarding.enterOverlay()
+            overlay.orderFrontRegardless()
+        }
         self.overlay = overlay
+        if AppPaths.isOnboardingPreview && ProcessInfo.processInfo.arguments.contains("--onboarding-compact") {
+            overlay.setContentSize(NSSize(width: 400, height: 280))
+        }
         overlay.onManualHeight = { [weak self] in self?.coordinator.settings.overlayAutoHeight = false }
         settingsObservation = coordinator.$settings.sink { [weak self] settings in self?.applyPreferences(settings) }
         coordinator.onOpenSettings = { [weak self] in self?.openSettings() }
+        coordinator.onOpenOnboarding = { [weak self] in self?.openOnboarding() }
+        coordinator.onShowOverlayTips = { [weak self] in
+            guard let self else { return }
+            self.closeOnboarding(); self.settingsWindow?.orderOut(nil)
+            self.coordinator.onboarding.replayTips()
+            self.syncGuidancePresentation()
+            self.overlay?.makeKeyAndOrderFront(nil)
+        }
+        onboardingObservation = coordinator.onboarding.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { self?.syncGuidancePresentation() }
+        }
+        syncGuidancePresentation()
         coordinator.onShowOverlay = { [weak self] automatic in self?.overlay?.showForAnswer(automatic: automatic) }
 
         hotkeys.onError = { [weak self] message in self?.coordinator.statusMessage = message }
@@ -103,6 +126,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Credential checks are asynchronous and silent. An empty startup cache is not
         // evidence that the user has never configured a key; Settings stays user-initiated.
+        if (!coordinator.isMock && coordinator.onboarding.state.shouldPresent) ||
+            AppPaths.isOnboardingPreview {
+            openOnboarding()
+        }
     }
 
     private func applyPreferences(_ settings: AppSettings) {
@@ -117,6 +144,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let menu = NSApp.mainMenu { localizeMenu(menu, language: settings.language) }
         settingsWindow?.title = L10n.text("LiveCopilot Settings", language: settings.language)
         historyWindow?.title = L10n.text("LiveCopilot — History", language: settings.language)
+        onboardingWindow?.title = ServiceGuide.text("Welcome to LiveCopilot", "欢迎使用 LiveCopilot", settings.language)
+        syncGuidancePresentation()
     }
 
     private func applyAppearance(to window: NSWindow, background: AppBackground) {
@@ -163,6 +192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if let onboardingWindow, onboardingWindow.isVisible {
+            onboardingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return true
+        }
         overlay?.reveal()
         overlay?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -195,6 +229,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.settingsWindow = window
     }
 
+    func openOnboarding() {
+        if let onboardingWindow {
+            onboardingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        coordinator.onboarding.isPresentingGuide = true
+        coordinator.onboarding.reopen()
+        let view = OnboardingView(coordinator: coordinator, close: { [weak self] in self?.closeOnboarding() },
+                                  beginListening: { [weak self] in
+            guard let self else { return }
+            self.closeOnboarding()
+            Task { await self.coordinator.start() }
+        }, beginTyping: { [weak self] in self?.closeOnboarding() })
+        let window = NSWindow(contentViewController: NSHostingController(rootView: view))
+        window.title = ServiceGuide.text("Welcome to LiveCopilot", "欢迎使用 LiveCopilot", coordinator.settings.language)
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.sharingType = .readOnly
+        window.minSize = NSSize(width: 1040, height: 700)
+        let visibleSize = (NSScreen.main?.visibleFrame.size ?? NSSize(width: 1120, height: 760))
+        window.setContentSize(NSSize(width: min(1040, visibleSize.width), height: min(700, visibleSize.height)))
+        // Appearance and compact-layout switches apply only to the isolated preview.
+        if AppPaths.isOnboardingPreview {
+            if ProcessInfo.processInfo.arguments.contains("--onboarding-dark") { window.appearance = NSAppearance(named: .darkAqua) }
+            if ProcessInfo.processInfo.arguments.contains("--onboarding-compact") { window.setContentSize(NSSize(width: 1040, height: 700)) }
+        }
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        onboardingWindow = window
+        overlay?.orderOut(nil)
+        window.center(); window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    private func closeOnboarding() { onboardingWindow?.close() }
+
+    private func syncGuidancePresentation() {
+        let guide = coordinator.onboarding.isPresentingGuide
+        let tips = coordinator.onboarding.visibleTip != nil
+        overlay?.setupWindowVisible = guide
+        overlay?.guidanceActive = tips
+        if guide { overlay?.orderOut(nil) }
+        else if tips { overlay?.reveal() }
+    }
+
     func openHistory() {
         if let historyWindow {
             historyWindow.makeKeyAndOrderFront(nil)
@@ -213,5 +294,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.historyWindow = window
+    }
+}
+
+extension AppDelegate: NSWindowDelegate {
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === onboardingWindow else { return }
+        // Closing the window preserves an in-progress guide; explicit Skip and
+        // Finish record their own disposition before arriving here.
+        window.contentViewController = nil
+        onboardingWindow = nil
+        coordinator.onboarding.isPresentingGuide = false
+        coordinator.onboarding.enterOverlay()
+        syncGuidancePresentation()
+        overlay?.reveal(); overlay?.makeKeyAndOrderFront(nil)
     }
 }

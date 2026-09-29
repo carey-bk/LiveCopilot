@@ -35,6 +35,10 @@ enum CoreChecks {
         try check("local services migrate independently and do not require OpenAI for DeepSeek") {
             let old = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
             try expect(old.listeningService == .openAI && old.embeddingService == .openAI, "old route silently changed")
+            try expect(old.deepSeekModel == "deepseek-flash" && AppSettings().deepSeekModel == "deepseek-flash", "DeepSeek default is not Flash")
+            var custom = old; custom.deepSeekModel = "deepseek-v4-pro"
+            let preserved = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(custom))
+            try expect(preserved.deepSeekModel == "deepseek-v4-pro", "explicit DeepSeek model was overwritten")
             var local = old; local.listeningService = .paraformer; local.embeddingService = .local; local.reasoningService = .deepSeek
             try expect(!local.requiresOpenAIKey, "local + DeepSeek unnecessarily requires OpenAI")
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(local))
@@ -46,6 +50,18 @@ enum CoreChecks {
             local.listeningService = .openAI; try expect(local.requiresOpenAIKey, "cloud listening lost credential requirement")
             local.listeningService = .paraformer; local.reasoningService = .sharedOpenAI
             try expect(local.requiresOpenAIKey, "shared reasoning lost its credential requirement")
+        }
+        try check("analysis defaults favor current fast cost-effective models") {
+            let settings = AppSettings()
+            try expect(settings.reasoningModel == "gpt-6-sol" && settings.reasoningEffort == "low", "OpenAI analysis default is not Sol low effort")
+            try expect(settings.deepSeekModel == "deepseek-flash" && settings.deepSeekEffort == "low", "DeepSeek analysis default is not Flash low effort")
+            try expect(settings.qwenConnection.model == "qwen3.8-flash" && settings.qwenConnection.thinking == .disabled, "Qwen Flash default is missing")
+            try expect(settings.glmConnection.model == "glm-5.3-flash" && settings.glmConnection.thinking == .modelDefault, "GLM Flash default must leave mandatory thinking enabled")
+            try expect(settings.kimiConnection.model == "kimi-k2.6" && settings.kimiConnection.thinking == .disabled, "Kimi general low-latency default changed")
+            let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+            try expect(restored == settings, "analysis defaults did not persist")
+            let legacy = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"reasoningModel":"gpt-5.6-sol","qwenConnection":{"baseURL":"https://dashscope.aliyuncs.com/compatible-mode/v1","model":"qwen-plus","thinking":"disabled"},"glmConnection":{"baseURL":"https://open.bigmodel.cn/api/paas/v4","model":"glm-5.2","thinking":"modelDefault"}}"#.utf8))
+            try expect(legacy.reasoningModel == "gpt-5.6-sol" && legacy.qwenConnection.model == "qwen-plus" && legacy.glmConnection.model == "glm-5.2", "saved model choices were overwritten")
         }
         try check("retired sentence ASR migrates without resetting user preferences") {
             let json = #"{"listeningService":"local","reasoningService":"deepSeek","deepSeekModel":"deepseek-flash","embeddingService":"local","background":"frosted","automaticSuggestions":false}"#
@@ -100,6 +116,8 @@ enum CoreChecks {
         try check("prices match official model and provider, never a compatible proxy") {
             try expect(ServiceGuide.livePrice("gpt-live-1", language: .english).contains("$0.10"), "dual-session charge omitted")
             try expect(ServiceGuide.embeddingPrice("text-embedding-3-large", language: .english).contains("$0.13"), "embedding rate incorrect")
+            try expect(ServiceGuide.analysisPrice(.sharedOpenAI, model: "gpt-6-luna", language: .english).contains("$0.10") && ServiceGuide.analysisPrice(.sharedOpenAI, model: "gpt-6-luna", language: .english).contains("$0.50"), "Luna standard rates incorrect")
+            try expect(ServiceGuide.analysisPrice(.sharedOpenAI, model: "gpt-6-sol", language: .english).contains("output $10"), "Sol standard rates missing")
             try expect(ServiceGuide.analysisPrice(.deepSeek, model: "deepseek-flash", language: .english).contains("$0.15 / $0.30"), "flash peak rates incorrect")
             try expect(ServiceGuide.analysisPrice(.deepSeek, model: "deepseek-v4-pro", language: .english).contains("$0.66 / $1.32"), "Pro accidentally quoted Flash rates")
             for provider in [ReasoningService.compatible, .deepSeek] {
@@ -538,7 +556,7 @@ enum CoreChecks {
                     let body = try JSONSerialization.jsonObject(with: http.httpBody!) as! [String: Any]
                     try expect(http.url?.absoluteString == endpoint && body["model"] as? String == settings.analysisModel, "wrong preset endpoint or model")
                     try expect(body["temperature"] == nil && body["reasoning_effort"] == nil, "unsupported sampling parameters sent")
-                    if thinking == .modelDefault {
+                    if thinking == .modelDefault || (service == .glm && thinking == .disabled) {
                         try expect(body["thinking"] == nil && body["enable_thinking"] == nil, "default thinking not delegated to model")
                     } else if service == .qwen {
                         try expect(body["enable_thinking"] as? Bool == (thinking == .enabled) && body["thinking"] == nil, "Qwen wire format incorrect")

@@ -53,6 +53,7 @@ struct SettingsView: View {
         .frame(minWidth: 820, idealWidth: 860, minHeight: 610, idealHeight: 680)
         .background { WindowBackgroundView(style: coordinator.settings.background) }
         .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
+        .toggleStyle(.switch)
         .environment(\.locale, coordinator.settings.language.locale)
         .onAppear { loadCustomDraft() }
         .sheet(isPresented: $showOpenAIKey) {
@@ -93,6 +94,19 @@ struct SettingsView: View {
     }
     private var general: some View {
         VStack(alignment: .leading, spacing: 22) {
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(b("Getting started", "新用户引导")).font(.headline)
+                    Text(b("Review language, models, services, and permissions. Your existing setup is kept.", "查看语言、模型、服务和权限，保留已有配置。")).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 8) {
+                    Button(b("Open guide", "打开引导")) { coordinator.onOpenOnboarding?() }
+                        .accessibilityIdentifier("settings-open-onboarding")
+                    Button(b("Show floating window tips", "悬浮窗操作提示")) { coordinator.onShowOverlayTips?() }
+                        .accessibilityIdentifier("settings-overlay-tips")
+                }
+            }
             SettingsSection {
                 VStack(alignment: .leading, spacing: 16) {
                     Picker(t("Interface language"), selection: $coordinator.settings.language) {
@@ -284,14 +298,8 @@ struct SettingsView: View {
                     Text("OpenAI")
                 }.font(.title3.bold()).accessibilityElement(children: .combine)
                 Text(t("Audio is sent to OpenAI Live for transcription and semantic question detection.")).font(.callout).foregroundStyle(.secondary)
-                Picker(b("Recognition language preference", "识别语言偏好"), selection: $coordinator.settings.liveSpeechLanguage) {
-                    Text(b("Chinese first", "中文优先")).tag(LiveSpeechLanguage.chinese)
-                    Text(b("English first", "英文优先")).tag(LiveSpeechLanguage.english)
-                    Text(b("Chinese + English", "中英混合")).tag(LiveSpeechLanguage.mixed)
-                    Text(b("Any language (auto-detect)", "不限语言（自动识别）")).tag(LiveSpeechLanguage.unrestricted)
-                }.disabled(locked).accessibilityIdentifier("live-speech-language")
-                Text(b("The first three options guide GPT-Live-1 but cannot lock its language. Any language sends no language hint, so the model decides from the audio. Choose before listening; changes apply to the next session.", "前三项仅引导 GPT-Live-1，不会强制锁定语言。选择“不限语言”则不发送语言提示，由模型根据音频自行判断。请在开始监听前选择，下次会话生效。"))
-                    .font(.caption).foregroundStyle(.secondary)
+                LiveSpeechLanguagePicker(language: $coordinator.settings.liveSpeechLanguage,
+                                         interfaceLanguage: coordinator.settings.language).disabled(locked)
                 Text(b("GPT-Live-1 decides when to delegate a complete question for analysis. Laya settings apply only to local speech recognition.", "GPT-Live-1 自行判断何时把完整问题委托给分析模型；Laya 设置仅用于本地语音识别。"))
                     .font(.caption).foregroundStyle(.secondary)
                 CredentialEditor(coordinator: coordinator, analysis: false)
@@ -354,6 +362,8 @@ struct SettingsView: View {
                 SettingsSection {
                     VStack(alignment: .leading, spacing: 14) {
                         modelField("Reasoning model", value: $coordinator.settings.deepSeekModel)
+                        Text(b("Flash is the default for faster, lower-cost analysis. You can change the model here.", "默认使用 Flash，优先考虑分析速度和费用；可在此修改模型。"))
+                            .font(.caption).foregroundStyle(.secondary)
                         Picker(t("Reasoning effort"), selection: $coordinator.settings.deepSeekEffort) {
                             Text(t("Off")).tag("none"); Text(t("Low (faster)")).tag("low")
                             Text(t("High")).tag("high"); Text(t("Maximum")).tag("max")

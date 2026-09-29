@@ -26,6 +26,9 @@ targets:
         buildPhase: resources
       - path: Resources/OpenAI-Logomark.svg
         buildPhase: resources
+      - path: Resources/ProviderLogos
+        type: folder
+        buildPhase: resources
       - path: Resources/LocalRuntime
         type: folder
         buildPhase: resources
@@ -58,6 +61,7 @@ targets:
       - path: Tests/LayaCoordinatorTests.swift
       - path: Tests/LayaWorkerTests.swift
       - path: Tests/IndexingProgressTests.swift
+      - path: Tests/OnboardingTests.swift
     dependencies:
       - target: LiveCopilot
     settings:

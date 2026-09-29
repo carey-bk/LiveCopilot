@@ -18,7 +18,7 @@ struct PresetAnalysisSettings: View {
                         TextField(t("API Base URL"), text: $draft.baseURL).textFieldStyle(.roundedBorder).accessibilityIdentifier("preset-base-url")
                     }
                     Picker(b("Thinking mode", "思考模式"), selection: $draft.thinking) {
-                        ForEach(AnalysisThinking.allCases) { Text(t($0.label)).tag($0) }
+                        ForEach(availableThinkingModes) { Text(t($0.label)).tag($0) }
                     }.accessibilityIdentifier("preset-thinking")
                     Text(connectionNote).font(.caption).foregroundStyle(.secondary)
                     Text(b("Chat Completions streaming. Do not include /chat/completions in the base URL. Thinking can increase latency and cost; if your chosen model cannot switch it off, use Model default. Keys are saved separately for each provider and endpoint.",
@@ -36,19 +36,28 @@ struct PresetAnalysisSettings: View {
             CredentialEditor(coordinator: coordinator, analysis: true)
                 .id(try? coordinator.settings.analysisCredentialReference().account)
                 .disabled(draft != coordinator.settings.presetConnection)
-        }.onAppear { draft = coordinator.settings.presetConnection ?? .qwen }
+        }.onAppear {
+            draft = coordinator.settings.presetConnection ?? .qwen
+            draft.thinking = service.normalizedThinking(draft.thinking, model: draft.model)
+        }
+            .onChange(of: draft.model) { _, _ in
+                draft.thinking = service.normalizedThinking(draft.thinking, model: draft.model)
+            }
+    }
+    private var availableThinkingModes: [AnalysisThinking] {
+        service.availableThinkingModes(for: draft.model)
     }
     private var connectionNote: String {
         switch service {
         case .qwen:
-            return b("Default: Qwen Plus, Beijing legacy endpoint. For a workspace endpoint, paste its full base URL from Model Studio, including /compatible-mode/v1. The API key must match its region. Singapore uses a different endpoint and key.",
-                     "默认 Qwen Plus、北京旧域名。使用业务空间新域名时，请从百炼控制台复制完整 Base URL，包含 /compatible-mode/v1。Key 必须与地域一致，新加坡等地域的端点和 Key 不通用。")
+            return b("Default: Qwen3.8 Flash with thinking off for faster answers, Beijing legacy endpoint. For a workspace endpoint, paste its full base URL from Model Studio, including /compatible-mode/v1. The API key must match its region.",
+                     "默认 Qwen3.8 Flash、关闭思考以缩短等待，使用北京旧域名。业务空间请从百炼控制台复制完整 Base URL（含 /compatible-mode/v1）；Key 必须与地域一致。")
         case .glm:
-            return b("Default: GLM-5.2 on Zhipu's general API. For an international Z.AI account use https://api.z.ai/api/paas/v4 with its own key and an available model. Coding Plan endpoints are not general API endpoints.",
-                     "默认 GLM-5.2、智谱通用 API。国际 Z.AI 账户请使用 https://api.z.ai/api/paas/v4、对应 Key 和可用模型。Coding Plan 专用端点不适用于通用 API。")
+            return b("Default: GLM-5.3 Flash on Zhipu's general API. This model requires thinking; use Model default or On. For an international Z.AI account use https://api.z.ai/api/paas/v4 with its own key. Coding Plan endpoints are not general API endpoints.",
+                     "默认 GLM-5.3 Flash、智谱通用 API。此模型必须开启思考，请选“模型默认”或“开启”。国际 Z.AI 账户请使用 https://api.z.ai/api/paas/v4 和对应 Key；Coding Plan 端点不适用于通用 API。")
         case .kimi:
-            return b("Default: Kimi K2.6, China API. For an international account use https://api.moonshot.ai/v1 with that platform's key. Model availability and billing follow your account.",
-                     "默认 Kimi K2.6、国内 API。国际账户请使用 https://api.moonshot.ai/v1 和该平台的 Key，模型可用性及计费以账户为准。")
+            return b("Default: Kimi K2.6 with thinking off for everyday answers, China API. For an international account use https://api.moonshot.ai/v1 with that platform's key. Model availability and billing follow your account.",
+                     "默认 Kimi K2.6、关闭思考以缩短日常回答等待，使用国内 API。国际账户请使用 https://api.moonshot.ai/v1 和该平台的 Key；模型可用性及计费以账户为准。")
         default: return ""
         }
     }
@@ -58,6 +67,7 @@ struct PresetAnalysisSettings: View {
             value.model = value.model.trimmingCharacters(in: .whitespacesAndNewlines)
             value.baseURL = value.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !value.model.isEmpty else { throw CopilotError.message("Enter an analysis model name in Services.") }
+            value.thinking = service.normalizedThinking(value.thinking, model: value.model)
             _ = try value.endpoint()
             coordinator.settings.presetConnection = value
             draft = value
