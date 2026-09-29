@@ -23,7 +23,7 @@ struct OnboardingRecommendationView: View {
                 .disabled(matches || coordinator.isRunning || coordinator.isTransitioning || coordinator.isIndexing ||
                           models.downloading != nil || apple.busy || laya.isBusy)
                 .accessibilityIdentifier("onboarding-apply-recommendation")
-            Text(b("Applying this setup does not download anything. Review the choices on the right before preparing them.", "应用推荐不会开始下载。可在右侧逐项调整，确认后再准备模型。")).font(.caption).foregroundStyle(.secondary)
+            Text(b("This selects your setup. Click “Download & continue” below to download the selected models in the background.", "这里只选择配置。点击右下角“下载并继续”，才会开始后台下载所选模型。")).font(.caption).foregroundStyle(.secondary)
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.accentColor.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
     }

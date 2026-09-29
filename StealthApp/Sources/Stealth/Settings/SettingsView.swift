@@ -101,12 +101,12 @@ struct SettingsView: View {
                     Text(b("Review language, models, services, and permissions. Your existing setup is kept.", "查看语言、模型、服务和权限，保留已有配置。")).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 8) {
                     Button(b("Open guide", "打开引导")) { coordinator.onOpenOnboarding?() }
                         .accessibilityIdentifier("settings-open-onboarding")
                     Button(b("Show floating window tips", "悬浮窗操作提示")) { coordinator.onShowOverlayTips?() }
                         .accessibilityIdentifier("settings-overlay-tips")
-                }
+                }.fixedSize(horizontal: true, vertical: false)
             }
             SettingsSection {
                 VStack(alignment: .leading, spacing: 16) {
@@ -572,8 +572,8 @@ private struct LocalModelCard: View {
                     Text(t("Download size") + " · " + kind.downloadSize).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Label(t(manager.installed.contains(kind) ? "Installed · offline ready" : "Not downloaded"),
-                      systemImage: manager.installed.contains(kind) ? "checkmark.circle.fill" : "arrow.down.circle")
+                Label(statusTitle, systemImage: manager.installed.contains(kind) ? "checkmark.circle.fill"
+                      : manager.queued.contains(kind) ? "clock" : "arrow.down.circle")
                     .font(.caption).foregroundStyle(manager.installed.contains(kind) ? .green : .secondary)
             }
             Text(language == .english ? "Automatically tries available download sources. Progress is for the current file." : "自动尝试可用下载线路；进度显示当前文件的下载比例。")
@@ -584,6 +584,9 @@ private struct LocalModelCard: View {
                     Text("\(Int(value * 100))% · " + manager.transferStatus).font(.caption.monospacedDigit())
                 } else { ProgressView().progressViewStyle(.linear); Text(manager.transferStatus).font(.caption) }
                 HStack { ProgressView().controlSize(.small); Text(t(manager.message)).font(.caption); Spacer(); Button(t("Cancel")) { manager.cancel() } }
+            } else if manager.queued.contains(kind) {
+                Text(language == .english ? "Download is queued and will start automatically after the current model." : "已加入下载队列，当前模型完成后会自动开始。")
+                    .font(.caption).foregroundStyle(.secondary)
             } else {
                 Button(t(manager.installed.contains(kind) ? "Download again" : "Download model")) { manager.install(kind) }
                     .disabled(locked || manager.downloading != nil).accessibilityIdentifier("download-" + kind.rawValue)
@@ -599,6 +602,13 @@ private struct LocalModelCard: View {
             Text(t("Downloaded once, stored on this Mac. No Python, Ollama or Docker installation is required.")).font(.caption).foregroundStyle(.secondary)
         }.padding(16).background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
             .onAppear { manager.refresh() }
+    }
+    private var statusTitle: String {
+        if manager.installed.contains(kind) { return t("Installed · offline ready") }
+        if manager.downloading == kind { return language == .english ? "Downloading…" : "正在下载…" }
+        if manager.queued.contains(kind) { return language == .english ? "Queued for download" : "等待下载" }
+        if manager.failures[kind] != nil { return language == .english ? "Download failed" : "下载失败" }
+        return t("Not downloaded")
     }
 }
 

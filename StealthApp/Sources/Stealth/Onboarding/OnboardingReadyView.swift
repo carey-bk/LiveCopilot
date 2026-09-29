@@ -60,7 +60,7 @@ struct OnboardingReadyView: View {
         }.padding(4)
     }
     private var readiness: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             VStack(spacing: 0) {
                 if !store.state.prefersTyping {
                     statusRow(b("Speech transcription", "语音转写"), detail: speechDetail, ready: speechReady, step: .models)
@@ -79,6 +79,15 @@ struct OnboardingReadyView: View {
                     statusRow("Jev Mode", detail: laya.isReady ? b("Local detection ready", "本地判断已就绪") : laya.isBusy ? b("Preparing · manual replies remain available", "准备中 · 仍可手动触发") : laya.isInstalled ? b("Installed · loads when listening starts", "已安装 · 开始监听时加载") : b("Laya needs setup · use manual replies", "Laya 待配置 · 可手动触发"), ready: laya.isReady, step: .models)
                 }
             }.padding(.horizontal, 16).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+            if OnboardingDownloads.hasPending(coordinator) {
+                HStack(spacing: 12) {
+                    Button(b("Download selected models", "下载所选模型")) { OnboardingDownloads.start(coordinator) }
+                        .disabled(coordinator.isMock || coordinator.isRunning || coordinator.isTransitioning || coordinator.isIndexing)
+                        .accessibilityIdentifier("onboarding-download-pending")
+                    Text(b("Continue using the app while downloads finish.", "后台下载，进入悬浮窗后会继续。"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             if !store.state.prefersTyping {
                 Button(coordinator.isMock ? b("Try sample captions", "体验示例字幕") : b("Start listening", "开始监听")) { store.complete(); beginListening() }
                     .disabled((!coordinator.isMock && (!speechReady || !permissionsReady)) || coordinator.isRunning || coordinator.isTransitioning)
@@ -96,6 +105,9 @@ struct OnboardingReadyView: View {
         return coordinator.hasAnswerCredential ? b("Key configured · connection not yet tested", "密钥已配置 · 连接尚未测试") : b("Configure a key to generate answers", "配置密钥后可生成回答")
     }
     private var speechDetail: String {
+        if coordinator.settings.listeningService == .paraformer, models.failures[.streamingSpeech] != nil {
+            return b("Download failed · review and retry", "下载失败 · 可查看并重试")
+        }
         if models.downloading == .streamingSpeech || apple.busy { return b("Downloading · you can continue typing", "下载中 · 可先输入问题") }
         if models.queued.contains(.streamingSpeech) { return b("Queued for download", "等待下载") }
         if speechReady { return coordinator.settings.listeningService.isLocal ? b("Resources installed · start to test", "资源已安装 · 开始使用后验证") : b("Cloud key configured · not yet tested", "云端密钥已配置 · 尚未验证语音") }
@@ -104,6 +116,7 @@ struct OnboardingReadyView: View {
     private var knowledgeDetail: String {
         if coordinator.settings.embeddingService == .openAI { return b("OpenAI · extracted text goes to the cloud", "OpenAI · 提取文本会发送至云端") }
         if models.installed.contains(.embedding) { return b("Local model installed · import documents in Settings", "本地模型已安装 · 可在设置中导入资料") }
+        if models.failures[.embedding] != nil { return b("Download failed · review and retry", "下载失败 · 可查看并重试") }
         return models.downloading == .embedding || models.queued.contains(.embedding) ? b("Downloading / queued", "正在下载或等待下载") : b("Local model not downloaded", "本地模型尚未下载")
     }
     private func statusRow(_ title: String, detail: String, ready: Bool, step: OnboardingStep) -> some View {

@@ -41,6 +41,14 @@ struct OnboardingView: View {
                 AppBrandTitle(iconSize: 28, titleSize: 19)
                 Spacer()
                 if coordinator.isMock { Text(b("PREVIEW · no recording or API calls", "预览 · 不录音，不调用 API")).font(.caption).foregroundStyle(.secondary) }
+                else if models.downloading != nil || apple.busy || laya.isBusy {
+                    Button { store.state.step = .models } label: {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(b("Preparing models · view progress", "正在准备模型 · 查看进度")).font(.caption)
+                        }
+                    }.buttonStyle(.plain).accessibilityIdentifier("onboarding-download-status")
+                }
             }.padding(.horizontal, 36).padding(.top, 28)
             ZStack {
                 ForEach(OnboardingStep.allCases) { page in
@@ -202,7 +210,7 @@ struct OnboardingView: View {
     }
     private var nextTitle: String {
         if step == .ready { return b("Enter LiveCopilot", "进入 LiveCopilot") }
-        if step == .models && !coordinator.isMock && !locked && OnboardingDownloads.hasPending(coordinator) { return b("Prepare & continue", "准备并继续") }
+        if step == .models && !coordinator.isMock && !locked && OnboardingDownloads.hasPending(coordinator) { return b("Download & continue", "下载并继续") }
         return b("Continue", "继续")
     }
     private func languageOption(_ language: AppLanguage, _ title: String) -> some View {
