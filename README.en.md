@@ -24,7 +24,7 @@ Requires **macOS 14+**, on Apple Silicon or Intel. Apple Speech additionally req
 
 Quit the previous version, open the DMG, and drag `LiveCopilot.app` into Applications (or `~/Applications`). Keep the app at a consistent path.
 
-Developer ID signing and Apple notarization for 2.1.0 are being prepared; see [release validation](docs/V2_1_0_UPDATE.md). Distribution follows successful notarization. macOS may still show its standard first-download confirmation.
+Version 2.1.0 is signed by **Developer ID Application: Bokai Zhang (666N9BJMD7)** and notarized by Apple. Both the app and DMG carry stapled tickets; see [release validation](docs/V2_1_0_UPDATE.md). macOS may still show its standard first-download confirmation.
 
 ## Choose your services
 

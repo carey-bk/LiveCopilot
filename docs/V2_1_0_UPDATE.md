@@ -18,7 +18,16 @@
 
 ## 发布验证
 
-发布准备中；最终版本号、Apple 公证结果、更新流程验证和校验值将在完成后补齐。GitHub Release 与官网尚未发布。
+- 版本：2.1.0 / 20260929.083739；Universal arm64 + x86_64。
+- 73 项确定性核心检查通过；XCTest 执行 75 项、跳过 1 项显式真实 Laya 测试、无失败。
+- 应用与全部 10 个 Mach-O 组件通过 Developer ID、加固运行时、安全时间戳和架构校验。
+- 签名后的 Paraformer 与 BGE-M3 实际加载及 ping 通过，未修改现有模型。
+- Apple 应用公证：`7275df92-3401-4f2b-8668-ad87bcdbaf30`，Accepted、无问题。
+- Apple DMG 公证：`2622856b-dc60-4788-a376-d217b7d35d75`，Accepted、无问题。
+- 应用与 DMG 均已附加票据；Gatekeeper 接受，最终 DMG 完整性与校验值通过。
+- DMG SHA-256：`dfb98be547959be88844bfda0eb1ecc50b253206c198a556764ac3dd6dc015c2`。
+
+发布准备尚未完成：更新清单签名和隔离环境的下载／安装／重启实测，等待 macOS 钥匙串授权。GitHub Release 与官网尚未发布，本机正式安装版尚未替换。
 
 ## English
 

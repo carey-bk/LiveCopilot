@@ -21,7 +21,7 @@ V2.1.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.1.0) 下载 **LiveCopilot-2.1.0-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**；Apple 本地识别另需 macOS 26+ 和受支持的设备。直接安装无需 Xcode。
 
 1. 打开 DMG，将 `LiveCopilot.app` 拖到 `Applications`，然后从应用程序文件夹启动。没有管理员权限时可复制到 `~/Applications`。
-2. 2.1.0 正在准备 Developer ID 签名与 Apple 公证，当前状态见 [发布验证](docs/V2_1_0_UPDATE.md)。公证完成后再发布安装包。首次从互联网下载打开时，macOS 仍可能显示标准确认提示。
+2. 2.1.0 已由 **Developer ID Application: Bokai Zhang (666N9BJMD7)** 签名，应用与 DMG 均通过 Apple 公证并附带票据，详见 [发布验证](docs/V2_1_0_UPDATE.md)。首次从互联网下载打开时，macOS 仍可能显示标准确认提示。
 3. 首次启动跟随六步引导选择语言、使用方式、模型、权限和回答服务；也可稍后在设置中完成。点击菜单栏波形图标打开设置，`⌥H` 显示或隐藏悬浮窗。1.1.1 起也显示 Dock 图标，点击可恢复悬浮窗。
 
 安装包不含 API Key、个人文档、会话历史或知识库。已有用户升级前先退出旧版，替换应用不会自动删除本地数据；macOS 可能重新询问权限。完整说明见 [安装说明](docs/INSTALL.txt)。
