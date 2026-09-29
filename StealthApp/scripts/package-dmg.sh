@@ -84,8 +84,14 @@ Application notarization: Apple ticket stapled and validated; Gatekeeper accepte
 Distribution: validate the disk image's own ticket with xcrun stapler validate.
 EOF
 
-hdiutil create -volname "LiveCopilot $VERSION" -srcfolder "$STAGE_DIR" \
-  -fs HFS+ -format UDZO "$DMG_PATH"
+# Build Finder metadata without scripting Finder or changing a user's preferences.
+DMG_TOOLS="$REPO_DIR/StealthApp/build/dmg-tools"
+if [[ ! -x "$DMG_TOOLS/bin/python" ]]; then python3 -m venv "$DMG_TOOLS"; fi
+"$DMG_TOOLS/bin/python" -m pip install --disable-pip-version-check --require-hashes \
+  -r StealthApp/scripts/dmg/requirements.txt
+swift StealthApp/scripts/dmg/artwork.swift "$STAGE_DIR"
+"$DMG_TOOLS/bin/dmgbuild" -s StealthApp/scripts/dmg/settings.py -D "stage=$STAGE_DIR" \
+  "LiveCopilot $VERSION" "$DMG_PATH"
 codesign --sign "$SIGN_IDENTITY" --timestamp "$DMG_PATH"
 codesign --verify --strict "$DMG_PATH"
 DMG_TEAM="$(codesign -dv "$DMG_PATH" 2>&1 | sed -n 's/^TeamIdentifier=//p')"

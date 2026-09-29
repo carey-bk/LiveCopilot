@@ -40,7 +40,7 @@ struct OverlayFirstUseTip: View {
         case .start: return store.state.prefersTyping ? b("Start with a question", "先输入一个问题") : b("Start listening when you are ready", "准备好后，再开始监听")
         case .answer: return b("Choose when to ask for help", "按需生成回答")
         case .visibility: return b("Keep the window within reach", "随时唤出悬浮窗")
-        case .captureExclusion: return b("Before sharing your screen", "共享屏幕前，检查截图排除")
+        case .captureExclusion: return L10n.text("Keep the floating window hidden during screen sharing and screenshots", language: coordinator.settings.language)
         }
     }
     private var detail: String {
@@ -62,7 +62,8 @@ struct OverlayFirstUseTip: View {
         case .captureExclusion:
             let status = coordinator.settings.excludeOverlayFromCapture
                 ? b("Currently on. ", "当前已开启。") : b("Currently off. ", "当前未开启。")
-            return status + b("In Settings → General → Capture exclusion, turn on ‘Hide overlay from screenshots and screen sharing’. This requests that capture apps omit the floating window. Check the result in your meeting app before sharing; support varies by macOS and capture app.", "可在“设置 → 通用 → 截图与共享排除”开启“在截图和屏幕共享中隐藏悬浮窗”。开启后请求采集软件排除悬浮窗；效果取决于 macOS 和会议软件，共享前请实际确认。")
+            return L10n.text("When enabled, the LiveCopilot floating window stays out of meeting apps' screen sharing and recordings, keeping suggestions visible only to you.", language: coordinator.settings.language)
+                + "\n" + status + b("Change this in Settings → General.", "可在“设置 → 通用”中调整。")
         case .visibility:
             return hotkeys.toggleOverlay.display + b(" shows or hides this window. Pin it to keep it visible; when edge hiding is enabled, move to the right edge to reveal it. You can replay these tips from Settings.", " 显示或隐藏窗口。点击图钉可固定窗口；开启贴边隐藏时，将鼠标移到屏幕右侧即可唤出。设置中可以重看提示。")
         }

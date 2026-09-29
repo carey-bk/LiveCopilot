@@ -7,16 +7,38 @@ struct LiveCopilotApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // Keep the menu-bar controls alongside the normal Dock application.
-        MenuBarExtra("LiveCopilot", systemImage: appDelegate.coordinator.isRunning ? "waveform" : "waveform.slash") {
-            MenuContent(coordinator: appDelegate.coordinator, hotkeys: appDelegate.coordinator.hotkeys,
-                        openSettings: appDelegate.openSettings,
-                        openHistory: appDelegate.openHistory,
-                        toggleOverlay: appDelegate.toggleOverlay)
+        LiveCopilotMenuBar(coordinator: appDelegate.coordinator, delegate: appDelegate)
+    }
+}
+
+/// Observe the settings owner so insertion changes take effect immediately.
+private struct LiveCopilotMenuBar: Scene {
+    @ObservedObject var coordinator: AppCoordinator
+    let delegate: AppDelegate
+    private var isInserted: Binding<Bool> {
+        Binding(get: { coordinator.settings.showMenuBarIcon }, set: { inserted in
+            guard coordinator.settings.showMenuBarIcon != inserted else { return }
+            // MenuBarExtra can write back during scene reconciliation. Avoid
+            // publishing the whole settings value inside that update cycle.
+            DispatchQueue.main.async {
+                if coordinator.settings.showMenuBarIcon != inserted {
+                    coordinator.settings.showMenuBarIcon = inserted
+                }
+            }
+        })
+    }
+
+    var body: some Scene {
+        MenuBarExtra("LiveCopilot", systemImage: coordinator.isRunning ? "waveform" : "waveform.slash",
+                     isInserted: isInserted) {
+            MenuContent(coordinator: coordinator, hotkeys: coordinator.hotkeys,
+                        openSettings: delegate.openSettings,
+                        openHistory: delegate.openHistory,
+                        toggleOverlay: delegate.toggleOverlay)
         }
         .commands {
             CommandGroup(after: .appInfo) {
-                CheckForUpdatesButton(updates: appDelegate.coordinator.updates, language: appDelegate.coordinator.settings.language)
+                CheckForUpdatesButton(updates: coordinator.updates, language: coordinator.settings.language)
             }
         }
     }
@@ -327,6 +349,7 @@ extension AppDelegate: NSWindowDelegate {
         coordinator.onboarding.isPresentingGuide = false
         coordinator.onboarding.enterOverlay()
         syncGuidancePresentation()
-        overlay?.reveal(); overlay?.makeKeyAndOrderFront(nil)
+        overlay?.revealAfterOnboarding()
+        overlay?.makeKeyAndOrderFront(nil)
     }
 }

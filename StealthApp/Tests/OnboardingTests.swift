@@ -312,6 +312,27 @@ final class OnboardingTests: XCTestCase {
         await coordinator.shutdown()
     }
 
+    @MainActor func testFinishingGuideKeepsOverlayVisibleUntilFirstPointerVisit() throws {
+        guard let screen = NSScreen.main else { throw XCTSkip("No display") }
+        let panel = OverlayWindow(rootView: Text("Onboarding handoff"))
+        defer { panel.close() }
+        panel.configure(autoHeight: true, edgeHide: true)
+        panel.revealAfterOnboarding()
+        let now = ProcessInfo.processInfo.systemUptime
+        let outside = NSPoint(x: screen.frame.minX + 20, y: screen.visibleFrame.midY)
+        panel.updatePointer(outside, now: now + 30, interacting: false)
+        panel.updatePointer(outside, now: now + 60, interacting: false)
+        XCTAssertTrue(panel.isVisible && !panel.edgeHidden, "completed or dismissed tours must still hand off to a visible window")
+        XCTAssertTrue(panel.edgeHide, "handoff must preserve auto-hide preference")
+        panel.updatePointer(NSPoint(x: panel.frame.midX, y: panel.frame.midY), now: now + 61, interacting: false)
+        panel.updatePointer(outside, now: now + 62, interacting: false)
+        panel.updatePointer(outside, now: now + 64, interacting: false)
+        XCTAssertTrue(panel.edgeHidden, "after the first visit, ordinary auto-hide resumes")
+        panel.revealAfterOnboarding()
+        panel.tuckAway(animated: false)
+        XCTAssertFalse(panel.isVisible, "explicit hide must always take precedence")
+    }
+
     @MainActor func testGuidancePreventsEdgeRevealAndAutoHideWithoutChangingPreference() throws {
         guard let screen = NSScreen.main else { throw XCTSkip("No display") }
         let panel = OverlayWindow(rootView: Text("Tour fixture"))

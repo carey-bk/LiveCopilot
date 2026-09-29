@@ -142,6 +142,14 @@ struct SettingsView: View {
                 }.padding(10)
             } label: { Label(t("Floating window"), systemImage: "rectangle.righthalf.inset.filled") }
             SettingsSection {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle(t("Show LiveCopilot in the menu bar"), isOn: $coordinator.settings.showMenuBarIcon)
+                        .accessibilityIdentifier("show-menu-bar-icon")
+                    Text(t("When hidden, use the Dock icon or ⌥H to open the floating window. You can turn the menu bar icon back on here."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }.padding(10)
+            } label: { Label(t("Menu bar"), systemImage: "menubar.rectangle") }
+            SettingsSection {
                 VStack(alignment: .leading, spacing: 14) {
                     Picker(t("Operating mode"), selection: $coordinator.settings.mode) {
                         ForEach(OperatingMode.allCases) { Text(t($0.rawValue)).tag($0) }
@@ -174,10 +182,11 @@ struct SettingsView: View {
             } label: { Label(t("Conversation tools"), systemImage: "list.bullet.rectangle") }
             CapturePermissionCard(language: coordinator.settings.language)
             VStack(alignment: .leading, spacing: 7) {
-                Label(t("Capture exclusion"), systemImage: "eye.slash").font(.headline)
-                Toggle(t("Hide overlay from screenshots and screen sharing"), isOn: $coordinator.settings.excludeOverlayFromCapture)
-                    .accessibilityIdentifier("exclude-overlay-capture")
-                Text(t("Turn this off to capture the overlay. Settings and history can always be captured. Exclusion depends on macOS and your capture app.")).font(.caption).foregroundStyle(.secondary)
+                Toggle(isOn: $coordinator.settings.excludeOverlayFromCapture) {
+                    Label(t("Keep the floating window hidden during screen sharing and screenshots"), systemImage: "eye.slash").font(.headline)
+                }.accessibilityIdentifier("exclude-overlay-capture")
+                Text(t("When enabled, the LiveCopilot floating window stays out of meeting apps' screen sharing and recordings, keeping suggestions visible only to you."))
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }.padding(.bottom, 4)
     }

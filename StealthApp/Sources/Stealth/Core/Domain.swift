@@ -43,6 +43,7 @@ struct AppSettings: Codable, Equatable {
     var background = AppBackground.glass
     var overlayAutoHeight = true
     var overlayEdgeHide = true
+    var showMenuBarIcon = true
     var excludeOverlayFromCapture = true
     var reasoningService = ReasoningService.sharedOpenAI
     var transcriptFontSize = 12.0
@@ -71,6 +72,7 @@ struct AppSettings: Codable, Equatable {
     init() {}
     private enum CodingKeys: String, CodingKey {
         case layaThreshold
+        case showMenuBarIcon
         case recapEnabled, followUpEnabled
         case transcriptFontSize, answerFontSize, qwenConnection, glmConnection, kimiConnection
         case listeningService, liveSpeechLanguage, appleSpeechLanguage, embeddingService, overlayAutoHeight, overlayEdgeHide
@@ -100,6 +102,7 @@ struct AppSettings: Codable, Equatable {
         background = try c.decodeIfPresent(AppBackground.self, forKey: .background) ?? background
         overlayAutoHeight = try c.decodeIfPresent(Bool.self, forKey: .overlayAutoHeight) ?? overlayAutoHeight
         overlayEdgeHide = try c.decodeIfPresent(Bool.self, forKey: .overlayEdgeHide) ?? overlayEdgeHide
+        showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? showMenuBarIcon
         excludeOverlayFromCapture = try c.decodeIfPresent(Bool.self, forKey: .excludeOverlayFromCapture) ?? excludeOverlayFromCapture
         reasoningService = try c.decodeIfPresent(ReasoningService.self, forKey: .reasoningService) ?? reasoningService
         deepSeekModel = try c.decodeIfPresent(String.self, forKey: .deepSeekModel) ?? deepSeekModel

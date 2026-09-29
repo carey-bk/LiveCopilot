@@ -64,6 +64,8 @@ xcrun stapler staple /tmp/release/LiveCopilot-VERSION-macOS-universal.dmg
 
 The DMG contains the stapled app, an Applications shortcut, bilingual instructions, MIT license and manifest. Packaging records the caller-supplied app source commit, release commit, executable hash, version/build, architectures and signing team; it rejects changed app inputs. This is provenance, not a reproducible-build attestation. Finalization checks signature, ticket, Gatekeeper and disk image integrity, then regenerates checksums **after stapling**, which changes DMG bytes.
 
+The package script installs hash-pinned `dmgbuild` dependencies into `StealthApp/build/dmg-tools`, draws 1x/2x backgrounds with AppKit, and writes Finder metadata without automating Finder or changing global preferences. `scripts/dmg/settings.py` places Applications on the left and the app on the right. Finder uses a folder-wide icon size; supplementary text files have transparent padded custom icons so they appear smaller. Do not strip their resource forks when packaging. The window has room for Finder's status/path bars, which some macOS versions retain despite volume preferences. Visually inspect the mounted image before notarizing it.
+
 ### Validate and publish
 
 - Mount the final DMG read-only without launching its production-ID app. Check both the mounted and copied-out app with `codesign`, `stapler` and `spctl`; compare the executable hash with the signed input.

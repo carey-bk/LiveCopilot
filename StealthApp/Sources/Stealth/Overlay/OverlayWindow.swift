@@ -18,6 +18,7 @@ final class OverlayWindow: NSPanel {
     private var edgeTimer: Timer?
     private var hover = OverlayHoverState()
     private var holdUntil: TimeInterval = 0
+    private var awaitingFirstPointerEntry = false
     private var geometryTask: DispatchWorkItem?
     private var screenObserver: NSObjectProtocol?
     private var transition = UUID()
@@ -169,8 +170,16 @@ final class OverlayWindow: NSPanel {
                 reveal()
             }
         } else {
+            let inside = frame.insetBy(dx: -12, dy: -12).contains(point)
+            if awaitingFirstPointerEntry {
+                // The guide can close with the pointer far from this window. Keep
+                // the destination visible until the user has actually reached it.
+                guard inside else { return }
+                awaitingFirstPointerEntry = false
+                hover.reset()
+            }
             guard !guidanceActive else { return }
-            if hover.shouldHide(inside: frame.insetBy(dx: -12, dy: -12).contains(point), interacting: interacting || now < holdUntil, now: now) {
+            if hover.shouldHide(inside: inside, interacting: interacting || now < holdUntil, now: now) {
                 tuckAway()
             }
         }
@@ -193,7 +202,13 @@ final class OverlayWindow: NSPanel {
         }
     }
 
+    func revealAfterOnboarding() {
+        awaitingFirstPointerEntry = true
+        reveal()
+    }
+
     func tuckAway(animated: Bool = true) {
+        awaitingFirstPointerEntry = false
         let id = UUID(); transition = id
         edgeHidden = edgeHide; hover.reset()
         // Release the editor before hiding, so the next edge reveal does not retain stale focus.
