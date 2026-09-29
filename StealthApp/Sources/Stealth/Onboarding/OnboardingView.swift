@@ -56,7 +56,7 @@ struct OnboardingView: View {
         }
         .frame(minWidth: 1040, idealWidth: 1040, minHeight: 660, idealHeight: 668)
         .background { OnboardingAtmosphere(step: step, reduceMotion: reduceMotion) }
-        .toggleStyle(.switch)
+        .toggleStyle(TrailingSwitchStyle())
         .environment(\.locale, coordinator.settings.language.locale)
         .onChange(of: step) { old, new in
             movingForward = new.rawValue > old.rawValue

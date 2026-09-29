@@ -53,7 +53,7 @@ struct SettingsView: View {
         .frame(minWidth: 820, idealWidth: 860, minHeight: 610, idealHeight: 680)
         .background { WindowBackgroundView(style: coordinator.settings.background) }
         .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
-        .toggleStyle(.switch)
+        .toggleStyle(TrailingSwitchStyle())
         .environment(\.locale, coordinator.settings.language.locale)
         .onAppear { loadCustomDraft() }
         .sheet(isPresented: $showOpenAIKey) {
