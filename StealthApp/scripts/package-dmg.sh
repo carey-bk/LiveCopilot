@@ -45,7 +45,12 @@ spctl --assess --type execute --verbose=2 "$APP_PATH"
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/livecopilot-dmg.XXXXXX")"
-trap 'rm -rf "$STAGE_DIR"' EXIT
+VERIFY_MOUNT=""
+cleanup() {
+  if [[ -n "$VERIFY_MOUNT" ]]; then hdiutil detach "$VERIFY_MOUNT" >/dev/null || return; fi
+  rm -rf "$STAGE_DIR"
+}
+trap cleanup EXIT
 ditto --noextattr --norsrc "$APP_PATH" "$STAGE_DIR/LiveCopilot.app"
 STAGED_APP="$STAGE_DIR/LiveCopilot.app"
 codesign --verify --deep --strict "$STAGED_APP"
@@ -97,6 +102,16 @@ codesign --verify --strict "$DMG_PATH"
 DMG_TEAM="$(codesign -dv "$DMG_PATH" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
 [[ "$DMG_TEAM" == "$TEAM" ]] || { echo 'DMG and app signing teams differ.' >&2; exit 1; }
 hdiutil verify "$DMG_PATH"
+# Finder layout tools must never attach metadata to the signed app bundle.
+# Verify the app inside the finished image as well as the staging source.
+VERIFY_MOUNT="$STAGE_DIR/verify-volume"
+mkdir "$VERIFY_MOUNT"
+hdiutil attach -readonly -nobrowse -mountpoint "$VERIFY_MOUNT" "$DMG_PATH" >/dev/null
+python3 StealthApp/scripts/sign-distribution.py "$VERIFY_MOUNT/LiveCopilot.app" --verify-only
+xcrun stapler validate "$VERIFY_MOUNT/LiveCopilot.app"
+cmp "$STAGED_APP/Contents/MacOS/LiveCopilot" "$VERIFY_MOUNT/LiveCopilot.app/Contents/MacOS/LiveCopilot"
+hdiutil detach "$VERIFY_MOUNT" >/dev/null
+VERIFY_MOUNT=""
 cp "$STAGE_DIR/ReleaseInfo.txt" "$OUTPUT_DIR/LiveCopilot-$VERSION-ReleaseInfo.txt"
 (
   cd "$OUTPUT_DIR"

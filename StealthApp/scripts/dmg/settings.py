@@ -18,7 +18,9 @@ arrange_by = None
 icon_size = 128
 text_size = 13
 label_pos = "bottom"
-hide_extensions = ["LiveCopilot.app"]
+# SetFile's extension flag adds FinderInfo to the signed bundle and breaks
+# codesign --strict. Finder already presents the app's normal display name.
+hide_extensions = []
 icon_locations = {
     "Applications": (180, 205),
     "LiveCopilot.app": (580, 205),
