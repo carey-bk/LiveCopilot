@@ -14,6 +14,11 @@ struct LiveCopilotApp: App {
                         openHistory: appDelegate.openHistory,
                         toggleOverlay: appDelegate.toggleOverlay)
         }
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesButton(updates: appDelegate.coordinator.updates, language: appDelegate.coordinator.settings.language)
+            }
+        }
     }
 }
 
@@ -50,6 +55,7 @@ private struct MenuContent: View {
 
         Button(t("History…")) { openHistory() }
         Button(t("Settings…")) { openSettings() }
+        CheckForUpdatesButton(updates: coordinator.updates, language: coordinator.settings.language)
         Button(t("Quit LiveCopilot")) { NSApp.terminate(nil) }
 
         Divider()
@@ -80,6 +86,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminationSignal?.setEventHandler { NSApp.terminate(nil) }
         terminationSignal?.resume()
         NSApp.setActivationPolicy(.regular)
+        coordinator.updates.blockingReason = { [weak self] in
+            guard let self else { return nil }
+            let c = self.coordinator
+            guard c.isRunning || c.isTransitioning || c.isIndexing || c.localModels.downloading != nil || c.laya.isBusy || c.appleSpeech.busy else { return nil }
+            return ServiceGuide.text("Finish listening, indexing, or preparing models before checking for updates.",
+                                     "请先结束监听、资料索引或模型准备，再检查更新。", c.settings.language)
+        }
+        coordinator.updates.prepareForRelaunch = { [weak self] in
+            guard let self else { return }
+            await self.coordinator.shutdown()
+            self.coordinator.saveSession()
+            self.readyToTerminate = true
+        }
+        coordinator.updates.start()
         if AppPaths.isOnboardingPreview && ProcessInfo.processInfo.arguments.contains("--onboarding-dark") {
             NSApp.appearance = NSAppearance(named: .darkAqua)
         }
@@ -163,7 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func localizeMenu(_ menu: NSMenu, language: AppLanguage) {
         for item in menu.items {
-            let standard = ["Edit", "View", "Window", "Help", "Undo", "Redo", "Cut", "Copy", "Paste", "Select All", "Close Window", "Minimize", "Zoom", "Bring All to Front", "Hide LiveCopilot", "Hide Others", "Show All", "About LiveCopilot"]
+            let standard = ["Edit", "View", "Window", "Help", "Undo", "Redo", "Cut", "Copy", "Paste", "Select All", "Close Window", "Minimize", "Zoom", "Bring All to Front", "Hide LiveCopilot", "Hide Others", "Show All", "About LiveCopilot", "Check for Updates…"]
             if let original = standard.first(where: { item.title == $0 || item.title == L10n.chinese[$0] }) {
                 item.title = L10n.text(original, language: language)
             }

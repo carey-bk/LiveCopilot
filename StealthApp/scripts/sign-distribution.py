@@ -48,7 +48,8 @@ def verify(app, require_universal=True):
                 for key in ('com.apple.security.get-task-allow', 'com.apple.security.cs.disable-library-validation',
                             'com.apple.security.cs.allow-unsigned-executable-memory', 'com.apple.security.cs.allow-jit'):
                     assert not entitlements.get(key, False), f'Unexpected exception {key}: {path}'
-    assert len(binaries) == 5, f'Review changed embedded executable inventory ({len(binaries)})'
+    expected = 10 if (app / 'Contents/Frameworks/Sparkle.framework').exists() else 5
+    assert len(binaries) == expected, f'Review changed embedded executable inventory ({len(binaries)})'
     print(f'Verified {len(binaries)} binaries: Developer ID, team {team}, secure timestamps, hardened runtime.')
 
 
@@ -92,6 +93,13 @@ def main():
     for name in ('libonnxruntime.dylib', 'libsherpa-onnx-c-api.dylib', 'llama.framework', 'livecopilot-inference'):
         print(f'Signing {name}', flush=True)
         run('/usr/bin/codesign', *flags, str(runtime / name))
+    sparkle = target / 'Contents/Frameworks/Sparkle.framework'
+    if sparkle.exists():
+        version = sparkle / 'Versions/B'
+        for name in ('Autoupdate', 'Updater.app', 'XPCServices/Downloader.xpc', 'XPCServices/Installer.xpc'):
+            print(f'Signing Sparkle {name}', flush=True)
+            run('/usr/bin/codesign', *flags, '--preserve-metadata=entitlements', str(version / name))
+        run('/usr/bin/codesign', *flags, str(sparkle))
     entitlements = Path(__file__).resolve().parents[1] / 'Resources/LiveCopilot.entitlements'
     run('/usr/bin/codesign', *flags, '--entitlements', str(entitlements), str(target))
     verify(target)

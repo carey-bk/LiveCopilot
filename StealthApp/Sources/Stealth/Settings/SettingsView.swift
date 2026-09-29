@@ -68,6 +68,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 24) {
             AppBrandTitle(iconSize: 64, titleSize: 28)
             Text(AppInfo.display).foregroundStyle(.secondary).textSelection(.enabled)
+            UpdateSettingsView(updates: coordinator.updates, language: coordinator.settings.language)
             Text(b("A native macOS conversation copilot. Listen, find relevant knowledge, and get words you can say aloud.",
                    "原生 macOS 对话助手。听取对话、查找相关资料，生成可以直接说出口的回答。"))
                 .font(.body).fixedSize(horizontal: false, vertical: true)

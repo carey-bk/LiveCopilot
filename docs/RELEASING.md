@@ -103,3 +103,33 @@ be dispatched manually. Publish the matching release assets before announcing
 the download link. Verify `/LiveCopilot/` and `/LiveCopilot/en/` after deployment.
 Only public product content belongs in `site/`; never include user recordings,
 keys, local data, or screenshots of private conversations.
+
+## Sparkle updates (2.1.0 and later)
+
+`prepare-sparkle.sh` downloads the official Sparkle 2.10.0 binary distribution and verifies its pinned SHA-256 before extraction. The app embeds that framework. Signing includes its updater, downloader/installer XPC services and Autoupdate helper, inside out, before signing the framework and application. The release inventory now contains ten universal Mach-O binaries.
+
+The public Ed25519 key is in `Resources/Info.plist`. The private key stays in the maintainer's login Keychain under Sparkle account `LiveCopilot`; never export it or commit it. Initial key generation uses `build/SparkleTools/bin/generate_keys --account LiveCopilot` only once. Do not regenerate the key for each release: older clients trust the existing public key.
+
+The release feed is `https://carey-bk.github.io/LiveCopilot/updates/appcast.xml`. Automatic checking defaults off, automatic installation is disabled, system profiling is disabled, signed feeds are required, and package verification runs before extraction. Debug/mock/preview builds do not check this feed. A Debug-only QA bundle may use a loopback feed with its own identity and isolated preview data.
+
+After both the app and DMG are notarized, stapled, and finalized, place the final DMG and a matching HTML fragment with release notes in a dedicated update staging directory. Do not re-sign or re-staple the DMG after generating its update signature.
+
+```bash
+StealthApp/build/SparkleTools/bin/generate_appcast \
+  --account LiveCopilot --maximum-deltas 0 \
+  --download-url-prefix https://github.com/carey-bk/LiveCopilot/releases/download/vVERSION/ \
+  --link https://carey-bk.github.io/LiveCopilot/ --embed-release-notes \
+  /absolute/path/to/update-staging
+StealthApp/build/SparkleTools/bin/sign_update --account LiveCopilot --verify \
+  /absolute/path/to/update-staging/appcast.xml
+mkdir -p site/updates
+cp /absolute/path/to/update-staging/appcast.xml site/updates/appcast.xml
+python3 StealthApp/scripts/build-site.py
+cmp site/updates/appcast.xml _site/updates/appcast.xml
+```
+
+Keep the signed appcast bytes unchanged: formatting, templating, or newline conversion invalidates the signature. `build-site.py` copies the feed as bytes. Never hand-edit a signed feed; regenerate it with the signing tool. On later releases reuse the preceding feed in staging so that compatible older releases can be retained where needed.
+
+Publish the matching GitHub Release and verify its assets first; deploy the website/feed afterward. Check the live feed bytes and download hash, then exercise Check for Updates in the canonical installed release. A source push or local signed feed alone does not establish working public updates. Versions before 2.1 lack Sparkle and require one manual upgrade.
+
+For an isolated end-to-end check, build Debug, run `python3 StealthApp/scripts/prepare-updater-qa.py`, serve its `build/updater-qa/server` on `127.0.0.1:18746`, and open only the staged QA app. Verify discovery, download, installation, and relaunch from build 100 to 101 without recording, paid API calls, or changing production data. Preserve QA evidence before using a fresh staging directory.

@@ -6,7 +6,7 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "2.0.0"
+    MARKETING_VERSION: "2.1.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: ""
@@ -20,6 +20,10 @@ targets:
   LiveCopilot:
     type: application
     platform: macOS
+    dependencies:
+      - framework: build/SparkleTools/Sparkle.framework
+        embed: true
+        codeSign: false
     sources:
       - path: Sources
       - path: Resources/AppIcon.icns
@@ -48,7 +52,7 @@ targets:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.livecopilot.development
           APP_DISPLAY_NAME: LiveCopilot Dev
-          MARKETING_VERSION: "2.0.0"
+          MARKETING_VERSION: "2.1.0"
         Release:
           ENABLE_HARDENED_RUNTIME: YES
   LiveCopilotTests:
@@ -62,8 +66,11 @@ targets:
       - path: Tests/LayaWorkerTests.swift
       - path: Tests/IndexingProgressTests.swift
       - path: Tests/OnboardingTests.swift
+      - path: Tests/AppUpdateTests.swift
     dependencies:
       - target: LiveCopilot
+      - framework: build/SparkleTools/Sparkle.framework
+        embed: false
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES

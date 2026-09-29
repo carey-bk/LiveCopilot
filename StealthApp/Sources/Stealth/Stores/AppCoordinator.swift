@@ -9,6 +9,7 @@ final class AppCoordinator: ObservableObject {
     let hotkeys: HotkeyStore
     let localModels: LocalModelManager
     let onboarding: OnboardingStore
+    let updates: AppUpdateController
     let laya: LayaRuntimeManager
     private let layaPredictor: ((String, String) async throws -> Double)?
     private let mockReasoning: (any ReasoningProvider)?
@@ -125,6 +126,7 @@ final class AppCoordinator: ObservableObject {
          mockReasoning: (any ReasoningProvider)? = nil,
          emitMockConversation: Bool = true, mockDefaults: UserDefaults? = nil) {
         isMock = mock
+        updates = AppUpdateController(mock: mock)
         self.layaPredictor = mock ? layaPredictor : nil
         self.mockReasoning = mock ? mockReasoning : nil
         self.emitMockConversation = emitMockConversation

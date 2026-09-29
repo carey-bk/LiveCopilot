@@ -6,7 +6,7 @@
 
 基于 [vortechron/stealth](https://github.com/vortechron/stealth) 的原生 macOS 个人 AI 助手，面向面试、会议和学术答辩。保留 Swift/SwiftUI、ScreenCaptureKit 系统音频、AVAudioEngine 麦克风、菜单栏、悬浮窗、全局快捷键和本地历史。
 
-V2.0.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别** 或 GPT-Live-1 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek、Qwen、GLM、Kimi 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
+V2.1.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别** 或 GPT-Live-1 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek、Qwen、GLM、Kimi 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
 **1.4.0** 移除非流式 SenseVoiceSmall，保留 Apple、Paraformer 和 GPT-Live-1 三种流式识别；新增转写区与回答区独立字号（11–28 pt）以及 Qwen、GLM、Kimi 分析服务预设。旧 SenseVoice 配置自动迁移至 Paraformer，其他偏好与已有模型文件保留。详见 [1.4.0 更新与验收](docs/V1_4_0_UPDATE.md) 和 [服务选择指南](docs/SERVICE_GUIDE.md)。
 
@@ -14,13 +14,15 @@ V2.0.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 
 **2.0.0** 增加 Jev Mode 本地 Laya 自动触发、ModelScope 固定修订模型分发（失败后尝试其他来源）、真实下载进度与速度、GPT-Live-1 识别语言偏好，以及流式字幕和界面修复。Laya 需要 Apple Silicon 与 macOS 14+。升级保留已下载模型、设置和用户数据。
 
+**2.1.0** 新增六步首次使用引导和应用内更新器。可以从 **设置 → 关于 → 检查更新** 或应用菜单检查新版，按需开启自动检查；下载和安装由你确认。升级保留模型、资料、历史与密钥。2.0 及更早版本需先手动安装一次 2.1。详见 [2.1 更新说明](docs/V2_1_0_UPDATE.md)。
+
 ## 下载与安装
 
-从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.0.0) 下载 **LiveCopilot-2.0.0-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**；Apple 本地识别另需 macOS 26+ 和受支持的设备。直接安装无需 Xcode。
+从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.1.0) 下载 **LiveCopilot-2.1.0-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**；Apple 本地识别另需 macOS 26+ 和受支持的设备。直接安装无需 Xcode。
 
 1. 打开 DMG，将 `LiveCopilot.app` 拖到 `Applications`，然后从应用程序文件夹启动。没有管理员权限时可复制到 `~/Applications`。
-2. 2.0.0 已由 **Developer ID Application: Bokai Zhang (666N9BJMD7)** 签名并通过 Apple 公证，应用与 DMG 均附带公证票据。正常安装无需使用“仍要打开”。首次从互联网下载打开时，macOS 仍可能显示标准确认提示。
-3. 点击菜单栏波形图标打开设置，`⌥H` 显示或隐藏悬浮窗。1.1.1 起也显示 Dock 图标，点击可恢复悬浮窗。
+2. 2.1.0 正在准备 Developer ID 签名与 Apple 公证，当前状态见 [发布验证](docs/V2_1_0_UPDATE.md)。公证完成后再发布安装包。首次从互联网下载打开时，macOS 仍可能显示标准确认提示。
+3. 首次启动跟随六步引导选择语言、使用方式、模型、权限和回答服务；也可稍后在设置中完成。点击菜单栏波形图标打开设置，`⌥H` 显示或隐藏悬浮窗。1.1.1 起也显示 Dock 图标，点击可恢复悬浮窗。
 
 安装包不含 API Key、个人文档、会话历史或知识库。已有用户升级前先退出旧版，替换应用不会自动删除本地数据；macOS 可能重新询问权限。完整说明见 [安装说明](docs/INSTALL.txt)。
 
@@ -64,7 +66,7 @@ V2.0.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 
 ## 验证与开发
 
-源码构建需要完整 **Xcode** 和 XcodeGen（`brew install xcodegen`，或设置 `XCODEGEN_BIN`）。首次构建会下载并校验固定版本的原生 sherpa-onnx/llama.cpp 运行库，再编译通用辅助程序；已安装的成品无需开发环境。执行 `./StealthApp/run.sh` 会编译、签名并安装到 `~/Applications/LiveCopilot.app`，旧应用会备份。
+源码构建需要完整 **Xcode** 和 XcodeGen（`brew install xcodegen`，或设置 `XCODEGEN_BIN`）。首次构建会下载并校验固定版本的 Sparkle 更新框架及原生 sherpa-onnx/llama.cpp 运行库，再编译通用辅助程序；已安装的成品无需开发环境。执行 `./StealthApp/run.sh` 会编译、签名并安装到 `~/Applications/LiveCopilot.app`，旧应用会备份。
 
 ```bash
 # 不使用 Key、不调用 API 的确定性检查

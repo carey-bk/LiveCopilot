@@ -1,4 +1,4 @@
-LiveCopilot 2.0.0 — 安装 / Installation
+LiveCopilot 2.1.0 — 安装 / Installation
 
 中文
 
@@ -11,7 +11,8 @@ Apple 本地语音另需 macOS 26+、受支持的设备和语言。
 2. 本版由 Developer ID Application: Bokai Zhang (666N9BJMD7) 签名并通过 Apple 公证。
    应用与 DMG 附带公证票据，正常安装无需“仍要打开”；首次下载仍可能显示系统确认。
    可用 Release 中的 SHA256SUMS.txt 核对下载文件。
-3. 设置 → 服务：选择本地 Apple 或 Paraformer 语音并下载资源，
+3. 首次启动可跟随六步新用户引导；之后也可从设置重新打开。
+   设置 → 服务：选择本地 Apple 或 Paraformer 语音并下载资源，
    或配置 OpenAI Live。知识库向量可选本地 BGE-M3 或 OpenAI Embeddings。
    本地语音可下载 Laya 并在 Jev Mode 中启用自动分析；GPT-Live-1 自行判断。
    模型默认从公开 ModelScope 下载并校验 SHA-256，失败时尝试备用源。
@@ -24,6 +25,9 @@ Apple 本地语音另需 macOS 26+、受支持的设备和语言。
 6. Option + H 唤出窗口；贴边隐藏、固定、自动高度均可配置。
    刷新清空当前转写、回答和草稿，监听继续新会话，保留知识库与已保存历史。
    关于页可打开作者 GitHub、项目仓库和双语介绍页。
+
+7. 设置 → 关于 → 检查更新，可选择开启自动检查；下载与安装由你确认。
+   2.0 及更早版本没有更新器，需先手动安装本版。
 
 安装包不含 API Key、个人文档、历史或知识库。升级不删除本地资料。
 首次从旧临时签名版迁移，可能需要重新允许录屏或钥匙串访问。
@@ -43,6 +47,11 @@ Signed by Developer ID Application: Bokai Zhang (666N9BJMD7), notarized by Apple
 with tickets stapled to the app and DMG. Normal installation does not require
 Open Anyway. A standard first-download confirmation can still appear. Verify
 the release download against SHA256SUMS.txt.
+
+First launch includes a six-step setup guide; reopen it from Settings > General.
+Check for updates in Settings > About, with optional automatic checks. Downloads
+and installation require your confirmation. Version 2.0 and earlier need this
+first upgrade installed manually.
 
 In Settings > Services, download local speech resources or configure OpenAI Live.
 Local speech can use the downloaded Laya model for automatic analysis. GPT-Live-1

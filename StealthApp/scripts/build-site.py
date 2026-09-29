@@ -32,7 +32,7 @@ for language, copy in content.items():
                 zh_current='' if english else 'aria-current="page"',
                 en_current='aria-current="page"' if english else '',
                 canonical=BASE + ('en/' if english else ''),
-                download_url='https://github.com/carey-bk/LiveCopilot/releases/download/v2.0.0/LiveCopilot-2.0.0-macOS-universal.dmg')
+                download_url='https://github.com/carey-bk/LiveCopilot/releases/download/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg')
     title_lines = copy['hero_title'].split('\n')
     data['hero_title_markup'] = ''.join('<span class="title-line">' + ''.join('<span class="title-character">' + html.escape(c) + '</span>' for c in line) + '</span>' for line in title_lines) + '<span class="title-cursor" aria-hidden="true"></span>'
     # One product structure for every section; translated text is already escaped.
@@ -61,6 +61,8 @@ for language, copy in content.items():
 for name in ['styles.css', 'product.css', 'phase5.css', 'demo.js']:
     shutil.copyfile(SOURCE / name, OUTPUT / name)
 shutil.copytree(SOURCE / 'assets', OUTPUT / 'assets', dirs_exist_ok=True)
+if (SOURCE / 'updates').exists():
+    shutil.copytree(SOURCE / 'updates', OUTPUT / 'updates', dirs_exist_ok=True)
 (OUTPUT / '.nojekyll').write_text('')
 (OUTPUT / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n'
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'

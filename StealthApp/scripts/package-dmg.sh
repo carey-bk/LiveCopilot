@@ -35,7 +35,7 @@ RELEASE_COMMIT="$(git rev-parse HEAD)"
 [[ -n "$APP_PATH" && -n "$APP_SOURCE_REF" && -n "$SIGN_IDENTITY" && "$SIGN_IDENTITY" != '-' ]] || { usage >&2; exit 1; }
 APP_SOURCE_REF="$(git rev-parse --verify "$APP_SOURCE_REF^{commit}")"
 git diff --quiet "$APP_SOURCE_REF" "$RELEASE_COMMIT" -- \
-  StealthApp/Sources StealthApp/Resources StealthApp/Native StealthApp/scripts/build-local-runtime.sh StealthApp/project.yml || {
+  StealthApp/Sources StealthApp/Resources StealthApp/Native StealthApp/scripts/build-local-runtime.sh StealthApp/scripts/prepare-sparkle.sh StealthApp/scripts/build.sh StealthApp/project.yml || {
   echo "App inputs changed since --app-source-ref. Build a new app instead." >&2; exit 1;
 }
 python3 StealthApp/scripts/sign-distribution.py "$APP_PATH" --verify-only

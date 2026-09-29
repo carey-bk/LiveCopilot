@@ -14,15 +14,17 @@ Version **1.4.1** retains these features and adds Developer ID signing, hardened
 
 Version **2.0.0** adds Jev Mode local Laya triggering, SHA-256 verified ModelScope model delivery with fallback sources, real download progress and speed, GPT-Live-1 transcription language preferences, and caption/UI fixes. Laya requires Apple Silicon and macOS 14+. Updating preserves downloaded models, settings, and user data.
 
+Version **2.1.0** adds a six-step first-run guide and in-app updates. Use **Settings → About → Check for Updates**, or the application menu. Automatic checks are optional; downloading and installation require confirmation. Models, documents, history, and keys are preserved. Versions 2.0 and earlier need one manual upgrade to 2.1 first. See [2.1 release notes](docs/V2_1_0_UPDATE.md).
+
 ## Download
 
-[Download LiveCopilot 2.0.0 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v2.0.0/LiveCopilot-2.0.0-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.0.0)
+[Download LiveCopilot 2.1.0 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.1.0)
 
 Requires **macOS 14+**, on Apple Silicon or Intel. Apple Speech additionally requires **macOS 26+**, supported hardware, and a supported language. No Xcode, Python, Ollama, or developer tools are needed to use the packaged app.
 
 Quit the previous version, open the DMG, and drag `LiveCopilot.app` into Applications (or `~/Applications`). Keep the app at a consistent path.
 
-Version 2.0.0 is signed by **Developer ID Application: Bokai Zhang (666N9BJMD7)** and notarized by Apple. Both the app and DMG carry stapled tickets; normal installation does not require Open Anyway. macOS may still show its standard first-download confirmation. Migrating from an older ad-hoc build may require renewed audio or Keychain permission; later updates preserve the signing team and bundle identity without bypassing system policy.
+Developer ID signing and Apple notarization for 2.1.0 are being prepared; see [release validation](docs/V2_1_0_UPDATE.md). Distribution follows successful notarization. macOS may still show its standard first-download confirmation.
 
 ## Choose your services
 
@@ -39,7 +41,7 @@ Paraformer updates Chinese/English caption previews as you speak. Apple streams 
 
 ## Get started
 
-1. Open Settings → Services. Select a speech route and download its local model, or configure OpenAI Live.
+1. Follow the six-step first-run guide, or open Settings → Services. Select a speech route and download its local model, or configure OpenAI Live.
 2. Select BGE-M3 or OpenAI Embeddings under the knowledge service. Select an analysis provider and save its API key.
 3. Optionally import PDF, Markdown, TXT, or DOCX in Knowledge. Scanned PDFs require external OCR. Rebuild the index after changing embedding models.
 4. Choose Interview, Meeting, or Academic Defense. Remote Meeting captures system audio plus an optional microphone; In-Person uses the microphone without promising speaker separation.
@@ -58,7 +60,7 @@ Keys are securely stored in the local macOS Keychain. Startup checks silently; a
 
 `Option + H` toggles the overlay. Generate answer, recap, and follow-up shortcuts are configurable. The 2.0.0 defaults are Control–Option–Space, Control–Option–S and Control–Option–X; saved custom bindings are preserved. Recap and follow-up can be disabled independently in General, hiding their buttons and releasing their shortcuts. Screenshot/sharing exclusion is optional; its behavior depends on macOS and the capture application. Settings and History remain capturable.
 
-Qwen, GLM, and Kimi presets use streamed Chat Completions with provider-specific thinking controls. Defaults are `qwen-plus`, `glm-5.2`, and `kimi-k2.6` on domestic general API endpoints. Edit the base URL for a matching region/account, save, then configure its key. Keys are isolated by provider and endpoint. Protocol and mock tests passed; real account access has not been tested with Qwen, GLM, or Kimi credentials. No keys are needed for development/mock testing; enter yours only in the app to validate a real request.
+Qwen, GLM, and Kimi presets use streamed Chat Completions with provider-specific thinking controls. Defaults are `qwen3.8-flash`, `glm-5.3-flash`, and `kimi-k2.6`; OpenAI uses `gpt-6-sol` and DeepSeek uses `deepseek-flash` on domestic general API endpoints. Edit the base URL for a matching region/account, save, then configure its key. Keys are isolated by provider and endpoint. Protocol and mock tests passed; real account access has not been tested with Qwen, GLM, or Kimi credentials. No keys are needed for development/mock testing; enter yours only in the app to validate a real request.
 
 ## Privacy and limits
 
@@ -77,7 +79,7 @@ xcodebuild -project StealthApp/LiveCopilot.xcodeproj -scheme LiveCopilot \
   -configuration Debug -derivedDataPath StealthApp/build CODE_SIGNING_ALLOWED=NO test
 ```
 
-The build downloads checksum-pinned sherpa-onnx/llama.cpp runtimes and compiles a universal inference helper. Debug uses a separate bundle identifier to avoid taking over production permissions. Mock checks do not use real keys or paid APIs.
+The build downloads checksum-pinned Sparkle and sherpa-onnx/llama.cpp runtimes and compiles a universal inference helper. Debug uses a separate bundle identifier to avoid taking over production permissions. Mock checks do not use real keys or paid APIs.
 
 From a clean, committed checkout, `./StealthApp/scripts/package-dmg.sh` builds the DMG. See [publishing instructions](docs/RELEASING.md). Preview the bilingual site with `python3 StealthApp/scripts/build-site.py`, then serve `_site/` with a local HTTP server.
 

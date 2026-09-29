@@ -2,6 +2,7 @@
 # Build a standalone preview that never reads real credentials or captures audio.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+bash scripts/prepare-sparkle.sh
 XCODEGEN_BIN="${XCODEGEN_BIN:-$(command -v xcodegen || true)}"
 if [[ -z "$XCODEGEN_BIN" && -x "$HOME/.local/bin/xcodegen" ]]; then XCODEGEN_BIN="$HOME/.local/bin/xcodegen"; fi
 if [[ -z "$XCODEGEN_BIN" ]]; then echo "XcodeGen is required." >&2; exit 1; fi

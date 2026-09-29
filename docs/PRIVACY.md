@@ -1,11 +1,11 @@
-# Privacy boundary (V1.3.1)
+# Privacy boundary (2.1.0)
 
 ## Stored locally
 
 - Original imported files are copied without modifying the originals into `~/Library/Application Support/LiveCopilot/knowledge/originals/<document-id>/`.
 - `knowledge.sqlite` (and SQLite WAL/SHM) contains document metadata, extracted text/chunks, source/page references, embedding model identifiers, vectors and FTS5 terms.
 - Retrieval ranking, keyword search and exact cosine similarity run on the Mac.
-- Optional local model weights live in `~/Library/Application Support/LiveCopilot/Models/`. SenseVoiceSmall or Paraformer streaming + Silero VAD processes audio locally; BGE-M3 generates document and query vectors locally. Workers communicate through private stdin/stdout pipes, open no network listener, inherit no API credentials, and do not log audio/text. Raw audio is held in bounded memory, not recorded to disk by this route.
+- Optional local model weights live in `~/Library/Application Support/LiveCopilot/Models/`. Paraformer streaming + Silero VAD processes audio locally; BGE-M3 generates document and query vectors locally. Workers communicate through private stdin/stdout pipes, open no network listener, inherit no API credentials, and do not log audio/text. Raw audio is held in bounded memory, not recorded to disk by this route.
 - Apple ASR uses on-device SpeechAnalyzer/SpeechTranscriber and SpeechDetector. Language assets are downloaded and managed by macOS; no fallback to Apple server dictation is implemented. Final captions enter the same local history and selected analysis context.
 - Session history is local JSON under `~/Library/Application Support/LiveCopilot/sessions/`. It includes timestamps, speaker labels and raw Live transcript fragments. History is retained until deleted.
 - Saved API keys use app-owned macOS login Keychain items in **LiveCopilot-Credentials-v1**. Their accounts include the original provider reference and username (and canonical endpoint for compatible services), preserving provider/destination isolation. No key is written to preferences, files or logs.
@@ -21,14 +21,18 @@ Local private storage directories are created with user-only permissions where a
 ## Sent to the selected service when a feature needs it
 
 - **Apple language download:** macOS obtains its speech assets from Apple when the user requests installation. Subsequent recognition uses the on-device SpeechTranscriber.
-- **Model download:** public model weights are fetched from pinned GitHub/Hugging Face locations, verified by SHA-256 and installed locally. No user audio, documents or API keys are sent with these downloads.
-- **Listening:** local mode sends no audio to a service and uses local Chinese/English question heuristics. OpenAI Live mode sends system and/or microphone audio plus relevant conversation context to the official Live API. No audio is uploaded while listening is off.
+- **Model download:** public model weights are fetched from pinned ModelScope locations with GitHub/Hugging Face fallback sources, verified by SHA-256 and installed locally. No user audio, documents or API keys are sent with these downloads.
+- **Listening:** local mode sends no audio to a service; optional Laya question-completeness scoring runs locally. OpenAI Live mode sends system and/or microphone audio plus relevant conversation context to the official Live API. No audio is uploaded while listening is off.
 - **Indexing / re-indexing:** local BGE-M3 runs entirely on the Mac. Selecting OpenAI Embeddings sends extracted document chunks to OpenAI; original PDF/DOCX files themselves are not uploaded by this path.
 - **Retrieval query:** local BGE-M3 computes the query vector on the Mac. OpenAI Embeddings sends the normalized question and bounded relevant context for a query embedding. Search/ranking over stored vectors is local in both modes.
 - **Answer:** current question, relevant conversation and roughly the best six retrieved chunks go to the **selected analysis service**: OpenAI Responses by default, optionally DeepSeek, Qwen, GLM, Kimi or the configured compatible endpoint. The full knowledge base is not attached to each question. Custom endpoints must use HTTPS; credentials in URL user info, query parameters or fragments are rejected.
 - **Live result feedback:** a short completed-answer summary may be returned to an active OpenAI Live session. Local mode retains context inside the application.
 
 OpenAI Live sessions and OpenAI Responses requests set `store: false`. Custom Chat Completions services receive only portable request fields; their storage/retention behavior depends on that provider. This is an API storage setting, **not a claim of zero provider retention**. OpenAI's account-level data controls and applicable policies still apply; see the [official data controls documentation](https://developers.openai.com/api/docs/guides/your-data).
+
+## Software updates
+
+In 2.1.0 and later, an explicit update check (or an optional scheduled check) fetches a signed release feed from GitHub Pages. Downloading an approved update fetches the application package from GitHub Releases. These HTTPS requests expose ordinary network metadata, such as IP address and the updater user agent, to GitHub. They do not include recordings, transcripts, knowledge documents, API credentials, or AI requests. Sparkle system profiling is disabled; no custom telemetry is attached. Automatic checking defaults off, and download/installation require confirmation. Feed and package signatures are verified before use.
 
 ## User controls
 

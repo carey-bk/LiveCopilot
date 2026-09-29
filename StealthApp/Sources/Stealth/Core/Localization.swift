@@ -129,6 +129,7 @@ enum L10n {
         "Close Window": "关闭窗口", "Minimize": "最小化", "Zoom": "缩放", "Bring All to Front": "全部置于最前",
         "Hide LiveCopilot": "隐藏 LiveCopilot", "Hide Others": "隐藏其他", "Show All": "全部显示",
         "About LiveCopilot": "关于 LiveCopilot",
+        "Check for Updates…": "检查更新…",
         "Screen Recording permission is required. Grant it in System Settings → Privacy & Security → Screen Recording, then reopen LiveCopilot.": "需要屏幕录制权限，请在系统设置 → 隐私与安全性 → 屏幕录制中允许 LiveCopilot，然后重新打开应用。",
         "Possible question forming": "问题形成中",
         "Already handled": "已处理过此问题",
