@@ -49,7 +49,7 @@ for name in ["Install - 安装说明.txt", "LICENSE.txt", "ReleaseInfo.txt"] {
     let path = stage.appendingPathComponent(name).path
     let document = NSWorkspace.shared.icon(for: .plainText)
     let icon = NSImage(size: NSSize(width: 128, height: 128), flipped: false) { _ in
-        document.draw(in: NSRect(x: 46, y: 0, width: 36, height: 36), from: .zero, operation: .sourceOver, fraction: 1)
+        document.draw(in: NSRect(x: 36, y: 0, width: 56, height: 56), from: .zero, operation: .sourceOver, fraction: 1)
         return true
     }
     guard NSWorkspace.shared.setIcon(icon, forFile: path, options: []) else {
