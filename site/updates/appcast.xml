@@ -5,24 +5,26 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
         <title>LiveCopilot</title>
         <item>
             <title>2.1.0</title>
-            <pubDate>Tue, 29 Sep 2026 20:47:56 +0800</pubDate>
+            <pubDate>Tue, 29 Sep 2026 23:08:05 +0800</pubDate>
             <link>https://carey-bk.github.io/LiveCopilot/</link>
-            <sparkle:version>20260929.123718</sparkle:version>
+            <sparkle:version>20260929.144323</sparkle:version>
             <sparkle:shortVersionString>2.1.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <description><![CDATA[<h2>LiveCopilot 2.1.0</h2>
 <p>新增六步首次使用引导、右对齐小尺寸开关和应用内更新。安装盘新增拖动提示与清晰的大、小图标；完成引导后自动展开悬浮窗，并支持隐藏菜单栏图标。可从设置 → 关于检查更新，自动检查可选，下载与安装由你确认。</p>
 <p>更新保留模型、资料、历史、偏好和 API Key。应用与 DMG 均使用 Developer ID 签名并通过 Apple 公证。</p>
 <p>知识库索引使用整批文档的真实总进度，显示连续进度条、百分比和完成数量；文档行仅显示加载状态。</p>
+<p>设置中的引导入口并排展示；本地模型步骤明确使用“下载并继续”，后续步骤可查看下载状态。排队模型显示等待下载，最后一步可补充下载尚未准备的所选模型。</p>
 <hr>
 <p>A six-step first-run guide, compact right-aligned switches, and signed in-app updates. The installer now has a drag-to-install layout; finishing setup opens the floating window, and menu bar visibility is configurable. Check for updates in Settings → About. Automatic checks are optional; you approve downloads and installation.</p>
 <p>Your models, documents, history, preferences, and API keys are preserved. Both the app and DMG are Developer ID signed and Apple notarized.</p>
 <p>Knowledge indexing now shows one continuous batch progress bar with a percentage and completed-document count. Individual documents use a loading indicator.</p>
+<p>Guide buttons now share one row. The model step explicitly says “Download &amp; continue”, subsequent steps expose download status, queued models are labeled correctly, and the final readiness page can start any pending selected downloads.</p>
 ]]></description>
-            <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg" length="35589489" type="application/octet-stream" sparkle:edSignature="ZnOXEHqdkVsWpLZ7l/mY8tEREYhCsVywVhZbuKUF5ApRg4+LqtH1L+4Rx9w4Lj2zMj9bdJEBfaOMcwT8/ZsEAg=="></enclosure>
+            <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg" length="35629484" type="application/octet-stream" sparkle:edSignature="W4xBtxVCFQD8Vs+JzNkHQMQLFC/HagIMIgHo2xKRYoSTFWHUlSjKzKsX8hwUueJ2VdZElXCndDynVlDt5FElBw=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: 5LeiOpUWAGAFWLiL180zJ7YGmSjn8dq7018+klgFU+7mq1uJ2QJMe0CwWssIPhLgOVUeY/YKi2iDuHc6mtzwCw==
-length: 2464
+edSignature: YnvIK+dgBRdfP5T8MCOL7vCcDx4yBoqJaEeej/B7njBOihWH9D9CCi0t6TZHQFwGSLb1DpFOVOccPS1gNV9nDg==
+length: 2942
 -->
