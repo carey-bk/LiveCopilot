@@ -1,0 +1,26 @@
+<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>LiveCopilot</title>
+        <item>
+            <title>2.1.0</title>
+            <pubDate>Tue, 29 Sep 2026 16:51:53 +0800</pubDate>
+            <link>https://carey-bk.github.io/LiveCopilot/</link>
+            <sparkle:version>20260929.083739</sparkle:version>
+            <sparkle:shortVersionString>2.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<h2>LiveCopilot 2.1.0</h2>
+<p>新增六步首次使用引导、右对齐小尺寸开关和应用内更新。可从设置 → 关于检查更新，自动检查可选，下载与安装由你确认。</p>
+<p>更新保留模型、资料、历史、偏好和 API Key。应用与 DMG 均使用 Developer ID 签名并通过 Apple 公证。</p>
+<hr>
+<p>A six-step first-run guide, compact right-aligned switches, and signed in-app updates. Check for updates in Settings → About. Automatic checks are optional; you approve downloads and installation.</p>
+<p>Your models, documents, history, preferences, and API keys are preserved. Both the app and DMG are Developer ID signed and Apple notarized.</p>
+]]></description>
+            <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg" length="34502239" type="application/octet-stream" sparkle:edSignature="RoaRsD/7kOJ1lvzjGzEeBRzfrAoLKcjqwckuDO6CNCkPdGLvp0F6OrNkN5QjkCLC0yVa62nsf1oNrvMaQi+JCA=="></enclosure>
+        </item>
+    </channel>
+</rss><!-- sparkle-signatures:
+edSignature: 0v9S3kq/Vk9bW2FQrcICg+g4Ez/lMDnQhUyfKJL7heBevi2Zvn7GvwM/aIDzT2lprXllQaPZrFamDYcLD2vOAw==
+length: 1893
+-->
