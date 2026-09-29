@@ -13,6 +13,7 @@ final class AppCoordinator: ObservableObject {
     let laya: LayaRuntimeManager
     private let layaPredictor: ((String, String) async throws -> Double)?
     private let mockReasoning: (any ReasoningProvider)?
+    private let mockEmbedding: (any EmbeddingProvider)?
     private let emitMockConversation: Bool
     private lazy var layaGate: LayaTriggerController = {
         let gate = LayaTriggerController(predict: { [weak self] text, context in
@@ -108,7 +109,8 @@ final class AppCoordinator: ObservableObject {
     @Published var knowledgeDocuments: [KnowledgeDocument] = []
     @Published var isIndexing = false
     @Published private(set) var indexingProgress = 0.0
-    @Published private(set) var documentIndexingProgress = 0.0
+    @Published private(set) var indexingDocumentCount = 0
+    @Published private(set) var indexingCompletedDocumentCount = 0
     @Published private(set) var indexingDocumentID: String?
     @Published private(set) var indexingSucceeded = false
     @Published var knowledgeMessage = ""
@@ -124,11 +126,13 @@ final class AppCoordinator: ObservableObject {
     init(mock: Bool = AppPaths.isMock,
          layaRoot: URL? = nil, layaPredictor: ((String, String) async throws -> Double)? = nil,
          mockReasoning: (any ReasoningProvider)? = nil,
-         emitMockConversation: Bool = true, mockDefaults: UserDefaults? = nil) {
+         emitMockConversation: Bool = true, mockDefaults: UserDefaults? = nil,
+         mockEmbedding: (any EmbeddingProvider)? = nil, mockKnowledgeDirectory: URL? = nil) {
         isMock = mock
         updates = AppUpdateController(mock: mock)
         self.layaPredictor = mock ? layaPredictor : nil
         self.mockReasoning = mock ? mockReasoning : nil
+        self.mockEmbedding = mock ? mockEmbedding : nil
         self.emitMockConversation = emitMockConversation
         localModels = LocalModelManager(root: AppPaths.modelsDirectory(mock: mock))
         laya = LayaRuntimeManager(root: layaRoot ?? AppPaths.dataDirectory(mock: mock).appendingPathComponent("Laya", isDirectory: true))
@@ -144,7 +148,7 @@ final class AppCoordinator: ObservableObject {
             settings.automaticSuggestions = laya.state != .unsupported
             settings.save(defaults: settingsDefaults)
         }
-        do { knowledge = try KnowledgeIndex(directory: AppPaths.dataDirectory(mock: mock).appendingPathComponent("knowledge")) }
+        do { knowledge = try KnowledgeIndex(directory: (mock ? mockKnowledgeDirectory : nil) ?? AppPaths.dataDirectory(mock: mock).appendingPathComponent("knowledge")) }
         catch { knowledgeMessage = error.localizedDescription }
         if mock { hasAPIKey = true; keyStatus = "Mock providers — no credential needed."; statusMessage = "MOCK MODE — no API calls" }
         else if settings.requiresOpenAIKey { refreshKeyState() }
@@ -386,7 +390,7 @@ final class AppCoordinator: ObservableObject {
     }
 
     private func embeddingProvider(requireReady: Bool = false) throws -> any EmbeddingProvider {
-        if isMock { return MockEmbeddingProvider() }
+        if isMock { return mockEmbedding ?? MockEmbeddingProvider() }
         if settings.embeddingService == .local {
             if requireReady, !LocalModelKind.embedding.isInstalled(in: localModels.root) { throw CopilotError.message("Download the local embedding model in Services first.") }
             if localEmbedding == nil { localEmbedding = LocalEmbeddingProvider(directory: LocalModelKind.embedding.location(in: localModels.root)) }
@@ -698,9 +702,19 @@ final class AppCoordinator: ObservableObject {
     }
     private func updateIndexing(id: String, value: Double, offset: Int, count: Int) async {
         indexingDocumentID = id
-        documentIndexingProgress = value
+        // Each document has equal weight, including the actual completed portion of the
+        // active document. The denominator stays fixed for this batch, not the library.
+        indexingCompletedDocumentCount = offset + (value == 1 ? 1 : 0)
         indexingProgress = (Double(offset) + value) / Double(max(1, count))
         if value == 0 || value == 1 { await refreshKnowledge() }
+    }
+    private func beginIndexing(count: Int) {
+        indexingDocumentCount = count
+        indexingCompletedDocumentCount = 0
+        indexingProgress = 0
+        indexingSucceeded = false
+        indexingDocumentID = nil
+        isIndexing = true
     }
     func importDocuments(_ urls: [URL]) {
         guard !isIndexing, let knowledge else { return }
@@ -708,8 +722,7 @@ final class AppCoordinator: ObservableObject {
         do { documents = try DocumentImport.validate(urls) }
         catch { knowledgeMessage = error.localizedDescription; return }
         guard !documents.isEmpty else { return }
-        isIndexing = true
-        indexingProgress = 0; documentIndexingProgress = 0; indexingSucceeded = false; indexingDocumentID = nil
+        beginIndexing(count: documents.count)
         Task {
             defer { isIndexing = false; indexingDocumentID = nil }
             do {
@@ -728,8 +741,7 @@ final class AppCoordinator: ObservableObject {
     }
     func reindex(_ document: KnowledgeDocument) {
         guard !isIndexing, let knowledge else { return }
-        isIndexing = true
-        indexingProgress = 0; documentIndexingProgress = 0; indexingSucceeded = false; indexingDocumentID = nil
+        beginIndexing(count: 1)
         Task {
             defer { isIndexing = false; indexingDocumentID = nil }
             do {
@@ -754,8 +766,7 @@ final class AppCoordinator: ObservableObject {
         guard !isIndexing, let knowledge else { return }
         let documents = knowledgeDocuments
         guard !documents.isEmpty else { return }
-        isIndexing = true
-        indexingProgress = 0; documentIndexingProgress = 0; indexingSucceeded = false; indexingDocumentID = nil
+        beginIndexing(count: documents.count)
         Task {
             defer { isIndexing = false; indexingDocumentID = nil }
             do {

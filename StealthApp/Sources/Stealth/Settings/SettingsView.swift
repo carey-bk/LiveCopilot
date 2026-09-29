@@ -480,10 +480,12 @@ struct SettingsView: View {
             }
             Stepper(t("Evidence chunks") + ": \(coordinator.settings.retrievalCount)", value: $coordinator.settings.retrievalCount, in: 3...8)
             Text(b("More evidence chunks provide more context but increase the analysis model's input tokens and may add irrelevant text.", "证据片段越多，分析模型可读的上下文越多，但输入 token 和无关信息也可能增加。")).font(.caption).foregroundStyle(.secondary)
-            if coordinator.isIndexing {
-                IndexingProgressView(progress: coordinator.indexingProgress, label: b("Building retrieval index…", "正在生成检索向量…"))
+            if coordinator.indexingDocumentCount > 0 {
+                IndexingProgressView(progress: coordinator.indexingProgress,
+                                     label: b("Documents completed: ", "已完成文档：") + "\(coordinator.indexingCompletedDocumentCount) / \(coordinator.indexingDocumentCount)")
                     .accessibilityIdentifier("knowledge-index-progress")
-            } else if coordinator.indexingSucceeded {
+            }
+            if coordinator.indexingSucceeded {
                 Label(b("Index established", "索引已建立"), systemImage: "checkmark.square.fill")
                     .foregroundStyle(.green).accessibilityIdentifier("knowledge-index-complete")
             }
@@ -493,7 +495,10 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(document.name).font(.headline)
                         if coordinator.isIndexing && coordinator.indexingDocumentID == document.id {
-                            IndexingProgressView(progress: coordinator.documentIndexingProgress, label: b("Building index…", "正在建立索引…"))
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text(b("Building index…", "正在建立索引…")).font(.caption).foregroundStyle(.secondary)
+                            }
                         } else if document.status == "Ready" {
                             Label(b("Index established", "索引已建立"), systemImage: "checkmark.square.fill")
                                 .font(.caption).foregroundStyle(.green)
