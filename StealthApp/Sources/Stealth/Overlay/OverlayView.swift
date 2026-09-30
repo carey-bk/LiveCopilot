@@ -161,7 +161,8 @@ struct OverlayView: View {
             }.help(t(coordinator.settings.overlayEdgeHide ? "Pin window" : "Unpin and hide at right edge"))
                 .accessibilityIdentifier("overlay-pin")
                 .onboardingHighlight(onboarding.visibleTip == .visibility)
-            Button { (NSApp.windows.first(where: { $0 is OverlayWindow }) as? OverlayWindow)?.tuckAway() } label: { Image(systemName: "minus") }.help(t("Hide (⌥H)"))
+            Button { (NSApp.windows.first(where: { $0 is OverlayWindow }) as? OverlayWindow)?.tuckAway() } label: { Image(systemName: "minus") }
+                .help(t("Hide ({shortcut})").replacingOccurrences(of: "{shortcut}", with: hotkeys.toggleOverlay.display))
         }.buttonStyle(.borderless)
     }
     private var transcriptView: some View {

@@ -9,7 +9,7 @@ import Carbon.HIToolbox
 ///   ⌃⌥Space → generate an answer    (adjustable in Settings)
 ///   ⌃⌥S     → recap the conversation (adjustable in Settings)
 ///   ⌃⌥X     → follow-up question     (adjustable in Settings)
-///   ⌥H     → show / hide the overlay (fixed)
+///   ⌥H     → show / hide the overlay (adjustable in Settings)
 @MainActor
 final class HotkeyManager {
     var onError: ((String) -> Void)?
@@ -44,6 +44,12 @@ final class HotkeyManager {
     private var enabledModes = SuggestionMode.allCases
     private var onSuggest: ((SuggestionMode) -> Void)?
     private var onToggleOverlay: (() -> Void)?
+    private var isRecording = false
+
+    func setRecording(_ recording: Bool) {
+        isRecording = recording
+        rebuild()
+    }
 
     /// Register all hotkeys from the store. Safe to call again to rebind live.
     func register(store: HotkeyStore,
@@ -70,6 +76,7 @@ final class HotkeyManager {
     private func rebuild() {
         guard let store, let onSuggest, let onToggleOverlay else { return }
         unregisterAll()
+        guard !isRecording else { return }
         installDispatcher()
 
         for mode in enabledModes {
@@ -78,7 +85,7 @@ final class HotkeyManager {
                 onSuggest(mode)
             }
         }
-        // Fixed overlay toggle.
+        // Overlay visibility stays available even when conversation tools are disabled.
         add(id: ID.toggleOverlay,
             keyCode: store.toggleOverlay.keyCode,
             modifiers: store.toggleOverlay.modifiers,

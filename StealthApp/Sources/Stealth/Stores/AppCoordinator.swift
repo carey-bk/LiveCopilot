@@ -118,6 +118,7 @@ final class AppCoordinator: ObservableObject {
     @Published var micEnabled = true
     @Published private(set) var conversationGeneration = UUID()
     var onHotkeysChanged: (() -> Void)?
+    var onHotkeyRecordingChanged: ((Bool) -> Void)?
     var onOpenSettings: (() -> Void)?
     var onOpenOnboarding: (() -> Void)?
     var onShowOverlayTips: (() -> Void)?
@@ -241,8 +242,18 @@ final class AppCoordinator: ObservableObject {
         guard isMock else { return }
         receive(event, speaker: speaker, epoch: liveEpoch)
     }
-    func updateHotkey(_ combo: HotkeyCombo, for mode: SuggestionMode) { hotkeys.set(combo, for: mode); onHotkeysChanged?() }
-    func resetHotkey(_ mode: SuggestionMode) { hotkeys.reset(mode); onHotkeysChanged?() }
+    @discardableResult func updateHotkey(_ combo: HotkeyCombo, for mode: SuggestionMode) -> Bool {
+        guard hotkeys.set(combo, for: mode) else { return false }
+        onHotkeysChanged?(); return true
+    }
+    @discardableResult func resetHotkey(_ mode: SuggestionMode) -> Bool {
+        updateHotkey(HotkeyStore.defaultCombos[mode]!, for: mode)
+    }
+    @discardableResult func updateOverlayHotkey(_ combo: HotkeyCombo) -> Bool {
+        guard hotkeys.setToggleOverlay(combo) else { return false }
+        onHotkeysChanged?(); return true
+    }
+    @discardableResult func resetOverlayHotkey() -> Bool { updateOverlayHotkey(HotkeyStore.defaultToggleOverlay) }
     func refreshKeyState(interactive: Bool = false) {
         if isMock { hasAPIKey = true; return }
         guard !isCheckingKey else { return }

@@ -7,12 +7,14 @@ import Carbon.HIToolbox
 struct KeyRecorderView: NSViewRepresentable {
     let combo: HotkeyCombo
     var language: AppLanguage = .system
-    let onRecorded: (HotkeyCombo) -> Void
+    var onRecordingChanged: ((Bool) -> Void)?
+    let onRecorded: (HotkeyCombo) -> Bool
 
     func makeNSView(context: Context) -> RecorderButton {
         let view = RecorderButton()
         view.language = language
         view.onRecorded = onRecorded
+        view.onRecordingChanged = onRecordingChanged
         view.combo = combo
         return view
     }
@@ -20,14 +22,18 @@ struct KeyRecorderView: NSViewRepresentable {
     func updateNSView(_ nsView: RecorderButton, context: Context) {
         nsView.language = language
         nsView.onRecorded = onRecorded
+        nsView.onRecordingChanged = onRecordingChanged
         if !nsView.isRecording { nsView.combo = combo }
     }
+
+    static func dismantleNSView(_ nsView: RecorderButton, coordinator: ()) { nsView.stopRecording() }
 }
 
 /// An `NSButton` that, when clicked, becomes first responder and captures the
 /// next modified key press as the new shortcut.
 final class RecorderButton: NSButton {
-    var onRecorded: ((HotkeyCombo) -> Void)?
+    var onRecorded: ((HotkeyCombo) -> Bool)?
+    var onRecordingChanged: ((Bool) -> Void)?
     var language = AppLanguage.system { didSet { refreshTitle() } }
     var combo: HotkeyCombo? { didSet { refreshTitle() } }
     private(set) var isRecording = false {
@@ -35,6 +41,7 @@ final class RecorderButton: NSButton {
     }
 
     private var monitor: Any?
+    private var resignObserver: NSObjectProtocol?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -50,14 +57,23 @@ final class RecorderButton: NSButton {
     @objc private func beginRecording() {
         guard !isRecording else { return }
         isRecording = true
+        onRecordingChanged?(true)
+        resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
+                                                                object: window, queue: .main) { [weak self] _ in
+            self?.stopRecording()
+        }
         // Local monitor: capture the next key down while recording.
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self, self.isRecording else { return event }
             return self.handle(event)
         }
     }
 
     private func handle(_ event: NSEvent) -> NSEvent? {
+        if event.type == .leftMouseDown || event.type == .rightMouseDown {
+            stopRecording()
+            return event
+        }
         // Escape cancels recording without changing anything.
         if event.type == .keyDown && Int(event.keyCode) == kVK_Escape {
             stopRecording()
@@ -70,16 +86,19 @@ final class RecorderButton: NSButton {
 
         let carbon = HotkeyCombo.carbonModifiers(from: mods)
         let recorded = HotkeyCombo(keyCode: UInt32(event.keyCode), modifiers: carbon)
-        combo = recorded
-        onRecorded?(recorded)
+        if onRecorded?(recorded) == true { combo = recorded }
         stopRecording()
         return nil
     }
 
-    private func stopRecording() {
+    func stopRecording() {
+        guard isRecording else { return }
         isRecording = false
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+        resignObserver = nil
+        onRecordingChanged?(false)
     }
 
     private func refreshTitle() {
@@ -88,5 +107,6 @@ final class RecorderButton: NSButton {
 
     deinit {
         if let monitor { NSEvent.removeMonitor(monitor) }
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
     }
 }

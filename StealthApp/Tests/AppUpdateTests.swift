@@ -38,6 +38,30 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(info["SUVerifyUpdateBeforeExtraction"] as? Bool, true)
         XCTAssertEqual(info["SUEnableSystemProfiling"] as? Bool, false)
         XCTAssertEqual(info["SUAllowsAutomaticUpdates"] as? Bool, false)
-        XCTAssertEqual(info["SUEnableAutomaticChecks"] as? Bool, false)
+        XCTAssertEqual(info["SUEnableAutomaticChecks"] as? Bool, true)
+    }
+
+    func testFreshInstallChecksAutomaticallyAndPreservesAnExplicitOptOut() throws {
+        let identifier = "com.livecopilot.updater-policy-test." + UUID().uuidString
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(identifier + ".bundle")
+        let contents = root.appendingPathComponent("Contents")
+        let defaults = UserDefaults(suiteName: identifier)!
+        defer {
+            defaults.removePersistentDomain(forName: identifier)
+            try? FileManager.default.removeItem(at: root)
+        }
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        var info = Bundle.main.infoDictionary!
+        info["CFBundleIdentifier"] = identifier
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: contents.appendingPathComponent("Info.plist"))
+        let bundle = try XCTUnwrap(Bundle(url: root))
+        let settings = SPUUpdaterSettings(hostBundle: bundle)
+        XCTAssertTrue(settings.automaticallyChecksForUpdates)
+        XCTAssertFalse(settings.automaticallyDownloadsUpdates)
+        settings.automaticallyChecksForUpdates = false
+        XCTAssertFalse(SPUUpdaterSettings(hostBundle: bundle).automaticallyChecksForUpdates)
+        settings.automaticallyChecksForUpdates = true
+        XCTAssertTrue(SPUUpdaterSettings(hostBundle: bundle).automaticallyChecksForUpdates)
     }
 }

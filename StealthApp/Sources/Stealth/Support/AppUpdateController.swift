@@ -30,6 +30,7 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
         available = available || Self.qaFeed != nil
         #endif
         enabled = available
+        automaticChecks = SPUUpdaterSettings(hostBundle: .main).automaticallyChecksForUpdates
         super.init()
     }
 

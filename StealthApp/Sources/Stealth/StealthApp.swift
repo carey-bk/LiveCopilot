@@ -71,7 +71,7 @@ private struct MenuContent: View {
             coordinator.toggleMic()
         }
 
-        Button(t("Show / Hide Overlay (⌥H)")) { toggleOverlay() }
+        Button(t("Show / Hide Overlay") + " (\(hotkeys.toggleOverlay.display))") { toggleOverlay() }
 
         Divider()
 
@@ -165,6 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         // Rebind live whenever Settings records a new shortcut.
         coordinator.onHotkeysChanged = { [weak self] in self?.hotkeys.reload() }
+        coordinator.onHotkeyRecordingChanged = { [weak self] in self?.hotkeys.setRecording($0) }
 
         // Credential checks are asynchronous and silent. An empty startup cache is not
         // evidence that the user has never configured a key; Settings stays user-initiated.
@@ -261,7 +262,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = L10n.text("LiveCopilot Settings", language: coordinator.settings.language)
         window.sharingType = .readOnly
         applyAppearance(to: window, background: coordinator.settings.background)
-        window.styleMask = [.titled, .closable, .resizable]
+        window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         window.minSize = NSSize(width: 820, height: 640)
         window.setContentSize(NSSize(width: 860, height: 680))
         window.isReleasedWhenClosed = false

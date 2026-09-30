@@ -7,7 +7,7 @@
 	<key>SUPublicEDKey</key>
 	<string>faKUQqId6YEVKbs4ZgtvcYLsJXPbu3UacQBdt7XUyx8=</string>
 	<key>SUEnableAutomaticChecks</key>
-	<false/>
+	<true/>
 	<key>SUAutomaticallyUpdate</key>
 	<false/>
 	<key>SUAllowsAutomaticUpdates</key>

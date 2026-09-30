@@ -71,17 +71,17 @@ struct HotkeyCombo: Codable, Equatable {
     }
 }
 
-/// Persisted, observable hotkey assignments. One combo per suggestion mode plus
-/// the fixed overlay-toggle (not user-editable). Stored in `UserDefaults`.
+/// Persisted, observable global shortcut assignments, including overlay visibility.
 @MainActor
 final class HotkeyStore: ObservableObject {
     @Published private(set) var combos: [SuggestionMode: HotkeyCombo]
 
-    /// Fixed (non-adjustable) overlay show/hide hotkey: ⌥H.
-    let toggleOverlay = HotkeyCombo(keyCode: UInt32(kVK_ANSI_H), modifiers: UInt32(optionKey))
+    @Published private(set) var toggleOverlay: HotkeyCombo
+    static let defaultToggleOverlay = HotkeyCombo(keyCode: UInt32(kVK_ANSI_H), modifiers: UInt32(optionKey))
 
     private let defaults: UserDefaults
     private static let storageKey = "hotkeyCombos.v1"
+    private static let overlayStorageKey = "overlayHotkey.v1"
 
     static let defaultCombos: [SuggestionMode: HotkeyCombo] = [
         .reply:    HotkeyCombo(keyCode: UInt32(kVK_Space),  modifiers: UInt32(controlKey | optionKey)),
@@ -91,6 +91,8 @@ final class HotkeyStore: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        toggleOverlay = defaults.data(forKey: Self.overlayStorageKey)
+            .flatMap { try? JSONDecoder().decode(HotkeyCombo.self, from: $0) } ?? Self.defaultToggleOverlay
         if let data = defaults.data(forKey: Self.storageKey),
            let decoded = try? JSONDecoder().decode([String: HotkeyCombo].self, from: data) {
             var map: [SuggestionMode: HotkeyCombo] = [:]
@@ -109,14 +111,25 @@ final class HotkeyStore: ObservableObject {
     }
 
     /// Update one mode's combo and persist (immutably).
-    func set(_ combo: HotkeyCombo, for mode: SuggestionMode) {
+    @discardableResult func set(_ combo: HotkeyCombo, for mode: SuggestionMode) -> Bool {
+        guard combo != toggleOverlay, !combos.contains(where: { $0.key != mode && $0.value == combo }) else { return false }
         combos = combos.merging([mode: combo]) { _, new in new }
         persist()
+        return true
     }
 
-    func reset(_ mode: SuggestionMode) {
+    @discardableResult func reset(_ mode: SuggestionMode) -> Bool {
         set(Self.defaultCombos[mode]!, for: mode)
     }
+
+    @discardableResult func setToggleOverlay(_ combo: HotkeyCombo) -> Bool {
+        guard !combos.values.contains(combo) else { return false }
+        toggleOverlay = combo
+        if let data = try? JSONEncoder().encode(combo) { defaults.set(data, forKey: Self.overlayStorageKey) }
+        return true
+    }
+
+    @discardableResult func resetToggleOverlay() -> Bool { setToggleOverlay(Self.defaultToggleOverlay) }
 
     private func persist() {
         let raw = Dictionary(uniqueKeysWithValues: combos.map { ($0.key.rawValue, $0.value) })

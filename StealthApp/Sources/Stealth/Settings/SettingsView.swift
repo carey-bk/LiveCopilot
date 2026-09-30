@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var customModel = ""
     @State private var connectionMessage = ""
     @State private var showOpenAIKey = false
+    @State private var shortcutConflict = false
     init(coordinator: AppCoordinator) { self.coordinator = coordinator; hotkeys = coordinator.hotkeys; laya = coordinator.laya }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     private func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
@@ -37,8 +38,9 @@ struct SettingsView: View {
                 Spacer()
                 Text(coordinator.isMock ? t("MOCK — no API calls") : AppInfo.display)
                     .font(.caption2).foregroundStyle(.secondary).padding(16)
-            }.frame(width: 180).background(.thinMaterial)
-            Divider()
+            }.frame(width: 180)
+                .background { Rectangle().fill(.thinMaterial).ignoresSafeArea(edges: .top) }
+            Divider().ignoresSafeArea(edges: .top)
             VStack(alignment: .leading, spacing: 18) {
                 Text(t(page.rawValue)).font(.system(size: 24, weight: .semibold))
                 switch page {
@@ -51,7 +53,7 @@ struct SettingsView: View {
             }.padding(26).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 820, idealWidth: 860, minHeight: 610, idealHeight: 680)
-        .background { WindowBackgroundView(style: coordinator.settings.background) }
+        .background { WindowBackgroundView(style: coordinator.settings.background).ignoresSafeArea() }
         .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
         .toggleStyle(TrailingSwitchStyle())
         .environment(\.locale, coordinator.settings.language.locale)
@@ -138,14 +140,16 @@ struct SettingsView: View {
                     Text(t("Stay compact when empty, grow with captions and answers, then scroll at the screen limit. Drag a vertical edge to switch to manual sizing.")).font(.caption).foregroundStyle(.secondary)
                     Toggle(t("Hide at the right screen edge"), isOn: $coordinator.settings.overlayEdgeHide)
                         .accessibilityIdentifier("overlay-edge-hide")
-                    Text(t("Starts hidden. Hover at the right edge to reveal; move away to tuck it back. Pin the window or press ⌥H to keep it within reach.")).font(.caption).foregroundStyle(.secondary)
+                    Text(t("Starts hidden. Hover at the right edge to reveal; move away to tuck it back. Pin the window or press {shortcut} to keep it within reach.")
+                        .replacingOccurrences(of: "{shortcut}", with: hotkeys.toggleOverlay.display)).font(.caption).foregroundStyle(.secondary)
                 }.padding(10)
             } label: { Label(t("Floating window"), systemImage: "rectangle.righthalf.inset.filled") }
             SettingsSection {
                 VStack(alignment: .leading, spacing: 12) {
                     Toggle(t("Show LiveCopilot in the menu bar"), isOn: $coordinator.settings.showMenuBarIcon)
                         .accessibilityIdentifier("show-menu-bar-icon")
-                    Text(t("When hidden, use the Dock icon or ⌥H to open the floating window. You can turn the menu bar icon back on here."))
+                    Text(t("When hidden, use the Dock icon or {shortcut} to open the floating window. You can turn the menu bar icon back on here.")
+                        .replacingOccurrences(of: "{shortcut}", with: hotkeys.toggleOverlay.display))
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(10)
             } label: { Label(t("Menu bar"), systemImage: "menubar.rectangle") }
@@ -526,19 +530,44 @@ struct SettingsView: View {
     private var shortcuts: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(t("Global shortcuts")).font(.headline)
+            HStack {
+                Label(t("Show / Hide Overlay"), systemImage: "macwindow").frame(width: 160, alignment: .leading)
+                KeyRecorderView(combo: hotkeys.toggleOverlay, language: coordinator.settings.language,
+                                onRecordingChanged: coordinator.onHotkeyRecordingChanged) { combo in
+                    recordShortcut { coordinator.updateOverlayHotkey(combo) }
+                }.frame(width: 140, height: 28).accessibilityIdentifier("shortcut-toggle-overlay")
+                Button(t("Reset")) { recordShortcut { coordinator.resetOverlayHotkey() } }
+                    .accessibilityIdentifier("reset-shortcut-toggle-overlay")
+            }
+            Divider()
             ForEach(SuggestionMode.allCases) { mode in
                 HStack {
-                    Label(t(mode.label), systemImage: mode.systemImage).frame(width: 130, alignment: .leading)
-                    KeyRecorderView(combo: hotkeys.combo(for: mode), language: coordinator.settings.language) { coordinator.updateHotkey($0, for: mode) }.frame(width: 140, height: 28)
-                    Button(t("Reset")) { coordinator.resetHotkey(mode) }
+                    Label(t(mode.label), systemImage: mode.systemImage).frame(width: 160, alignment: .leading)
+                    KeyRecorderView(combo: hotkeys.combo(for: mode), language: coordinator.settings.language,
+                                    onRecordingChanged: coordinator.onHotkeyRecordingChanged) { combo in
+                        recordShortcut { coordinator.updateHotkey(combo, for: mode) }
+                    }.frame(width: 140, height: 28).accessibilityIdentifier("shortcut-" + mode.rawValue)
+                    Button(t("Reset")) { recordShortcut { coordinator.resetHotkey(mode) } }
                 }.disabled(!coordinator.settings.isEnabled(mode))
                 if !coordinator.settings.isEnabled(mode) {
                     Text(t("Enable this tool in General to use its shortcut.")).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Text(t("⌥H shows/hides the overlay. Click the text box to type; Return submits a question even when listening is off.")).font(.caption).foregroundStyle(.secondary)
+            if shortcutConflict {
+                Text(b("This shortcut is already assigned to another action. Choose a different combination.", "这个快捷键已用于其他操作，请选择其他组合。"))
+                    .font(.caption).foregroundStyle(.red).accessibilityIdentifier("shortcut-conflict")
+            }
+            Text(b("Click a shortcut and press a new key combination. Escape cancels; Reset restores its default.", "点击快捷键后按下新的组合键，按 Esc 取消；点击“重置”恢复默认。"))
+                .font(.caption).foregroundStyle(.secondary)
+            Text(t("{shortcut} shows/hides the overlay. Click the text box to type; Return submits a question even when listening is off.")
+                .replacingOccurrences(of: "{shortcut}", with: hotkeys.toggleOverlay.display)).font(.caption).foregroundStyle(.secondary)
             Spacer()
         }
+    }
+    @discardableResult private func recordShortcut(_ update: () -> Bool) -> Bool {
+        let accepted = update()
+        shortcutConflict = !accepted
+        return accepted
     }
 }
 

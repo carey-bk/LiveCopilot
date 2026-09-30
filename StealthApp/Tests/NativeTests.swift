@@ -290,6 +290,54 @@ final class NativeTests: XCTestCase {
         restarted.reset(.reply)
         XCTAssertEqual(restarted.combo(for: .reply), HotkeyStore.defaultCombos[.reply])
     }
+    @MainActor func testOverlayShortcutMigrationPersistenceAndConflicts() throws {
+        let suite = "LiveCopilot-Overlay-Key-Test-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let customReply = HotkeyCombo(keyCode: UInt32(kVK_F8), modifiers: UInt32(controlKey | shiftKey))
+        // Older installations only saved suggestion shortcuts.
+        defaults.set(try JSONEncoder().encode(["reply": customReply]), forKey: "hotkeyCombos.v1")
+        let store = HotkeyStore(defaults: defaults)
+        XCTAssertEqual(store.toggleOverlay, HotkeyStore.defaultToggleOverlay)
+        XCTAssertEqual(store.combo(for: .reply), customReply)
+        let overlay = HotkeyCombo(keyCode: UInt32(kVK_ANSI_J), modifiers: UInt32(controlKey | optionKey))
+        XCTAssertTrue(store.setToggleOverlay(overlay))
+        XCTAssertFalse(store.set(overlay, for: .reply))
+        XCTAssertFalse(store.setToggleOverlay(customReply))
+        let restarted = HotkeyStore(defaults: defaults)
+        XCTAssertEqual(restarted.toggleOverlay, overlay)
+        XCTAssertEqual(restarted.combo(for: .reply), customReply)
+        XCTAssertTrue(restarted.resetToggleOverlay())
+        XCTAssertEqual(HotkeyStore(defaults: defaults).toggleOverlay, HotkeyStore.defaultToggleOverlay)
+        XCTAssertEqual(restarted.combo(for: .reply), customReply)
+    }
+    @MainActor func testOverlayShortcutReloadRecordingAndDisabledTools() {
+        let suite = "LiveCopilot-Overlay-Dispatch-Test-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let manager = HotkeyManager(), store = HotkeyStore(defaults: defaults)
+        var toggles = 0
+        manager.register(store: store, onSuggest: { _ in XCTFail("No suggestion expected") }, onToggleOverlay: { toggles += 1 })
+        defer { manager.unregisterAll() }
+        func key(_ code: Int) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .option, timestamp: 0,
+                            windowNumber: 0, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: UInt16(code))!
+        }
+        manager.setRecording(true)
+        XCTAssertFalse(manager.handleOverlayKey(key(kVK_ANSI_H)))
+        XCTAssertTrue(store.setToggleOverlay(HotkeyCombo(keyCode: UInt32(kVK_ANSI_J), modifiers: UInt32(optionKey))))
+        manager.reload()
+        XCTAssertFalse(manager.handleOverlayKey(key(kVK_ANSI_J)))
+        manager.setRecording(false)
+        manager.setEnabledModes([])
+        XCTAssertFalse(manager.handleOverlayKey(key(kVK_ANSI_H)))
+        XCTAssertTrue(manager.handleOverlayKey(key(kVK_ANSI_J)))
+        XCTAssertEqual(toggles, 1)
+        store.resetToggleOverlay(); manager.reload()
+        XCTAssertTrue(manager.handleOverlayKey(key(kVK_ANSI_H)))
+        XCTAssertFalse(manager.handleOverlayKey(key(kVK_ANSI_J)))
+        XCTAssertEqual(toggles, 2)
+    }
     @MainActor func testDisabledToolCannotStartOrContinueAnAnswer() async throws {
         let coordinator = AppCoordinator(mock: true)
         let original = coordinator.settings

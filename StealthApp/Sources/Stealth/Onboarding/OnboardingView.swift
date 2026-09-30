@@ -7,6 +7,7 @@ struct OnboardingView: View {
     @ObservedObject var models: LocalModelManager
     @ObservedObject var apple: AppleSpeechManager
     @ObservedObject var laya: LayaRuntimeManager
+    @ObservedObject var hotkeys: HotkeyStore
     @StateObject private var permissions: OnboardingPermissions
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @State private var presentedStep: OnboardingStep
@@ -18,7 +19,7 @@ struct OnboardingView: View {
     init(coordinator: AppCoordinator, close: @escaping () -> Void,
          beginListening: @escaping () -> Void, beginTyping: @escaping () -> Void) {
         self.coordinator = coordinator; store = coordinator.onboarding
-        models = coordinator.localModels; apple = coordinator.appleSpeech; laya = coordinator.laya
+        models = coordinator.localModels; apple = coordinator.appleSpeech; laya = coordinator.laya; hotkeys = coordinator.hotkeys
         _permissions = StateObject(wrappedValue: OnboardingPermissions(mock: coordinator.isMock))
         _presentedStep = State(initialValue: coordinator.onboarding.state.step)
         self.close = close; self.beginListening = beginListening; self.beginTyping = beginTyping
@@ -155,7 +156,7 @@ struct OnboardingView: View {
                            detail: b("Return to the introduction to change this choice. Granting access never starts recording.", "可以返回功能介绍页更改使用方式。授予权限不会开始录音。"))
         case .ready:
             OnboardingNote(icon: "keyboard", title: b("Keep it within reach", "随时唤出助手"),
-                           detail: coordinator.hotkeys.toggleOverlay.display + b(" shows or hides the floating window. ", " 显示或隐藏悬浮窗。") + "\n" + coordinator.hotkeys.combo(for: .reply).display + b(" generates a reply from the conversation.", " 根据当前对话生成回答。"))
+                           detail: hotkeys.toggleOverlay.display + b(" shows or hides the floating window. ", " 显示或隐藏悬浮窗。") + "\n" + hotkeys.combo(for: .reply).display + b(" generates a reply from the conversation.", " 根据当前对话生成回答。"))
         }
         if locked { Text(b("Stop the current session or indexing before changing setup.", "请先停止当前监听或索引，再更改配置。")).font(.caption).foregroundStyle(.secondary) }
     }
