@@ -7,11 +7,21 @@ import html
 import json
 import re
 import shutil
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / 'site'
 OUTPUT = ROOT / '_site'
 BASE = 'https://carey-bk.github.io/LiveCopilot/'
+download = json.loads((SOURCE / 'download.json').read_text())
+github_download = download['github_url']
+mirror_download = download.get('mirror_url')
+for url in [github_download, mirror_download]:
+    if url is None:
+        continue
+    parsed = urlsplit(url)
+    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError('Download URLs must be public HTTPS URLs without credentials, query strings or fragments.')
 content = json.loads((SOURCE / 'content.json').read_text())
 assert content['zh'].keys() == content['en'].keys(), 'Both language pages need matching content.'
 template = Template((SOURCE / 'template.html').read_text())
@@ -32,7 +42,8 @@ for language, copy in content.items():
                 zh_current='' if english else 'aria-current="page"',
                 en_current='aria-current="page"' if english else '',
                 canonical=BASE + ('en/' if english else ''),
-                download_url='https://github.com/carey-bk/LiveCopilot/releases/download/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg')
+                download_url=html.escape(mirror_download or github_download, quote=True),
+                download_fallback=('<p class="install-note"><a class="text-link" href="' + html.escape(github_download, quote=True) + '">' + ('Alternative: GitHub download' if english else '备用：GitHub 下载') + '</a></p>') if mirror_download else '')
     title_lines = copy['hero_title'].split('\n')
     data['hero_title_markup'] = ''.join('<span class="title-line">' + ''.join('<span class="title-character">' + html.escape(c) + '</span>' for c in line) + '</span>' for line in title_lines) + '<span class="title-cursor" aria-hidden="true"></span>'
     # One product structure for every section; translated text is already escaped.
