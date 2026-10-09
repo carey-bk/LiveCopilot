@@ -119,7 +119,7 @@ After both the app and DMG are notarized, stapled, and finalized, place the fina
 ```bash
 StealthApp/build/SparkleTools/bin/generate_appcast \
   --account LiveCopilot --maximum-deltas 0 \
-  --download-url-prefix https://github.com/carey-bk/LiveCopilot/releases/download/vVERSION/ \
+  --download-url-prefix https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/vVERSION/ \
   --link https://carey-bk.github.io/LiveCopilot/ --embed-release-notes \
   /absolute/path/to/update-staging
 StealthApp/build/SparkleTools/bin/sign_update --account LiveCopilot --verify \
@@ -132,6 +132,6 @@ cmp site/updates/appcast.xml _site/updates/appcast.xml
 
 Keep the signed appcast bytes unchanged: formatting, templating, or newline conversion invalidates the signature. `build-site.py` copies the feed as bytes. Never hand-edit a signed feed; regenerate it with the signing tool. On later releases reuse the preceding feed in staging so that compatible older releases can be retained where needed.
 
-Publish the matching GitHub Release and verify its assets first; deploy the website/feed afterward. Check the live feed bytes and download hash, then exercise Check for Updates in the canonical installed release. A source push or local signed feed alone does not establish working public updates. Versions before 2.1 lack Sparkle and require one manual upgrade.
+Publish the matching GitHub Release and verify its assets first. Mirror the identical finalized DMG to Hong Kong OSS, verify its SHA-256 and anonymous download, then generate the signed feed using that versioned OSS URL and deploy the website/feed. Keep GitHub Releases as the manual download fallback. The feed itself remains on GitHub Pages; no IP routing is involved. Check the live feed bytes and download hash, then exercise Check for Updates in the canonical installed release. A source push or local signed feed alone does not establish working public updates. Versions before 2.1 lack Sparkle and require one manual upgrade.
 
 For an isolated end-to-end check, build Debug, run `python3 StealthApp/scripts/prepare-updater-qa.py`, serve its `build/updater-qa/server` on `127.0.0.1:18746`, and open only the staged QA app. Verify discovery, download, installation, and relaunch from build 100 to 101 without recording, paid API calls, or changing production data. Preserve QA evidence before using a fresh staging directory.

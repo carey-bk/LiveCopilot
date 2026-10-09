@@ -32,7 +32,7 @@ OpenAI Live sessions and OpenAI Responses requests set `store: false`. Custom Ch
 
 ## Software updates
 
-In 2.1.0 and later, an explicit update check (or an optional scheduled check) fetches a signed release feed from GitHub Pages. Downloading an approved update fetches the application package from GitHub Releases. These HTTPS requests expose ordinary network metadata, such as IP address and the updater user agent, to GitHub. They do not include recordings, transcripts, knowledge documents, API credentials, or AI requests. Sparkle system profiling is disabled; no custom telemetry is attached. Automatic checking defaults off, and download/installation require confirmation. Feed and package signatures are verified before use.
+In 2.1.0 and later, an explicit update check (or an optional scheduled check) fetches a signed release feed from GitHub Pages. Downloading an approved update fetches the application package from Alibaba Cloud OSS in Hong Kong. The signed feed request exposes ordinary network metadata, such as IP address and the updater user agent, to GitHub; the package download exposes this metadata to Alibaba Cloud. GitHub Releases remains available as a manual download fallback. They do not include recordings, transcripts, knowledge documents, API credentials, or AI requests. Sparkle system profiling is disabled; no custom telemetry is attached. Automatic checking defaults off, and download/installation require confirmation. Feed and package signatures are verified before use.
 
 ## User controls
 

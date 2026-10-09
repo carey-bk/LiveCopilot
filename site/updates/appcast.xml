@@ -21,10 +21,10 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 <p>Knowledge indexing now shows one continuous batch progress bar with a percentage and completed-document count. Individual documents use a loading indicator.</p>
 <p>Guide buttons now share one row. The model step explicitly says “Download &amp; continue”, subsequent steps expose download status, queued models are labeled correctly, and the final readiness page can start any pending selected downloads.</p>
 ]]></description>
-            <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg" length="35629484" type="application/octet-stream" sparkle:edSignature="W4xBtxVCFQD8Vs+JzNkHQMQLFC/HagIMIgHo2xKRYoSTFWHUlSjKzKsX8hwUueJ2VdZElXCndDynVlDt5FElBw=="></enclosure>
+            <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg" length="35629484" type="application/octet-stream" sparkle:edSignature="W4xBtxVCFQD8Vs+JzNkHQMQLFC/HagIMIgHo2xKRYoSTFWHUlSjKzKsX8hwUueJ2VdZElXCndDynVlDt5FElBw=="></enclosure>
         </item>
     </channel>
 </rss><!-- sparkle-signatures:
-edSignature: YnvIK+dgBRdfP5T8MCOL7vCcDx4yBoqJaEeej/B7njBOihWH9D9CCi0t6TZHQFwGSLb1DpFOVOccPS1gNV9nDg==
-length: 2942
+edSignature: 7FvQlaznyCD+OXcMIMi2qxJTWMZzDuBS+jFnY6FisYDz7dnBqCCpHj1c+BV7Ps0p9e7GDcSlvRaRMw4/if26Aw==
+length: 2955
 -->
