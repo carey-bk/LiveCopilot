@@ -112,7 +112,7 @@ keys, local data, or screenshots of private conversations.
 
 The public Ed25519 key is in `Resources/Info.plist`. The private key stays in the maintainer's login Keychain under Sparkle account `LiveCopilot`; never export it or commit it. Initial key generation uses `build/SparkleTools/bin/generate_keys --account LiveCopilot` only once. Do not regenerate the key for each release: older clients trust the existing public key.
 
-The release feed is `https://carey-bk.github.io/LiveCopilot/updates/appcast.xml`. Automatic checking defaults off, automatic installation is disabled, system profiling is disabled, signed feeds are required, and package verification runs before extraction. Debug/mock/preview builds do not check this feed. A Debug-only QA bundle may use a loopback feed with its own identity and isolated preview data.
+The release feed is `https://carey-bk.github.io/LiveCopilot/updates/appcast.xml`. Automatic checking defaults on for fresh 2.2 installations (2.1 defaulted off); existing saved preferences are retained. Automatic installation is disabled, system profiling is disabled, signed feeds are required, and package verification runs before extraction. Debug/mock/preview builds do not check this feed. A Debug-only QA bundle may use a loopback feed with its own identity and isolated preview data.
 
 After both the app and DMG are notarized, stapled, and finalized, place the final DMG and a matching HTML fragment with release notes in a dedicated update staging directory. Do not re-sign or re-staple the DMG after generating its update signature.
 

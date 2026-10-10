@@ -1,8 +1,38 @@
-<?xml version="1.0" standalone="yes"?><!-- sparkle-sign-warning:
+<?xml version="1.0" standalone="yes"?>
+<!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+-->
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>LiveCopilot</title>
+        <item>
+            <title>2.2.0</title>
+            <pubDate>Sat, 10 Oct 2026 20:45:12 +0800</pubDate>
+            <link>https://carey-bk.github.io/LiveCopilot/</link>
+            <sparkle:version>20261010.105949</sparkle:version>
+            <sparkle:shortVersionString>2.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<h2>LiveCopilot 2.2.0</h2>
+<ul>
+<li><strong>混合知识回答</strong>：默认结合你的资料与模型通用知识回答，也可切换为「仅知识库」。引用只展示实际采用的资料。</li>
+<li><strong>中英文自由切换</strong>：回答语言默认 Auto，跟随当前问题；悬浮窗可直接选择中文或 English，支持跨语言使用知识库。</li>
+<li><strong>更及时的自动建议</strong>：改进连续提问和「讲讲」「告诉我」等表达的识别，优化触发与首次检索等待；新增首字耗时和生成状态提示。</li>
+<li><strong>更清晰的模型选择</strong>：提供语音识别选型提示，以及来自 Artificial Analysis、OpenRouter 的首 Token 延迟和生成速度参考。OpenAI 默认模型更新为 GPT-6.1 Sol，支持推理档位的预设在切换时优先选择 low。</li>
+<li><strong>共享时保护悬浮窗</strong>：已通过腾讯会议整个屏幕共享与本地录制验证，对方画面隐藏悬浮窗，本机仍可正常查看和输入；同时保护已验证的苹果拼音候选条，输入时保持箭头鼠标。</li>
+<li><strong>更顺手的操作</strong>：语言和知识模式使用一级菜单，统一设置页样式，并支持自定义悬浮窗显示快捷键。</li>
+</ul>
+<h3>English</h3>
+<ul>
+<li><strong>Hybrid knowledge</strong> combines your documents with general model knowledge by default. Knowledge Base Only remains available, with citations limited to documents actually used.</li>
+<li><strong>Flexible answer language</strong> follows each question in Auto mode. Choose 中文 or English directly in the overlay, including answers based on documents in another language.</li>
+<li><strong>Faster automatic suggestions</strong> better recognize consecutive questions and requests such as “explain” or “tell me,” with improved triggering, retrieval preparation, and visible first-answer timing.</li>
+<li><strong>Clearer model selection</strong> adds speech-model guidance and latency/throughput references from Artificial Analysis and OpenRouter. OpenAI now defaults to GPT-6.1 Sol; supported reasoning presets start at low when selected.</li>
+<li><strong>Overlay sharing protection</strong> has been verified with Tencent Meeting full-screen sharing and local recording: the overlay remains usable locally while hidden from the shared image. Verified Apple Pinyin candidates are protected, and text entry keeps the arrow pointer.</li>
+<li><strong>Simpler controls</strong> offer single-level language and knowledge menus, consistent settings pages, and a customizable overlay shortcut.</li>
+</ul>
+]]></description>
+            <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.2.0/LiveCopilot-2.2.0-macOS-universal.dmg" length="36008959" type="application/octet-stream" sparkle:edSignature="qkCH2Oue+6OqykDXr1bYW5XepW9bTgpgD5Dq9kF3YGfDb7Z7ZQj02+R2AXbeSDbEEaEL45Z7b/7Zuiu3K6yVDQ=="/>
+        </item>
         <item>
             <title>2.1.0</title>
             <pubDate>Tue, 29 Sep 2026 23:08:05 +0800</pubDate>
@@ -21,10 +51,11 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 <p>Knowledge indexing now shows one continuous batch progress bar with a percentage and completed-document count. Individual documents use a loading indicator.</p>
 <p>Guide buttons now share one row. The model step explicitly says “Download &amp; continue”, subsequent steps expose download status, queued models are labeled correctly, and the final readiness page can start any pending selected downloads.</p>
 ]]></description>
-            <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg" length="35629484" type="application/octet-stream" sparkle:edSignature="W4xBtxVCFQD8Vs+JzNkHQMQLFC/HagIMIgHo2xKRYoSTFWHUlSjKzKsX8hwUueJ2VdZElXCndDynVlDt5FElBw=="></enclosure>
+            <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg" length="35629484" type="application/octet-stream" sparkle:edSignature="W4xBtxVCFQD8Vs+JzNkHQMQLFC/HagIMIgHo2xKRYoSTFWHUlSjKzKsX8hwUueJ2VdZElXCndDynVlDt5FElBw=="/>
         </item>
     </channel>
-</rss><!-- sparkle-signatures:
-edSignature: 7FvQlaznyCD+OXcMIMi2qxJTWMZzDuBS+jFnY6FisYDz7dnBqCCpHj1c+BV7Ps0p9e7GDcSlvRaRMw4/if26Aw==
-length: 2955
+</rss>
+<!-- sparkle-signatures:
+edSignature: AslTO6XjkiL+Inodegcz3x1EOSbvNL9VMxkY+IMV3NoZdoimUEZATG/j8i0EBqGU3694+WSuVv5guO6AiSLXCA==
+length: 6345
 -->

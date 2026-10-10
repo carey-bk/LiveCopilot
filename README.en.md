@@ -16,9 +16,11 @@ Version **2.0.0** adds Jev Mode local Laya triggering, SHA-256 verified ModelSco
 
 Version **2.1.0** adds a six-step first-run guide and in-app updates. Use **Settings → About → Check for Updates**, or the application menu. Automatic checks are optional; downloading and installation require confirmation. Models, documents, history, and keys are preserved. Versions 2.0 and earlier need one manual upgrade to 2.1 first. See [2.1 release notes](docs/V2_1_0_UPDATE.md).
 
+Version **2.2.0** adds hybrid knowledge, Auto/中文/English answer language, model performance references, faster automatic suggestions, improved overlay sharing protection, and a configurable overlay shortcut. See [2.2 release notes](docs/releases/2.2.0.md).
+
 ## Download
 
-[Download LiveCopilot 2.1.0 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v2.1.0/LiveCopilot-2.1.0-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.1.0)
+[Download LiveCopilot 2.2.0 for macOS](https://github.com/carey-bk/LiveCopilot/releases/download/v2.2.0/LiveCopilot-2.2.0-macOS-universal.dmg) · [Release notes and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.2.0)
 
 Requires **macOS 14+**, on Apple Silicon or Intel. Apple Speech additionally requires **macOS 26+**, supported hardware, and a supported language. No Xcode, Python, Ollama, or developer tools are needed to use the packaged app.
 
@@ -60,7 +62,7 @@ Keys are securely stored in the local macOS Keychain. Startup checks silently; a
 
 `Option + H` toggles the overlay. Generate answer, recap, and follow-up shortcuts are configurable. The 2.0.0 defaults are Control–Option–Space, Control–Option–S and Control–Option–X; saved custom bindings are preserved. Recap and follow-up can be disabled independently in General, hiding their buttons and releasing their shortcuts. Screenshot/sharing exclusion is optional; its behavior depends on macOS and the capture application. Settings and History remain capturable.
 
-Qwen, GLM, and Kimi presets use streamed Chat Completions with provider-specific thinking controls. Defaults are `qwen3.8-flash`, `glm-5.3-flash`, and `kimi-k2.6`; OpenAI uses `gpt-6-sol` and DeepSeek uses `deepseek-flash` on domestic general API endpoints. Edit the base URL for a matching region/account, save, then configure its key. Keys are isolated by provider and endpoint. Protocol and mock tests passed; real account access has not been tested with Qwen, GLM, or Kimi credentials. No keys are needed for development/mock testing; enter yours only in the app to validate a real request.
+Qwen, GLM, and Kimi presets use streamed Chat Completions with provider-specific thinking controls. Defaults are `qwen3.8-flash`, `glm-5.3-flash`, and `kimi-k2.6`; OpenAI uses `gpt-6.1-sol` and DeepSeek uses `deepseek-flash` on domestic general API endpoints. Edit the base URL for a matching region/account, save, then configure its key. Keys are isolated by provider and endpoint. Protocol and mock tests passed; real account access has not been tested with Qwen, GLM, or Kimi credentials. No keys are needed for development/mock testing; enter yours only in the app to validate a real request.
 
 ## Privacy and limits
 

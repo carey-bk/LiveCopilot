@@ -6,7 +6,7 @@
 
 基于 [vortechron/stealth](https://github.com/vortechron/stealth) 的原生 macOS 个人 AI 助手，面向面试、会议和学术答辩。保留 Swift/SwiftUI、ScreenCaptureKit 系统音频、AVAudioEngine 麦克风、菜单栏、悬浮窗、全局快捷键和本地历史。
 
-V2.1.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别** 或 GPT-Live-1 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek、Qwen、GLM、Kimi 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
+V2.2.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**、**本地 Paraformer 中英流式识别** 或 GPT-Live-1 进行语音识别，知识库可选择 **本地 BGE-M3** 或 OpenAI Embeddings，分析可选 OpenAI、DeepSeek、Qwen、GLM、Kimi 或 OpenAI 兼容服务。**关闭监听时也可以直接输入问题。** 无 AI 语音播放、云端向量库、Ollama 或账号系统。
 
 **1.4.0** 移除非流式 SenseVoiceSmall，保留 Apple、Paraformer 和 GPT-Live-1 三种流式识别；新增转写区与回答区独立字号（11–28 pt）以及 Qwen、GLM、Kimi 分析服务预设。旧 SenseVoice 配置自动迁移至 Paraformer，其他偏好与已有模型文件保留。详见 [1.4.0 更新与验收](docs/V1_4_0_UPDATE.md) 和 [服务选择指南](docs/SERVICE_GUIDE.md)。
 
@@ -16,12 +16,14 @@ V2.1.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 
 **2.1.0** 新增六步首次使用引导和应用内更新器。可以从 **设置 → 关于 → 检查更新** 或应用菜单检查新版，按需开启自动检查；下载和安装由你确认。升级保留模型、资料、历史与密钥。2.0 及更早版本需先手动安装一次 2.1。详见 [2.1 更新说明](docs/V2_1_0_UPDATE.md)。
 
+**2.2.0** 新增默认混合知识回答、Auto／中文／English 回答语言、模型性能参考和更及时的自动建议；改进悬浮窗共享保护，支持自定义显示快捷键。详见 [2.2 更新说明](docs/releases/2.2.0.md)。
+
 ## 下载与安装
 
-从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.1.0) 下载 **LiveCopilot-2.1.0-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**；Apple 本地识别另需 macOS 26+ 和受支持的设备。直接安装无需 Xcode。
+从 [GitHub Releases](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.2.0) 下载 **LiveCopilot-2.2.0-macOS-universal.dmg**。支持 **macOS 14+、Apple Silicon 和 Intel**；Apple 本地识别另需 macOS 26+ 和受支持的设备。直接安装无需 Xcode。
 
 1. 打开 DMG，将 `LiveCopilot.app` 拖到 `Applications`，然后从应用程序文件夹启动。没有管理员权限时可复制到 `~/Applications`。
-2. 2.1.0 已由 **Developer ID Application: Bokai Zhang (666N9BJMD7)** 签名，应用与 DMG 均通过 Apple 公证并附带票据，详见 [发布验证](docs/V2_1_0_UPDATE.md)。首次从互联网下载打开时，macOS 仍可能显示标准确认提示。
+2. 2.2.0 已由 **Developer ID Application: Bokai Zhang (666N9BJMD7)** 签名，应用与 DMG 均通过 Apple 公证并附带票据，详见 [发布验证](docs/releases/2.2.0-validation.md)。首次从互联网下载打开时，macOS 仍可能显示标准确认提示。
 3. 首次启动跟随六步引导选择语言、使用方式、模型、权限和回答服务；也可稍后在设置中完成。点击菜单栏波形图标打开设置，`⌥H` 显示或隐藏悬浮窗。1.1.1 起也显示 Dock 图标，点击可恢复悬浮窗。
 
 安装包不含 API Key、个人文档、会话历史或知识库。已有用户升级前先退出旧版，替换应用不会自动删除本地数据；macOS 可能重新询问权限。完整说明见 [安装说明](docs/INSTALL.txt)。
@@ -51,7 +53,7 @@ V2.1.0 可选择 **Apple SpeechAnalyzer / SpeechTranscriber 本地流式识别**
 - **通用 → 窗口底色**：半透明毛玻璃／微透磨砂／纯白底色。微透与白底使用浅色控件与深色文字。
 - **服务 → 实时服务／知识库服务**：独立选择本地或 OpenAI。选择 OpenAI 时，Live 和 Embeddings 共用现有 Key；界面显示固定掩码，点击“更换密钥”才打开输入框，不回填真实 Key。
 - **服务 → 分析服务**：选择分析供应商。默认沿用实时服务的 OpenAI；DeepSeek 使用独立 Key，默认模型 `deepseek-flash`，优先考虑速度和费用，也可自行修改。兼容服务填写 HTTPS Base URL、Chat Completions 路径和模型，先保存连接，再配置该地址的 Key。
-- **Qwen / GLM / Kimi**：分别预填 `qwen3.8-flash`、`glm-5.3-flash`、`kimi-k2.6` 和国内通用 API 地址，优先考虑临场回答的速度与费用；OpenAI 分析默认 `gpt-6-sol`，DeepSeek 默认 `deepseek-flash`。可修改模型、地域/业务空间 Base URL 和思考模式。先保存连接，再输入自己的 Key。厂商与端点之间的密钥互相隔离，不会继承 OpenAI Key。GLM Coding Plan 不等同于通用 API；Qwen 的 Key 必须与地域对应。
+- **Qwen / GLM / Kimi**：分别预填 `qwen3.8-flash`、`glm-5.3-flash`、`kimi-k2.6` 和国内通用 API 地址，优先考虑临场回答的速度与费用；OpenAI 分析默认 `gpt-6.1-sol`，DeepSeek 默认 `deepseek-flash`。可修改模型、地域/业务空间 Base URL 和思考模式。先保存连接，再输入自己的 Key。厂商与端点之间的密钥互相隔离，不会继承 OpenAI Key。GLM Coding Plan 不等同于通用 API；Qwen 的 Key 必须与地域对应。
 - 更换分析模型不需要重建知识库。自定义 API 地址改变后不会沿用旧地址的密钥。新三家服务已完成协议及 Mock 测试，未使用真实 Qwen、GLM、Kimi Key 联调；实际账户权限、余额、模型可用性需在本机验证。不要把 Key 发到聊天或写入仓库。
 
 早期版本通过 `NSWindow.sharingType = .none` 对全部窗口请求截图排除。1.1.1 起设置和历史页允许截图；**通用 → 在截图和屏幕共享中隐藏悬浮窗** 控制悬浮窗，默认保留隐藏，关闭后可截图。实际排除效果仍依赖 macOS 和具体会议软件。

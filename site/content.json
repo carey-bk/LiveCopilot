@@ -12,7 +12,7 @@
     "download_label": "下载 macOS",
     "install_link": "查看安装步骤",
     "platform": "macOS 14+ · Apple Silicon 与 Intel",
-    "release_note": "开源社区版 2.1.0 · 自备分析服务 API Key",
+    "release_note": "开源社区版 2.2.0 · 自备分析服务 API Key",
     "demo_caption": "把准备过的内容，带回眼前",
     "demo_status": "示例对话 · 线上面试",
     "speaker_them": "对方",
@@ -47,12 +47,12 @@
     "privacy_link": "阅读完整隐私说明",
     "install_title": "下一次对话，\n更从容。",
     "install_intro": "导入你的资料，打开 LiveCopilot，开始下一场面试、答辩或会议。",
-    "download_details": "2.1.0 · Universal DMG · 免费开源",
+    "download_details": "2.2.0 · Universal DMG · 免费开源",
     "install_one": "退出旧版，将 LiveCopilot.app 拖入 Applications，保持安装位置固定。",
     "install_two": "首次启动跟随六步引导，选择语言、使用方式、本地模型、回答服务和音频权限。",
     "install_three": "选择分析服务并保存 API Key；需要时导入自己的资料。",
     "install_four": "开始监听并授予所需音频权限，或直接输入问题。Option + H 可唤出悬浮窗。",
-    "signing_note": "2.1.0 已使用 Developer ID 正式签名，应用与 DMG 均通过 Apple 公证并附带票据。旧临时签名版首次升级可能需重新授权录屏或钥匙串访问。",
+    "signing_note": "2.2.0 已使用 Developer ID 正式签名，应用与 DMG 均通过 Apple 公证并附带票据。旧临时签名版首次升级可能需重新授权录屏或钥匙串访问。",
     "apple_link": "Apple 安装说明",
     "author_link": "作者 GitHub",
     "release_link": "版本更新",
@@ -264,7 +264,7 @@
     "overview_find_text": "向量化可选本地或云端，资料检索在 Mac 上完成。",
     "overview_answer_text": "将问题与相关片段发送给所选服务，生成回答。",
     "explore_label": "探索 LiveCopilot 的工作方式",
-    "updater_note": "2.1 新增首次使用引导与应用内更新。可在“设置 → 关于”检查更新并开启自动检查，下载与安装由你确认。2.0 及更早版本需先手动安装本版。"
+    "updater_note": "2.2 新增混合知识、中英文回答切换与模型性能参考。2.1 及以上版本可在“设置 → 关于”检查更新；下载与安装由你确认。更早版本请手动安装。"
   },
   "en": {
     "page_title": "LiveCopilot — AI for the conversation in front of you",
@@ -279,7 +279,7 @@
     "download_label": "Download for macOS",
     "install_link": "View Installation Guide",
     "platform": "macOS 14+ · Apple Silicon and Intel",
-    "release_note": "Open-source community build 2.1.0 · Bring your own analysis API key",
+    "release_note": "Open-source community build 2.2.0 · Bring your own analysis API key",
     "demo_caption": "Your preparation, back in view",
     "demo_status": "Example conversation · Online interview",
     "speaker_them": "Them",
@@ -314,12 +314,12 @@
     "privacy_link": "Read the full privacy notes",
     "install_title": "Your next conversation.\nA little more composed.",
     "install_intro": "Import your materials, open LiveCopilot, and head into your next interview, defense, or meeting with the context you prepared close at hand.",
-    "download_details": "2.1.0 · Universal DMG · Free and open source",
+    "download_details": "2.2.0 · Universal DMG · Free and open source",
     "install_one": "Quit the previous version and move LiveCopilot.app into Applications. Keep its installation location consistent.",
     "install_two": "Follow the six-step welcome guide to choose your language, conversation mode, models, answer service, and audio permissions.",
     "install_three": "Choose an analysis service, save your API key, and optionally import your own material.",
     "install_four": "Start listening and grant the required audio permissions, or just type a question. Option + H shows the overlay.",
-    "signing_note": "Version 2.1.0 is Developer ID signed and Apple notarized, with tickets stapled to both the app and DMG. Upgrading from an older ad-hoc build may require renewed recording or Keychain permission.",
+    "signing_note": "Version 2.2.0 is Developer ID signed and Apple notarized, with tickets stapled to both the app and DMG. Upgrading from an older ad-hoc build may require renewed recording or Keychain permission.",
     "apple_link": "Apple installation guidance",
     "author_link": "Author on GitHub",
     "release_link": "Release notes",
@@ -531,6 +531,6 @@
     "overview_find_text": "Choose local or cloud embeddings; search stays on the Mac.",
     "overview_answer_text": "Send the question and relevant passages to your provider for an answer.",
     "explore_label": "Explore how LiveCopilot works",
-    "updater_note": "New in 2.1: guided setup and in-app updates. Check for updates in Settings → About, with optional automatic checks. You approve downloads and installation. Version 2.0 and earlier need this first upgrade installed manually."
+    "updater_note": "New in 2.2: hybrid knowledge, Chinese/English answer controls, and model performance references. Version 2.1 and later can update through Settings → About; you approve downloads and installation. Earlier versions need a manual installation."
   }
 }
