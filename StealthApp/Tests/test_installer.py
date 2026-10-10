@@ -10,6 +10,13 @@ installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
 
 class BackupTests(unittest.TestCase):
+    def test_target_preserves_system_or_user_install_location_only(self):
+        for path in [Path('/Applications/LiveCopilot.app'), Path.home() / 'Applications/LiveCopilot.app']:
+            self.assertEqual(installer.install_target(path), path)
+        for path in [Path('/Applications/Other.app'), Path('/tmp/LiveCopilot.app'), Path('/Applications')]:
+            with self.assertRaises(ValueError):
+                installer.install_target(path)
+
     def test_archive_preserves_bundle_bytes_and_symlinks(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

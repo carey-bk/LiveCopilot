@@ -474,19 +474,16 @@ import Foundation
                        "expired inference escaped or restarted")
         }
 
-        try await check("revised context requires a new decision and cannot inherit a positive partial score") {
+        try await check("same utterance reuses score when caption context changes, retaining latest context") {
             let h = Harness(); defer { h.close() }
-            h.controller.submit(input("Explain this decision", final: false, context: "still requested"))
+            h.controller.submit(input("Explain this decision", final: false, context: "partial caption context"))
             try await until("partial prediction") { h.predictor.calls.count == 1 }
             h.predictor.finish(0)
             try await until("positive partial") { h.sink.decisions.count == 1 }
-            h.controller.submit(input("Explain this decision", context: "request withdrawn"))
-            try await until("revised context prediction") { h.predictor.calls.count == 2 }
-            try expect(h.predictor.calls[1].context == "request withdrawn", "latest context was ignored")
-            h.predictor.finish(1, score: 0.05)
-            try await until("negative final decision") { h.sink.decisions.count == 2 }
-            try await pause(0.06)
-            try expect(h.sink.attempts.isEmpty, "final reused a score from stale context")
+            h.controller.submit(input("Explain this decision", context: "committed caption context"))
+            try await until("final dispatch") { h.sink.attempts.count == 1 }
+            try expect(h.predictor.calls.count == 1, "unchanged utterance was scored again")
+            try expect(h.sink.attempts[0].context == "committed caption context", "answer lost latest context")
         }
 
         try await check("manual intervention also cancels cached quiet timers and busy retries") {

@@ -116,14 +116,32 @@ actor KnowledgeIndex {
         return result
     }
     func retrieve(query: RetrievalQuery, vector: [Float]?, model: String, limit: Int) throws -> [RetrievedSource] {
-        let lex = try lexical(query.lexical)
+        let terms = Set(LexicalTokenizer.retrievalTerms(query.lexical))
+        func coverage(_ chunk: SourceChunk) -> Double {
+            guard !terms.isEmpty else { return 0 }
+            return Double(terms.intersection(LexicalTokenizer.retrievalTerms(chunk.text)).count) / Double(terms.count)
+        }
+        let lex = try lexical(query.lexical).filter { coverage($0) >= 0.25 }
         var semantic: [SourceChunk] = []
+        var similarities: [String: Double] = [:]
         if let vector {
+            // Absolute relevance is separate from RRF rank. A top-ranked unrelated
+            // item is still unrelated. These conservative floors are not probabilities.
+            let floor = model == LocalModelKind.embeddingIdentity ? 0.38 : 0.30
             semantic = try allChunks().filter { $0.embeddingModel == model && $0.vector.count == vector.count }
-                .map { ($0, VectorMath.cosine($0.vector, vector)) }.filter { $0.1 > 0.15 }
+                .map { chunk -> (SourceChunk, Double) in
+                    let score = VectorMath.cosine(chunk.vector, vector)
+                    similarities[chunk.id] = score
+                    return (chunk, score)
+                }.filter { $0.1 >= floor }
                 .sorted { $0.1 > $1.1 }.prefix(24).map { $0.0 }
         }
-        return VectorMath.fuse(lexical: lex, semantic: semantic, limit: limit)
+        return VectorMath.fuse(lexical: lex, semantic: semantic, limit: limit).map {
+            var source = $0
+            source.semanticSimilarity = similarities[source.id]
+            source.lexicalCoverage = coverage(source.chunk)
+            return source
+        }
     }
 
     func importDocument(_ url: URL, provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {

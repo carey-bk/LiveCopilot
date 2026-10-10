@@ -41,7 +41,7 @@ struct ConversationState {
 
     func context(limit: Int = 7000) -> String {
         var rows: [(Speaker, String)] = []
-        for fragment in fragments.suffix(100) {
+        for fragment in Self.withoutAdjacentRepeats(Array(fragments.suffix(100))) {
             if rows.last?.0 == fragment.speaker {
                 rows[rows.count - 1].1 += fragment.text
             } else { rows.append((fragment.speaker, fragment.text)) }
@@ -58,15 +58,27 @@ struct ConversationState {
         var eligible = fragments.filter { $0.speaker == speaker }
         if let id = lastQuestionFragmentID, let index = eligible.firstIndex(where: { $0.id == id }), index + 1 < eligible.count {
             eligible = Array(eligible.suffix(from: index + 1))
-        } else {
-            // Restrict to the latest caption group, a context choice, not a completion assertion.
-            var start = max(0, eligible.count - 12)
-            for i in stride(from: eligible.count - 1, through: max(1, start), by: -1) {
-                if eligible[i].startMS - eligible[i - 1].endMS > 1600 { start = i; break }
-            }
-            eligible = Array(eligible.suffix(from: start))
         }
-        let question = String(eligible.map(\.text).joined().suffix(2200)).trimmingCharacters(in: .whitespacesAndNewlines)
+        // A completed answer does not disable turn boundaries. Otherwise an
+        // unanswered/duplicate caption can leak into every subsequent question.
+        var start = max(0, eligible.count - 12)
+        for i in stride(from: eligible.count - 1, through: max(1, start), by: -1) {
+            if eligible[i].startMS - eligible[i - 1].endMS > 1600 { start = i; break }
+        }
+        eligible = Array(eligible.suffix(from: start))
+        if !force {
+            // Keep raw captions/context; only retire an exact answered prefix in
+            // an automatic candidate. Never fuzzy-match a new follow-up here.
+            let answered = Set(handled.filter { now.timeIntervalSince($0.at) <= 180 }.map { Self.captionKey($0.text) })
+            while eligible.count > 1, let first = eligible.first,
+                  answered.contains(Self.captionKey(first.text)) { eligible.removeFirst() }
+        }
+        let eligibleIDs = Set(eligible.map(\.id))
+        // Include intervening speakers during deduplication so a repeated question
+        // after someone else's answer remains a separate turn.
+        let turns = fragments.filter { $0.speaker != speaker || eligibleIDs.contains($0.id) }
+        let captions = Self.withoutAdjacentRepeats(turns).filter { $0.speaker == speaker }
+        let question = String(captions.map(\.text).joined().suffix(2200)).trimmingCharacters(in: .whitespacesAndNewlines)
         guard question.count >= (semanticDetection ? 2 : 5) else { phase = .waiting; return nil }
         let lower = question.lowercased().trimmingCharacters(in: .punctuationCharacters)
         let incomplete = [" and", " or", " because", " if", " but", " the", " of", " with", "以及", "因为", "如果"]
@@ -90,6 +102,23 @@ struct ConversationState {
         phase = .listening
     }
     mutating func reset() { self = Self() }
+    /// Keep the raw transcript intact. Only collapse adjacent repeated full captions
+    /// in analysis input, never fuzzy matches, short acknowledgements or speaker turns.
+    private static func withoutAdjacentRepeats(_ input: [TranscriptFragment]) -> [TranscriptFragment] {
+        var result: [TranscriptFragment] = []
+        for fragment in input {
+            let key = captionKey(fragment.text)
+            if key.count >= 5, let last = result.last, last.speaker == fragment.speaker,
+               captionKey(last.text) == key { continue }
+            result.append(fragment)
+        }
+        return result
+    }
+    private static func captionKey(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .widthInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".!?。！？… "))
+    }
     static func similar(_ lhs: String, _ rhs: String) -> Bool {
         func canonical(_ s: String) -> String {
             s.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }.map(String.init).joined()

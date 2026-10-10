@@ -6,7 +6,7 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    MARKETING_VERSION: "2.1.1"
+    MARKETING_VERSION: "2.2.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: ""
@@ -52,7 +52,7 @@ targets:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.livecopilot.development
           APP_DISPLAY_NAME: LiveCopilot Dev
-          MARKETING_VERSION: "2.1.1"
+          MARKETING_VERSION: "2.2.0"
         Release:
           ENABLE_HARDENED_RUNTIME: YES
   LiveCopilotTests:
@@ -67,6 +67,12 @@ targets:
       - path: Tests/IndexingProgressTests.swift
       - path: Tests/OnboardingTests.swift
       - path: Tests/AppUpdateTests.swift
+      - path: Tests/PipelineBenchmarks.swift
+      - path: Tests/HybridLanguageTests.swift
+      - path: Tests/AnalysisSelectionTests.swift
+      - path: Tests/RetrievalPreparationTests.swift
+      - path: Tests/AnswerLatencyTests.swift
+      - path: Tests/ConfiguredAnalysisChecks.swift
     dependencies:
       - target: LiveCopilot
       - framework: build/SparkleTools/Sparkle.framework
@@ -84,6 +90,11 @@ schemes:
     test:
       environmentVariables:
         LIVECOPILOT_MOCK: "1"
+        LIVECOPILOT_UI_ACCEPTANCE: "$(LIVECOPILOT_UI_ACCEPTANCE)"
+        LIVECOPILOT_KEYCHAIN_INTERACTIVE: "$(LIVECOPILOT_KEYCHAIN_INTERACTIVE)"
+        LIVECOPILOT_REAL_ANALYSIS: "$(LIVECOPILOT_REAL_ANALYSIS)"
+        LIVECOPILOT_LATENCY_COMPARISON: "$(LIVECOPILOT_LATENCY_COMPARISON)"
+        LIVECOPILOT_PIPELINE_BENCHMARK: "$(LIVECOPILOT_PIPELINE_BENCHMARK)"
         LIVECOPILOT_TEST_REAL_LAYA: "$(LIVECOPILOT_TEST_REAL_LAYA)"
       targets:
         - LiveCopilotTests

@@ -36,7 +36,7 @@ struct OnboardingRecommendationView: View {
     }
     private var configuration: String {
         let speech = plan.typing ? b("Type questions; no speech setup. ", "输入提问，无需配置语音。") : plan.speech == .apple
-            ? b("Reuse installed Apple speech. ", "复用已安装的 Apple 识别。")
+            ? b("Reuse installed Apple speech for one language; select Paraformer for mixed Chinese/English. ", "可复用已安装的 Apple 单语言识别；中英混说请选 Paraformer。")
             : b("Local Chinese/English speech. ", "本地中英转写。")
         let trigger = plan.typing ? "" : plan.recommendsJev
             ? b("Enable Jev Mode for automatic suggestions. ", "开启 Jev Mode 自动建议。")

@@ -86,10 +86,13 @@ enum LexicalTokenizer {
         return tokens
     }
     static func indexedText(_ text: String) -> String { terms(text).joined(separator: " ") }
+    static func retrievalTerms(_ text: String) -> [String] {
+        let stop: Set<String> = ["the", "and", "what", "how", "you", "your", "them", "this", "that", "with", "about", "is", "a", "to", "of", "in", "it", "its", "are", "was", "were", "can", "could", "would", "please", "explain", "tell", "me", "do", "does", "why", "we", "did", "请问", "什么", "怎么", "如何", "为什么", "一下", "这个", "那个", "我们", "你们", "的是", "是否"]
+        return terms(text).filter { !stop.contains($0) && $0.count >= 2 }
+    }
     static func matchQuery(_ text: String) -> String {
         var seen = Set<String>()
-        let stop: Set<String> = ["the", "and", "what", "how", "you", "them", "this", "that", "with", "about", "is", "a", "to", "of", "in", "it"]
-        return terms(text).filter { !stop.contains($0) && seen.insert($0).inserted }.prefix(70)
+        return retrievalTerms(text).filter { seen.insert($0).inserted }.prefix(70)
             .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }.joined(separator: " OR ")
     }
 }

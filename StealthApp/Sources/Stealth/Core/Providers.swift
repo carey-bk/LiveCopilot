@@ -6,6 +6,12 @@ protocol EmbeddingProvider {
     func embed(_ texts: [String], progress: @Sendable (Int) async -> Void) async throws -> [[Float]]
 }
 
+/// Only local providers opt into background preparation; never warm a paid API.
+protocol LocalEmbeddingPreparing: EmbeddingProvider {
+    var isPrepared: Bool { get }
+    func prepare() async throws
+}
+
 extension EmbeddingProvider {
     /// Cloud providers retain their batch request; only report work actually completed.
     func embed(_ texts: [String], progress: @Sendable (Int) async -> Void) async throws -> [[Float]] {

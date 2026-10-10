@@ -23,6 +23,7 @@ struct AppleSpeechCard: View {
                 Button(b("Refresh status", "刷新状态")) { Task { await manager.refresh(language) } }.disabled(manager.busy)
             }
             Text(b("Local / no API fee. Apple manages the model files; after downloading, speech recognition runs offline. This language setting is independent of the interface language.", "本地 / 无 API 费用。模型文件由 Apple 管理，下载后语音识别离线运行。识别语言与界面语言分别设置。")).font(.caption).foregroundStyle(.secondary)
+            Text(b("Apple ASR uses a single recognition language. Switching answer language does not change ASR. For mixed Chinese/English, use the existing bilingual Paraformer or GPT-Live Mixed option.", "Apple ASR 使用单一识别语言，切换回答语言不会改变转写语言。中英混合场景请使用现有的双语 Paraformer 或 GPT-Live 中英混合选项。")).font(.caption).foregroundStyle(.secondary)
         }.padding(14).background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
             .task(id: language) { await manager.refresh(language) }
     }

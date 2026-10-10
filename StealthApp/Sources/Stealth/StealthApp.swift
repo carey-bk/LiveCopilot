@@ -137,6 +137,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             overlay.orderFrontRegardless()
         }
         self.overlay = overlay
+        overlay.onCaptureProtectionChanged = { [weak self] status in
+            guard self?.coordinator.overlayCaptureProtection != status else { return }
+            self?.coordinator.overlayCaptureProtection = status
+        }
         if AppPaths.isOnboardingPreview && ProcessInfo.processInfo.arguments.contains("--onboarding-compact") {
             overlay.setContentSize(NSSize(width: 400, height: 280))
         }
@@ -177,12 +181,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func applyPreferences(_ settings: AppSettings) {
         hotkeys.setEnabledModes(settings.enabledSuggestionModes)
-        for window in [overlay, settingsWindow, historyWindow].compactMap({ $0 }) {
+        for window in [overlay, settingsWindow, historyWindow, onboardingWindow].compactMap({ $0 }) {
             applyAppearance(to: window, background: settings.background)
             if !(window is OverlayWindow) { window.sharingType = .readOnly }
         }
         let preview = coordinator.isMock && ProcessInfo.processInfo.arguments.contains("--ui-preview")
-        overlay?.sharingType = settings.excludeOverlayFromCapture && !preview ? .none : .readOnly
+        overlay?.setCaptureExcluded(settings.excludeOverlayFromCapture && !preview)
         overlay?.configure(autoHeight: settings.overlayAutoHeight, edgeHide: settings.overlayEdgeHide)
         if let menu = NSApp.mainMenu { localizeMenu(menu, language: settings.language) }
         settingsWindow?.title = L10n.text("LiveCopilot Settings", language: settings.language)

@@ -6,7 +6,240 @@ import Security
 import UniformTypeIdentifiers
 @testable import LiveCopilot
 
+/// Deterministic state for testing restoration despite the XCTest-host sharing
+/// getter peculiarity documented in the compositor acceptance report.
+private final class CaptureSharingPanel: NSPanel {
+    private var storedSharing: NSWindow.SharingType = .readOnly
+    var testKeyWindow: Bool?
+    override var isKeyWindow: Bool { testKeyWindow ?? super.isKeyWindow }
+    override var sharingType: NSWindow.SharingType {
+        get { storedSharing }
+        set { storedSharing = newValue }
+    }
+    override var canBecomeKey: Bool { true }
+}
+
 final class NativeTests: XCTestCase {
+    @MainActor func testProtectedOverlayUsesArrowWithoutChangingOtherWindowsOrResizeCursors() {
+        let window = NSPanel(contentRect: NSRect(x: 40, y: 40, width: 200, height: 100), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.hidesOnDeactivate = false
+        window.orderFrontRegardless()
+        var point = NSPoint(x: 100, y: 80)
+        var top = window.windowNumber
+        let controller = OverlayCursorProtection(window: window, pointer: { point }, topWindow: { _ in top })
+        defer { controller.stop(); window.close(); NSCursor.arrow.set() }
+        NSCursor.iBeam.set()
+        XCTAssertTrue(NSCursor.current === NSCursor.arrow)
+        NSCursor.iBeamCursorForVerticalLayout.set()
+        XCTAssertTrue(NSCursor.current === NSCursor.arrow)
+        NSCursor.resizeLeftRight.set()
+        XCTAssertTrue(NSCursor.current === NSCursor.resizeLeftRight, "Resizing remains discoverable")
+        NSCursor.pointingHand.set()
+        XCTAssertTrue(NSCursor.current === NSCursor.pointingHand)
+        top = window.windowNumber + 1
+        NSCursor.iBeam.set()
+        XCTAssertTrue(NSCursor.current === NSCursor.iBeam, "A settings/other-app window above it keeps its cursor")
+        top = window.windowNumber; point = NSPoint(x: 900, y: 900)
+        NSCursor.iBeam.set()
+        XCTAssertTrue(NSCursor.current === NSCursor.iBeam, "Do not change text editing outside the overlay")
+        point = NSPoint(x: 100, y: 80)
+        controller.setEnabled(false)
+        NSCursor.iBeam.set()
+        XCTAssertTrue(NSCursor.current === NSCursor.iBeam)
+        controller.setEnabled(true)
+        XCTAssertTrue(NSCursor.current === NSCursor.arrow)
+        NSCursor.iBeam.push()
+        XCTAssertTrue(NSCursor.current === NSCursor.arrow)
+        NSCursor.pop()
+        window.orderOut(nil)
+        NSCursor.iBeam.set()
+        XCTAssertTrue(NSCursor.current === NSCursor.iBeam)
+        window.orderFrontRegardless()
+        controller.stop()
+        NSCursor.iBeam.set()
+        XCTAssertTrue(NSCursor.current === NSCursor.iBeam, "Closed controllers leave the cursor alone")
+    }
+
+    @MainActor func testInputCandidateProtectionRestoresStateWithoutProtectingSettings() {
+        func panel() -> CaptureSharingPanel {
+            let panel = CaptureSharingPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+            panel.isReleasedWhenClosed = false
+            return panel
+        }
+        let overlay = panel(), candidate = panel(), settings = panel()
+        let controller = OverlayInputCaptureProtection(overlay: overlay, candidate: { $0 === candidate })
+        defer { controller.stop(); overlay.close(); candidate.close(); settings.close() }
+        controller.update(windows: [overlay, candidate, settings], protectInput: true)
+        XCTAssertEqual(candidate.sharingType, .none)
+        XCTAssertEqual(settings.sharingType, .readOnly)
+        controller.update(windows: [overlay, candidate, settings], protectInput: true)
+        controller.update(windows: [overlay, candidate, settings], protectInput: false)
+        XCTAssertEqual(candidate.sharingType, .readOnly, "The same candidate panel is reused for settings input")
+        candidate.sharingType = .none
+        controller.update(windows: [candidate], protectInput: true)
+        controller.stop()
+        XCTAssertEqual(candidate.sharingType, .none, "Preserve pre-existing exclusions")
+    }
+
+    @MainActor func testOrdinaryPanelIsNotMistakenForAnInputCandidate() {
+        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        defer { panel.close() }
+        XCTAssertFalse(OverlayInputCaptureProtection.isInputPanel(panel))
+    }
+
+    @MainActor func testVisibleCandidateKeepsProtectionUntilItLeavesScreen() {
+        let overlay = CaptureSharingPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+        let candidate = CaptureSharingPanel(contentRect: NSRect(x: 60, y: 60, width: 120, height: 28), styleMask: [.borderless], backing: .buffered, defer: false)
+        for window in [overlay, candidate] { window.isReleasedWhenClosed = false }
+        let controller = OverlayInputCaptureProtection(overlay: overlay, candidate: { $0 === candidate })
+        defer { controller.stop(); candidate.close(); overlay.close() }
+        candidate.orderFrontRegardless()
+        controller.update(windows: [candidate], protectInput: true)
+        XCTAssertTrue(candidate.isVisible)
+        controller.update(windows: [candidate], protectInput: false)
+        XCTAssertEqual(candidate.sharingType, .none, "Focus loss must not expose the outgoing candidate")
+        candidate.orderOut(nil)
+        XCTAssertFalse(candidate.isVisible)
+        XCTAssertEqual(candidate.sharingType, .readOnly, "Restore after it has left the screen")
+    }
+
+    @MainActor func testCandidateOrderingHookHandlesFirstDisplayReuseAndShutdown() {
+        let overlay = CaptureSharingPanel(contentRect: NSRect(x: 40, y: 40, width: 150, height: 80), styleMask: [.borderless], backing: .buffered, defer: false)
+        let candidate = CaptureSharingPanel(contentRect: NSRect(x: 40, y: 40, width: 120, height: 28), styleMask: [.borderless], backing: .buffered, defer: false)
+        for window in [overlay, candidate] { window.isReleasedWhenClosed = false }
+        let editor = NSTextView(frame: NSRect(x: 0, y: 0, width: 120, height: 50))
+        overlay.contentView = editor
+        overlay.makeKeyAndOrderFront(nil)
+        XCTAssertTrue(overlay.makeFirstResponder(editor))
+        // The non-active XCTest host cannot reliably acquire the system key
+        // window. Supply that input; real IME ordering is checked by the probe.
+        overlay.testKeyWindow = true
+        XCTAssertTrue(overlay.isKeyWindow)
+        let controller = OverlayInputCaptureProtection(overlay: overlay, candidate: { $0 === candidate })
+        defer { controller.stop(); candidate.close(); overlay.close() }
+        // No refresh/update call before the first ordering operation.
+        candidate.order(.above, relativeTo: 0)
+        XCTAssertEqual(candidate.sharingType, .none)
+        candidate.orderOut(nil)
+        candidate.sharingType = .readOnly
+        candidate.orderFrontRegardless()
+        XCTAssertEqual(candidate.sharingType, .none, "Both public presentation paths are guarded")
+        overlay.testKeyWindow = false
+        overlay.orderOut(nil)
+        XCTAssertEqual(candidate.sharingType, .none, "Still-visible old content remains protected")
+        candidate.orderOut(nil)
+        XCTAssertEqual(candidate.sharingType, .readOnly)
+        candidate.orderFrontRegardless()
+        XCTAssertEqual(candidate.sharingType, .readOnly, "A normal input owner reuses an unprotected panel")
+        controller.stop()
+        overlay.testKeyWindow = true
+        overlay.makeKeyAndOrderFront(nil)
+        candidate.orderFrontRegardless()
+        XCTAssertEqual(candidate.sharingType, .readOnly, "Stopped controllers cannot change later windows")
+    }
+
+    /// Manual capture acceptance fixture, deliberately skipped in unattended runs.
+    @MainActor func testManualFullOverlayCaptureRendering() async throws {
+        guard ProcessInfo.processInfo.environment["LIVECOPILOT_UI_ACCEPTANCE"] == "capture-render" else {
+            throw XCTSkip("Opt-in manual meeting capture fixture")
+        }
+        let screen = try XCTUnwrap(NSScreen.main)
+        let suite = "com.livecopilot.capture-render." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let coordinator = AppCoordinator(mock: true, emitMockConversation: false, mockDefaults: defaults)
+        coordinator.settings.background = .glass
+        coordinator.settings.language = .simplifiedChinese
+        coordinator.settings.overlayEdgeHide = false
+        coordinator.settings.overlayAutoHeight = false
+        coordinator.statusMessage = "完整界面对照 / 玻璃"
+        let panel = OverlayWindow(rootView: OverlayView(coordinator: coordinator))
+        panel.isReleasedWhenClosed = false
+        defer {
+            panel.stopWatching()
+            panel.close()
+            defaults.removePersistentDomain(forName: suite)
+        }
+        // Keep one small panel at the lower left so the meeting toolbar and
+        // screen-share picker remain operable during manual acceptance.
+        panel.configure(autoHeight: false, edgeHide: false)
+        panel.setFrame(CGRect(x: screen.visibleFrame.minX + 35,
+                              y: screen.visibleFrame.minY + 110,
+                              width: 420, height: 315), display: true)
+        panel.orderFrontRegardless()
+        print("FULL_CAPTURE_RENDER_READY")
+        let stop=URL(fileURLWithPath:"/tmp/livecopilot-full-render-small-stop")
+        for _ in 0..<2400 {
+            if FileManager.default.fileExists(atPath:stop.path) { break }
+            try await Task.sleep(for:.milliseconds(100))
+        }
+        withExtendedLifetime(coordinator) {}
+        throw XCTSkip("Manual fixture displayed; local/recorded observations must be logged separately")
+    }
+
+    @MainActor func testCaptureRegionUsesWindowPointsAndClearsWithoutHidingLocalWindow() {
+        var calls: [(Int, CGRect?)] = []
+        let protection = WindowCaptureProtection(backend: .init { id, rect in
+            calls.append((id, rect)); return 0
+        })
+        let window = NSWindow(contentRect: NSRect(x: 30, y: 60, width: 420, height: 280),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.orderFrontRegardless()
+        let originalFrame = window.frame, originalAlpha = window.alphaValue
+        XCTAssertEqual(protection.apply(to: window, enabled: true), .applied)
+        XCTAssertEqual(calls.last?.0, window.windowNumber)
+        XCTAssertEqual(calls.last?.1, CGRect(x: 0, y: 0, width: 420, height: 280))
+        XCTAssertEqual(window.sharingType, .none)
+        XCTAssertEqual(window.frame, originalFrame)
+        XCTAssertEqual(window.alphaValue, originalAlpha)
+        XCTAssertEqual(protection.apply(to: window, enabled: true, covering: CGSize(width: 600, height: 500)), .applied)
+        XCTAssertEqual(calls.last?.1, CGRect(x: 0, y: 0, width: 600, height: 500))
+        XCTAssertEqual(protection.apply(to: window, enabled: false), .disabled)
+        XCTAssertNil(calls.last!.1)
+        // On macOS 27.2 the XCTest host reads .none even after a direct
+        // .readOnly assignment. Actual reappearance is checked by the separate
+        // SCStream pixel probe, rather than accepting that getter as evidence.
+        XCTAssertEqual(protection.status, .disabled)
+        XCTAssertEqual(window.alphaValue, originalAlpha)
+    }
+
+    @MainActor func testProductionCaptureProtectionDoesNotUsePrivateRegionBackend() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 250),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let production = WindowCaptureProtection()
+        XCTAssertEqual(production.apply(to: window, enabled: true), .legacyRequested)
+        XCTAssertEqual(window.sharingType, .none)
+        XCTAssertEqual(production.apply(to: window, enabled: false), .disabled)
+        let failed = WindowCaptureProtection(backend: .init { _, _ in 1000 })
+        XCTAssertEqual(failed.apply(to: window, enabled: true), .failed(1000))
+        XCTAssertEqual(failed.apply(to: window, enabled: false), .failed(1000))
+    }
+
+    @MainActor func testOverlayCaptureSwitchDoesNotProtectOrdinaryWindows() {
+        let settings = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+                                styleMask: [.titled], backing: .buffered, defer: false)
+        let onboarding = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 320),
+                                  styleMask: [.titled], backing: .buffered, defer: false)
+        let overlay = OverlayWindow(rootView: Text("Synthetic privacy fixture"))
+        for window in [settings, onboarding, overlay] { window.isReleasedWhenClosed = false }
+        defer { overlay.close(); settings.close(); onboarding.close() }
+        overlay.orderFrontRegardless()
+        overlay.setCaptureExcluded(false)
+        XCTAssertEqual(overlay.captureProtectionStatus, .disabled)
+        overlay.setCaptureExcluded(true)
+        overlay.setFrame(NSRect(x: 20, y: 20, width: 600, height: 460), display: false)
+        XCTAssertEqual(overlay.sharingType, .none)
+        XCTAssertEqual(overlay.captureProtectionStatus, .legacyRequested)
+        XCTAssertEqual(settings.sharingType, .readOnly)
+        XCTAssertEqual(onboarding.sharingType, .readOnly)
+        overlay.setCaptureExcluded(false)
+        XCTAssertEqual(overlay.captureProtectionStatus, .disabled)
+    }
+
     @MainActor func testDeletingModelsPreservesKnowledgeAndOtherModel() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

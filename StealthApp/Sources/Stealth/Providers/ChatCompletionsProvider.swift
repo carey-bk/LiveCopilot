@@ -24,10 +24,16 @@ struct ChatCompletionsProvider: ReasoningProvider {
         let thinking = service.normalizedThinking(thinking, model: model)
         if thinking != .modelDefault {
             switch service {
-            case .qwen: body["enable_thinking"] = thinking == .enabled
-            case .glm, .kimi: body["thinking"] = ["type": thinking == .enabled ? "enabled" : "disabled"]
+            case .qwen: body["enable_thinking"] = thinking != .disabled
+            case .glm: body["thinking"] = ["type": thinking != .disabled ? "enabled" : "disabled"]
+            case .kimi:
+                // K3 uses effort only; its API does not accept the K2.x thinking toggle.
+                if model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "kimi-k3" {
+                    body["thinking"] = ["type": thinking != .disabled ? "enabled" : "disabled"]
+                }
             default: break
             }
+            if service.isPreset, let effort = thinking.effort { body["reasoning_effort"] = effort }
         }
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"; request.timeoutInterval = 90
@@ -43,7 +49,8 @@ struct ChatCompletionsProvider: ReasoningProvider {
                 do {
                     let http = try httpRequest(request)
                     var parser = ServerSentEvents(), completed = false, hadText = false
-                    func handle(_ payload: String) throws {
+                    var reportedService = false, reportedReasoning = false
+                    func handle(_ payload: String) async throws {
                         if payload == "[DONE]" { completed = true; return }
                         guard let data = payload.data(using: .utf8),
                               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -55,7 +62,16 @@ struct ChatCompletionsProvider: ReasoningProvider {
                         guard let choices = object["choices"] as? [[String: Any]] else {
                             throw CopilotError.message("Malformed reasoning stream. Retry this question.")
                         }
+                        if !reportedService {
+                            reportedService = true
+                            await request.onStreamProgress?(.firstServiceEvent, ProcessInfo.processInfo.systemUptime)
+                        }
                         for choice in choices where (choice["index"] as? Int ?? 0) == 0 {
+                            if !reportedReasoning, let delta = choice["delta"] as? [String: Any],
+                               let reasoning = delta["reasoning_content"] as? String, !reasoning.isEmpty {
+                                reportedReasoning = true
+                                await request.onStreamProgress?(.reasoningStarted, ProcessInfo.processInfo.systemUptime)
+                            }
                             if let delta = choice["delta"] as? [String: Any], let content = delta["content"] as? String, !content.isEmpty {
                                 hadText = true; continuation.yield(content)
                             }
@@ -69,10 +85,10 @@ struct ChatCompletionsProvider: ReasoningProvider {
                     }
                     for try await line in transport.lines(for: http) {
                         try Task.checkCancellation()
-                        if let event = parser.consume(line) { try handle(event) }
+                        if let event = parser.consume(line) { try await handle(event) }
                         if completed { break }
                     }
-                    if let event = parser.finish() { try handle(event) }
+                    if let event = parser.finish() { try await handle(event) }
                     guard completed && hadText else { throw CopilotError.message("Reasoning stream ended without a complete answer. Check the network and retry.") }
                     continuation.finish()
                 } catch { continuation.finish(throwing: error) }

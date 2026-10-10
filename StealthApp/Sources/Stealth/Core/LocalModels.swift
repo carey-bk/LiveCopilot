@@ -174,6 +174,7 @@ enum LocalQuestionDetector {
         guard !filler.contains(lower) else { return false }
         let reported = ["i don't know", "i do not know", "we don't know", "he asked", "she asked", "我不知道", "他问我", "她问我", "我刚才问"]
         guard !reported.contains(where: lower.hasPrefix) else { return false }
+        if QuestionCompleteness.explicitDirectQuestion(text) { return true }
         let english = #"(^|[.!?]\s+)(why|what|how|when|where|which|who|whose|can you|could you|would you|will you|do you|did you|have you|are you|is there|are there|what about|how about|please explain|please describe|tell us|tell me|walk us through|walk me through)\b"#
         if lower.range(of: english, options: .regularExpression) != nil { return true }
         let chinese = ["为什么", "为何", "怎么", "怎样", "如何", "什么", "多少", "哪个", "哪些", "哪里", "是否", "能否", "可否", "能不能", "有没有", "你认为", "你觉得", "您认为", "请介绍", "请解释", "请说明", "请问", "说说", "谈谈"]

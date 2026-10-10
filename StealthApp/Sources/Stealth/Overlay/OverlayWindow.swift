@@ -4,10 +4,18 @@ import SwiftUI
 /// A floating, always-on-top panel that requests exclusion from screen capture.
 ///
 /// The stealth properties:
-///  - `sharingType = .none` requests exclusion; verify in the actual sharing app.
+///  - Per-window sharing preference; verify the actual meeting output.
 ///  - `.floating` level + joins all Spaces → stays above fullscreen calls.
 ///  - non-activating panel → clicking it never steals focus from the meeting.
 final class OverlayWindow: NSPanel {
+    private let captureProtection = WindowCaptureProtection()
+    private var inputCaptureProtection: OverlayInputCaptureProtection?
+    private var cursorProtection: OverlayCursorProtection?
+    private var captureProtectionReady = false
+    private var excludesCapture = true
+    private var captureGeometryRefresh: DispatchWorkItem?
+    var onCaptureProtectionChanged: ((WindowCaptureProtection.Status) -> Void)?
+    var captureProtectionStatus: WindowCaptureProtection.Status { captureProtection.status }
     private(set) var autoHeight = true
     private(set) var edgeHide = false
     private(set) var edgeHidden = false
@@ -65,8 +73,67 @@ final class OverlayWindow: NSPanel {
                 guard let self else { return }
                 self.targetScreen = nil
                 self.fitHeight(animated: false)
+                self.refreshCaptureProtection()
             }
         }
+        captureProtectionReady = true
+        refreshCaptureProtection()
+        inputCaptureProtection = OverlayInputCaptureProtection(overlay: self)
+        cursorProtection = OverlayCursorProtection(window: self)
+    }
+
+    func setCaptureExcluded(_ enabled: Bool) {
+        excludesCapture = enabled
+        refreshCaptureProtection()
+        inputCaptureProtection?.setEnabled(enabled)
+        cursorProtection?.setEnabled(enabled)
+    }
+
+    private func refreshCaptureProtection(covering size: CGSize? = nil) {
+        guard captureProtectionReady else { return }
+        let status = captureProtection.apply(to: self, enabled: excludesCapture, covering: size)
+        onCaptureProtectionChanged?(status)
+    }
+
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        // Cover an enlarged surface before AppKit paints its newly exposed edge.
+        refreshCaptureProtection(covering: CGSize(width: max(frame.width, frameRect.width),
+                                                  height: max(frame.height, frameRect.height)))
+        super.setFrame(frameRect, display: flag)
+        refreshCaptureProtection()
+        refreshCaptureAfterGeometryCommit()
+    }
+
+    override func setFrame(_ frameRect: NSRect, display flag: Bool, animate: Bool) {
+        refreshCaptureProtection(covering: CGSize(width: max(frame.width, frameRect.width),
+                                                  height: max(frame.height, frameRect.height)))
+        // Avoid an intermediate animation surface escaping the exclusion region.
+        super.setFrame(frameRect, display: flag, animate: excludesCapture ? false : animate)
+        refreshCaptureProtection()
+        refreshCaptureAfterGeometryCommit()
+    }
+
+    // The server can still use the old bounds during setFrame. Reapply after
+    // AppKit commits geometry, otherwise an enlarged edge can escape the region.
+    private func refreshCaptureAfterGeometryCommit() {
+        guard captureProtectionReady else { return }
+        captureGeometryRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.captureGeometryRefresh = nil
+            self?.refreshCaptureProtection()
+        }
+        captureGeometryRefresh = work
+        DispatchQueue.main.async(execute: work)
+    }
+
+    override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+        if place != .out { refreshCaptureProtection() }
+        super.order(place, relativeTo: otherWin)
+    }
+
+    override func orderFrontRegardless() {
+        refreshCaptureProtection()
+        super.orderFrontRegardless()
     }
 
     /// Borderless panels can't normally become key; allow it so text is selectable if needed.
@@ -231,6 +298,9 @@ final class OverlayWindow: NSPanel {
     func showForAnswer(automatic: Bool = true) { if !automatic || !edgeHide { reveal() } }
 
     func stopWatching() {
+        cursorProtection?.stop()
+        inputCaptureProtection?.stop()
+        captureGeometryRefresh?.cancel(); captureGeometryRefresh = nil
         edgeTimer?.invalidate(); edgeTimer = nil
         geometryTask?.cancel(); geometryTask = nil
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver); self.screenObserver = nil }

@@ -40,6 +40,7 @@ struct LayaTriggerInput: Equatable, Sendable {
     let context: String
     let speaker: Speaker
     let isFinal: Bool
+    var trace: PipelineTrace? = nil
 }
 
 /// Scores revisions as they arrive, but only dispatches a committed, quiet turn.
@@ -63,6 +64,8 @@ struct LayaTriggerInput: Equatable, Sendable {
 
     var onError: ((String) -> Void)?
     var onDecision: ((Double) -> Void)?
+    var onExplicitConfirmation: ((Bool) -> Void)?
+    var onTrace: ((PipelineTrace, PipelineTrace.Stage) -> Void)?
 
     private struct Candidate {
         let id: UInt64
@@ -73,6 +76,7 @@ struct LayaTriggerInput: Equatable, Sendable {
         var attempted = false
         var score: Double?
         var deferred = false
+        var trace = PipelineTrace()
     }
 
     private struct Flight {
@@ -85,6 +89,7 @@ struct LayaTriggerInput: Equatable, Sendable {
     private let onTrigger: (LayaTriggerInput) -> Bool
     private let timing: Timing
     private let ruleNearMissMargin: Double
+    private let allowExplicitQuestions: Bool
     private var enabled = false
     private var threshold = 0.8
     private var cooldown: TimeInterval = 7
@@ -94,6 +99,7 @@ struct LayaTriggerInput: Equatable, Sendable {
     private var flight: Flight?
     private var speaking = Set<Speaker>()
     private var lastActivityAt: TimeInterval = 0
+    private var lastSpeechEndAt: TimeInterval?
     private var lastPredictionAt: TimeInterval?
     private var lastTriggerAt: TimeInterval?
     private var handled = Set<String>()
@@ -107,10 +113,11 @@ struct LayaTriggerInput: Equatable, Sendable {
     /// Timing is injectable for regression checks; ordinary callers use the two closures.
     init(predict: @escaping (String, String) async throws -> Double,
          onTrigger: @escaping (LayaTriggerInput) -> Bool,
-         timing: Timing = Timing(), ruleNearMissMargin: Double = 0) {
+         timing: Timing = Timing(), ruleNearMissMargin: Double = 0, allowExplicitQuestions: Bool = false) {
         self.predict = predict
         self.onTrigger = onTrigger
         self.timing = timing
+        self.allowExplicitQuestions = allowExplicitQuestions
         self.ruleNearMissMargin = max(0, min(0.2, ruleNearMissMargin))
     }
 
@@ -149,11 +156,12 @@ struct LayaTriggerInput: Equatable, Sendable {
             // Duplicate finals (including changed context or punctuation) cannot renew
             // the quiet window/expiry, downgrade a final, or repeat its prediction.
             if current.input.isFinal { return }
-            if current.input.text == input.text, current.input.context == input.context,
-               current.input.speaker == input.speaker {
+            if current.input.speaker == input.speaker {
                 guard input.isFinal else { return }
                 current.input = input
                 current.finalAt = now
+                current.trace.mark(.asrStable, at: now)
+                onTrace?(current.trace, .asrStable)
                 current.expiresAt = now + timing.expiry
                 candidate = current
                 lastActivityAt = now
@@ -168,7 +176,16 @@ struct LayaTriggerInput: Equatable, Sendable {
         if let current = candidate, current.input.isFinal { remember(current.key) }
         nextID &+= 1
         candidate = Candidate(id: nextID, key: key, input: input,
-                              expiresAt: now + timing.expiry, finalAt: input.isFinal ? now : nil)
+                              expiresAt: now + timing.expiry, finalAt: input.isFinal ? now : nil,
+                              trace: PipelineTrace(origin: min(now, lastSpeechEndAt ?? now)))
+        if input.isFinal {
+            candidate?.trace.mark(.asrStable, at: now)
+            if let trace = candidate?.trace { onTrace?(trace, .asrStable) }
+        }
+        if let ended = lastSpeechEndAt, speaking.isEmpty {
+            candidate?.trace.mark(.questionEnd, at: ended)
+            if let trace = candidate?.trace { onTrace?(trace, .questionEnd) }
+        }
         lastActivityAt = now
         dispatchTask?.cancel()
         dispatchTask = nil
@@ -181,11 +198,17 @@ struct LayaTriggerInput: Equatable, Sendable {
         if active { changed = speaking.insert(speaker).inserted }
         else { changed = speaking.remove(speaker) != nil }
         guard changed else { return }
+        if active { lastSpeechEndAt = nil }
         if active, speaker == .you { invalidateCurrent(rememberCurrent: true) }
         lastActivityAt = Self.now
         dispatchTask?.cancel()
         dispatchTask = nil
-        if !active { attemptDispatch() }
+        if !active {
+            lastSpeechEndAt = Self.now
+            candidate?.trace.mark(.questionEnd)
+            if let trace = candidate?.trace { onTrace?(trace, .questionEnd) }
+            attemptDispatch()
+        }
     }
 
     /// Ends the current lifecycle, including deduplication and cooldown history.
@@ -196,6 +219,7 @@ struct LayaTriggerInput: Equatable, Sendable {
         handledOrder.removeAll()
         speaking.removeAll()
         lastActivityAt = 0
+        lastSpeechEndAt = nil
         lastPredictionAt = nil
         lastTriggerAt = nil
     }
@@ -278,7 +302,8 @@ struct LayaTriggerInput: Equatable, Sendable {
     private func startPredictionIfNeeded() {
         guard !expireIfNeeded(), enabled, !speaking.contains(.you),
               var current = candidate, !current.attempted, predictionTask == nil else { return }
-        let delay = (lastPredictionAt.map { $0 + timing.throttle } ?? Self.now) - Self.now
+        let interval = current.input.isFinal ? min(timing.throttle, 0.05) : timing.throttle
+        let delay = (lastPredictionAt.map { $0 + interval } ?? Self.now) - Self.now
         if delay > 0 {
             // The first revision schedules a fixed throttle deadline. Later revisions
             // only replace the candidate; they do not push that deadline back.
@@ -295,6 +320,8 @@ struct LayaTriggerInput: Equatable, Sendable {
         throttleTask?.cancel()
         throttleTask = nil
         current.attempted = true
+        current.trace.mark(.jevStart)
+        onTrace?(current.trace, .jevStart)
         candidate = current
         lastPredictionAt = Self.now
         let request = Flight(id: current.id, generation: generation, key: current.key)
@@ -325,7 +352,10 @@ struct LayaTriggerInput: Equatable, Sendable {
         switch result {
         case .success(let score) where score.isFinite && (0...1).contains(score):
             candidate?.score = score
+            candidate?.trace.mark(.jevEnd)
+            if let trace = candidate?.trace { onTrace?(trace, .jevEnd) }
             onDecision?(score)
+            onExplicitConfirmation?(allowExplicitQuestions && candidate.map { QuestionCompleteness.explicitDirectQuestion($0.input.text) } == true && score < threshold)
             attemptDispatch()
         case .success:
             onError?("Laya returned an invalid confidence; automatic suggestion skipped.")
@@ -346,12 +376,19 @@ struct LayaTriggerInput: Equatable, Sendable {
               let current = candidate, current.input.speaker != .you,
               current.input.isFinal, let finalAt = current.finalAt,
               let score = current.score,
+              !QuestionCompleteness.mustWait(current.input.text),
               (score >= threshold ||
+               (allowExplicitQuestions && QuestionCompleteness.explicitDirectQuestion(current.input.text)) ||
                (ruleNearMissMargin > 0 && score >= threshold - ruleNearMissMargin &&
                 LocalQuestionDetector.isQuestion(current.input.text))),
               !current.deferred, !handled.contains(current.key) else { return }
-        let due = max(max(finalAt, lastActivityAt) + timing.quiet,
-                      lastTriggerAt.map { $0 + cooldown } ?? 0)
+        // A final ASR segment already includes endpoint silence. High-confidence
+        // complete questions need only a short revision guard, not another full pause.
+        let fast = (score >= max(0.9, threshold) || (allowExplicitQuestions && QuestionCompleteness.explicitDirectQuestion(current.input.text))) && QuestionCompleteness.permitsFastDispatch(current.input.text)
+        let quiet = fast ? min(timing.quiet, 0.15) : timing.quiet
+        let interval = fast ? min(cooldown, 0.75) : cooldown
+        let due = max(max(finalAt, lastActivityAt) + quiet,
+                      lastTriggerAt.map { $0 + interval } ?? 0)
         let delay = due - Self.now
         if delay > 0 {
             let epoch = generation
@@ -366,7 +403,9 @@ struct LayaTriggerInput: Equatable, Sendable {
         }
         let epoch = generation
         dispatching = true
-        let accepted = onTrigger(current.input)
+        var input = current.input
+        input.trace = current.trace
+        let accepted = onTrigger(input)
         dispatching = false
         guard generation == epoch else { return }
         if accepted {

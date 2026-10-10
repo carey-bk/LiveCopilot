@@ -12,7 +12,12 @@ struct PresetAnalysisSettings: View {
             SettingsSection {
                 VStack(alignment: .leading, spacing: 14) {
                     LabeledContent(t("Reasoning model")) {
-                        TextField(t("Reasoning model"), text: $draft.model).textFieldStyle(.roundedBorder).accessibilityIdentifier("preset-model")
+                        TextField(t("Reasoning model"), text: Binding(get: { draft.model }, set: { value in
+                            if draft.model != value {
+                                draft.model = value
+                                draft.thinking = service.defaultThinking(for: value)
+                            }
+                        })).textFieldStyle(.roundedBorder).accessibilityIdentifier("preset-model")
                     }
                     LabeledContent(t("API Base URL")) {
                         TextField(t("API Base URL"), text: $draft.baseURL).textFieldStyle(.roundedBorder).accessibilityIdentifier("preset-base-url")
@@ -30,6 +35,7 @@ struct PresetAnalysisSettings: View {
                     if !message.isEmpty { Text(t(message)).font(.caption).foregroundStyle(.secondary) }
                 }.padding(10)
             } label: { Text(t(service.label)) }
+            AnalysisPerformanceCard(settings: draftSettings)
             if draft != coordinator.settings.presetConnection {
                 Text(b("Save the connection before managing its key. The next answer still uses the saved connection.", "请先保存连接再管理密钥；下一次回答仍使用已保存的配置。")).font(.caption).foregroundStyle(.secondary)
             }
@@ -40,9 +46,12 @@ struct PresetAnalysisSettings: View {
             draft = coordinator.settings.presetConnection ?? .qwen
             draft.thinking = service.normalizedThinking(draft.thinking, model: draft.model)
         }
-            .onChange(of: draft.model) { _, _ in
-                draft.thinking = service.normalizedThinking(draft.thinking, model: draft.model)
-            }
+
+    }
+    private var draftSettings: AppSettings {
+        var settings = coordinator.settings
+        settings.presetConnection = draft
+        return settings
     }
     private var availableThinkingModes: [AnalysisThinking] {
         service.availableThinkingModes(for: draft.model)
@@ -50,14 +59,14 @@ struct PresetAnalysisSettings: View {
     private var connectionNote: String {
         switch service {
         case .qwen:
-            return b("Default: Qwen3.8 Flash with thinking off for faster answers, Beijing legacy endpoint. For a workspace endpoint, paste its full base URL from Model Studio, including /compatible-mode/v1. The API key must match its region.",
-                     "默认 Qwen3.8 Flash、关闭思考以缩短等待，使用北京旧域名。业务空间请从百炼控制台复制完整 Base URL（含 /compatible-mode/v1）；Key 必须与地域一致。")
+            return b("Default: Qwen3.8 Flash with low reasoning effort, Beijing legacy endpoint. For a workspace endpoint, paste its full base URL from Model Studio, including /compatible-mode/v1. The API key must match its region.",
+                     "默认 Qwen3.8 Flash、low 推理强度，使用北京旧域名。业务空间请从百炼控制台复制完整 Base URL（含 /compatible-mode/v1）；Key 必须与地域一致。")
         case .glm:
-            return b("Default: GLM-5.3 Flash on Zhipu's general API. This model requires thinking; use Model default or On. For an international Z.AI account use https://api.z.ai/api/paas/v4 with its own key. Coding Plan endpoints are not general API endpoints.",
-                     "默认 GLM-5.3 Flash、智谱通用 API。此模型必须开启思考，请选“模型默认”或“开启”。国际 Z.AI 账户请使用 https://api.z.ai/api/paas/v4 和对应 Key；Coding Plan 端点不适用于通用 API。")
+            return b("Default: GLM-5.3 Flash on Zhipu's general API. This model requires thinking and defaults to low effort here. For an international Z.AI account use https://api.z.ai/api/paas/v4 with its own key. Coding Plan endpoints are not general API endpoints.",
+                     "默认 GLM-5.3 Flash、智谱通用 API。此模型必须开启思考，本软件默认使用 low 推理强度。国际 Z.AI 账户请使用 https://api.z.ai/api/paas/v4 和对应 Key；Coding Plan 端点不适用于通用 API。")
         case .kimi:
-            return b("Default: Kimi K2.6 with thinking off for everyday answers, China API. For an international account use https://api.moonshot.ai/v1 with that platform's key. Model availability and billing follow your account.",
-                     "默认 Kimi K2.6、关闭思考以缩短日常回答等待，使用国内 API。国际账户请使用 https://api.moonshot.ai/v1 和该平台的 Key；模型可用性及计费以账户为准。")
+            return b("Default: Kimi K2.6 with thinking off (no low setting), China API. Kimi K3 supports low/high/max. For an international account use https://api.moonshot.ai/v1 with that platform's key. Model availability and billing follow your account.",
+                     "默认 Kimi K2.6、关闭思考（无 low 档位），使用国内 API。Kimi K3 可选 low/high/max。国际账户请使用 https://api.moonshot.ai/v1 和该平台的 Key；模型可用性及计费以账户为准。")
         default: return ""
         }
     }

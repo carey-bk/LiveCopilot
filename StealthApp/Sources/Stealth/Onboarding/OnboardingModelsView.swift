@@ -84,20 +84,21 @@ struct OnboardingModelsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Label(b("Live transcription", "实时转写"), systemImage: "waveform").font(.headline)
             Picker(b("Speech service", "识别方式"), selection: $coordinator.settings.listeningService) {
-                Text(b("Local · Chinese + English", "本地 · 中英双语")).tag(ListeningService.paraformer)
-                Text(b("Apple · on-device", "Apple · 本机识别")).tag(ListeningService.apple).disabled(!apple.available)
+                Text(b("Paraformer · Chinese + English", "Paraformer · 本地中英双语")).tag(ListeningService.paraformer)
+                Text(b("Apple · one language, on-device", "Apple · 本机单语言")).tag(ListeningService.apple).disabled(!apple.available)
                 Text(b("OpenAI · cloud audio", "OpenAI · 云端识别")).tag(ListeningService.openAI)
             }.disabled(locked || apple.busy || models.downloading != nil || laya.isBusy)
                 .accessibilityIdentifier("onboarding-speech-provider")
+            SpeechSelectionGuide(language: coordinator.settings.language)
             switch coordinator.settings.listeningService {
             case .paraformer:
                 modelStatus(.streamingSpeech)
                 Text(b("Recognition language: Chinese + English · automatic", "识别语言：中英混合 · 自动识别")).font(.callout)
                 Text(b("Paraformer + VAD · about 238 MB. Speech stays on this Mac.", "Paraformer + VAD · 约 238 MB。语音在本机处理。")).font(.caption).foregroundStyle(.secondary)
+                Text(b("For English-heavy speech or specialist terms, compare Apple English or OpenAI on your own audio.", "英文为主或专业术语较多时，建议用自己的音频对比 Apple 英语或 OpenAI 的转写效果。")).font(.caption).foregroundStyle(.secondary)
             case .apple:
                 AppleSpeechCard(manager: apple, language: $coordinator.settings.appleSpeechLanguage,
                                 interfaceLanguage: coordinator.settings.language, locked: locked, permitsDownload: !coordinator.isMock)
-                Text(b("For mixed Chinese/English, choose Local · Chinese + English. For unrestricted language detection, choose OpenAI.", "中英混合可选择“本地 · 中英双语”；不限语言可选择 OpenAI。")).font(.caption).foregroundStyle(.secondary)
             case .openAI:
                 LiveSpeechLanguagePicker(language: $coordinator.settings.liveSpeechLanguage,
                                          interfaceLanguage: coordinator.settings.language).disabled(locked)

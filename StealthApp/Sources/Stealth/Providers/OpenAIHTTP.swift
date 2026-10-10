@@ -145,11 +145,21 @@ struct OpenAIReasoningProvider: ReasoningProvider {
                     if !effort.isEmpty { body["reasoning"] = ["effort": effort] }
                     let http = try OpenAIHTTP.request(path: "responses", key: key, body: body)
                     var parser = ServerSentEvents(), completed = false, hadText = false
-                    func handle(_ payload: String) throws {
+                    var reportedService = false, reportedReasoning = false
+                    func handle(_ payload: String) async throws {
                         if payload == "[DONE]" { return }
                         guard let data = payload.data(using: .utf8),
                               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                               let type = obj["type"] as? String else { throw CopilotError.message("Malformed reasoning stream. Retry this question.") }
+                        if !reportedService {
+                            reportedService = true
+                            await request.onStreamProgress?(.firstServiceEvent, ProcessInfo.processInfo.systemUptime)
+                        }
+                        if !reportedReasoning, type == "response.output_item.added",
+                           let item = obj["item"] as? [String: Any], item["type"] as? String == "reasoning" {
+                            reportedReasoning = true
+                            await request.onStreamProgress?(.reasoningStarted, ProcessInfo.processInfo.systemUptime)
+                        }
                         switch type {
                         case "response.output_text.delta", "response.refusal.delta":
                             if let delta = obj["delta"] as? String { hadText = hadText || !delta.isEmpty; continuation.yield(delta) }
@@ -161,9 +171,9 @@ struct OpenAIReasoningProvider: ReasoningProvider {
                     }
                     for try await line in transport.lines(for: http) {
                         try Task.checkCancellation()
-                        if let event = parser.consume(line) { try handle(event) }
+                        if let event = parser.consume(line) { try await handle(event) }
                     }
-                    if let event = parser.finish() { try handle(event) }
+                    if let event = parser.finish() { try await handle(event) }
                     guard completed && hadText else { throw CopilotError.message("Reasoning stream ended without a complete answer. Check the network and retry.") }
                     continuation.finish()
                 } catch { continuation.finish(throwing: error) }

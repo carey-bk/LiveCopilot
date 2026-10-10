@@ -42,7 +42,9 @@ enum AppleSpeechSupport {
     private var analyzer: SpeechAnalyzer?
     private var continuation: AsyncStream<AnalyzerInput>.Continuation?
     private var resultTask: Task<Void, Never>?
-    private var detectorTask: Task<Void, Never>?
+    private var endpointTask: Task<Void, Never>?
+    private var endpoint = PCMEndpoint()
+    private var pendingEndpoint: Int64?
     private var loading: Task<Void, Never>?
     private var inputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
     private var targetFormat: AVAudioFormat?
@@ -64,8 +66,7 @@ enum AppleSpeechSupport {
         }
         let transcriber = SpeechTranscriber(locale: locale, preset: .timeIndexedProgressiveTranscription)
         try Task.checkCancellation()
-        let detector = SpeechDetector(detectionOptions: .init(sensitivityLevel: .medium), reportResults: true)
-        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber, detector], considering: inputFormat) else {
+        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber], considering: inputFormat) else {
             throw CopilotError.message("Apple speech has no compatible audio format.")
         }
         targetFormat = format
@@ -73,7 +74,7 @@ enum AppleSpeechSupport {
             converter = AVAudioConverter(from: inputFormat, to: format)
             guard converter != nil else { throw CopilotError.message("Apple speech has no compatible audio format.") }
         }
-        let analyzer = SpeechAnalyzer(modules: [transcriber, detector])
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
         self.analyzer = analyzer
         try await analyzer.prepareToAnalyze(in: format)
         try Task.checkCancellation()
@@ -86,22 +87,12 @@ enum AppleSpeechSupport {
                 }
             } catch { if let self, self.active || self.closing { self.fail() } }
         }
-        detectorTask = Task { [weak self] in
-            do {
-                for try await result in detector.results {
-                    guard let self, !Task.isCancelled else { return }
-                    self.speaking = result.speechDetected
-                    if self.speaking { self.heardSpeech = true }
-                    self.onEvent?(.speechActivity(self.speaking))
-                }
-            } catch { if let self, self.active || self.closing { self.fail() } }
-        }
         try await analyzer.start(inputSequence: input)
     }
     func connect(context: String) {
         guard !active else { return }
         active = true
-        heardSpeech = false
+        heardSpeech = false; endpoint = PCMEndpoint()
         offsetMS = max(0, Int(Date().timeIntervalSince(sessionStart) * 1000))
         loading = Task { [weak self] in
             guard let self else { return }
@@ -129,6 +120,35 @@ enum AppleSpeechSupport {
             let time = CMTime(value: audioFrames, timescale: 16000)
             audioFrames += Int64(bytes.count / 2)
             guard case .enqueued = continuation?.yield(AnalyzerInput(buffer: buffer, bufferStartTime: time)) else { fail(); return }
+            for event in endpoint.consume(bytes) {
+                switch event {
+                case .started:
+                    speaking = true; heardSpeech = true
+                    onEvent?(.speechActivity(true))
+                case .ended(let frame):
+                    speaking = false
+                    onEvent?(.speechActivity(false))
+                    pendingEndpoint = frame
+                    finalizeEndpoint()
+                }
+            }
+        }
+    }
+    private func finalizeEndpoint() {
+        guard endpointTask == nil, let analyzer else { return }
+        endpointTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.endpointTask = nil }
+            while let frame = self.pendingEndpoint, self.active, !Task.isCancelled {
+                self.pendingEndpoint = nil
+                do {
+                    // Commit only audio already enqueued, retaining the analyzer for the next turn.
+                    try await analyzer.finalize(through: CMTime(value: frame, timescale: 16000))
+                } catch {
+                    if self.active && !Task.isCancelled { self.fail() }
+                    return
+                }
+            }
         }
     }
     private func makeBuffer(_ bytes: Data) -> AVAudioPCMBuffer? {
@@ -170,15 +190,19 @@ enum AppleSpeechSupport {
     func appendContext(_ text: String, delegationID: String?) {}
     func disconnect() async {
         closing = true; active = false
+        // Bound endpoint finalization too, not just the final session drain.
+        let deadline = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.failed = true
+            await self?.analyzer?.cancelAndFinishNow()
+        }
+        defer { deadline.cancel() }
         if !ready { loading?.cancel(); await loading?.value }
+        endpointTask?.cancel(); await endpointTask?.value; pendingEndpoint = nil
         continuation?.finish()
         var finalized = ready && !failed && pending.isEmpty
         if let analyzer {
-            let deadline = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 15_000_000_000)
-                guard !Task.isCancelled else { return }
-                self?.failed = true; await analyzer.cancelAndFinishNow()
-            }
             if ready {
                 do { try await analyzer.finalizeAndFinishThroughEndOfInput(); await resultTask?.value }
                 catch {
@@ -188,9 +212,8 @@ enum AppleSpeechSupport {
                     finalized = !heardSpeech && recognition.domain == "SFSpeechErrorDomain" && recognition.code == 1
                 }
             } else { await analyzer.cancelAndFinishNow() }
-            deadline.cancel()
         }
-        detectorTask?.cancel(); resultTask?.cancel(); loading?.cancel()
+        endpointTask?.cancel(); resultTask?.cancel(); loading?.cancel()
         pending.removeAll(); continuation = nil; analyzer = nil; ready = false; closing = false
         onEvent?(.partialTranscript("")); onEvent?(.speechActivity(false))
         onEvent?(.closed(finalized: finalized && !failed))

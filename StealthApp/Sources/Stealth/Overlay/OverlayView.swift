@@ -83,13 +83,17 @@ struct OverlayView: View {
                 }
                 if coordinator.settings.automaticSuggestions,
                    coordinator.settings.listeningService.isLocal {
-                    Text(coordinator.layaLastScore.map {
+                    Text(coordinator.layaExplicitConfirmation ? t("Complete answer request confirmed") : coordinator.layaLastScore.map {
                         String(format: "Laya %@ %.2f / %@ %.2f", t("Latest score"), $0,
                                t("Threshold"), coordinator.settings.layaThreshold)
                     } ?? String(format: "Laya %@ · %@ %.2f", t("Waiting for a decision"),
                                        t("Threshold"), coordinator.settings.layaThreshold))
                         .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                         .lineLimit(1).frame(height: 16, alignment: .leading)
+                }
+                if coordinator.settings.listeningService == .apple {
+                    Text(t("Apple ASR uses one language. For mixed Chinese/English, select Paraformer or GPT-Live in Services."))
+                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if !transcript.hasContent {
                     Text(t("Listening — waiting for speech")).font(.caption).foregroundStyle(.secondary)
@@ -105,7 +109,16 @@ struct OverlayView: View {
                         .help(hotkeys.combo(for: mode).display).accessibilityIdentifier("action-" + mode.rawValue)
                         .onboardingHighlight(onboarding.visibleTip == .answer && mode == .reply)
                 }
-                Spacer()
+                Spacer(minLength: 4)
+                Menu {
+                    Picker(t("Answer language"), selection: $coordinator.settings.answerLanguage) {
+                        ForEach(AnswerLanguage.allCases) { language in Text(language.label).tag(language) }
+                    }.pickerStyle(.inline)
+                } label: {
+                    Label(coordinator.settings.answerLanguage.label, systemImage: "globe")
+                        .font(.caption)
+                }.fixedSize().help(t("Answer language"))
+                    .accessibilityIdentifier("answer-language")
             }
             if onboarding.visibleTip == .answer {
                 OverlayFirstUseTip(step: .answer, coordinator: coordinator)
@@ -126,7 +139,15 @@ struct OverlayView: View {
             }
             HStack {
                 Toggle(t("Use recent conversation"), isOn: $coordinator.includeConversation).font(.caption2).toggleStyle(OverlaySwitchStyle())
-                Spacer()
+                Spacer(minLength: 4)
+                Menu {
+                    Picker(t("Knowledge mode"), selection: $coordinator.settings.knowledgeMode) {
+                        ForEach(KnowledgeMode.allCases) { mode in Text(t(mode.label)).tag(mode) }
+                    }.pickerStyle(.inline)
+                } label: {
+                    Text(t(coordinator.settings.knowledgeMode == .hybrid ? "Hybrid" : "KB Only")).font(.caption2)
+                }.fixedSize().help(t(coordinator.settings.knowledgeMode.label))
+                    .accessibilityIdentifier("knowledge-mode")
                 if suggestion.isLoading { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption) }
             }
             footer.padding(.trailing, 20)
@@ -202,7 +223,7 @@ struct OverlayView: View {
                 if !suggestion.question.isEmpty { Text(suggestion.question).font(.system(size: answerSize, weight: .semibold)).textSelection(.enabled) }
                 if let warning = suggestion.warning { Text(t(warning)).font(.caption).foregroundStyle(.orange) }
                 if suggestion.isLoading && suggestion.text.isEmpty {
-                    HStack { ProgressView().controlSize(.small); Text(t("Retrieving evidence and thinking…")).font(.caption) }
+                    HStack { ProgressView().controlSize(.small); Text(t(suggestion.waitingMessage)).font(.caption) }
                 }
                 if suggestion.text.isEmpty && !suggestion.isLoading && suggestion.error == nil {
                     Text(t("Ask a question below, or press {shortcut} to generate an answer from the conversation.")
@@ -211,17 +232,19 @@ struct OverlayView: View {
                 }
                 ForEach(Array(SuggestionParser.sections(suggestion.text).enumerated()), id: \.offset) { _, section in
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(t(section.title)).font(.system(size: max(11, answerSize - 1), weight: .semibold)).foregroundStyle(.secondary)
+                        if !section.title.isEmpty {
+                            Text(section.title).font(.system(size: max(11, answerSize - 1), weight: .semibold)).foregroundStyle(.secondary)
+                        }
                         Text(.init(section.content)).font(.system(size: answerSize)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 if let error = suggestion.error { Text(t(error)).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-                if !suggestion.sources.isEmpty {
+                if !suggestion.citedSources.isEmpty {
                     Divider()
-                    Text(t("Sources · retrieved local evidence")).font(.caption.bold())
-                    ForEach(Array(suggestion.sources.enumerated()), id: \.element.id) { i, source in
-                        DisclosureGroup("[S\(i + 1)] \(source.chunk.displayLabel(language: coordinator.settings.language))") {
-                            Text(source.chunk.text).font(.system(size: answerSize)).textSelection(.enabled)
+                    Text(t("Sources · cited evidence")).font(.caption.bold())
+                    ForEach(suggestion.citedSources, id: \.index) { citation in
+                        DisclosureGroup("[S\(citation.index)] \(citation.source.chunk.displayLabel(language: coordinator.settings.language))") {
+                            Text(citation.source.chunk.text).font(.system(size: answerSize)).textSelection(.enabled)
                         }.font(.caption2)
                     }
                 }

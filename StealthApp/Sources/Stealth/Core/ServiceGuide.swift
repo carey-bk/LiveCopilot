@@ -8,7 +8,7 @@ enum ServiceGuide {
     static func listening(_ service: ListeningService, language: AppLanguage) -> String {
         switch service {
         case .openAI: return text("OpenAI · cloud, semantic question detection", "OpenAI · 云端，语义判断提问", language)
-        case .apple: return text("Apple · local/free, streaming, macOS 26+", "Apple · 本地/免费，流式，macOS 26+", language)
+        case .apple: return text("Apple · local/free, one language, macOS 26+", "Apple · 本地/免费，单语言，macOS 26+", language)
         case .paraformer: return text("Paraformer · local/free, Chinese/English streaming", "Paraformer · 本地/免费，中英文流式", language)
         }
     }
@@ -37,6 +37,9 @@ enum ServiceGuide {
                         "Kimi 按输入/输出 token 计费，缓存命中输入另有价格；思考也消耗输出 token。国内与国际平台的端点和计费不同，请查看账户所属平台的当前模型报价。", language)
         case .sharedOpenAI, .separateOpenAI:
             switch model {
+            case "gpt-6.1-sol":
+                return text("GPT-6.1 Sol (checked Oct 10, 2026): standard processing, up to 272K input tokens, per 1M tokens input $2 · cached input $0.10 · cache writes $2.50 · output $10. Longer prompts and other tiers have different rates.",
+                            "GPT-6.1 Sol（2026-10-10 核对）：标准处理、输入不超过 272K token 时，每百万 token 输入 $2 · 缓存命中 $0.10 · 缓存写入 $2.50 · 输出 $10。更长上下文及其他处理档位另有报价。", language)
             case "gpt-6-sol":
                 return text("GPT-6 Sol (checked Sep 29, 2026): standard processing, up to 272K input tokens, per 1M tokens input $2 · cached input $0.20 · cache writes $2.50 · output $10. Longer prompts and other tiers have different rates.",
                             "GPT-6 Sol（2026-09-29 核对）：标准处理、输入不超过 272K token 时，每百万 token 输入 $2 · 缓存命中 $0.20 · 缓存写入 $2.50 · 输出 $10。更长上下文及其他处理档位另有报价。", language)

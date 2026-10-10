@@ -116,10 +116,19 @@ final class LocalInferenceWorker: @unchecked Sendable {
     }
 }
 
-final class LocalEmbeddingProvider: EmbeddingProvider, @unchecked Sendable {
+final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable {
     let model = LocalModelKind.embeddingIdentity
     private let worker: LocalInferenceWorker
+    private let readinessLock = NSLock()
+    private var prepared = false
+    var isPrepared: Bool { readinessLock.withLock { prepared } }
     init(directory: URL, executable: URL? = nil) { worker = .init(mode: "embedding", modelDirectory: directory, executable: executable) }
+    func prepare() async throws {
+        guard !isPrepared else { return }
+        // Exercise both model loading and the first inference/Metal setup with fixed local text.
+        // The resident worker and subsequent queries share the same serialized IPC queue.
+        _ = try await embed(["warmup"])
+    }
     func embed(_ texts: [String]) async throws -> [[Float]] {
         try await embed(texts, progress: { _ in })
     }
@@ -128,16 +137,19 @@ final class LocalEmbeddingProvider: EmbeddingProvider, @unchecked Sendable {
         // One text per IPC request lets a new interactive query run between import chunks.
         for text in texts {
             try Task.checkCancellation()
-            let response = try await worker.call(["op": "embed", "text": text])
+            let response: [String: Any]
+            do { response = try await worker.call(["op": "embed", "text": text]) }
+            catch { readinessLock.withLock { prepared = false }; throw error }
             guard let numbers = response["vector"] as? [NSNumber], numbers.count == 1024 else {
                 throw CopilotError.message("Local model returned an invalid response.")
             }
             let vector = numbers.map(\.floatValue)
             guard vector.allSatisfy(\.isFinite), vector.contains(where: { $0 != 0 }) else { throw CopilotError.message("Local model returned an invalid response.") }
             vectors.append(vector)
+            readinessLock.withLock { prepared = true }
             await progress(vectors.count)
         }
         return vectors
     }
-    func close() { worker.close() }
+    func close() { readinessLock.withLock { prepared = false }; worker.close() }
 }

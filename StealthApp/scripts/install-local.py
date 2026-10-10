@@ -82,14 +82,24 @@ def production_copies(paths, target):
     return result
 
 
+def install_target(path):
+    path = path.expanduser().absolute()
+    allowed = (Path('/Applications/LiveCopilot.app'), Path.home() / 'Applications/LiveCopilot.app')
+    if path not in allowed or path.is_symlink():
+        raise ValueError('Use a non-symlink LiveCopilot.app in /Applications or ~/Applications')
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('app', type=Path, help='Already signed, validated application bundle')
+    parser.add_argument('--target', type=Path, default=Path.home() / 'Applications/LiveCopilot.app',
+                        help='Canonical app in /Applications or ~/Applications; preserve the existing install location')
     parser.add_argument('--repair-permissions', action='store_true', help='Rebuild this app’s ScreenCapture grant even if the signature matches')
     parser.add_argument('--dry-run', action='store_true')
     args = parser.parse_args()
     source = args.app.expanduser().resolve()
-    target = Path.home() / 'Applications/LiveCopilot.app'
+    target = install_target(args.target)
     backup_root = Path.home() / 'Library/Application Support/LiveCopilot/Backups/Applications'
     info = identity(source)
     run('/usr/bin/codesign', '--verify', '--deep', '--strict', str(source))

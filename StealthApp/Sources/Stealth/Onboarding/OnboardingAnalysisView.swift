@@ -17,8 +17,9 @@ struct OnboardingAnalysisView: View {
          coordinator.settings.presetConnection?.thinking.rawValue ?? ""].joined(separator: "|")
     }
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 16) {
-            Picker(b("Answer service", "回答服务"), selection: $coordinator.settings.reasoningService) {
+            Picker(b("Answer service", "回答服务"), selection: Binding(get: { coordinator.settings.reasoningService }, set: { coordinator.settings.selectAnalysisService($0) })) {
                 ForEach(ReasoningService.allCases) { service in
                     Text(L10n.text(service.label, language: coordinator.settings.language)).tag(service)
                 }
@@ -26,6 +27,10 @@ struct OnboardingAnalysisView: View {
             Text(b("Model: ", "模型：") + coordinator.settings.analysisModel).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             OnboardingConnectionFields(coordinator: coordinator).id(coordinator.settings.reasoningService)
                 .disabled(locked || testing)
+            if coordinator.settings.reasoningService == .sharedOpenAI || coordinator.settings.reasoningService == .separateOpenAI {
+                OpenAIAnalysisModelHint(settings: $coordinator.settings).disabled(locked || testing)
+            }
+            AnalysisPerformanceCard(settings: coordinator.settings)
             if (try? coordinator.settings.analysisCredentialReference()) != nil {
                 CredentialEditor(coordinator: coordinator, analysis: !shared)
                     .id(connectionIdentity).disabled(locked || testing)
@@ -49,6 +54,7 @@ struct OnboardingAnalysisView: View {
             Text(b("Testing sends only a short synthetic question to this service and may incur API charges. No conversation or documents are included.", "测试只向该服务发送一条简短示例问题，可能产生 API 费用，不附带对话或个人资料。")).font(.caption).foregroundStyle(.secondary)
             Text(b("You can continue without a key. Local transcription and the example remain available.", "暂时没有密钥也可以继续。本地转写与示例体验不受影响。")).font(.caption).foregroundStyle(.secondary)
         }.padding(4)
+        }
         .onChange(of: connectionIdentity) { _, _ in cancelTest() }
         .onChange(of: coordinator.answerCredentialRevision) { _, _ in cancelTest() }
         .onDisappear { cancelTest() }
@@ -110,6 +116,8 @@ private struct OnboardingConnectionFields: View {
             model = coordinator.settings.analysisModel
             baseURL = coordinator.settings.presetConnection?.baseURL ?? coordinator.settings.compatibleBaseURL
             path = coordinator.settings.compatiblePath
+        }.onChange(of: coordinator.settings.analysisModel) { _, value in
+            model = value
         }
     }
     private func save() {
@@ -117,9 +125,9 @@ private struct OnboardingConnectionFields: View {
             let model = model.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !model.isEmpty else { throw CopilotError.message("Enter an analysis model name in Services.") }
             var settings = coordinator.settings
+            settings.selectAnalysisModel(model)
             switch service {
-            case .sharedOpenAI, .separateOpenAI: settings.reasoningModel = model
-            case .deepSeek: settings.deepSeekModel = model
+            case .sharedOpenAI, .separateOpenAI, .deepSeek: break
             case .qwen, .glm, .kimi:
                 var connection = settings.presetConnection!
                 connection.model = model; connection.baseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)

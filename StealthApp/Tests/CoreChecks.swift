@@ -53,10 +53,14 @@ enum CoreChecks {
         }
         try check("analysis defaults favor current fast cost-effective models") {
             let settings = AppSettings()
-            try expect(settings.reasoningModel == "gpt-6-sol" && settings.reasoningEffort == "low", "OpenAI analysis default is not Sol low effort")
+            try expect(settings.reasoningModel == "gpt-6.1-sol" && settings.reasoningEffort == "low", "OpenAI analysis default is not 6.1 Sol low effort")
+            let unset = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+            try expect(unset.reasoningModel == "gpt-6.1-sol", "missing model did not receive the new default")
+            let pinned = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"reasoningModel":"gpt-6-sol","reasoningEffort":"high"}"#.utf8))
+            try expect(pinned.reasoningModel == "gpt-6-sol" && pinned.reasoningEffort == "high", "saved model choice was overwritten")
             try expect(settings.deepSeekModel == "deepseek-flash" && settings.deepSeekEffort == "low", "DeepSeek analysis default is not Flash low effort")
-            try expect(settings.qwenConnection.model == "qwen3.8-flash" && settings.qwenConnection.thinking == .disabled, "Qwen Flash default is missing")
-            try expect(settings.glmConnection.model == "glm-5.3-flash" && settings.glmConnection.thinking == .modelDefault, "GLM Flash default must leave mandatory thinking enabled")
+            try expect(settings.qwenConnection.model == "qwen3.8-flash" && settings.qwenConnection.thinking == .low, "Qwen Flash default is missing")
+            try expect(settings.glmConnection.model == "glm-5.3-flash" && settings.glmConnection.thinking == .low, "GLM Flash default must leave mandatory thinking enabled")
             try expect(settings.kimiConnection.model == "kimi-k2.6" && settings.kimiConnection.thinking == .disabled, "Kimi general low-latency default changed")
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
             try expect(restored == settings, "analysis defaults did not persist")
@@ -118,6 +122,7 @@ enum CoreChecks {
             try expect(ServiceGuide.embeddingPrice("text-embedding-3-large", language: .english).contains("$0.13"), "embedding rate incorrect")
             try expect(ServiceGuide.analysisPrice(.sharedOpenAI, model: "gpt-6-luna", language: .english).contains("$0.10") && ServiceGuide.analysisPrice(.sharedOpenAI, model: "gpt-6-luna", language: .english).contains("$0.50"), "Luna standard rates incorrect")
             try expect(ServiceGuide.analysisPrice(.sharedOpenAI, model: "gpt-6-sol", language: .english).contains("output $10"), "Sol standard rates missing")
+            try expect(ServiceGuide.analysisPrice(.sharedOpenAI, model: "gpt-6.1-sol", language: .english).contains("cached input $0.10"), "6.1 Sol rates missing")
             try expect(ServiceGuide.analysisPrice(.deepSeek, model: "deepseek-flash", language: .english).contains("$0.15 / $0.30"), "flash peak rates incorrect")
             try expect(ServiceGuide.analysisPrice(.deepSeek, model: "deepseek-v4-pro", language: .english).contains("$0.66 / $1.32"), "Pro accidentally quoted Flash rates")
             for provider in [ReasoningService.compatible, .deepSeek] {
@@ -518,8 +523,13 @@ enum CoreChecks {
             if service != .sharedOpenAI && service != .separateOpenAI {
                 try expect(output == "42 毫秒 [S1]" && !output.contains("private-reasoning"), "final text/source corrupted or reasoning leaked")
                 try expect((body["messages"] as? [[String: String]])?.last?["content"]?.contains("[S1]") == true, "evidence omitted")
-                try expect((body["thinking"] != nil) == (service == .deepSeek || service == .kimi), "vendor options leaked to custom service")
-            } else { try expect(body["store"] as? Bool == false, "OpenAI storage contract changed") }
+                try expect((body["thinking"] != nil) == (service == .deepSeek || service == .kimi || service == .glm), "vendor options leaked to custom service")
+            } else {
+                try expect(body["store"] as? Bool == false, "OpenAI storage contract changed")
+                try expect(request.url?.path == "/v1/responses" && body["model"] as? String == "gpt-6.1-sol", "new default not routed through Responses")
+                try expect((body["reasoning"] as? [String: String])?["effort"] == "low", "supported low reasoning effort changed")
+                try expect(body["service_tier"] == nil && body["temperature"] == nil, "model upgrade added a paid tier or incompatible parameter")
+            }
             passed.append("analysis routing and credential isolation: " + service.rawValue)
         }
         try check("preset connections persist and isolate credentials by provider and region") {
@@ -548,7 +558,7 @@ enum CoreChecks {
             let endpoints = [ReasoningService.qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
                              .glm: "https://open.bigmodel.cn/api/paas/v4/chat/completions", .kimi: "https://api.moonshot.cn/v1/chat/completions"]
             for (service, endpoint) in endpoints {
-                for thinking in AnalysisThinking.allCases {
+                for thinking in [AnalysisThinking.modelDefault, .disabled, .enabled] {
                     var settings = AppSettings(); settings.reasoningService = service
                     settings.presetConnection!.thinking = thinking
                     let provider = try ReasoningProviderFactory.make(settings: settings, liveKey: nil, analysisKey: "fixture") as! ChatCompletionsProvider

@@ -117,7 +117,7 @@ struct SettingsView: View {
                         Text("English").tag(AppLanguage.english)
                         Text("简体中文").tag(AppLanguage.simplifiedChinese)
                     }.accessibilityIdentifier("interface-language")
-                    Text(t("Changes apply immediately. Answers follow the language of your question.")).font(.caption).foregroundStyle(.secondary)
+                    Text(t("Changes apply immediately. Set the answer language separately in the floating panel.")).font(.caption).foregroundStyle(.secondary)
                     Divider()
                     Picker(t("Window background"), selection: $coordinator.settings.background) {
                         ForEach(AppBackground.allCases) { background in
@@ -187,10 +187,19 @@ struct SettingsView: View {
             CapturePermissionCard(language: coordinator.settings.language)
             VStack(alignment: .leading, spacing: 7) {
                 Toggle(isOn: $coordinator.settings.excludeOverlayFromCapture) {
-                    Label(t("Keep the floating window hidden during screen sharing and screenshots"), systemImage: "eye.slash").font(.headline)
+                    Label(t("Hide the floating window from meeting screen sharing and recording"), systemImage: "eye.slash").font(.headline)
                 }.accessibilityIdentifier("exclude-overlay-capture")
-                Text(t("When enabled, the LiveCopilot floating window stays out of meeting apps' screen sharing and recordings, keeping suggestions visible only to you."))
+                Text(t("Keep suggestions visible on your screen while excluding the floating window from capture. Settings and setup remain visible in shared content. Verify the result from another participant before use."))
                     .font(.caption).foregroundStyle(.secondary)
+                if coordinator.settings.excludeOverlayFromCapture {
+                    switch coordinator.overlayCaptureProtection {
+                    case .failed:
+                        Label(b("Capture protection is unavailable on this system. The floating window may be recorded.",
+                                "当前系统未能启用录制保护，悬浮窗可能被录入。"), systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                    default: EmptyView()
+                    }
+                }
             }
         }.padding(.bottom, 4)
     }
@@ -287,6 +296,7 @@ struct SettingsView: View {
                          : ServiceGuide.listening(service, language: coordinator.settings.language)).tag(service)
                 }
             }.disabled(locked).accessibilityIdentifier("listening-provider")
+            SpeechSelectionGuide(language: coordinator.settings.language)
             if coordinator.settings.listeningService == .apple {
                 Text(b("SpeechAnalyzer + SpeechTranscriber: offline streaming captions with revisable previews. Apple manages language downloads and inference. Requires macOS 26 and supported hardware; choose Mandarin or English before listening. This option does not automatically switch languages.", "SpeechAnalyzer + SpeechTranscriber：离线流式转写，预览文字会修正。语言模型与推理由 macOS 管理，需要 macOS 26 和受支持硬件；开始前选择普通话或英语，不自动切换语言。")).font(.callout).foregroundStyle(.secondary)
                 AppleSpeechCard(manager: coordinator.appleSpeech, language: $coordinator.settings.appleSpeechLanguage, interfaceLanguage: coordinator.settings.language, locked: locked)
@@ -348,7 +358,7 @@ struct SettingsView: View {
     }
     private var analysisService: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Picker(t("Provider"), selection: $coordinator.settings.reasoningService) {
+            Picker(t("Provider"), selection: Binding(get: { coordinator.settings.reasoningService }, set: { coordinator.settings.selectAnalysisService($0) })) {
                 ForEach(ReasoningService.allCases) { service in
                     Text(t(service.label) + (service == .compatible ? b(" · provider pricing", " · 服务商定价") : b(" · billed per token", " · 按 token 计费"))).tag(service)
                 }
@@ -365,17 +375,19 @@ struct SettingsView: View {
             case .sharedOpenAI, .separateOpenAI:
                 SettingsSection {
                     VStack(spacing: 14) {
-                        modelField("Reasoning model", value: $coordinator.settings.reasoningModel)
+                        modelField("Reasoning model", value: Binding(get: { coordinator.settings.reasoningModel }, set: { coordinator.settings.selectAnalysisModel($0) }))
+                        OpenAIAnalysisModelHint(settings: $coordinator.settings).disabled(locked)
                         Picker(t("Reasoning effort"), selection: $coordinator.settings.reasoningEffort) {
                             Text(t("Model default")).tag(""); Text(t("Low (faster)")).tag("low")
                             Text(t("Medium")).tag("medium"); Text(t("High")).tag("high")
+                            Text("Xhigh").tag("xhigh"); Text(t("Maximum")).tag("max")
                         }
                     }.padding(10)
                 } label: { Text("OpenAI Responses") }
             case .deepSeek:
                 SettingsSection {
                     VStack(alignment: .leading, spacing: 14) {
-                        modelField("Reasoning model", value: $coordinator.settings.deepSeekModel)
+                        modelField("Reasoning model", value: Binding(get: { coordinator.settings.deepSeekModel }, set: { coordinator.settings.selectAnalysisModel($0) }))
                         Text(b("Flash is the default for faster, lower-cost analysis. You can change the model here.", "默认使用 Flash，优先考虑分析速度和费用；可在此修改模型。"))
                             .font(.caption).foregroundStyle(.secondary)
                         Picker(t("Reasoning effort"), selection: $coordinator.settings.deepSeekEffort) {
@@ -388,6 +400,9 @@ struct SettingsView: View {
             case .qwen, .glm, .kimi:
                 PresetAnalysisSettings(coordinator: coordinator).id(coordinator.settings.reasoningService)
             case .compatible: customService
+            }
+            if !coordinator.settings.reasoningService.isPreset {
+                AnalysisPerformanceCard(settings: coordinator.settings)
             }
             Text(b("Higher reasoning effort can improve complex answers but takes longer and can use more output tokens. Off disables optional thinking when the model supports it. A separate OpenAI key changes billing credentials, not the model's capability.", "更高思考强度可能改善复杂回答，但通常更慢、输出 token 更多；关闭表示不启用模型可选的思考。独立 OpenAI Key 仅改变计费凭据，不改变模型能力。")).font(.caption).foregroundStyle(.secondary)
             priceNote(ServiceGuide.analysisPrice(coordinator.settings.reasoningService, model: coordinator.settings.analysisModel, language: coordinator.settings.language),

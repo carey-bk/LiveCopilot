@@ -24,19 +24,27 @@ final class AppCoordinator: ObservableObject {
                 let score: Double
                 if let predict = self.layaPredictor { score = try await predict(variant, context) }
                 else { score = try await self.laya.predict(text: variant, context: context) }
+                guard score.isFinite, (0...1).contains(score) else {
+                    throw CopilotError.message("Laya returned an invalid confidence.")
+                }
                 highest = max(highest, score)
+                if highest >= self.settings.layaThreshold { break }
             }
             return highest
-        }, onTrigger: { [weak self] input in self?.dispatchLaya(input) ?? true }, ruleNearMissMargin: 0.1)
+        }, onTrigger: { [weak self] input in self?.dispatchLaya(input) ?? true }, ruleNearMissMargin: 0.1, allowExplicitQuestions: true)
         gate.onError = { [weak self] _ in
             guard let self else { return }
             self.statusMessage = ServiceGuide.text("Laya unavailable — manual generation remains available. Check Live services settings.", "Laya 暂不可用，仍可手动生成回答。请检查“实时服务”设置。", self.settings.language)
         }
         gate.onDecision = { [weak self] score in self?.layaLastScore = score }
+        gate.onExplicitConfirmation = { [weak self] used in self?.layaExplicitConfirmation = used }
+        gate.onTrace = { trace, stage in DebugLog.log(trace.logLine(stage)) }
         return gate
     }()
     let appleSpeech = AppleSpeechManager()
     private var localEmbedding: LocalEmbeddingProvider?
+    private var retrievalPreparationTask: Task<Void, Never>?
+    @Published private(set) var isPreparingRetrieval = false
     let systemAudio = AudioCaptureManager()
     let mic = MicCaptureManager()
     let isMock: Bool
@@ -88,6 +96,7 @@ final class AppCoordinator: ObservableObject {
                 (try? oldValue.analysisCredentialReference()) != (try? settings.analysisCredentialReference()) {
                 refreshAnalysisKeyState()
             }
+            if oldValue.embeddingService != settings.embeddingService { prepareLocalRetrieval() }
         }
     }
     @Published var isRunning = false
@@ -106,6 +115,7 @@ final class AppCoordinator: ObservableObject {
     @Published var statusMessage = "Ready — type a question or start listening"
     @Published var questionState = QuestionPhase.listening.rawValue
     @Published private(set) var layaLastScore: Double?
+    @Published private(set) var layaExplicitConfirmation = false
     @Published var knowledgeDocuments: [KnowledgeDocument] = []
     @Published var isIndexing = false
     @Published private(set) var indexingProgress = 0.0
@@ -120,6 +130,7 @@ final class AppCoordinator: ObservableObject {
     var onHotkeysChanged: (() -> Void)?
     var onHotkeyRecordingChanged: ((Bool) -> Void)?
     var onOpenSettings: (() -> Void)?
+    @Published var overlayCaptureProtection: WindowCaptureProtection.Status = .disabled
     var onOpenOnboarding: (() -> Void)?
     var onShowOverlayTips: (() -> Void)?
     var onShowOverlay: ((_ automatic: Bool) -> Void)?
@@ -182,13 +193,16 @@ final class AppCoordinator: ObservableObject {
             // Published sends before mutation; read readiness on the next actor turn.
             Task { @MainActor [weak self] in self?.configureAutomaticTrigger(prepare: false) }
         }.store(in: &cancellables)
+        localModels.$installed.dropFirst().sink { [weak self] _ in
+            Task { @MainActor [weak self] in self?.prepareLocalRetrieval() }
+        }.store(in: &cancellables)
         Task { await refreshKnowledge() }
     }
     /// Local transcribers use Laya; GPT-Live-1 owns its client delegation decisions.
     private var usesLaya: Bool { settings.listeningService.isLocal }
     private func invalidateAutomaticTrigger(releaseRuntime: Bool = true) {
         questionTask?.cancel(); questionTask = nil; pendingAutomatic = nil
-        layaLastScore = nil
+        layaLastScore = nil; layaExplicitConfirmation = false
         layaGate.reset()
         if releaseRuntime { laya.stop() }
     }
@@ -222,7 +236,7 @@ final class AppCoordinator: ObservableObject {
         if let partial {
             let now = Date()
             let offset = Int(now.timeIntervalSince(sessionStartedAt ?? now) * 1000)
-            _ = snapshot.append(.init(id: "laya-preview", speaker: speaker, text: partial,
+            _ = snapshot.append(.init(id: "laya-preview", speaker: speaker, text: " " + partial,
                                       startMS: offset, endMS: offset, receivedAt: now))
         }
         guard let text = snapshot.candidate(speaker: speaker, now: Date(), cooldown: 0, force: partial != nil, semanticDetection: true) else { return }
@@ -231,10 +245,10 @@ final class AppCoordinator: ObservableObject {
     private func dispatchLaya(_ input: LayaTriggerInput) -> Bool {
         guard isRunning, !isTransitioning, !isShuttingDown, usesLaya, settings.automaticSuggestions else { return true }
         guard !suggestion.isLoading else { return false }
-        guard let candidate = conversation.candidate(speaker: input.speaker, now: Date(), cooldown: settings.scenario.cooldown, semanticDetection: true),
+        guard let candidate = conversation.candidate(speaker: input.speaker, now: Date(), cooldown: 0, semanticDetection: true),
               candidate == input.text else { return true }
         // No fabricated OpenAI tool-call ID: Laya is an independent automatic origin.
-        request(query: candidate, mode: .reply, speaker: input.speaker, automatic: true, contextOverride: input.context)
+        request(query: candidate, mode: .reply, speaker: input.speaker, automatic: true, contextOverride: input.context, pipelineTrace: input.trace)
         return true
     }
     /// Deterministic audio-free input for the existing mock mode and native integration tests.
@@ -353,7 +367,8 @@ final class AppCoordinator: ObservableObject {
         let provider: any ReasoningProvider = isMock ? (mockReasoning ?? MockReasoningProvider()) :
             try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
         let request = AnswerRequest(query: RetrievalQuery.formulate(question: question, context: "", previousQuestion: nil),
-                                    conversation: "", scenario: settings.scenario, sources: [], mode: .reply)
+                                    conversation: "", scenario: settings.scenario, sources: [], mode: .reply,
+                                    knowledgeMode: settings.knowledgeMode, answerLanguage: settings.answerLanguage)
         return provider.stream(request)
     }
     func removeCredential(analysis: Bool) async throws {
@@ -396,7 +411,10 @@ final class AppCoordinator: ObservableObject {
     }
     func removeLocalModel(_ kind: LocalModelKind) {
         guard !isRunning, !isTransitioning, !isIndexing, !suggestion.isLoading else { return }
-        if kind == .embedding { localEmbedding?.close(); localEmbedding = nil }
+        if kind == .embedding {
+            retrievalPreparationTask?.cancel()
+            localEmbedding?.close(); localEmbedding = nil
+        }
         localModels.remove(kind)
     }
 
@@ -409,9 +427,31 @@ final class AppCoordinator: ObservableObject {
         }
         return OpenAIEmbeddingProvider(key: cachedKey ?? "", model: settings.embeddingModel)
     }
+    /// Pay the one-time local load before a question arrives, only for a usable library.
+    /// No ASR fragment retrieval, document re-indexing, model download or cloud call.
+    private func prepareLocalRetrieval() {
+        guard !isShuttingDown, settings.embeddingService == .local, retrievalPreparationTask == nil,
+              knowledgeDocuments.contains(where: { $0.chunkCount > 0 }),
+              let provider = (try? embeddingProvider(requireReady: true)) as? any LocalEmbeddingPreparing,
+              knowledgeDocuments.contains(where: { $0.chunkCount > 0 && $0.embeddingModel == provider.model }),
+              !provider.isPrepared else { return }
+        isPreparingRetrieval = true
+        retrievalPreparationTask = Task { [weak self] in
+            let started = ProcessInfo.processInfo.systemUptime
+            defer { self?.isPreparingRetrieval = false; self?.retrievalPreparationTask = nil }
+            do {
+                try await provider.prepare()
+                DebugLog.log("retrieval.prepare ready elapsed_ms=\(Int((ProcessInfo.processInfo.systemUptime - started) * 1000))")
+            } catch {
+                // Retrieval retains its existing keyword fallback. Do not interrupt listening.
+                DebugLog.log("retrieval.prepare \(Task.isCancelled ? "cancelled" : "failed")")
+            }
+        }
+    }
     func start() async {
         guard !isRunning, !isTransitioning, !isShuttingDown else { return }
         isTransitioning = true; defer { isTransitioning = false }
+        prepareLocalRetrieval()
         invalidateAutomaticTrigger(releaseRuntime: false)
         let epoch = UUID(); liveEpoch = epoch
         conversation.reset(); transcript.clear(); activeDelegations = []; speakingSources = []
@@ -535,6 +575,8 @@ final class AppCoordinator: ObservableObject {
     }
     func shutdown() async {
         isShuttingDown = true
+        retrievalPreparationTask?.cancel()
+        await retrievalPreparationTask?.value
         cancelAnswer()
         startupCheckTask?.cancel()
         await startupCheckTask?.value
@@ -614,36 +656,43 @@ final class AppCoordinator: ObservableObject {
     func requestSuggestion(mode: SuggestionMode = .reply) {
         manualIntervention()
         guard settings.isEnabled(mode) else { return }
-        let context = conversation.context()
+        var snapshot = conversation
+        let latestSpeaker: Speaker = settings.mode == .inPerson ? .room : .them
+        if !transcript.partialThem.isEmpty {
+            let now = Date(), offset = Int(Date().timeIntervalSince(sessionStartedAt ?? Date()) * 1000)
+            _ = snapshot.append(.init(id: "manual-preview", speaker: latestSpeaker, text: " " + transcript.partialThem,
+                                      startMS: offset, endMS: offset, receivedAt: now))
+        }
+        let context = snapshot.context()
+        let latest = snapshot.candidate(speaker: latestSpeaker, now: Date(), cooldown: 0, force: true, semanticDetection: true)
         guard !context.isEmpty else { statusMessage = "No conversation yet. Type a question below to ask directly."; onShowOverlay?(false); return }
         let query: String
         switch mode {
-        case .reply: query = "Help me answer the latest substantive question in this conversation."
+        case .reply: query = latest ?? "Help me answer the latest substantive question in this conversation."
         case .recap: query = "Summarize the recent conversation, decisions and unresolved questions."
         case .followUp: query = "Suggest one useful follow-up question based on this conversation."
         }
-        request(query: query, mode: mode, useContext: true)
+        request(query: query, mode: mode, speaker: mode == .reply ? latestSpeaker : nil, useContext: true,
+                contextOverride: context, languageQuestion: latest)
     }
     func askText(_ query: String) { manualIntervention(); request(query: query, mode: .reply, useContext: includeConversation) }
     func cancelAnswer() {
         manualIntervention()
+        suggestion.mark(.cancelled)
         requestID = UUID(); answerTask?.cancel(); suggestion.finish()
         conversation.finish(success: false, question: suggestion.question)
         questionState = conversation.phase.rawValue
     }
     private func request(query: String, mode: SuggestionMode, speaker: Speaker? = nil,
                          delegationID: String? = nil, useContext: Bool = true,
-                         automatic: Bool = false, contextOverride: String? = nil) {
+                         automatic: Bool = false, contextOverride: String? = nil, pipelineTrace: PipelineTrace? = nil, languageQuestion: String? = nil) {
         if !automatic { manualIntervention() }
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, !isTransitioning, !isShuttingDown else { return }
         guard query.count <= 8000 else { suggestion.fail("Keep a manual question under 8,000 characters."); return }
-        let reasoning: any ReasoningProvider
-        let embedding: any EmbeddingProvider
-        do {
-            reasoning = isMock ? (mockReasoning ?? MockReasoningProvider()) : try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
-            embedding = try embeddingProvider()
-        } catch { suggestion.fail(error.localizedDescription); onShowOverlay?(automatic); return }
+        let settings = settings, liveKey = cachedKey, analysisKey = cachedAnalysisKey
+        let embedding = try? embeddingProvider()
+        if suggestion.isLoading { suggestion.mark(.cancelled) }
         answerTask?.cancel()
         let id = UUID(); requestID = id
         let context = useContext ? (contextOverride ?? conversation.context()) : ""
@@ -652,40 +701,75 @@ final class AppCoordinator: ObservableObject {
         conversation.begin(query, speaker: speaker, now: Date())
         questionState = conversation.phase.rawValue
         suggestion.begin(mode: mode, question: query)
+        suggestion.trace = pipelineTrace ?? PipelineTrace(id: id)
+        suggestion.mark(.analysisDispatched)
         onShowOverlay?(automatic)
-        let settings = settings, epoch = liveEpoch, started = Date()
+        let epoch = liveEpoch, started = ProcessInfo.processInfo.systemUptime
         answerTask = Task { [weak self] in
             guard let self else { return }
             do {
                 var sources: [RetrievedSource] = []
-                if let knowledge = self.knowledge {
-                    let documents = try await knowledge.documents()
-                    if documents.contains(where: { $0.chunkCount > 0 }) {
-                        var vector: [Float]?
-                        do { vector = try await embedding.embed([normalized.semantic]).first }
-                        catch {
-                            try Task.checkCancellation()
-                            guard self.requestID == id else { return }
-                            self.suggestion.warning = "Semantic retrieval unavailable; using local keyword search."
+                do {
+                    if let knowledge = self.knowledge {
+                        let documents = try await knowledge.documents()
+                        if documents.contains(where: { $0.chunkCount > 0 }) {
+                            var vector: [Float]?
+                            do {
+                                guard let embedding else { throw CopilotError.message("Embedding unavailable") }
+                                // An index built with another embedding model cannot use this vector.
+                                if documents.contains(where: { $0.chunkCount > 0 && $0.embeddingModel == embedding.model }) {
+                                    self.suggestion.mark(.embeddingStart)
+                                    vector = try await embedding.embed([normalized.semantic]).first
+                                    try Task.checkCancellation(); guard self.requestID == id else { return }
+                                    self.suggestion.mark(.embeddingComplete)
+                                }
+                            } catch {
+                                try Task.checkCancellation()
+                                guard self.requestID == id else { return }
+                                self.suggestion.warning = "Semantic retrieval unavailable; using local keyword search."
+                            }
+                            sources = try await knowledge.retrieve(query: normalized, vector: vector, model: embedding?.model ?? settings.selectedEmbeddingIdentity, limit: settings.retrievalCount)
                         }
-                        sources = try await knowledge.retrieve(query: normalized, vector: vector, model: embedding.model, limit: settings.retrievalCount)
-                    }
-                } else { self.suggestion.warning = "Knowledge database unavailable; answering from general context." }
+                    } else { throw CopilotError.message("Knowledge unavailable") }
+                } catch {
+                    try Task.checkCancellation()
+                    guard self.requestID == id else { return }
+                    self.suggestion.warning = settings.knowledgeMode == .hybrid
+                        ? "Knowledge database unavailable; answering from general context."
+                        : "Knowledge database unavailable; strict mode cannot answer without evidence."
+                }
                 try Task.checkCancellation(); guard self.requestID == id else { return }
                 self.suggestion.sources = sources
-                self.suggestion.retrievalMS = Int(Date().timeIntervalSince(started) * 1000)
-                DebugLog.log("rag.ready elapsed_ms=\(self.suggestion.retrievalMS) chunks=\(sources.count)")
-                let answer = AnswerRequest(query: normalized, conversation: context, scenario: settings.scenario, sources: sources, mode: mode)
-                var first = true
-                for try await delta in reasoning.stream(answer) {
-                    try Task.checkCancellation(); guard self.requestID == id else { return }
-                    if first {
-                        self.suggestion.firstTextMS = Int(Date().timeIntervalSince(started) * 1000); first = false
-                        DebugLog.log("answer.first_text elapsed_ms=\(self.suggestion.firstTextMS ?? 0)")
+                self.suggestion.retrievalMS = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                self.suggestion.mark(.ragComplete)
+                if settings.knowledgeMode == .knowledgeBaseOnly && sources.isEmpty {
+                    self.suggestion.appendDelta(settings.answerLanguage.missingEvidence(question: languageQuestion ?? query))
+                } else {
+                    var answer = AnswerRequest(query: normalized, conversation: context, scenario: settings.scenario, sources: sources, mode: mode,
+                                               knowledgeMode: settings.knowledgeMode, answerLanguage: settings.answerLanguage, languageQuestion: languageQuestion)
+                    answer.onStreamProgress = { [weak self] stage, time in
+                        guard let coordinator = self else { return }
+                        await MainActor.run {
+                            guard coordinator.requestID == id, coordinator.suggestion.isLoading else { return }
+                            coordinator.suggestion.mark(stage, at: time)
+                        }
                     }
-                    self.suggestion.appendDelta(delta)
+                    let reasoning: any ReasoningProvider = self.isMock ? (self.mockReasoning ?? MockReasoningProvider()) :
+                        try ReasoningProviderFactory.make(settings: settings, liveKey: liveKey, analysisKey: analysisKey)
+                    self.suggestion.mark(.modelRequest)
+                    var first = true
+                    for try await delta in reasoning.stream(answer) {
+                        try Task.checkCancellation(); guard self.requestID == id else { return }
+                        guard !delta.isEmpty else { continue }
+                        if first {
+                            self.suggestion.firstTextMS = Int((ProcessInfo.processInfo.systemUptime - started) * 1000); first = false
+                            self.suggestion.mark(.firstToken)
+                        }
+                        self.suggestion.appendDelta(delta)
+                    }
                 }
                 guard self.requestID == id else { return }
+                self.suggestion.mark(.answerComplete)
                 self.suggestion.finish(); self.conversation.finish(success: true, question: query)
                 if let delegationID, self.liveEpoch == epoch {
                     let summary = "Assistance completed in the text overlay for the question. Brief result: " + String(self.suggestion.text.prefix(900))
@@ -693,6 +777,7 @@ final class AppCoordinator: ObservableObject {
                 }
             } catch {
                 guard self.requestID == id, !Task.isCancelled else { return }
+                self.suggestion.mark(.failed)
                 self.suggestion.fail(error.localizedDescription); self.conversation.finish(success: false, question: query)
             }
             self.questionState = self.conversation.phase.rawValue
@@ -702,7 +787,7 @@ final class AppCoordinator: ObservableObject {
     }
     func refreshKnowledge() async {
         guard let knowledge else { return }
-        do { knowledgeDocuments = try await knowledge.documents() }
+        do { knowledgeDocuments = try await knowledge.documents(); prepareLocalRetrieval() }
         catch { knowledgeMessage = error.localizedDescription }
     }
     private func indexingCallback(offset: Int, count: Int) -> @Sendable (String, Double) async -> Void {
