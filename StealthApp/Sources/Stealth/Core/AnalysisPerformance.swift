@@ -28,6 +28,22 @@ struct AnalysisPerformanceSelection {
 
 enum AnalysisPerformance {
     static let samples: [AnalysisPerformanceSample] = [
+        .init(model: "gpt-6-luna", effort: "none", firstTokenSeconds: 0.77, tokensPerSecond: 118.1,
+              firstAnswerSeconds: nil, source: "Artificial Analysis", url: "https://artificialanalysis.ai/models/gpt-6-luna-non-reasoning",
+              route: "OpenAI", capturedAt: "2026-10-11", method: "AA first-party API"),
+        .init(model: "gpt-6-luna", effort: "low", firstTokenSeconds: 3.07, tokensPerSecond: 133,
+              firstAnswerSeconds: nil, source: "Artificial Analysis", url: "https://artificialanalysis.ai/models/gpt-6-luna-low",
+              route: "OpenAI", capturedAt: "2026-10-11", method: "AA first-party API"),
+        .init(model: "gpt-6-luna", effort: "high", firstTokenSeconds: 21.06, tokensPerSecond: 129.6,
+              firstAnswerSeconds: nil, source: "Artificial Analysis", url: "https://artificialanalysis.ai/models/gpt-6-luna-high",
+              route: "OpenAI", capturedAt: "2026-10-11", method: "AA first-party API"),
+        .init(model: "gpt-6-luna", effort: "xhigh", firstTokenSeconds: 34.27, tokensPerSecond: 126.3,
+              firstAnswerSeconds: nil, source: "Artificial Analysis", url: "https://artificialanalysis.ai/models/gpt-6-luna-xhigh",
+              route: "OpenAI", capturedAt: "2026-10-11", method: "AA first-party API"),
+        .init(model: "gpt-6-luna", effort: "max", firstTokenSeconds: 101.52, tokensPerSecond: 138.4,
+              firstAnswerSeconds: nil, source: "Artificial Analysis", url: "https://artificialanalysis.ai/models/gpt-6-luna",
+              route: "OpenAI", capturedAt: "2026-10-11", method: "AA first-party API"),
+
         .init(model: "gpt-6.1-sol", effort: "low", firstTokenSeconds: 3.03, tokensPerSecond: 51.3,
               firstAnswerSeconds: nil, source: "Artificial Analysis",
               url: "https://artificialanalysis.ai/models/gpt-6-1-sol-low", route: "OpenAI",
@@ -88,7 +104,7 @@ enum AnalysisPerformance {
         }
         let model = settings.analysisModel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let knownModels: [ReasoningService: Set<String>] = [
-            .sharedOpenAI: ["gpt-6.1-sol", "gpt-6-sol"], .separateOpenAI: ["gpt-6.1-sol", "gpt-6-sol"],
+            .sharedOpenAI: ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-sol"], .separateOpenAI: ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-sol"],
             .deepSeek: ["deepseek-flash"], .qwen: ["qwen3.8-flash"], .glm: ["glm-5.3-flash"], .kimi: ["kimi-k2.6", "kimi-k3"]
         ]
         let candidates = knownModels[settings.reasoningService]?.contains(model) == true ? samples.filter { $0.model == model } : []
