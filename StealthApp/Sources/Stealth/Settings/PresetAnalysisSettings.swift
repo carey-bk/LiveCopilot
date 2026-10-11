@@ -11,6 +11,18 @@ struct PresetAnalysisSettings: View {
         VStack(alignment: .leading, spacing: 14) {
             SettingsSection {
                 VStack(alignment: .leading, spacing: 14) {
+                    Picker(b("Recommended model", "推荐模型"), selection: $draft.model) {
+                        ForEach(AnalysisModelCatalog.choices(for: service)) { choice in
+                            Text(choice.name + " · " + choice.subtitle).tag(choice.id)
+                        }
+                        if !AnalysisModelCatalog.supports(draft.model, service: service) {
+                            Text(b("Custom model", "自定义模型") + " · " + draft.model).tag(draft.model)
+                        }
+                    }
+                    .accessibilityIdentifier("preset-model-catalog")
+                    .onChange(of: draft.model) { _, newModel in
+                        draft.thinking = service.defaultThinking(for: newModel)
+                    }
                     LabeledContent(t("Reasoning model")) {
                         TextField(t("Reasoning model"), text: Binding(get: { draft.model }, set: { value in
                             if draft.model != value {
