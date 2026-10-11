@@ -375,19 +375,19 @@ struct SettingsView: View {
             case .sharedOpenAI, .separateOpenAI:
                 SettingsSection {
                     VStack(spacing: 14) {
-                        modelField("Reasoning model", value: Binding(get: { coordinator.settings.reasoningModel }, set: { coordinator.settings.selectAnalysisModel($0) }))
+                        catalogModelField(value: Binding(get: { coordinator.settings.reasoningModel }, set: { coordinator.settings.selectAnalysisModel($0) }))
                         OpenAIAnalysisModelHint(settings: $coordinator.settings).disabled(locked)
                         Picker(t("Reasoning effort"), selection: $coordinator.settings.reasoningEffort) {
-                            Text(t("Model default")).tag(""); Text(t("Low (faster)")).tag("low")
-                            Text(t("Medium")).tag("medium"); Text(t("High")).tag("high")
-                            Text("Xhigh").tag("xhigh"); Text(t("Maximum")).tag("max")
+                            ForEach(AnalysisModelCatalog.openAIEfforts(for: coordinator.settings.reasoningModel), id: \.self) { effort in
+                                Text(t(AnalysisModelCatalog.openAIEffortLabel(effort))).tag(effort)
+                            }
                         }
                     }.padding(10)
                 } label: { Text("OpenAI Responses") }
             case .deepSeek:
                 SettingsSection {
                     VStack(alignment: .leading, spacing: 14) {
-                        modelField("Reasoning model", value: Binding(get: { coordinator.settings.deepSeekModel }, set: { coordinator.settings.selectAnalysisModel($0) }))
+                        catalogModelField(value: Binding(get: { coordinator.settings.deepSeekModel }, set: { coordinator.settings.selectAnalysisModel($0) }))
                         Text(b("Flash is the default for faster, lower-cost analysis. You can change the model here.", "默认使用 Flash，优先考虑分析速度和费用；可在此修改模型。"))
                             .font(.caption).foregroundStyle(.secondary)
                         Picker(t("Reasoning effort"), selection: $coordinator.settings.deepSeekEffort) {
@@ -474,6 +474,21 @@ struct SettingsView: View {
             Slider(value: value, in: OverlayTypography.range, step: 1)
                 .accessibilityLabel(title).accessibilityIdentifier(identifier + "-slider")
             Text(preview).font(.system(size: value.wrappedValue)).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+    private func catalogModelField(value: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Picker(b("Recommended model", "推荐模型"), selection: value) {
+                ForEach(AnalysisModelCatalog.choices(for: coordinator.settings.reasoningService)) { model in
+                    Text(model.name + " · " + model.subtitle).tag(model.id)
+                }
+                if !AnalysisModelCatalog.supports(value.wrappedValue, service: coordinator.settings.reasoningService) {
+                    Text(b("Saved custom model", "已保存的自定义模型") + " · " + value.wrappedValue).tag(value.wrappedValue)
+                }
+            }.accessibilityIdentifier("analysis-model-catalog")
+            modelField("API Model ID", value: value)
+            Text(b("Selecting a known model fills its exact official API ID. You may still enter any custom ID.", "选择内置模型会自动填写官方 API Model ID；也可继续手动输入其他模型 ID。"))
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
     private func modelField(_ title: String, value: Binding<String>, prompt: String? = nil) -> some View {
