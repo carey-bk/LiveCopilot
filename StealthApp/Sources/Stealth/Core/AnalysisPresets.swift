@@ -95,7 +95,7 @@ extension AppSettings {
     }
     private mutating func resetAnalysisEffort() {
         switch reasoningService {
-        case .sharedOpenAI, .separateOpenAI: reasoningEffort = "low"
+        case .sharedOpenAI, .separateOpenAI: reasoningEffort = ["gpt-6-luna", "gpt-6-sol"].contains(model.lowercased()) ? "none" : "low"
         case .deepSeek: deepSeekEffort = "low"
         case .qwen, .glm, .kimi:
             let thinking = reasoningService.defaultThinking(for: analysisModel)
