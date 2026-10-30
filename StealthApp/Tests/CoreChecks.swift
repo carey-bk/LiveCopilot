@@ -491,6 +491,25 @@ enum CoreChecks {
             try expect(chunks[0].displayLabel(language: .simplifiedChinese).contains("第 3 页"), "source page lost")
             try expect(chunks[0].text.contains("128"), "source content altered")
         }
+        try check("Traditional Chinese selection, persistence and content boundaries") {
+            let traditional = AppLanguage.traditionalChinese
+            try expect(traditional.usesChinese && traditional.usesTraditionalChinese, "traditional language classification")
+            for identifier in ["zh-Hant", "zh-TW", "zh-HK", "zh_MO"] {
+                try expect(AppLanguage.isTraditional(identifier), "traditional system locale missed")
+            }
+            for identifier in ["en", "zh-CN", "zh-Hans-HK"] {
+                try expect(!AppLanguage.isTraditional(identifier), "non-traditional system locale changed")
+            }
+            try expect(ServiceGuide.text("Settings", "设置", traditional) == "設置", "inline chrome not converted")
+            try expect(L10n.text("History", language: traditional) == "歷史記錄", "dictionary chrome not converted")
+            try expect(L10n.text("我的简体文档和对话", language: traditional) == "我的简体文档和对话", "user content was converted")
+            try expect(ServiceGuide.text("Settings", "设置", .simplifiedChinese) == "设置", "simplified changed")
+            try expect(L10n.text("Re-indexing 简体文档.pdf", language: traditional) == "正在重建索引 简体文档.pdf", "index status changed document name")
+            try expect(chunks[0].displayLabel(language: traditional).contains("第 3 頁"), "source page not traditional")
+            var settings = AppSettings(); settings.language = traditional
+            let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+            try expect(restored.language == traditional, "traditional preference not preserved")
+        }
         try check("custom endpoint rejects credential URLs and binds keys to destinations") {
             for bad in ["http://example.com", "https://user:password@example.com", "https://example.com?api_key=fixture", "https://example.com#fragment"] {
                 do { _ = try ServiceEndpoint.make(baseURL: bad, path: "chat/completions"); throw CheckError(description: "unsafe endpoint accepted") }

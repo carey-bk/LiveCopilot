@@ -20,14 +20,15 @@ final class LocalLiveProvider: LiveProvider {
     private var partial = ""
     private let contextual: Bool
     private var nextTerms: [String] = []
+    private var displayTerms: [String] = []
     private var sentTerms: [String]?
 
-    init(directory: URL, speaker: Speaker, sessionStart: Date = Date(), executable: URL? = nil, contextual: Bool = false, terms: [String] = []) {
+    init(directory: URL, speaker: Speaker, sessionStart: Date = Date(), executable: URL? = nil, contextual: Bool = false, terms: [String] = [], displayTerms: [String]? = nil) {
         self.speaker = speaker; self.sessionStart = sessionStart
-        self.contextual = contextual; self.nextTerms = terms
+        self.contextual = contextual; self.nextTerms = terms; self.displayTerms = displayTerms ?? terms
         worker = .init(mode: contextual ? "zipformer" : "paraformer", modelDirectory: directory, executable: executable)
     }
-    func updateTerms(_ terms: [String]) { nextTerms = terms }
+    func updateTerms(_ terms: [String], displayTerms: [String]? = nil) { nextTerms = terms; self.displayTerms = displayTerms ?? terms }
     private func applyTerms() async throws {
         guard contextual, sentTerms != nextTerms else { return }
         let snapshot = nextTerms
@@ -83,14 +84,15 @@ final class LocalLiveProvider: LiveProvider {
         if wasSpeaking != speaking { onEvent?(.speechActivity(speaking)) }
         for row in response["segments"] as? [[String: Any]] ?? [] {
             guard let raw = row["text"] as? String, let start = row["start_ms"] as? Int, let end = row["end_ms"] as? Int else { continue }
-            let text = raw.replacingOccurrences(of: #"<\|[^>]+\|>"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleaned = raw.replacingOccurrences(of: #"<\|[^>]+\|>"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            let text = contextual ? TranscriptCasing.format(cleaned, terms: displayTerms) : cleaned
             guard !text.isEmpty else { continue }
             let id = "local-" + UUID().uuidString
             onEvent?(.transcript(.init(id: id, speaker: speaker, text: " " + text, startMS: offsetMS + start,
                                       endMS: offsetMS + end, receivedAt: Date())))
         }
         if let preview = response["partial"] as? String, preview != partial {
-            partial = preview; onEvent?(.partialTranscript(preview))
+            partial = preview; onEvent?(.partialTranscript(contextual ? TranscriptCasing.format(preview, terms: displayTerms) : preview))
         }
     }
     private func fail() {

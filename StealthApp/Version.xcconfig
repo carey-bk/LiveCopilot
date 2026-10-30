@@ -1,4 +1,4 @@
 // Single source for the next release's public version. Do not include the v prefix here.
-MARKETING_VERSION = 2.5.1
+MARKETING_VERSION = 2.7.0
 // Distribution signing replaces this with a monotonic internal build identifier.
 CURRENT_PROJECT_VERSION = 1

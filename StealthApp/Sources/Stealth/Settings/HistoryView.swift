@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct HistoryView: View {
     @ObservedObject var coordinator: AppCoordinator
     var body: some View {
-        HistoryBrowser(sessions: coordinator.sessions, english: coordinator.settings.language == .english,
+        HistoryBrowser(sessions: coordinator.sessions, english: !coordinator.settings.language.usesChinese, language: coordinator.settings.language,
                        rename: coordinator.renameSession, regenerate: coordinator.regenerateSessionTitle)
             .preferredColorScheme(.light)
             .environment(\.locale, coordinator.settings.language.locale)
@@ -16,6 +16,7 @@ struct HistoryView: View {
 struct HistoryBrowser: View {
     @ObservedObject var sessions: SessionStore
     var english = false
+    var language: AppLanguage = .simplifiedChinese
     var rename: ((UUID, String) -> Void)? = nil
     var regenerate: ((UUID) -> Void)? = nil
     @State private var pendingRename: SessionRecord?
@@ -26,7 +27,7 @@ struct HistoryBrowser: View {
     @State private var exportError: String?
     @State private var copied = false
     @State private var bookmarks: [UUID: String] = [:]
-    private func b(_ en: String, _ zh: String) -> String { english ? en : zh }
+    private func b(_ en: String, _ zh: String) -> String { english ? en : language.interfaceText(zh) }
     private var filtered: [SessionRecord] { sessions.sessions.filter { $0.matches(query) } }
     private var selected: SessionRecord? { filtered.first { $0.id == selectedID } }
     private func group(_ session: SessionRecord) -> Int {
@@ -90,7 +91,7 @@ struct HistoryBrowser: View {
                             ForEach(records) { session in
                                 Button { selectedID = session.id; copied = false } label: {
                                     VStack(alignment: .leading, spacing: 5) {
-                                        Text(HistoryFormat.date(session.startedAt, english: english, style: index == 2 ? .abbreviated : .omitted, time: .shortened))
+                                        Text(HistoryFormat.date(session.startedAt, english: english, language: language, style: index == 2 ? .abbreviated : .omitted, time: .shortened))
                                             .font(.caption).foregroundStyle(.secondary)
                                         Text(session.title).font(.system(size: 13, weight: .medium)).lineLimit(2).multilineTextAlignment(.leading)
                                         Text("\(session.durationLabel) · \(session.messageCount) " + b("messages", "条消息"))
@@ -132,15 +133,15 @@ struct HistoryBrowser: View {
                             .help(b("Delete session", "删除会话")).accessibilityLabel(b("Delete session", "删除会话"))
                     }.buttonStyle(.borderless).foregroundStyle(.secondary).padding(.top, 3)
                 }
-                Text(HistoryFormat.date(session.startedAt, english: english, style: .complete, time: .omitted)).font(.caption).foregroundStyle(.secondary)
-                Text(HistoryFormat.date(session.startedAt, english: english) + " – " + HistoryFormat.date(session.endedAt, english: english) + " · \(session.durationLabel) · \(session.messageCount) " + b("messages", "条消息"))
+                Text(HistoryFormat.date(session.startedAt, english: english, language: language, style: .complete, time: .omitted)).font(.caption).foregroundStyle(.secondary)
+                Text(HistoryFormat.date(session.startedAt, english: english, language: language) + " – " + HistoryFormat.date(session.endedAt, english: english, language: language) + " · \(session.durationLabel) · \(session.messageCount) " + b("messages", "条消息"))
                     .font(.caption).foregroundStyle(.secondary)
                 if session.namingState == "pending" { Text(b("Naming this session…", "正在生成会话名称…")).font(.caption2).foregroundStyle(.secondary) }
                 if session.namingState == "failed" { Text(b("Could not generate a title. Your previous title is kept. Check the analysis service and try again from the context menu.", "自动命名失败，已保留原名称。请检查分析服务，再从右键菜单重试。")).font(.caption).foregroundStyle(.orange) }
                 if let error = exportError ?? sessions.lastError { Text(error).font(.caption).foregroundStyle(.red) }
             }.padding(18)
             Divider()
-            HistoryTimeline(session: session, english: english,
+            HistoryTimeline(session: session, english: english, language: language,
                             position: Binding(get: { bookmarks[session.id] }, set: { bookmarks[session.id] = $0 }))
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -170,10 +171,12 @@ struct HistoryBrowser: View {
 private struct HistoryTimeline: View {
     let session: SessionRecord
     let english: Bool
+    let language: AppLanguage
+    private func b(_ en: String, _ zh: String) -> String { english ? en : language.interfaceText(zh) }
     @Binding var position: String?
     @State private var visibleID: String?
-    init(session: SessionRecord, english: Bool, position: Binding<String?>) {
-        self.session = session; self.english = english; _position = position
+    init(session: SessionRecord, english: Bool, language: AppLanguage, position: Binding<String?>) {
+        self.session = session; self.english = english; self.language = language; _position = position
         _visibleID = State(initialValue: position.wrappedValue)
     }
     var body: some View {
@@ -181,11 +184,11 @@ private struct HistoryTimeline: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 if (session.answers ?? []).isEmpty {
-                    Label(english ? (session.isLegacy ? "This older record contains transcripts only." : "No AI answers in this session.") : (session.isLegacy ? "这条旧记录仅保存了语音转写，没有 AI 回答。" : "本次会话没有生成 AI 回答。"), systemImage: "info.circle")
+                    Label(session.isLegacy ? b("This older record contains transcripts only.", "这条旧记录仅保存了语音转写，没有 AI 回答。") : b("No AI answers in this session.", "本次会话没有生成 AI 回答。"), systemImage: "info.circle")
                         .font(.caption).foregroundStyle(.secondary).padding(.bottom, 4).id("notice")
                 }
                 ForEach(events) { event in
-                    HistoryMessage(event: event, english: english).id(event.id)
+                    HistoryMessage(event: event, english: english, language: language).id(event.id)
                 }
             }.scrollTargetLayout().padding(18)
         }.scrollPosition(id: $visibleID, anchor: .top).onDisappear { position = visibleID }.accessibilityIdentifier("history-timeline")
@@ -195,22 +198,24 @@ private struct HistoryTimeline: View {
 private struct HistoryMessage: View {
     let event: SessionEvent
     let english: Bool
+    let language: AppLanguage
+    private func b(_ en: String, _ zh: String) -> String { english ? en : language.interfaceText(zh) }
     private var color: Color { event.kind == .room ? .green : event.kind == .nearby ? .blue : .secondary }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Circle().fill(color).frame(width: 5, height: 5)
-                Text(event.role(english: english)).fontWeight(.medium)
-                Text(HistoryFormat.date(event.at, english: english, time: .standard)).foregroundStyle(Color.secondary)
+                Text(language.interfaceText(event.role(english: english))).fontWeight(.medium)
+                Text(HistoryFormat.date(event.at, english: english, language: language, time: .standard)).foregroundStyle(Color.secondary)
                 Spacer()
                 Button {
                     NSPasteboard.general.clearContents(); NSPasteboard.general.setString(event.exported(markdown: false, english: english), forType: .string)
-                } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).foregroundStyle(Color.secondary).help(english ? "Copy message" : "复制这条消息").accessibilityLabel(english ? "Copy message" : "复制这条消息")
+                } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.borderless).foregroundStyle(Color.secondary).help(b("Copy message", "复制这条消息")).accessibilityLabel(b("Copy message", "复制这条消息"))
             }.font(.caption).foregroundStyle(color)
             if event.kind == .answer {
                 ForEach(Array(SuggestionParser.sections(event.content).enumerated()), id: \.offset) { _, section in
                     if AnswerMessageView.isEvidence(section.title) {
-                        DisclosureGroup(english ? "Evidence & notes" : "依据与补充") { markdown(section.content).padding(.top, 6) }.font(.caption)
+                        DisclosureGroup(b("Evidence & notes", "依据与补充")) { markdown(section.content).padding(.top, 6) }.font(.caption)
                     } else {
                         if !section.title.isEmpty { Text(section.title).font(.subheadline.weight(.semibold)) }
                         markdown(section.content)
@@ -223,7 +228,7 @@ private struct HistoryMessage: View {
                     if let warning = answer.warning { Text(warning).font(.caption).foregroundStyle(.orange) }
                     if let error = answer.error { Text(error).font(.caption).foregroundStyle(.red) }
                     if !answer.sources.isEmpty {
-                        DisclosureGroup(english ? "Knowledge sources & citations (\(answer.sources.count))" : "知识库来源与引用（\(answer.sources.count)）") {
+                        DisclosureGroup(b("Knowledge sources & citations (\(answer.sources.count))", "知识库来源与引用（\(answer.sources.count)）")) {
                             VStack(alignment: .leading, spacing: 10) {
                                 ForEach(answer.sources) { source in
                                     Text(source.label).font(.caption.weight(.semibold))
@@ -240,21 +245,21 @@ private struct HistoryMessage: View {
         }.padding(event.kind == .answer || event.kind == .question ? 12 : 0)
             .background(event.kind == .answer ? Color.primary.opacity(0.025) : event.kind == .question ? Color.accentColor.opacity(0.045) : .clear, in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(event.kind == .answer ? Color.primary.opacity(0.07) : .clear))
-            .contextMenu { Button(english ? "Copy message" : "复制这条消息") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(event.exported(markdown: false, english: english), forType: .string) } }
+            .contextMenu { Button(b("Copy message", "复制这条消息")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(event.exported(markdown: false, english: english), forType: .string) } }
     }
     private func markdown(_ value: String) -> some View { Text(.init(value)).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
     private func status(_ value: String) -> String {
         switch value {
-        case "completed": return english ? "Completed without text" : "已结束，未返回正文"
-        case "failed": return english ? "Answer failed" : "回答生成失败"
-        case "interrupted": return english ? "Answer interrupted" : "回答已中断"
-        default: return english ? "Answer was not completed when saved" : "保存时回答尚未完成"
+        case "completed": return b("Completed without text", "已结束，未返回正文")
+        case "failed": return b("Answer failed", "回答生成失败")
+        case "interrupted": return b("Answer interrupted", "回答已中断")
+        default: return b("Answer was not completed when saved", "保存时回答尚未完成")
         }
     }
 }
 
 private enum HistoryFormat {
-    static func date(_ date: Date, english: Bool, style: Date.FormatStyle.DateStyle = .omitted, time: Date.FormatStyle.TimeStyle = .shortened) -> String {
-        date.formatted(Date.FormatStyle(date: style, time: time, locale: Locale(identifier: english ? "en_US" : "zh_CN")))
+    static func date(_ date: Date, english: Bool, language: AppLanguage = .simplifiedChinese, style: Date.FormatStyle.DateStyle = .omitted, time: Date.FormatStyle.TimeStyle = .shortened) -> String {
+        date.formatted(Date.FormatStyle(date: style, time: time, locale: (english ? Locale(identifier: "en_US") : language.locale)))
     }
 }

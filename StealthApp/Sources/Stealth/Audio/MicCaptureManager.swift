@@ -25,6 +25,7 @@ final class MicCaptureManager: ObservableObject {
         configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isCapturing else { return }
+                CaptureDiagnostics.record(.micDeviceChanged)
                 self.stop()
                 self.lastError = "Microphone device configuration changed. Stop/start listening to use the current device."
             }
@@ -34,9 +35,12 @@ final class MicCaptureManager: ObservableObject {
 
     func start() async {
         let revision = UUID(); captureRevision = revision
+        CaptureDiagnostics.record(.micPermission)
         let granted = await AVCaptureDevice.requestAccess(for: .audio)
         guard captureRevision == revision else { return }
+        CaptureDiagnostics.record(.micPermission, details: .init(permissionGranted: granted))
         guard granted else {
+            CaptureDiagnostics.record(.micFailed)
             lastError = "Microphone permission denied. Enable LiveCopilot in System Settings → Privacy & Security → Microphone."
             return
         }
@@ -61,24 +65,31 @@ final class MicCaptureManager: ObservableObject {
             DebugLog.log("MIC voice processing (AEC) DISABLED (Config.micEchoCancellation=false)")
         }
 
+        CaptureDiagnostics.record(.micFormat)
         let inputFormat = input.outputFormat(forBus: 0)
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+        CaptureDiagnostics.record(.micFormat, details: .init(sampleRate: inputFormat.sampleRate.isFinite ? inputFormat.sampleRate : nil, channels: inputFormat.channelCount, echoCancellation: Config.micEchoCancellation))
+        guard inputFormat.sampleRate.isFinite, inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            CaptureDiagnostics.record(.micFailed)
             lastError = "No microphone input available."
             DebugLog.log("MIC no input format")
             return
         }
 
         let worker = pcmConverter, emit = onPCM16
+        CaptureDiagnostics.record(.micTap)
         input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { buffer, _ in
             if let data = worker.convert(buffer) { emit?(data) }
         }
 
         do {
+            CaptureDiagnostics.record(.micEngine)
             engine.prepare()
             try engine.start()
             isCapturing = true
+            CaptureDiagnostics.record(.micReady)
             DebugLog.log("MIC capture started OK (input \(inputFormat.sampleRate)Hz)")
         } catch {
+            CaptureDiagnostics.record(.micFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
             lastError = error.localizedDescription
             DebugLog.log("MIC capture FAILED: \(error.localizedDescription)")
             input.removeTap(onBus: 0)
@@ -92,6 +103,7 @@ final class MicCaptureManager: ObservableObject {
         engine.stop()
         pcmConverter.reset()
         isCapturing = false
+        CaptureDiagnostics.record(.micStopped)
         DebugLog.log("MIC capture stopped")
     }
 

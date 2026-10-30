@@ -2,18 +2,44 @@ import Foundation
 import NaturalLanguage
 
 enum KnowledgeMode: String, Codable, CaseIterable, Identifiable {
-    case hybrid, knowledgeBaseOnly
+    case general, hybrid, knowledgeBaseOnly
     var id: String { rawValue }
-    var label: String { self == .hybrid ? "Hybrid Knowledge" : "Knowledge Base Only" }
+    var usesKnowledgeBase: Bool { self != .general }
+    var label: String {
+        switch self {
+        case .general: return "General Knowledge"
+        case .hybrid: return "Hybrid Knowledge"
+        case .knowledgeBaseOnly: return "Knowledge Base Only"
+        }
+    }
+    var compactLabel: String {
+        switch self { case .general: return "General Knowledge"; case .hybrid: return "Hybrid"; case .knowledgeBaseOnly: return "KB Only" }
+    }
     var instructions: String {
         switch self {
+        case .general:
+            return """
+            Knowledge mode: GENERAL KNOWLEDGE. No knowledge base is consulted. Answer the current
+            question using your general knowledge and reasoning. Recent conversation, when supplied,
+            clarifies the question; never force a connection to the user's resume or past projects.
+            For hypothetical problems, explain what you would do, without claiming you already did it.
+            Never invent personal experience or facts about the user. Do not cite local documents.
+            """
         case .hybrid:
             return """
-            Knowledge mode: HYBRID. Answer general questions even when there are NO relevant documents.
-            Highly relevant excerpts take priority for the user's documented facts. With partial relevance,
-            combine only the supported details with relevant general knowledge. Ignore unrelated excerpts
-            completely and answer from your own knowledge. Retrieval candidates are NOT proof of relevance.
-            Never say you cannot answer a general question merely because the knowledge base has no match.
+            Knowledge mode: HYBRID. Decide what the current question needs before using any excerpts.
+            For general concepts, technical explanations, unfamiliar job responsibilities, hypothetical
+            scenarios or proposed solutions, answer directly using relevant general knowledge and reasoning.
+            If the question does not require knowledge-base facts, use ONLY general knowledge for the answer,
+            even when retrieved excerpts are supplied. Do not redirect the answer to the user's resume,
+            past projects or achievements merely because they share words with the question.
+            Use excerpts only when the question needs specific documented facts, such as the user's actual
+            experience, project results, or the contents of a document. With partial relevance, combine
+            only directly supported personal facts with relevant general knowledge. Retrieval candidates
+            are NOT proof of relevance. A fully general answer with no document citations is valid.
+            Distinguish what you would do from what the user has actually done. Never invent personal facts.
+            Ignore unrelated excerpts completely. Do not mention the knowledge base or missing evidence
+            when answering a general question; never refuse it merely because the library has no match.
             """
         case .knowledgeBaseOnly:
             return """

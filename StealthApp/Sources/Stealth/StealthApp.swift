@@ -115,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingObservation: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        CaptureDiagnostics.record(.appLaunch)
         signal(SIGTERM, SIG_IGN)
         terminationSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         terminationSignal?.setEventHandler { NSApp.terminate(nil) }
@@ -233,7 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func localizeMenu(_ menu: NSMenu, language: AppLanguage) {
         for item in menu.items {
             let standard = ["Edit", "View", "Window", "Help", "Undo", "Redo", "Cut", "Copy", "Paste", "Select All", "Close Window", "Minimize", "Zoom", "Bring All to Front", "Hide LiveCopilot", "Hide Others", "Show All", "About LiveCopilot", "Check for Updates…"]
-            if let original = standard.first(where: { item.title == $0 || item.title == L10n.chinese[$0] }) {
+            if let original = standard.first(where: { item.title == $0 || item.title == L10n.chinese[$0] || item.title == L10n.text($0, language: .traditionalChinese) }) {
                 item.title = L10n.text(original, language: language)
             }
             if let submenu = item.submenu { localizeMenu(submenu, language: language) }
@@ -258,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay?.stopWatching()
         hotkeys.unregisterAll()
         coordinator.saveSession()
+        CaptureDiagnostics.record(.cleanExit)
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

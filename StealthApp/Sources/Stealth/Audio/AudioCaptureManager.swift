@@ -29,9 +29,11 @@ final class AudioCaptureManager: NSObject, ObservableObject {
         guard !isCapturing else { return }
         let revision = UUID(); captureRevision = revision
         lastError = nil
+        CaptureDiagnostics.record(.systemStart)
         // Checking a denied/stale grant must not spawn a new macOS prompt on
         // every Start. The explicit Settings button owns the permission request.
         guard CGPreflightScreenCaptureAccess() else {
+            CaptureDiagnostics.record(.systemFailed)
             lastError = "Screen Recording permission is required. Grant it in System Settings → Privacy & Security → Screen Recording, then reopen LiveCopilot."
             return
         }
@@ -71,10 +73,12 @@ final class AudioCaptureManager: NSObject, ObservableObject {
 
             self.stream = stream
             self.isCapturing = true
+            CaptureDiagnostics.record(.systemReady, details: .init(sampleRate: Double(cfg.sampleRate), channels: UInt32(cfg.channelCount)))
             log.info("System audio capture started")
             DebugLog.log("AUDIO capture started OK")
         } catch {
             guard captureRevision == revision else { return }
+            CaptureDiagnostics.record(.systemFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
             lastError = humanReadable(error)
             log.error("Capture start failed: \(error.localizedDescription, privacy: .public)")
             DebugLog.log("AUDIO capture FAILED: \(error.localizedDescription)")
@@ -87,6 +91,7 @@ final class AudioCaptureManager: NSObject, ObservableObject {
         self.stream = nil
         self.output = nil
         self.isCapturing = false
+        CaptureDiagnostics.record(.systemStopped)
         do { try await stream.stopCapture() } catch {
             log.error("Stop failed: \(error.localizedDescription, privacy: .public)")
         }
@@ -110,6 +115,7 @@ extension AudioCaptureManager: SCStreamDelegate {
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         Task { @MainActor in
             guard self.stream === stream else { return }
+            CaptureDiagnostics.record(.systemFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
             self.lastError = self.humanReadable(error)
             self.isCapturing = false
         }

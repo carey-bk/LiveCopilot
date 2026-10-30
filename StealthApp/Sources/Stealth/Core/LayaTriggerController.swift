@@ -1,5 +1,72 @@
 import Foundation
 
+/// Fixed diagnostic vocabulary: no transcript, prompt, credential or arbitrary error strings.
+enum LayaGateEvent: String, CaseIterable, Sendable {
+    case ownSpeechStarted, ownSpeechEnded, otherSpeechStarted, otherSpeechEnded
+    case inputReceived, received, predictionStarted, predictionCompleted, dispatched, discarded
+    case disabled, loading, unavailable, captureInactive, ownSpeech, ownTranscript
+    case emptyInput, shortPreview, noCandidate, duplicate, expired, predicting
+    case waitingFinal, waitingSilence, belowThreshold, cooldown, busy, failed, idle, staleCandidate
+
+    func label(_ language: AppLanguage) -> String {
+        let pair: (String, String)
+        switch self {
+        case .ownSpeechStarted, .ownSpeechEnded, .otherSpeechStarted, .otherSpeechEnded, .inputReceived, .received, .idle: pair = ("Waiting for transcript", "等待转写输入")
+        case .predictionStarted, .predicting: pair = ("Evaluating", "正在判断")
+        case .predictionCompleted: pair = ("Decision received", "已收到判断")
+        case .dispatched: pair = ("Answer queued", "已提交回答")
+        case .discarded: pair = ("Outdated decision discarded", "已丢弃过期判断")
+        case .disabled: pair = ("Automatic suggestions off", "自动建议未启用")
+        case .loading: pair = ("Loading model", "正在加载模型")
+        case .unavailable: pair = ("Model unavailable — check settings", "模型不可用，请检查设置")
+        case .captureInactive: pair = ("Audio source inactive", "音轨未启动")
+        case .ownSpeech: pair = ("Your microphone is active", "检测到我方语音，暂停自动回答")
+        case .ownTranscript: pair = ("Your transcript interrupted the question", "我方转写中断了待回答问题")
+        case .emptyInput: pair = ("Empty transcript", "转写内容为空")
+        case .shortPreview: pair = ("Waiting for more transcript", "临时转写过短，等待后续")
+        case .noCandidate: pair = ("No eligible question in context", "当前上下文没有可提交的问题")
+        case .duplicate: pair = ("Question already handled", "该问题已处理，跳过重复")
+        case .expired: pair = ("Question expired", "待回答问题已过期")
+        case .waitingFinal: pair = ("Waiting for final transcript", "等待转写定稿")
+        case .waitingSilence: pair = ("Waiting for speech to finish", "等待语音结束")
+        case .belowThreshold: pair = ("Score below threshold", "评分低于阈值")
+        case .cooldown: pair = ("Waiting for pause / cooldown", "等待停顿或冷却")
+        case .busy: pair = ("Answer pipeline busy", "回答通道忙，等待重试")
+        case .failed: pair = ("Prediction failed — check settings", "判断失败，请检查设置")
+        case .staleCandidate: pair = ("Question context changed", "问题上下文已变化，取消提交")
+        }
+        return ServiceGuide.text(pair.0, pair.1, language)
+    }
+}
+
+/// In-memory, current-listening-session diagnostics, safe to include in the public summary.
+/// Survives stopping listening so users can export afterward; a new session resets counts.
+enum LayaGateDiagnostics {
+    private static let lock = NSLock()
+    private static var counts: [String: Int] = [:]
+    private static var last = "idle"
+    private static var started: Date?
+    private static var recent: [String] = []
+    static func begin() {
+        lock.lock(); defer { lock.unlock() }
+        counts = [:]; last = "idle"; started = Date(); recent = []
+    }
+    static func record(_ event: LayaGateEvent) {
+        lock.lock(); defer { lock.unlock() }
+        counts[event.rawValue, default: 0] += 1; last = event.rawValue
+        recent.append("\(ISO8601DateFormatter().string(from: Date())) \(event.rawValue)")
+        recent = Array(recent.suffix(32))
+    }
+    static func snapshot() -> String {
+        lock.lock(); defer { lock.unlock() }
+        guard let started else { return "No listening session in this process. Counters are not persisted across restarts." }
+        return "Session started: \(ISO8601DateFormatter().string(from: started))\nLast event: \(last)\n" +
+            LayaGateEvent.allCases.map { "\($0.rawValue): \(counts[$0.rawValue, default: 0])" }.joined(separator: "\n") +
+            "\nRecent events (maximum 32):\n" + recent.joined(separator: "\n") +
+            "\nCounts are events/state transitions, not unique questions; no transcript content is collected."
+    }
+}
+
 /// Semantic eligibility comes only from Laya. Text rules do not override its score.
 /// Final ASR, silence, cooldown, speaker and lifecycle guards remain in the controller.
 enum LayaTriggerDecision: String, Sendable {
@@ -27,6 +94,7 @@ struct LayaTriggerInput: Equatable, Sendable {
     let isFinal: Bool
     var trace: PipelineTrace? = nil
     var answerContext: String? = nil
+    var sourceID: String? = nil
 }
 
 /// Scores revisions as they arrive, but only dispatches a committed, quiet turn.
@@ -50,6 +118,11 @@ struct LayaTriggerInput: Equatable, Sendable {
 
     var onError: ((String) -> Void)?
     var onDecision: ((Double) -> Void)?
+    var onEvent: ((LayaGateEvent) -> Void)?
+    private var lastWait: LayaGateEvent?
+    private func wait(_ event: LayaGateEvent) {
+        guard lastWait != event else { return }; lastWait = event; onEvent?(event)
+    }
     var onTrace: ((PipelineTrace, PipelineTrace.Stage) -> Void)?
 
     private struct Candidate {
@@ -85,6 +158,7 @@ struct LayaTriggerInput: Equatable, Sendable {
     private var lastSpeechEndAt: TimeInterval?
     private var lastPredictionAt: TimeInterval?
     private var lastTriggerAt: TimeInterval?
+    private var suppressedSources: [String: String] = [:]
     private var handled = Set<String>()
     private var handledOrder: [String] = []
     private var dispatching = false
@@ -120,16 +194,31 @@ struct LayaTriggerInput: Equatable, Sendable {
     }
 
     func submit(_ input: LayaTriggerInput) {
-        guard enabled else { return }
+        onEvent?(.received)
+        lastWait = nil
+        guard enabled else { wait(.disabled); return }
         let key = Self.key(for: input.text)
-        guard !key.isEmpty else { return }
+        guard !key.isEmpty else { wait(.emptyInput); return }
         if input.speaker == .you {
             // A transcript can arrive without a separate speech-start notification.
             invalidateCurrent(rememberCurrent: true)
+            wait(.ownTranscript)
             return
         }
-        guard !speaking.contains(.you) else { remember(key); return }
-        guard !handled.contains(key) else { return }
+        // Preserve stale replay protection. Only a distinct committed ASR event can
+        // distinguish a genuinely repeated question from the suppressed old delivery.
+        guard !speaking.contains(.you) else {
+            if input.isFinal, let sourceID = input.sourceID {
+                suppressedSources[key] = sourceID
+                if suppressedSources.count > 128, let oldest = suppressedSources.keys.first { suppressedSources.removeValue(forKey: oldest) }
+            } else { remember(key) }
+            wait(.ownSpeech); return
+        }
+        if let suppressed = suppressedSources[key] {
+            guard input.isFinal, let sourceID = input.sourceID, sourceID != suppressed else { wait(.duplicate); return }
+            suppressedSources.removeValue(forKey: key)
+        }
+        guard !handled.contains(key) else { wait(.duplicate); return }
         if expireIfNeeded(), handled.contains(key) { return }
 
         let now = Self.now
@@ -198,7 +287,7 @@ struct LayaTriggerInput: Equatable, Sendable {
         else { changed = speaking.remove(speaker) != nil }
         guard changed else { return }
         if active { lastSpeechEndAt = nil }
-        if active, speaker == .you { invalidateCurrent(rememberCurrent: true) }
+        if active, speaker == .you { invalidateCurrent(rememberCurrent: true); wait(.ownSpeech) }
         lastActivityAt = Self.now
         dispatchTask?.cancel()
         dispatchTask = nil
@@ -214,6 +303,7 @@ struct LayaTriggerInput: Equatable, Sendable {
     /// Configuration is retained; a subsequent submit starts a fresh lifecycle.
     func reset() {
         invalidateCurrent(rememberCurrent: false)
+        suppressedSources.removeAll()
         handled.removeAll()
         handledOrder.removeAll()
         speaking.removeAll()
@@ -221,6 +311,7 @@ struct LayaTriggerInput: Equatable, Sendable {
         lastSpeechEndAt = nil
         lastPredictionAt = nil
         lastTriggerAt = nil
+        lastWait = nil
     }
 
     /// Retires both the visible revision and any older prediction still completing.
@@ -281,6 +372,7 @@ struct LayaTriggerInput: Equatable, Sendable {
     @discardableResult private func expireIfNeeded() -> Bool {
         guard let current = candidate, Self.now >= current.expiresAt else { return false }
         invalidateCurrent(rememberCurrent: true)
+        wait(.expired)
         return true
     }
 
@@ -318,6 +410,8 @@ struct LayaTriggerInput: Equatable, Sendable {
         }
         throttleTask?.cancel()
         throttleTask = nil
+        onEvent?(.predictionStarted)
+        wait(.predicting)
         current.attempted = true
         current.trace.mark(.jevStart)
         onTrace?(current.trace, .jevStart)
@@ -345,6 +439,7 @@ struct LayaTriggerInput: Equatable, Sendable {
         predictionTask = nil
         guard !cancelled, generation == request.generation, enabled,
               !speaking.contains(.you), !expireIfNeeded(), candidate?.id == request.id else {
+            onEvent?(.discarded)
             startPredictionIfNeeded()
             return
         }
@@ -353,15 +448,18 @@ struct LayaTriggerInput: Equatable, Sendable {
             candidate?.score = score
             candidate?.trace.mark(.jevEnd)
             if let trace = candidate?.trace { onTrace?(trace, .jevEnd) }
+            onEvent?(.predictionCompleted)
             onDecision?(score)
             attemptDispatch()
         case .success:
+            wait(.failed)
             onError?("Laya returned an invalid confidence; automatic suggestion skipped.")
         case .failure:
             // Error descriptions from a worker may contain its input. Keep the
             // diagnostic generic, and never fall back to a punctuation heuristic.
             // Lifecycle cancellations were filtered above; an independently
             // cancelled worker is still a failure of this active prediction.
+            wait(.failed)
             onError?("Laya prediction failed; automatic suggestion skipped.")
         }
         startPredictionIfNeeded()
@@ -370,12 +468,14 @@ struct LayaTriggerInput: Equatable, Sendable {
     private func attemptDispatch() {
         dispatchTask?.cancel()
         dispatchTask = nil
-        guard !expireIfNeeded(), enabled, !dispatching, speaking.isEmpty,
-              let current = candidate, current.input.speaker != .you,
-              current.input.isFinal, let finalAt = current.finalAt,
-              let score = current.score,
-              LayaTriggerDecision.evaluate(score: score, threshold: threshold).shouldTrigger,
-              !current.deferred, !handled.contains(current.key) else { return }
+        guard !expireIfNeeded(), enabled, !dispatching, let current = candidate else { return }
+        guard !speaking.contains(.you), current.input.speaker != .you else { wait(.ownSpeech); return }
+        guard let score = current.score else { if current.attempted { wait(.predicting) }; return }
+        guard LayaTriggerDecision.evaluate(score: score, threshold: threshold).shouldTrigger else { wait(.belowThreshold); return }
+        guard current.input.isFinal, let finalAt = current.finalAt else { wait(.waitingFinal); return }
+        guard speaking.isEmpty else { wait(.waitingSilence); return }
+        guard !current.deferred else { wait(.busy); return }
+        guard !handled.contains(current.key) else { wait(.duplicate); return }
         // A final ASR segment already includes endpoint silence. Requests with a
         // high response-needed score need only a short revision guard.
         let fast = score >= max(0.9, threshold)
@@ -385,6 +485,7 @@ struct LayaTriggerInput: Equatable, Sendable {
                       lastTriggerAt.map { $0 + interval } ?? 0)
         let delay = due - Self.now
         if delay > 0 {
+            wait(.cooldown)
             let epoch = generation
             dispatchTask = Task { [weak self] in
                 do { try await Self.sleep(delay) } catch { return }
@@ -414,6 +515,7 @@ struct LayaTriggerInput: Equatable, Sendable {
             attemptDispatch()
         } else if candidate?.id == current.id {
             candidate?.deferred = true
+            wait(.busy)
         }
     }
 }

@@ -49,3 +49,7 @@ docs/LiveCopilot_Codex_Goal_V1.docx
 
 # Downloaded, hash-verified response checkpoint (receipts remain tracked).
 StealthApp/Resources/LayaRuntime/ResponseModel/
+
+# Local verification build products
+StealthApp/build-install-tests/
+StealthApp/build-layout-release/

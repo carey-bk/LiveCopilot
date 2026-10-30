@@ -1,16 +1,31 @@
 import Foundation
 
 enum AppLanguage: String, Codable, CaseIterable, Identifiable {
-    case system, english, simplifiedChinese
+    case system, english, simplifiedChinese, traditionalChinese
     var id: String { rawValue }
     var usesChinese: Bool {
         switch self {
         case .system: return Locale.preferredLanguages.first?.hasPrefix("zh") == true
         case .english: return false
-        case .simplifiedChinese: return true
+        case .simplifiedChinese, .traditionalChinese: return true
         }
     }
-    var locale: Locale { Locale(identifier: usesChinese ? "zh-Hans" : "en") }
+    static func isTraditional(_ identifier: String) -> Bool {
+        let parts = identifier.replacingOccurrences(of: "_", with: "-").lowercased().split(separator: "-")
+        guard parts.first == "zh" else { return false }
+        if parts.contains("hans") { return false }
+        return parts.contains("hant") || parts.contains("tw") || parts.contains("hk") || parts.contains("mo")
+    }
+    var usesTraditionalChinese: Bool {
+        self == .traditionalChinese || (self == .system && Self.isTraditional(Locale.preferredLanguages.first ?? "en"))
+    }
+    var locale: Locale { Locale(identifier: usesTraditionalChinese ? "zh-Hant" : usesChinese ? "zh-Hans" : "en") }
+
+    /// Application-owned interface copy only; never apply to user content.
+    func interfaceText(_ text: String) -> String {
+        guard usesTraditionalChinese else { return text }
+        return text.applyingTransform(StringTransform("Hans-Hant"), reverse: false) ?? text
+    }
 }
 
 /// GPT-Live-1 has no hard input-transcript language selector. This preference

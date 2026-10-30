@@ -23,6 +23,124 @@ private final class CountingLayaReasoning: ReasoningProvider, @unchecked Sendabl
 }
 
 final class LayaCoordinatorTests: XCTestCase {
+    @MainActor func testSuppressedQuestionCanBeDeliveredAgainAfterOwnSpeech() async {
+        var predictions = 0, answers = 0
+        var events: [LayaGateEvent] = []
+        let gate = LayaTriggerController(predict: { _, _ in predictions += 1; return 0.99 }, onTrigger: { _ in answers += 1; return true })
+        gate.onEvent = { events.append($0) }
+        gate.configure(enabled: true, threshold: 0.5, cooldown: 0)
+        let question = LayaTriggerInput(text: "Please introduce your project", context: "", speaker: .them, isFinal: true, sourceID: "old")
+        gate.setSpeaking(true, speaker: .you)
+        gate.submit(question)
+        await pause(0.25)
+        XCTAssertEqual(predictions, 0)
+        XCTAssertTrue(events.contains(.ownSpeech))
+        gate.setSpeaking(false, speaker: .you)
+        await pause(0.25)
+        XCTAssertEqual(answers, 0, "Do not replay suppressed questions on silence alone")
+        gate.submit(question)
+        await pause(0.2)
+        XCTAssertEqual(predictions, 0, "Old ASR replay must stay suppressed")
+        var fresh = question; fresh.sourceID = "new"
+        gate.submit(fresh)
+        await pause(0.4)
+        XCTAssertEqual(predictions, 1)
+        XCTAssertEqual(answers, 1)
+        gate.submit(question)
+        await pause(0.2)
+        XCTAssertEqual(answers, 1, "Actually handled questions must remain deduplicated")
+        XCTAssertTrue(events.contains(.duplicate))
+    }
+
+    @MainActor func testRenderGateStatus() async throws {
+        guard let path = ProcessInfo.processInfo.environment["LIVECOPILOT_UI_ACCEPTANCE"], !path.isEmpty, !path.hasPrefix("$(") else { throw XCTSkip("Opt-in UI rendering") }
+        let root = URL(fileURLWithPath: path)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let app = make(CountingLayaReasoning())
+        app.settings.language = .simplifiedChinese
+        app.settings.background = .white
+        await app.start()
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        final(app, text: "Please introduce your project", id: "blocked")
+        let host = NSHostingView(rootView: OverlayView(coordinator: app))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 620), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host; window.orderFrontRegardless()
+        await pause(0.4)
+        host.layoutSubtreeIfNeeded(); window.display()
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: root.appendingPathComponent("own-speech-block.png"))
+        window.orderOut(nil)
+        await app.shutdown()
+    }
+
+    func testDiagnosticCountersAreBoundedAndContainOnlyFixedEvents() {
+        LayaGateDiagnostics.begin()
+        for _ in 0..<50 { LayaGateDiagnostics.record(.inputReceived) }
+        LayaGateDiagnostics.record(.ownSpeech)
+        let report = LayaGateDiagnostics.snapshot()
+        XCTAssertTrue(report.contains("inputReceived: 50"))
+        XCTAssertTrue(report.contains("ownSpeech: 1"))
+        let timeline = report.components(separatedBy: "Recent events (maximum 32):\n").last!
+        XCTAssertEqual(timeline.components(separatedBy: "\n").filter { $0.contains("T") && $0.contains("Z ") }.count, 32)
+        LayaGateDiagnostics.begin()
+        XCTAssertTrue(LayaGateDiagnostics.snapshot().contains("inputReceived: 0"))
+    }
+
+    @MainActor func testPredictionFailureIsExplicit() async {
+        var events: [LayaGateEvent] = []
+        let gate = LayaTriggerController(predict: { _, _ in throw LayaRuntimeError.unavailable }, onTrigger: { _ in XCTFail("Must not dispatch"); return true })
+        gate.onEvent = { events.append($0) }
+        gate.configure(enabled: true)
+        gate.submit(.init(text: "Synthetic private question", context: "", speaker: .them, isFinal: true))
+        await pause(0.15)
+        XCTAssertEqual(events.last, .failed)
+        XCTAssertFalse(events.contains(.predictionCompleted))
+    }
+
+    @MainActor func testGateDiagnosticReasonsTrackRealBoundaries() async {
+        var score = 0.95
+        var events: [LayaGateEvent] = []
+        let gate = LayaTriggerController(predict: { _, _ in score }, onTrigger: { _ in true })
+        gate.onEvent = { events.append($0) }
+        let question = LayaTriggerInput(text: "Explain caching", context: "", speaker: .them, isFinal: false)
+        gate.submit(question)
+        XCTAssertEqual(events.last, .disabled)
+        gate.configure(enabled: true)
+        gate.submit(question)
+        await pause(0.15)
+        XCTAssertTrue(events.contains(.predictionStarted))
+        XCTAssertTrue(events.contains(.predictionCompleted))
+        XCTAssertEqual(events.last, .waitingFinal)
+        gate.setSpeaking(true, speaker: .them)
+        gate.submit(.init(text: question.text, context: "", speaker: .them, isFinal: true))
+        XCTAssertEqual(events.last, .waitingSilence)
+        gate.reset(); score = 0.1
+        gate.submit(.init(text: "A different question", context: "", speaker: .them, isFinal: true))
+        await pause(0.15)
+        XCTAssertEqual(events.last, .belowThreshold)
+        gate.reset()
+        XCTAssertEqual(events.filter { $0 == .predictionStarted }.count, 2)
+        XCTAssertEqual(events.filter { $0 == .predictionCompleted }.count, 2)
+    }
+
+    @MainActor func testCoordinatorExposesOwnSpeechBlockAndRecoversOnFreshQuestion() async {
+        let reasoning = CountingLayaReasoning(), app = make(reasoning)
+        await app.start()
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        final(app, text: "Explain how caches work", id: "suppressed")
+        await pause(0.2)
+        XCTAssertEqual(app.layaGateStatus, .ownSpeech)
+        XCTAssertNil(app.layaLastScore)
+        XCTAssertTrue(reasoning.requests.isEmpty)
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        final(app, text: "Explain how caches work", id: "fresh", offset: 6000)
+        await pause(0.7)
+        XCTAssertEqual(reasoning.requests.count, 1)
+        XCTAssertEqual(app.layaGateStatus, .dispatched)
+        await app.shutdown()
+    }
+
     @MainActor func testRawRequestAndRollingHistoryReachModelButAnswerKeepsReadableContext() async throws {
         let reasoning = CountingLayaReasoning()
         var inputs: [(String, String)] = []

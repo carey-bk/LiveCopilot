@@ -4,6 +4,16 @@ import Foundation
 /// Raw protocol/status strings remain stable for diagnostics and persisted V1 data.
 enum L10n {
     static func text(_ text: String, language: AppLanguage) -> String {
+        if language.usesChinese {
+            for (prefix, translated) in [("Indexing ", "正在索引 "), ("Re-indexing ", "正在重建索引 ")] where text.hasPrefix(prefix) {
+                return language.interfaceText(translated) + text.dropFirst(prefix.count)
+            }
+        }
+        let translated = simplifiedText(text, language: language)
+        // Unknown strings may be document names or model output: preserve them verbatim.
+        return translated == text ? text : language.interfaceText(translated)
+    }
+    private static func simplifiedText(_ text: String, language: AppLanguage) -> String {
         guard language.usesChinese else { return text }
         if let value = chinese[text] { return value }
         if let kind = ServiceHTTPFailure.kind(fromSafeMessage: text), let translated = chinese[kind.message] {
@@ -352,6 +362,7 @@ enum L10n {
         "You": "我",
         "Room": "现场",
         "Follow transcript": "跟随最新转写",
+        "General Knowledge": "自由知识",
         "Waiting for a pause": "等待讲话结束",
         "Below trigger threshold": "低于触发阈值，未自动分析",
         "Latest score": "最近分数",
@@ -437,6 +448,6 @@ enum L10n {
 extension SourceChunk {
     func displayLabel(language: AppLanguage) -> String {
         guard language.usesChinese else { return sourceLabel }
-        return "\(documentName) · \(page.map { "第 \($0) 页 · " } ?? "")片段 \(ordinal + 1)"
+        return "\(documentName) · \(page.map { language.interfaceText("第 \($0) 页 · ") } ?? "")片段 \(ordinal + 1)"
     }
 }

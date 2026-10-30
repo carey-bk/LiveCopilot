@@ -120,6 +120,7 @@ struct OnboardingView: View {
             VStack(spacing: 9) {
                 languageOption(.system, b("Follow system", "跟随系统"))
                 languageOption(.simplifiedChinese, "简体中文")
+                languageOption(.traditionalChinese, "繁體中文")
                 languageOption(.english, "English")
             }
         case .introduction:

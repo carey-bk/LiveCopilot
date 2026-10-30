@@ -7,6 +7,7 @@ struct SettingsView: View {
     @ObservedObject var laya: LayaRuntimeManager
     @ObservedObject var localModels: LocalModelManager
     @ObservedObject var updates: AppUpdateController
+    @State private var showDiagnostics = false
     @State private var page = SettingsPage.general
     @State private var serviceRole = 0
     @State private var baseURL = ""
@@ -44,7 +45,7 @@ struct SettingsView: View {
                 .background { Rectangle().fill(.thinMaterial).ignoresSafeArea(edges: .top) }
             Divider().ignoresSafeArea(edges: .top)
             VStack(alignment: .leading, spacing: 18) {
-                UpdateBanner(updates: updates, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
+                UpdateBanner(updates: updates, language: coordinator.settings.language, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
                 Text(t(page.rawValue)).font(.system(size: 24, weight: .semibold))
                 switch page {
                 case .general: ScrollView { general }
@@ -63,6 +64,7 @@ struct SettingsView: View {
         .environment(\.locale, coordinator.settings.language.locale)
         .onAppear { loadCustomDraft() }
         .onChange(of: updates.managementRequest) { _, _ in page = .about }
+        .sheet(isPresented: $showDiagnostics) { DiagnosticFeedbackView(settings: coordinator.settings) }
         .sheet(isPresented: $showOpenAIKey) {
             VStack(alignment: .leading, spacing: 18) {
                 Text(t("Manage OpenAI credential")).font(.title2)
@@ -73,7 +75,6 @@ struct SettingsView: View {
     }
     private var about: some View {
         VStack(alignment: .leading, spacing: 24) {
-            UpdateSettingsView(updates: updates, language: coordinator.settings.language)
             AppBrandTitle(iconSize: 64, titleSize: 28)
             Text(AppInfo.display).foregroundStyle(.secondary).textSelection(.enabled)
             Text(b("A native macOS conversation copilot. Listen, find relevant knowledge, and get words you can say aloud.",
@@ -86,18 +87,17 @@ struct SettingsView: View {
                 Link(destination: URL(string: "https://github.com/carey-bk/LiveCopilot")!) {
                     Label(b("LiveCopilot on GitHub", "LiveCopilot 项目仓库"), systemImage: "chevron.left.forwardslash.chevron.right")
                 }.accessibilityIdentifier("about-repository")
-                Link(destination: URL(string: coordinator.settings.language.usesChinese
+                Link(destination: URL(string: coordinator.settings.language.usesTraditionalChinese ? "https://carey-bk.github.io/LiveCopilot/zh-Hant/" : coordinator.settings.language.usesChinese
                                        ? "https://carey-bk.github.io/LiveCopilot/"
                                        : "https://carey-bk.github.io/LiveCopilot/en/")!) {
                     Label(b("Product guide · 中文 / English", "使用介绍 · 中文 / English"), systemImage: "globe")
                 }.accessibilityIdentifier("about-guide")
             }.buttonStyle(.link)
+            Button { showDiagnostics = true } label: {
+                Label(b("Report a problem…", "反馈问题与诊断报告…"), systemImage: "ladybug")
+            }.accessibilityIdentifier("diagnostics-open")
             Divider()
-            Text(b("Open source under the MIT license. Built on Stealth's native macOS foundation.",
-                   "基于 Stealth 原生 macOS 架构开发，采用 MIT 开源许可。"))
-                .font(.callout).foregroundStyle(.secondary)
-            Link("Stealth · vortechron", destination: URL(string: "https://github.com/vortechron/stealth")!)
-                .font(.callout)
+            UpdateSettingsView(updates: updates, language: coordinator.settings.language)
         }.padding(.top, 8).frame(maxWidth: .infinity, alignment: .leading)
     }
     private var general: some View {
@@ -121,6 +121,7 @@ struct SettingsView: View {
                         Text(t("Follow system")).tag(AppLanguage.system)
                         Text("English").tag(AppLanguage.english)
                         Text("简体中文").tag(AppLanguage.simplifiedChinese)
+                        Text("繁體中文").tag(AppLanguage.traditionalChinese)
                     }.accessibilityIdentifier("interface-language")
                     Text(t("Changes apply immediately. Set the answer language separately in the floating panel.")).font(.caption).foregroundStyle(.secondary)
                     Divider()
@@ -688,7 +689,7 @@ private struct LocalModelCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(kind == .embedding ? (language == .english ? "Local knowledge index model" : "知识库本地索引模型") : kind.title).font(.headline)
+                    Text(kind == .embedding ? (ServiceGuide.text("Local knowledge index model", "知识库本地索引模型", language)) : kind.title).font(.headline)
                     Text(t("Download size") + " · " + kind.downloadSize).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -696,7 +697,7 @@ private struct LocalModelCard: View {
                       : manager.queued.contains(kind) ? "clock" : "arrow.down.circle")
                     .font(.caption).foregroundStyle(manager.health[kind]?.ready == true ? .green : .secondary)
             }
-            Text(language == .english ? "Automatically tries available download sources. Progress is for the current file." : "自动尝试可用下载线路；进度显示当前文件的下载比例。")
+            Text(ServiceGuide.text("Automatically tries available download sources. Progress is for the current file.", "自动尝试可用下载线路；进度显示当前文件的下载比例。", language))
                 .font(.caption).foregroundStyle(.secondary)
             if manager.downloading == kind {
                 if let value = manager.downloadProgress {
@@ -705,32 +706,32 @@ private struct LocalModelCard: View {
                 } else { ProgressView().progressViewStyle(.linear); Text(manager.transferStatus).font(.caption) }
                 HStack { ProgressView().controlSize(.small); Text(t(manager.message)).font(.caption); Spacer(); Button(t("Cancel")) { manager.cancel() } }
             } else if manager.queued.contains(kind) {
-                Text(language == .english ? "Download is queued and will start automatically after the current model." : "已加入下载队列，当前模型完成后会自动开始。")
+                Text(ServiceGuide.text("Download is queued and will start automatically after the current model.", "已加入下载队列，当前模型完成后会自动开始。", language))
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 10) {
                     Button(t(manager.installed.contains(kind) ? "Download again" : "Download model")) { copiedDiagnostics = false; manager.install(kind) }
                         .disabled(locked || manager.downloading != nil).accessibilityIdentifier("download-" + kind.rawValue)
                     if manager.installed.contains(kind) {
-                        Button(language == .english ? "Run self-check" : "运行自检") { copiedDiagnostics = false; manager.runSelfCheck(kind) }
+                        Button(ServiceGuide.text("Run self-check", "运行自检", language)) { copiedDiagnostics = false; manager.runSelfCheck(kind) }
                             .disabled(locked || manager.downloading != nil).accessibilityIdentifier("selfcheck-" + kind.rawValue)
-                        Button(language == .english ? "Delete local model…" : "删除本地模型…", role: .destructive) { confirmRemoval = true }
+                        Button(ServiceGuide.text("Delete local model…", "删除本地模型…", language), role: .destructive) { confirmRemoval = true }
                             .foregroundStyle(.red)
                             .disabled(locked || manager.downloading != nil)
-                            .confirmationDialog(language == .english ? "Delete this local model?" : "删除此本地模型？", isPresented: $confirmRemoval) {
-                                Button(language == .english ? "Delete" : "删除", role: .destructive, action: remove)
-                            } message: { Text(language == .english ? "Download again to use it. Knowledge documents, indexes and settings are retained." : "下次使用需要重新下载。知识库文档、索引和设置均保留。") }
+                            .confirmationDialog(ServiceGuide.text("Delete this local model?", "删除此本地模型？", language), isPresented: $confirmRemoval) {
+                                Button(ServiceGuide.text("Delete", "删除", language), role: .destructive, action: remove)
+                            } message: { Text(ServiceGuide.text("Download again to use it. Knowledge documents, indexes and settings are retained.", "下次使用需要重新下载。知识库文档、索引和设置均保留。", language)) }
                     }
                 }
                 if manager.downloading == nil, manager.messageKind == kind, !manager.message.isEmpty { Text(t(manager.message)).font(.caption).foregroundStyle(.secondary) }
             }
             if let report = manager.health[kind] {
                 HStack(alignment: .center, spacing: 12) {
-                    Button(copiedDiagnostics ? (language == .english ? "Copied" : "已复制") : (language == .english ? "Copy diagnostics" : "复制诊断信息")) {
+                    Button(copiedDiagnostics ? (ServiceGuide.text("Copied", "已复制", language)) : (ServiceGuide.text("Copy diagnostics", "复制诊断信息", language))) {
                         NSPasteboard.general.clearContents()
                         copiedDiagnostics = NSPasteboard.general.setString(report.diagnostic(kind: kind), forType: .string)
                     }.fixedSize().accessibilityIdentifier("copy-diagnostics-" + kind.rawValue)
-                    Text(report.advice(english: language == .english))
+                    Text(language.interfaceText(report.advice(english: !language.usesChinese)))
                         .font(.caption).foregroundStyle(report.ready ? Color.secondary : Color.orange)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("selfcheck-result-" + kind.rawValue)
@@ -740,14 +741,14 @@ private struct LocalModelCard: View {
             .onAppear { manager.refresh() }
     }
     private var statusTitle: String {
-        if manager.checking == kind { return language == .english ? "Checking…" : "正在自检…" }
+        if manager.checking == kind { return ServiceGuide.text("Checking…", "正在自检…", language) }
         if let report = manager.health[kind] {
-            return report.ready ? (language == .english ? "Self-check passed · offline ready" : "自检通过 · 可离线使用") : (language == .english ? "Self-check failed" : "自检未通过")
+            return report.ready ? (ServiceGuide.text("Self-check passed · offline ready", "自检通过 · 可离线使用", language)) : (ServiceGuide.text("Self-check failed", "自检未通过", language))
         }
-        if manager.downloading == kind { return language == .english ? "Downloading…" : "正在下载…" }
-        if manager.installed.contains(kind) { return language == .english ? "Downloaded · not checked" : "已下载 · 尚未自检" }
-        if manager.queued.contains(kind) { return language == .english ? "Queued for download" : "等待下载" }
-        if manager.failures[kind] != nil { return language == .english ? "Download failed" : "下载失败" }
+        if manager.downloading == kind { return ServiceGuide.text("Downloading…", "正在下载…", language) }
+        if manager.installed.contains(kind) { return ServiceGuide.text("Downloaded · not checked", "已下载 · 尚未自检", language) }
+        if manager.queued.contains(kind) { return ServiceGuide.text("Queued for download", "等待下载", language) }
+        if manager.failures[kind] != nil { return ServiceGuide.text("Download failed", "下载失败", language) }
         return t("Not downloaded")
     }
 }

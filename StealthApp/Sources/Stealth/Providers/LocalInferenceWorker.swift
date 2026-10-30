@@ -18,7 +18,11 @@ final class LocalInferenceWorker: @unchecked Sendable {
     private var closed = false
     private var diagnosticCode = "unknown"
     var failureCode: String { lock.lock(); defer { lock.unlock() }; return diagnosticCode }
-    private func recordFailure(_ code: String) { lock.lock(); diagnosticCode = code; lock.unlock() }
+    private func recordFailure(_ code: String) {
+        lock.lock(); diagnosticCode = code; lock.unlock()
+        CaptureDiagnostics.record(.workerFailure, details: .init(workerMode: diagnosticMode, failure: CaptureDiagnostics.Failure(rawValue: code) ?? .unknown))
+    }
+    private var diagnosticMode: String { ["embedding", "asr", "streaming", "zipformer", "paraformer"].contains(arguments.first ?? "") ? arguments[0] : "other" }
 
     init(mode: String, modelDirectory: URL, executable: URL? = nil) {
         self.executable = executable ?? Bundle.main.resourceURL!.appendingPathComponent("LocalRuntime/livecopilot-inference")
@@ -62,6 +66,8 @@ final class LocalInferenceWorker: @unchecked Sendable {
                     } catch {
                         discardProcess()
                         lock.lock(); let wasCancelled = cancelled.contains(id) || closed, expired = timedOut.contains(id); lock.unlock()
+                        if expired { recordFailure("timeout") }
+                        else if !wasCancelled && failureCode == "process_ended" { recordFailure("process_ended") }
                         continuation.resume(throwing: wasCancelled ? CancellationError() : expired ? CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.") : error)
                     }
                 }
@@ -88,11 +94,15 @@ final class LocalInferenceWorker: @unchecked Sendable {
         let child = Process(), stdin = Pipe(), stdout = Pipe()
         child.executableURL = executable; child.arguments = arguments
         child.environment = ["PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory(), "TMPDIR": NSTemporaryDirectory(), "LANG": "en_US.UTF-8"]
+        let mode = diagnosticMode
+        child.terminationHandler = { process in
+            CaptureDiagnostics.record(.workerExit, code: Int(process.terminationStatus), details: .init(workerMode: mode, workerPID: process.processIdentifier, terminationReason: process.terminationReason.rawValue))
+        }
         child.standardInput = stdin; child.standardOutput = stdout; child.standardError = FileHandle.nullDevice
         lock.lock()
         guard !closed, activeID.map({ !cancelled.contains($0) }) ?? false else { lock.unlock(); throw CancellationError() }
         process = child
-        do { try child.run() } catch { process = nil; diagnosticCode = "runtime_start"; lock.unlock(); throw CopilotError.message("Local runtime could not start. Reinstall the complete LiveCopilot app.") }
+        do { try child.run(); CaptureDiagnostics.record(.workerStart, details: .init(workerMode: mode, workerPID: child.processIdentifier)) } catch { process = nil; diagnosticCode = "runtime_start"; lock.unlock(); recordFailure("runtime_start"); throw CopilotError.message("Local runtime could not start. Reinstall the complete LiveCopilot app.") }
         lock.unlock()
         input = stdin.fileHandleForWriting; output = stdout.fileHandleForReading; buffer.removeAll(keepingCapacity: true)
         let response = try readMessage()

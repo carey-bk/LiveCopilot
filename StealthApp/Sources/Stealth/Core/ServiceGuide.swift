@@ -4,7 +4,7 @@ import Foundation
 /// a compatible endpoint can have a completely different billing policy.
 enum ServiceGuide {
     static let checked = "2026-09-25"
-    static func text(_ en: String, _ zh: String, _ language: AppLanguage) -> String { language.usesChinese ? zh : en }
+    static func text(_ en: String, _ zh: String, _ language: AppLanguage) -> String { language.usesChinese ? language.interfaceText(zh) : en }
     static func listening(_ service: ListeningService, language: AppLanguage) -> String {
         switch service {
         case .openAI: return text("OpenAI · cloud, semantic question detection", "OpenAI · 云端，语义判断提问", language)

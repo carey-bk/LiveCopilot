@@ -289,7 +289,7 @@ struct OnboardingModelsView: View {
         } else if let report = models.health[kind] {
             Label(report.ready ? b("Self-check passed", "自检通过") : b("Self-check failed", "自检未通过"), systemImage: report.ready ? "checkmark.circle.fill" : "exclamationmark.triangle")
                 .foregroundStyle(report.ready ? Color.green : Color.orange)
-            Text(report.advice(english: coordinator.settings.language == .english)).font(.caption)
+            Text(coordinator.settings.language.interfaceText(report.advice(english: !coordinator.settings.language.usesChinese))).font(.caption)
             if !report.ready { Text(b("Open Settings → Services for self-check and diagnostics.", "请到设置 → 服务运行自检或复制诊断信息。")).font(.caption) }
         } else if models.installed.contains(kind) {
             Label(b("Downloaded · run self-check in Services", "已下载 · 可到服务页运行自检"), systemImage: "internaldrive").font(.callout).foregroundStyle(.secondary)
