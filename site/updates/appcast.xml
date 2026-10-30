@@ -35,7 +35,7 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 - Local diagnostic summaries and private support ZIP export, optional raw crash reports, and clearer export controls. Nothing is uploaded automatically.
 - Existing settings, credentials, models and history are preserved. Translation may incur configured provider charges; Laya model weights are unchanged.
 </pre>]]></description>
-            <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.7.0/LiveCopilot-2.7.0-macOS-universal.dmg" length="38375615" type="application/octet-stream" sparkle:edSignature="+BcX3x/tOIBKX21jzRN8a9voRg5YyhGvxz9meZiDFisTodD7nOCxnIi/h3t0cxI3mGEJ60mhPMrzFNnS4vp6AA=="/>
+            <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.7.0/LiveCopilot-2.7.0-macOS-universal.dmg" length="38375615" type="application/octet-stream" sparkle:edSignature="+BcX3x/tOIBKX21jzRN8a9voRg5YyhGvxz9meZiDFisTodD7nOCxnIi/h3t0cxI3mGEJ60mhPMrzFNnS4vp6AA=="/>
         </item>
         <item>
             <title>2.5.1</title>
@@ -60,6 +60,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: mJmFCMK84ugpjT1Vva+vYzhsObgI7F7l78uzbG2QTMqCNHmXehFDErDv+CcLW/I8aEsuKZo0Nt5zKYreeASNCw==
-length: 6522
+edSignature: FZZh/WXpsnlLqg+IPsb50+bbDNP0Wiu3xzPvnpHGaDQ06ALn/WII487iPwhHBbAEWh+UmVVSmGYRwq8VI/rgBA==
+length: 6535
 -->
