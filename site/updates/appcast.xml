@@ -6,6 +6,38 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>LiveCopilot</title>
         <item>
+            <title>2.7.0</title>
+            <pubDate>Fri, 30 Oct 2026 15:50:56 +1100</pubDate>
+            <link>https://carey-bk.github.io/LiveCopilot/</link>
+            <sparkle:version>20261030.044420</sparkle:version>
+            <sparkle:shortVersionString>2.7.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<h2>LiveCopilot 2.7</h2><pre># LiveCopilot 2.7
+
+- 转写区支持三行折叠，原文与译文统一对齐；折叠时自动跟随最新内容。
+- 新增转写翻译及目标语言选择，支持稳定临时转写和流式译文。
+- Zipformer 英文大小写整理，改善英文转写可读性。
+- 自由知识、混合知识、仅知识库三种回答模式；混合模式对无关问题使用通用知识。
+- 自动回答显示具体等待或拦截原因，诊断包含阶段计数与最近事件。
+- 修复部分因我方语音被抑制的问题，在新转写事件到达后无法重新判断的情况；保留防抢答与旧事件去重。
+- 新增本地诊断摘要和私下反馈 ZIP，可选择包含原始崩溃报告；不会自动上传。
+- 改善音频故障记录、反馈输入框与导出流程，保留已有设置、模型、凭证和历史。
+
+转写翻译使用已配置的回答服务，可能产生服务费用。诊断不保证自动定位所有故障；请附发生时间和复现步骤。Laya 模型权重未更新。
+
+## English
+
+- Compact three-line transcripts with consistent original/translation alignment.
+- Optional streaming transcript translation and Zipformer English casing cleanup.
+- General, mixed and knowledge-base-only answer modes, with improved mixed-mode instructions.
+- Explicit automatic-answer gate status, diagnostic counters and bounded event history.
+- Allow a fresh final transcript event to retry a question previously suppressed by own speech while preserving stale-event and duplicate protection.
+- Local diagnostic summaries and private support ZIP export, optional raw crash reports, and clearer export controls. Nothing is uploaded automatically.
+- Existing settings, credentials, models and history are preserved. Translation may incur configured provider charges; Laya model weights are unchanged.
+</pre>]]></description>
+            <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.7.0/LiveCopilot-2.7.0-macOS-universal.dmg" length="38375615" type="application/octet-stream" sparkle:edSignature="+BcX3x/tOIBKX21jzRN8a9voRg5YyhGvxz9meZiDFisTodD7nOCxnIi/h3t0cxI3mGEJ60mhPMrzFNnS4vp6AA=="/>
+        </item>
+        <item>
             <title>2.5.1</title>
             <pubDate>Sun, 18 Oct 2026 10:52:06 +0800</pubDate>
             <link>https://carey-bk.github.io/LiveCopilot/</link>
@@ -25,19 +57,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
             <description><![CDATA[<h2>LiveCopilot 2.5.0</h2><ul><li>完整会话历史：多轮问答、引用、搜索、导出和自动命名；支持手动重命名。</li><li>本地模型真实加载自检、诊断信息及明确恢复指引。</li><li>推荐 Zipformer 中英双语识别；新版微调 Laya 从引导页下载，安装包不包含模型权重。</li><li>悬浮窗和设置布局优化；保留现有配置、凭证、模型与历史。</li></ul><p>Laya 本地运行需要 Apple Silicon。模型下载约 767 MB，需额外磁盘空间。</p><h3>English</h3><ul><li>Searchable multi-turn session history with citations, export, automatic titles and rename controls.</li><li>Real local-model loading checks, diagnostics and recovery guidance.</li><li>Recommended Zipformer bilingual speech recognition. Download the pinned fine-tuned Laya model during setup; no Laya weights in the small installer.</li><li>Refined native settings and floating window; existing settings, credentials, models and history are preserved.</li></ul><p>Local Laya requires Apple Silicon. Model setup downloads approximately 767 MB and requires additional disk space.</p>]]></description>
             <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.5.0/LiveCopilot-2.5.0-macOS-universal.dmg" length="37980349" type="application/octet-stream" sparkle:edSignature="HN4H97hZN+LFqx8fYlsQNnA/50wiiZ7wRgeZrFKvKY/LzU5OSFBT9sBkh5b79tU65fAGXrr8Qj8RfE1vSkfoCw=="/>
         </item>
-        <item>
-            <title>2.3.0</title>
-            <pubDate>Mon, 12 Oct 2026 22:08:00 +0800</pubDate>
-            <link>https://carey-bk.github.io/LiveCopilot/</link>
-            <sparkle:version>20261012.115413</sparkle:version>
-            <sparkle:shortVersionString>2.3.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<h2>LiveCopilot v2.3.0</h2><ul><li>**更简单的首次配置**：按语音语言和知识库需求推荐本地能力，展示真实准备状态及下载资源，支持先用现有能力开始使用。</li><li>**更清晰的模型选择**：新增推荐模型配置、推理深度与处理模式选择，集中展示延迟、生成速度和价格参考；估算数据明确标注。</li><li>**更顺畅的密钥配置**：可直接配置语音 OpenAI 密钥，已保存密钥检查提供明确反馈，连接测试区分常见失败原因。</li><li>**更及时的更新提醒**：主窗口提醒、菜单栏入口和设置页统一管理更新，实时使用期间不打扰；版本号统一为三段式。</li><li>**更自由的悬浮窗**：默认保持自动贴边，也可关闭自动贴边后自由拖动到桌面任意位置。</li><li>Guided setup recommends local capabilities by language and knowledge-base needs, with clear readiness/download status and a quick-start option.</li><li>Model recommendations, reasoning and processing controls, latency, throughput and pricing references are presented together. Estimates remain labeled.</li><li>Speech-key setup, saved-key checks and connection-test feedback are clearer.</li><li>Unified update reminders in the main window, menu and settings stay quiet during live use, with semantic version comparison.</li><li>Turn off automatic edge docking to freely position the floating window.</li></ul>]]></description>
-            <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.3.0/LiveCopilot-2.3.0-macOS-universal.dmg" length="36865154" type="application/octet-stream" sparkle:edSignature="mopo1B9YTVat+VfxXYtCleKh4YJ2Lvq24LCyLpWCdRb36jGwe2TDGg2iEvmEBtRkhzCT3PyDzHeflbmc5Z9QBA=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: 87LoDAiYLUNEo1KxVn1rwTnWtqex2lYCln5WaMoM8Tbx02kWDgqdhceUdjwD9LUpcw9PnXBWLUN1FQHXy1LYAA==
-length: 6118
+edSignature: mJmFCMK84ugpjT1Vva+vYzhsObgI7F7l78uzbG2QTMqCNHmXehFDErDv+CcLW/I8aEsuKZo0Nt5zKYreeASNCw==
+length: 6522
 -->
