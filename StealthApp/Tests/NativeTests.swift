@@ -406,6 +406,17 @@ final class NativeTests: XCTestCase {
         XCTAssertTrue(restored.excludeOverlayFromCapture)
         XCTAssertEqual(restored.background, .white)
     }
+    func testDebugLogRotatesAtItsBoundAndKeepsOnePreviousFile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LiveCopilot-DebugLog-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let log = directory.appendingPathComponent("livecopilot.log"), previous = directory.appendingPathComponent("livecopilot.1.log")
+        for _ in 0..<5 { DebugLog.append(Data(repeating: 65, count: 400), to: log, maximumBytes: 1_000) }
+        XCTAssertEqual(try Data(contentsOf: log).count, 400, "The current log must restart after crossing its bound")
+        XCTAssertEqual(try Data(contentsOf: previous).count, 800, "Only the most recent full log is kept")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path).count, 2)
+    }
+
     func testCoreAcceptanceChecks() async throws {
         let checks = try await CoreChecks.run()
         XCTAssertGreaterThanOrEqual(checks.count, 25)
