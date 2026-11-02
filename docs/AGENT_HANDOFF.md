@@ -51,8 +51,10 @@ These metrics enable provider-event timing and backlog comparisons; **no latency
 cd StealthApp
 ./scripts/test-core.sh
 bash scripts/prepare-sparkle.sh && ./scripts/build-local-runtime.sh && ~/.local/bin/xcodegen generate
+# DerivedData outside ~/Documents: see "Repeated Documents access prompts" below.
 xcodebuild -project LiveCopilot.xcodeproj -scheme LiveCopilot -configuration Debug \
-  -derivedDataPath build/DerivedData-claude -resultBundlePath build/claude-test-results.xcresult test
+  -derivedDataPath "$HOME/Library/Developer/Xcode/DerivedData/LiveCopilot-claude-high-value-fixes" \
+  -resultBundlePath build/<name>.xcresult test
 ```
 
 ## Results
@@ -151,3 +153,30 @@ Run on this worktree (macOS, Debug, synthetic fixtures, no real API calls, no mi
 - No compiler warnings in changed files (an initial `AnalyzerInput.buffer` deprecation on OS 27 was removed by tracking FIFO durations instead).
 - `measure-local-asr.py` rerun after moving it into the repo: zh load 456 ms (warm), RTF 0.069, final 714 ms after the segment end.
 - Raw logs: Claude session scratchpad (`core-r2.log`, `xctest-r2*.log`, `asr/*.json`); reproducible with the commands above.
+
+
+## Repeated Documents access prompts during tests (round 3)
+
+**Symptom.** Test runs repeatedly showed a macOS prompt for LiveCopilot to access the Documents folder; unattended runs stalled until it was answered.
+
+**Root cause (from the TCC log, `log show --predicate 'subsystem == "com.apple.TCC"'`).**
+- The worktree is under `~/Documents`, a TCC-protected folder. `OnboardingTests.testKnownSizesMatchPinnedDistributionManifestAndUnknownDigestStaysUnknown` read `docs/*-model-manifest.json` through `#filePath`, i.e. from the checkout, inside the test host (`com.livecopilot.development`). That was the only XCTest reading the source tree.
+- Debug builds are ad-hoc signed (`CODE_SIGN_IDENTITY: "-"`, no Team ID). `codesign -d -r-` shows `designated => cdhash H"…"`, so every rebuild is a new code identity and an earlier grant no longer matches. Two DerivedData builds here had different cdhashes (`55c2079f…`, `3b3e35ea…`).
+- Round 2 evidence: at 14:12:13 tccd logged `Failed to match existing code requirement for subject com.livecopilot.development and service kTCCServiceSystemPolicyDocumentsFolder`, then `AUTHREQ_PROMPTING`. The grant was created at 14:29:42 when the prompt was answered. That 17.5 min is the 1048.8 s attributed to that test. Earlier runs of the same test took 0.001–20.8 s, i.e. however long the prompt waited. The round-1 9537 s on `testDebugLogRotates…` (a failing run) was not traced; it fits the same pattern but is unconfirmed.
+
+**Signing stability.** Not stable for TCC: ad-hoc, cdhash-based designated requirement. The only code-signing identity on this Mac is the release Developer ID, which was deliberately not used for development builds (release signing is out of scope for agents). A stable development identity (e.g. an Apple Development certificate set as `CODE_SIGN_IDENTITY` for Debug) is the owner's decision. Without it, microphone and screen-recording grants for Debug builds also do not survive a rebuild, so expect one microphone prompt per new Debug build during hardware checks.
+
+**Fix (no permission reset, no Full Disk Access, worktree not moved).**
+- The two manifests are now test-bundle resources (`project.yml`, copied by Xcode at build time); the test reads them with `Bundle(for:)`. Assertions unchanged.
+- Build/test with DerivedData outside `~/Documents` (command above), so the test host, its bundle, dSYMs and symbolication never touch a protected folder. Result bundles are written by `xcodebuild` itself and can stay in `StealthApp/build/`.
+- `scripts/test-core.sh` and other swiftc command-line checks run under the invoking terminal's permissions and are unaffected.
+
+**Development diagnostics.** `CaptureDiagnostics.record` previously accepted only `com.livecopilot.app`, so a local Debug build recorded nothing and a hardware check could not leave a journal. It now also records for `com.livecopilot.development`, into the existing development path `~/Library/Application Support/LiveCopilot/Development/capture-diagnostics.json`; test hosts (`XCTestConfigurationFilePath`), `LIVECOPILOT_MOCK=1` and `--mock` stay excluded. Development app data was already isolated under `LiveCopilot/Development`; only the model cache is shared (read). `DebugLog` still writes `~/Library/Logs/LiveCopilot/livecopilot.log` for both builds (pre-existing, unchanged).
+
+### Round 3 results
+
+- `scripts/test-core.sh`: **77 deterministic checks passed**.
+- Full XCTest with DerivedData at `~/Library/Developer/Xcode/DerivedData/LiveCopilot-claude-high-value-fixes`, result bundle `StealthApp/build/claude-r3-results.xcresult`: **260 executed, 24 skipped, 0 failures, `TEST SUCCEEDED`, 94.1 s**; the manifest test took 0.001 s.
+- The new build is again a new identity (`designated => cdhash H"d56d2877…"`, not the `3b3e35ea…` granted at 14:29), yet the TCC log for the whole run window (14:34:13–14:36:16) contains **no** `com.livecopilot` request at all, so no prompt was possible.
+- Both manifests are present in `LiveCopilotTests.xctest/Contents/Resources`.
+- No TCC record was reset or changed by this work; the Documents grant created at 14:29:42 for the old cdhash is left as the user answered it.
