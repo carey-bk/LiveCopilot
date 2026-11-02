@@ -86,3 +86,68 @@ Run on this worktree (macOS, Debug, no real API calls, no real recordings):
 - Evidence retained locally in this Claude worktree: `StealthApp/build/codex-review-results.xcresult`, `StealthApp/build/codex-review-final-results.xcresult`, and `StealthApp/build/codex-review-logs/`. These are not committed.
 - Xcode emitted local CoreDevice/CoreSimulator compatibility messages, existing Keychain deprecation warnings, and AppIntents metadata warnings. The macOS build and tests still completed successfully; simulator support was not validated or repaired.
 - Integration scope: local `main`; no GitHub push, release, signing/notarization, or installed-app replacement.
+
+## Round 2 (on top of `7540db3`)
+
+Scope: capture failures, recognition latency, crashes and diagnostics. Default listening service is local Zipformer (`AppSettings.listeningService`), so the local path was measured first.
+
+### Measurement before changing anything
+
+`StealthApp/scripts/measure-local-asr.py` drives the bundled `livecopilot-inference` exactly like `LocalLiveProvider` (stdio JSON, base64 PCM16, real-time 100 ms chunks) with synthetic `say` speech, and prints timings only. On this Mac (Apple M4 Max, 14 cores, 36 GB) with the installed Zipformer model:
+
+| Metric | zh (7.7 s speech) | en (3.7 s speech) |
+| --- | --- | --- |
+| Worker start to ready | 2837 ms first (cold), 362–456 ms later | 362 ms |
+| Inference real-time factor | 0.07 | 0.07 |
+| Request time p50 / p95 / max | 1.9–2.9 / 24 / 63 ms | 1.9 / 27 / 50 ms |
+| Speech onset to first preview | ≈ 0.6 s (100 ms resolution) | ≈ 0.6 s |
+| Speech end to final segment | ≈ 0.7 s (VAD `min_silence_duration` 0.65 s dominates) | ≈ 0.7 s |
+
+Conclusion: on fast hardware the worker is not the latency source; the app-side per-partial main-thread work (transcript store, translation preview, Laya gate) is light. Paraformer was not installed here and was not measured. No behaviour change was made for latency; instead the app now records the same end-to-end numbers on users' machines (below), so slow machines can be identified from a diagnostics export.
+
+### 5. Recognition timing and failure cause in diagnostics — added
+
+- `Core/RecognitionStats.swift` (new): per-provider `readyMS` (connect → model ready), `backlogMaxMS`, final lag (captured audio after an utterance's end when its final text arrived; includes endpoint silence, queueing and inference; excludes capture-callback buffering; stop-time flushes not counted) and a failure code.
+- `LocalLiveProvider` and `AppleLiveProvider` implement `RecognitionStatsReporting`. The coordinator records `ready_ms` on `speechReady`, `failure=` on `speechFailed`, and all of them in `audioCheck`/`audioSummary` (`final_lag_ms_mean`, `final_lag_ms_max`). This replaces `LocalLiveProvider.maxBacklogMS`.
+- These complement Codex's `activity_to_text_ms_*` (provider-event timing): the new final lag is on the audio timeline and does include queue and inference time. Preview (partial) latency is still not measured end-to-end because the worker does not report a preview's audio position.
+
+### 6. Slow model load reported as "fell behind" — distinguished
+
+Both providers hold at most 12 s of captured audio (`RecognitionStats.maximumBacklogMS`, unchanged value). Overflow before the model is ready now fails with `speech_load_slow` and "Local speech model took too long to load…" / "Apple speech took too long to start…"; overflow after ready keeps the existing message (`speech_behind`). zh-Hans strings added; zh-Hant via the existing transform. Behaviour (when listening stops) is unchanged.
+
+### 7. Apple speech input bound by buffer count — now bound by duration
+
+`AppleLiveProvider` fed `SpeechAnalyzer` through `AsyncStream(bufferingPolicy: .bufferingOldest(64))` and failed listening on the first dropped buffer. One buffer is created per capture callback, so the tolerated lag depended on the device's callback size (e.g. 64 × ~43 ms ≈ 2.7 s for a 2048-frame 48 kHz tap), and on startup the queued pre-ready audio (up to 48 × 250 ms) consumed most of the 64 slots at once. The stream is now unbounded and an `AudioBacklog` (FIFO of enqueued durations, released as the analyzer pulls each input) enforces the same 12 s bound as the local provider, with the cause recorded. **Evidence boundary:** code analysis only. Apple speech was not run here: `AppleSpeechSupport.installed` reserves a locale through `AssetInventory`, a shared system change that was not authorised for this session.
+
+### 8. Possible uncatchable exception when starting or recovering the microphone — hardened
+
+`MicCaptureManager` read `inputNode.outputFormat(forBus: 0)` and passed it to `installTap`. AVAudioEngine raises an Objective-C exception (not catchable from Swift, so the app terminates) when a tap format no longer matches the input hardware format, which can happen when a Bluetooth headset switches profile as its microphone opens, i.e. exactly at Start or during the device-change recovery added in round 1. A second `installTap` on the same bus raises as well. Changes:
+- Tap with `format: nil` (the bus's current format); the existing `PCMConverter` already follows each buffer's own format. The format is still read and validated (0 Hz / 0 channels still refuses to start) and recorded.
+- `tapInstalled` makes every install/remove paired; `startEngine` removes any previous tap first.
+- If an immediate recovery fails, one retry runs after 0.5 s (same 3-per-30 s budget, cancelled by Stop or a newer change) before falling back to the existing stop message.
+
+**Evidence boundary:** not reproduced (no hardware session; user crash reports were not read). This removes the known exception paths; whether they caused the reported crashes is unconfirmed.
+
+### Hardware checks still needed (user)
+
+1. In-Person mode with AirPods (or another Bluetooth headset): Start listening several times; then, while listening, switch input device in System Settings → Sound. Expect no crash, transcripts continue, and the journal shows `micDeviceChanged` → `micReady`.
+2. Default Zipformer on the affected (slower) Mac: listen for ~1 minute, Stop, export diagnostics. `ready_ms`, `final_lag_ms_*` and `backlog_ms_max` show whether loading or inference is slow there.
+3. Apple speech, if used: Start/stop a few times with system audio playing; expect no "Apple speech stopped unexpectedly".
+
+### Round 2 files
+
+- New: `StealthApp/Sources/Stealth/Core/RecognitionStats.swift`, `StealthApp/scripts/measure-local-asr.py`
+- Changed: `Audio/MicCaptureManager.swift`, `Providers/LocalLiveProvider.swift`, `Providers/AppleLiveProvider.swift`, `Core/CaptureDiagnostics.swift`, `Core/Localization.swift`, `Stores/AppCoordinator.swift`, `docs/BUG_REPORTING.md`
+- Tests: `Tests/CoreChecks.swift` (+1 check; the journal check now passes backlog via `RecognitionStats`), `Tests/NativeTests.swift` (+2 cases driving `LocalLiveProvider` with synthetic shell workers: final lag 700 ms for a 300 ms segment end after 1 s of audio; `speech_load_slow` vs `speech_behind` with localized messages)
+
+### Round 2 results
+
+Run on this worktree (macOS, Debug, synthetic fixtures, no real API calls, no microphone or system capture):
+
+- `scripts/test-core.sh`: **77 deterministic checks passed** (76 + the new recognition-stats check).
+- New XCTests alone: both passed (0.4 s each).
+- Full XCTest with `caffeinate -i`, DerivedData `build/DerivedData-claude`, result bundle `StealthApp/build/claude-r2-results.xcresult`: **260 executed, 24 skipped, 0 failures, `TEST SUCCEEDED`**. Skips are the existing opt-in real-model, rendering and benchmark tests (count unchanged).
+- That run took 1142.7 s, of which 1048.8 s was reported by `OnboardingTests.testKnownSizesMatchPinnedDistributionManifestAndUnknownDigestStaysUnknown`, which only parses two JSON manifests; rerun alone it passed in 0.013 s and `pmset -g log` shows no system sleep. Round 1 saw the same pattern (9537 s on a trivial test). Cause not established; it is not in the changed code, but whoever integrates should watch for it.
+- No compiler warnings in changed files (an initial `AnalyzerInput.buffer` deprecation on OS 27 was removed by tracking FIFO durations instead).
+- `measure-local-asr.py` rerun after moving it into the repo: zh load 456 ms (warm), RTF 0.069, final 714 ms after the segment end.
+- Raw logs: Claude session scratchpad (`core-r2.log`, `xctest-r2*.log`, `asr/*.json`); reproducible with the commands above.
