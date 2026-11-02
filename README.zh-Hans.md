@@ -8,13 +8,13 @@
 
 面向面试、会议和学术答辩的原生 macOS 助手。LiveCopilot 实时转写语音，检索个人文档中的相关资料，并在悬浮窗中流式呈现回答建议。也可以不开麦，直接输入问题。
 
-[下载 2.5.0](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.5.0) · [产品介绍](https://carey-bk.github.io/LiveCopilot/) · [版本说明](docs/releases/2.5.0.md)
+[下载 2.7.0](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.7.0) · [产品介绍](https://carey-bk.github.io/LiveCopilot/) · [版本说明](docs/releases/2.7.0.md)
 
 ## 下载与使用要求
 
-**2.5.0 · 安装包 37.98 MB · macOS 通用版本 · Developer ID 签名与 Apple 公证**
+**2.7.0 · 安装包 38.38 MB · macOS 通用版本 · Developer ID 签名与 Apple 公证**
 
-[下载安装包 — 香港镜像](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.5.0/LiveCopilot-2.5.0-macOS-universal.dmg) · [GitHub 下载与校验值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.5.0)
+[下载安装包 — 香港镜像](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.7.0/LiveCopilot-2.7.0-macOS-universal.dmg) · [GitHub 下载与校验值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.7.0)
 
 | 功能 | 使用要求 |
 |---|---|
@@ -25,20 +25,19 @@
 
 小安装包**不包含 Laya 权重**。在首次引导或「设置 → 服务」中下载所需模型，无需另外安装 Python、Ollama 或 Docker。下载量约为：Zipformer + VAD **200 MB**、BGE-M3 **635 MB**、Laya 与运行环境 **767 MB**。安装后还需额外磁盘空间，运行会占用本机内存和计算资源。
 
-打开 DMG，将 LiveCopilot 拖入「应用程序」后启动。已有用户可以从应用菜单选择「LiveCopilot → 检查更新…」。正常升级保留配置、API Key、文档和历史；新版 Laya 需要单独下载更新。
+打开 DMG，将 LiveCopilot 拖入「应用程序」后启动。已有用户可以从应用菜单选择「LiveCopilot → 检查更新…」。正常升级保留配置、API Key、文档和历史；Laya 模型更新独立于应用更新。
 
-## 相比 2.3，2.5.0 升级了什么？
+## 2.7 升级了什么？
 
-| 方向 | 主要变化 |
-|---|---|
-| 完整会话历史 | 三栏布局、日期分组、内容搜索和按时间排列的完整记录，保存语音、问题、回答及引用。支持单条复制与 Markdown/TXT 导出，兼容旧版纯转写记录。 |
-| 更准确的会话标题 | 语音会话结束后使用已配置的分析 API 自动命名，结合问答纠正标题中的明显同音字错误。右键可手动重命名或重新自动命名，不修改原始转写。 |
-| 本地模型更可靠 | 下载后实际加载并推理自检，支持手动自检、复制诊断信息和明确的失败处理建议。知识库模型降低初始内存占用，并可从 GPU 回退到 CPU。 |
-| 中英双语默认推荐 | 本地识别推荐 Zipformer，术语增强默认关闭、按需开启；Paraformer 继续作为备选。 |
-| 新版微调 Laya | 以 1,024 token 上下文判断何时需要回答；从魔搭固定版本下载，校验文件大小和 SHA-256。回答正文仍由分析 API 生成。 |
-| 设置与悬浮窗优化 | 模型操作按钮集中排列，两处字号左右布局，回答风格位于 API Key 之后，检索默认 5 个片段。底色设置仅作用于悬浮窗，主设置页保持白底；共享隐藏默认关闭，已有明确偏好保留。 |
+- 转写区支持三行折叠，原文与译文格式一致；新增可选的流式转写翻译。
+- Zipformer 英文大小写整理，改善英文转写可读性。
+- 自由知识、混合知识、仅知识库三档；混合模式在资料无关时使用通用知识回答。
+- 自动回答显示具体等待或拦截原因，提供诊断计数和近期事件。
+- 导出本地诊断摘要及私下反馈 ZIP，可选包含崩溃报告，不会自动上传。
 
-[2.5.0 验证报告](docs/releases/2.5.0-validation.md)记录了干净仓库构建、真实模型检查、公证以及实际 2.3 → 2.5 应用内更新结果。
+翻译使用已配置的回答服务，可能产生费用。2.7 未更新 Laya 模型权重。
+
+详见 [2.7.0 版本说明](docs/releases/2.7.0.md)和[验证报告](docs/releases/2.7.0-validation.md)，包含测试、公证与下载校验结果。
 
 ## 开始第一次对话
 

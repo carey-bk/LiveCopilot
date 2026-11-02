@@ -8,13 +8,13 @@
 
 A native macOS assistant for interviews, meetings and academic discussions. LiveCopilot transcribes speech, retrieves relevant passages from your documents and streams answer suggestions in a floating window. You can also type a question without starting the microphone.
 
-[Download 2.5.0](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.5.0) · [Product website](https://carey-bk.github.io/LiveCopilot/en/) · [Release notes](docs/releases/2.5.0.md)
+[Download 2.7.0](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.7.0) · [Product website](https://carey-bk.github.io/LiveCopilot/en/) · [Release notes](docs/releases/2.7.0.md)
 
 ## Download and requirements
 
-**2.5.0 · 37.98 MB · Universal macOS app · Developer ID signed and Apple notarized**
+**2.7.0 · 38.38 MB · Universal macOS app · Developer ID signed and Apple notarized**
 
-[Download DMG — Hong Kong mirror](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.5.0/LiveCopilot-2.5.0-macOS-universal.dmg) · [GitHub download and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.5.0)
+[Download DMG — Hong Kong mirror](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.7.0/LiveCopilot-2.7.0-macOS-universal.dmg) · [GitHub download and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.7.0)
 
 | Component | Requirement |
 |---|---|
@@ -27,18 +27,17 @@ The small installer **does not contain Laya weights**. Download the models you c
 
 Open the DMG, drag LiveCopilot into Applications and launch it there. Existing users can choose **LiveCopilot → Check for Updates…** in the application menu. Normal upgrades preserve settings, API keys, documents and history; updating Laya requires a separate model download.
 
-## What is new since 2.3?
+## What is new in 2.7?
 
-| Area | Improvements in 2.5.0 |
-|---|---|
-| Complete session history | Searchable three-column view, date groups and a chronological timeline of speech, questions, answers and citations. Copy individual messages or export a session as Markdown/TXT. Older transcript-only records remain readable. |
-| Better session titles | Automatic naming after a voice session uses the configured analysis API and Q&A context to correct obvious speech homophones in the title. Rename or generate a title again from the context menu. Transcripts are not rewritten. |
-| Reliable local models | Real loading/inference self-checks after download, manual checks, copyable diagnostics and specific recovery advice. Embedding initialization uses less initial memory and can fall back from GPU to CPU. |
-| Recommended bilingual speech | Zipformer is the recommended local Chinese/English engine, with optional terminology enhancement off by default. Paraformer remains an alternative. |
-| Fine-tuned Laya | Updated response-intent weights decide when to answer using a 1,024-token context. Downloads pin an immutable ModelScope revision and verify file sizes and SHA-256 hashes. The analysis API still generates the answer. |
-| Clearer native settings | Compact model actions, side-by-side font controls, answer style after API-key settings and a default of five retrieval passages. Background choices apply to the floating window; settings stay white. Capture exclusion defaults off; existing explicit preferences are retained. |
+- Compact three-line transcripts with consistent original/translation alignment and optional streaming translation.
+- Zipformer English casing cleanup for more readable transcripts.
+- General, mixed and knowledge-base-only answer modes; mixed mode uses general knowledge when documents are irrelevant.
+- Explicit automatic-answer waiting/blocking reasons, diagnostic counters and recent events.
+- Local diagnostic summaries and private support ZIP export, optionally including crash reports. Nothing is uploaded automatically.
 
-See the [2.5.0 validation report](docs/releases/2.5.0-validation.md) for clean-checkout builds, model checks, notarization and the tested 2.3 → 2.5 in-app update.
+Translation uses your configured answer provider and may incur charges. Laya model weights are unchanged in 2.7.
+
+See the [2.7.0 release notes](docs/releases/2.7.0.md) and [validation report](docs/releases/2.7.0-validation.md) for changes, tests, notarization and download verification.
 
 ## Start your first conversation
 
