@@ -149,7 +149,7 @@ Run on this worktree (macOS, Debug, synthetic fixtures, no real API calls, no mi
 - `scripts/test-core.sh`: **77 deterministic checks passed** (76 + the new recognition-stats check).
 - New XCTests alone: both passed (0.4 s each).
 - Full XCTest with `caffeinate -i`, DerivedData `build/DerivedData-claude`, result bundle `StealthApp/build/claude-r2-results.xcresult`: **260 executed, 24 skipped, 0 failures, `TEST SUCCEEDED`**. Skips are the existing opt-in real-model, rendering and benchmark tests (count unchanged).
-- That run took 1142.7 s, of which 1048.8 s was reported by `OnboardingTests.testKnownSizesMatchPinnedDistributionManifestAndUnknownDigestStaysUnknown`, which only parses two JSON manifests; rerun alone it passed in 0.013 s and `pmset -g log` shows no system sleep. Round 1 saw the same pattern (9537 s on a trivial test). Cause not established; it is not in the changed code, but whoever integrates should watch for it.
+- That run took 1142.7 s, of which 1048.8 s was reported by `OnboardingTests.testKnownSizesMatchPinnedDistributionManifestAndUnknownDigestStaysUnknown`, which only parses two JSON manifests; rerun alone it passed in 0.013 s and `pmset -g log` shows no system sleep. Round 1 saw the same pattern (9537 s on a trivial test). Cause found in round 3: a Documents access prompt waiting for an answer (see below).
 - No compiler warnings in changed files (an initial `AnalyzerInput.buffer` deprecation on OS 27 was removed by tracking FIFO durations instead).
 - `measure-local-asr.py` rerun after moving it into the repo: zh load 456 ms (warm), RTF 0.069, final 714 ms after the segment end.
 - Raw logs: Claude session scratchpad (`core-r2.log`, `xctest-r2*.log`, `asr/*.json`); reproducible with the commands above.
@@ -180,3 +180,43 @@ Run on this worktree (macOS, Debug, synthetic fixtures, no real API calls, no mi
 - The new build is again a new identity (`designated => cdhash H"d56d2877…"`, not the `3b3e35ea…` granted at 14:29), yet the TCC log for the whole run window (14:34:13–14:36:16) contains **no** `com.livecopilot` request at all, so no prompt was possible.
 - Both manifests are present in `LiveCopilotTests.xctest/Contents/Resources`.
 - No TCC record was reset or changed by this work; the Documents grant created at 14:29:42 for the old cdhash is left as the user answered it.
+
+## Round 4: non-hardware acceptance and Codex review hand-off
+
+Owner decisions: keep the test-resource and out-of-Documents build changes; **do not change development signing** (Debug stays ad-hoc). The owner runs the hardware checks listed under round 2.
+
+### Checks done without hardware
+
+- Re-read the full source diff since `7540db3`. No defect found:
+  - Providers are created per listening session (`AppCoordinator.makeLive`), so `RecognitionStats`, `capturedBytes` and `audioFrames` cannot carry over between sessions.
+  - `PCMConverter` rebuilds its converter whenever a buffer's format differs, so the `format: nil` tap does not depend on the format read at start.
+  - The 0.5 s mic retry cannot double-install a tap. It is skipped after Stop (`captureRevision`), after capture ended, or once a newer configuration change already restarted the engine (`tapInstalled`).
+- Edge case, behaviour unchanged in kind: Apple speech now shares the local provider's 12 s bound. If the model takes almost 12 s to load, the queued audio is handed over at once and the next buffer can overflow as `speech_behind` before the analyzer drains it. The old 64-buffer bound had the same cliff at a device-dependent point.
+- Searched XCTest sources for other reads of the checkout (`#filePath`, current directory, `~/Documents`). None remain. Remaining `homeDirectoryForCurrentUser` uses are opt-in benchmark/real-model tests reading `~/Library/Application Support/LiveCopilot`, which is not TCC-protected.
+- `scripts/build.sh` and `scripts/preview-onboarding.sh` still use `-derivedDataPath build` with `CODE_SIGNING_ALLOWED=NO`. They only build and never start the test host, so they were left unchanged.
+- `docs/BUG_REPORTING.md`: explains `micDeviceChanged → micFailed → micReady/micStopped` (immediate restart failed, then the retry decided).
+- `git diff --check 83a76dd` is clean. Secret-pattern scan of the whole branch diff found nothing. No build output, logs or result bundles are tracked (`build/` and `DerivedData/` are ignored).
+
+### Round 4 results (HEAD before this doc commit: `f430a71` + doc edit)
+
+- `scripts/test-core.sh`: **77 deterministic checks passed**, no real API calls.
+- Full XCTest (`caffeinate -i`, DerivedData `~/Library/Developer/Xcode/DerivedData/LiveCopilot-claude-high-value-fixes`, result bundle `StealthApp/build/claude-r4-results.xcresult`): **260 executed, 24 skipped, 0 failures, `TEST SUCCEEDED`, 94.4 s**. The manifest test took 0.001 s.
+- The TCC log for the run window contains no `com.livecopilot` event.
+- No compiler warnings in changed files.
+- Raw logs are in the Claude session scratchpad (`core-r4.log`, `xctest-r4.log`). Reproduce them with the commands above.
+
+### Not verified (needs the owner's hardware run)
+
+- Bluetooth / device-switch recovery and the absence of tap exceptions on real devices.
+- `ready_ms` / `final_lag_ms_*` / `backlog_ms_max` on the slower Mac.
+- Apple speech on any machine. `AssetInventory` reservation was not authorised.
+- Whether any of these changes caused or fixes the users' reported crashes. No user `.ips` or journal has been read.
+
+### Suggested review focus for Codex
+
+1. `MicCaptureManager`: the `tapInstalled` pairing and the retry `Task` guards against Stop/restart races.
+2. `AppleLiveProvider`: the unbounded `AsyncStream` plus `AudioBacklog` accounting, specifically that `removeOldest` is called exactly once per consumed input via `stream.map`.
+3. `CaptureDiagnostics.record`: development builds now write `LiveCopilot/Development/capture-diagnostics.json`, while tests and mock runs stay excluded.
+4. `project.yml`: the manifests are test-target resources only, not app resources.
+
+Branch state: local commits only. Nothing pushed, merged, versioned, signed, notarised or installed. The worktree and acceptance material (`StealthApp/build/claude-r*-results.xcresult`) are kept for integration.
