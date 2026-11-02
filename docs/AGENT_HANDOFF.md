@@ -24,17 +24,17 @@ Base: `83a76dd`. Worktree: `/Users/careyzhang/Documents/Claude Code Project/Dev-
 
 `Core/AudioFlowMonitor.swift` keeps content-free counters per source (updated on the capture thread under a lock; audio is never stored). The coordinator records them in the existing capture journal (`CaptureDiagnostics`), two events per source per session:
 
-- `audioCheck` ~5 s after listening starts, `audioSummary` when the source stops (after the final flush).
-- Fields: verdict (`noAudio`, `digitalSilence`, `audioWithoutText`, `recognized`), seconds of audio, ms to first audio, peak dBFS, audible share (> −60 dBFS), partial/final counts, mean/max speech-onset-to-first-text latency, and the largest local ASR backlog (`LocalLiveProvider.maxBacklogMS`).
+- `audioCheck` ~5 s after listening starts, `audioSummary` when the source stops. The full-session Stop path waits for final flush; capture-loss callbacks snapshot before asynchronous disconnect, so their summaries may omit flush-produced text.
+- Fields: verdict (`noAudio`, `digitalSilence`, `audioWithoutText`, `recognized`), seconds of audio, ms to first audio, peak dBFS, audible share (> −60 dBFS), partial/final counts, mean/max provider-activity-event-to-next-text time (not acoustic onset or end-to-end latency), and the largest local ASR backlog (`LocalLiveProvider.maxBacklogMS`).
 - The TXT summary prints these numbers via `CaptureDiagnostics.summaryLine`.
 - When the **microphone** delivers no buffers or only exact zeros for 5 s, the overlay status shows a localized device/mute hint (en, zh-Hans; zh-Hant via the existing ICU transform). System audio is only recorded, since silence is normal when nothing plays.
 - Journal decoding is now per-record tolerant, so a stage written by a newer build no longer empties (and later overwrites) the whole journal. Older builds still decode new journals all-or-nothing; a downgrade can lose that journal.
 
-These metrics enable latency comparisons; **no latency improvement is claimed** by this change.
+These metrics enable provider-event timing and backlog comparisons; **no latency improvement is claimed** by this change.
 
 ## 4. Unbounded debug log — bounded
 
-`Support/DebugLog.swift` rotated never; it now rotates `livecopilot.log` to `livecopilot.1.log` at 2 MB (≤ 4 MB total) and reuses one `DateFormatter`. Writes stay on the existing serial queue. The size is read with `FileManager.attributesOfItem`, not `URL.resourceValues`: the latter caches on the long-lived static URL, so the size never grows and rotation never fires. The first full XCTest run caught exactly this (log stayed at 2000 B against a 1000 B bound).
+`Support/DebugLog.swift` rotated never; it now rotates `livecopilot.log` to `livecopilot.1.log` at 2 MB (two bounded files under normal successful filesystem operations) and reuses one `DateFormatter`. Writes stay on the existing serial queue. The size is read with `FileManager.attributesOfItem`, not `URL.resourceValues`: the latter caches on the long-lived static URL, so the size never grows and rotation never fires. The first full XCTest run caught exactly this (log stayed at 2000 B against a 1000 B bound).
 
 ## Files
 
@@ -42,7 +42,7 @@ These metrics enable latency comparisons; **no latency improvement is claimed** 
 - `StealthApp/Sources/Stealth/Audio/MicCaptureManager.swift`, `AudioCaptureManager.swift`
 - `StealthApp/Sources/Stealth/Core/AudioFlowMonitor.swift` (new), `CaptureDiagnostics.swift`, `Localization.swift`
 - `StealthApp/Sources/Stealth/Stores/AppCoordinator.swift`, `Support/DebugLog.swift`
-- Tests: `StealthApp/Tests/CoreChecks.swift` (+3 checks), `StealthApp/Tests/NativeTests.swift` (+2 cases)
+- Tests: `StealthApp/Tests/CoreChecks.swift` (+3 checks), `StealthApp/Tests/NativeTests.swift` (+3 cases including the integration-review regression)
 - Docs: `docs/BUG_REPORTING.md`, this file
 
 ## Commands
@@ -67,6 +67,22 @@ Run on this worktree (macOS, Debug, no real API calls, no real recordings):
 ## Not addressed / remaining
 
 - Answer format and personalization (feedback 6): not changed. Lower priority than crash/no-audio; would need a precedence design across scenario, knowledge-mode and language prompts.
-- Recognition speed (feedback 2): no tuning. The new `text_ms_*` and `backlog_ms_max` fields are the before/after measurement for future work; audio still hops to the main actor per buffer (`AppCoordinator` `onPCM16`), a candidate if backlog proves significant.
+- Recognition speed (feedback 2): no tuning. The new `activity_to_text_ms_*` and `backlog_ms_max` fields are the before/after measurement for future work; audio still hops to the main actor per buffer (`AppCoordinator` `onPCM16`), a candidate if backlog proves significant.
 - Knowledge model "downloaded but load fails" (feedback 4): prior work (`KNOWLEDGE_MODEL_LOAD_FIX.md`) already added self-check and CPU fallback; no new root-cause evidence found. The SIGPIPE fix also protects the embedding worker.
 - Not verified: physical microphone/system audio, Bluetooth switching, signed/installed build, affected users' machines.
+
+## Codex integration review
+
+- Local providers emit speech activity only after the worker response arrives. Renamed printed timing fields to `activity_to_text_ms_*`: queue/inference time before that event is excluded, and events are not correlated by utterance ID. These values alone cannot establish recognition speed improvements.
+- Bounded single oversized debug-log writes and added a regression for repeated oversized messages and both retained files.
+- Hardware/device-switch acceptance remains outstanding. This review does not establish the cause of users' crashes or prove recovery on physical Bluetooth devices.
+
+### Independent validation (2026-11-02)
+
+- Standalone `scripts/test-core.sh`: **76 deterministic checks passed**, no real API calls.
+- Independent original-source XCTest: **257 tests, 24 skipped, 0 failures** (94.456 s).
+- Final reviewed-source XCTest, including the oversized-write regression and core acceptance checks: **258 tests, 24 skipped, 0 failures**, `TEST SUCCEEDED` (114.386 s).
+- Both runs used `caffeinate -i xcodebuild -project LiveCopilot.xcodeproj -scheme LiveCopilot -configuration Debug -derivedDataPath build/DerivedData-codex-review -resultBundlePath <bundle> test` from `StealthApp`.
+- Evidence retained locally in this Claude worktree: `StealthApp/build/codex-review-results.xcresult`, `StealthApp/build/codex-review-final-results.xcresult`, and `StealthApp/build/codex-review-logs/`. These are not committed.
+- Xcode emitted local CoreDevice/CoreSimulator compatibility messages, existing Keychain deprecation warnings, and AppIntents metadata warnings. The macOS build and tests still completed successfully; simulator support was not validated or repaired.
+- Integration scope: local `main`; no GitHub push, release, signing/notarization, or installed-app replacement.

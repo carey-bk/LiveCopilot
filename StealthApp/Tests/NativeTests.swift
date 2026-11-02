@@ -417,6 +417,17 @@ final class NativeTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path).count, 2)
     }
 
+    func testDebugLogBoundsAnOversizedSingleWrite() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LiveCopilot-LargeLog-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let log = directory.appendingPathComponent("livecopilot.log")
+        for _ in 0..<3 { DebugLog.append(Data(repeating: 65, count: 4_000), to: log, maximumBytes: 1_000) }
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        XCTAssertEqual(files.count, 2)
+        for file in files { XCTAssertLessThanOrEqual(try Data(contentsOf: file).count, 1_000) }
+    }
+
     @MainActor func testMicrophoneHintsOnlyForMissingOrDigitallySilentInputInAllLanguages() {
         XCTAssertNil(AppCoordinator.microphoneHint(.audioWithoutText), "Quiet rooms or unrecognized speech are not device faults")
         XCTAssertNil(AppCoordinator.microphoneHint(.recognized))

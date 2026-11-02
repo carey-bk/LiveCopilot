@@ -26,6 +26,9 @@ enum DebugLog {
     }
 
     static func append(_ data: Data, to url: URL, maximumBytes: Int = maximumBytes) {
+        guard maximumBytes > 0 else { return }
+        // Keep even a single oversized message within the per-file bound.
+        let data = Data(data.prefix(maximumBytes))
         // Not `URL.resourceValues`: it caches on the long-lived URL, so the size would never grow.
         let size = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0
         if size + data.count > maximumBytes {

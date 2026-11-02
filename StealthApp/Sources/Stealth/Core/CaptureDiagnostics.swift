@@ -92,8 +92,8 @@ enum CaptureDiagnostics {
         if let v = d.audibleFraction { fields.append("audible=\(v)") }
         if let v = d.partials { fields.append("partials=\(v)") }
         if let v = d.transcripts { fields.append("finals=\(v)") }
-        if let v = d.textLatencyMeanMS { fields.append("text_ms_mean=\(v)") }
-        if let v = d.textLatencyMaxMS { fields.append("text_ms_max=\(v)") }
+        if let v = d.textLatencyMeanMS { fields.append("activity_to_text_ms_mean=\(v)") }
+        if let v = d.textLatencyMaxMS { fields.append("activity_to_text_ms_max=\(v)") }
         if let v = d.backlogMaxMS { fields.append("backlog_ms_max=\(v)") }
         line += " " + fields.joined(separator: " ")
         return line

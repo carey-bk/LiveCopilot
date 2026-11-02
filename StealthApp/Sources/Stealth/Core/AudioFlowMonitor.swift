@@ -2,7 +2,8 @@ import Foundation
 
 /// Content-free accounting for one capture source. It separates "no audio arrived",
 /// "audio arrived but was digital silence" and "audio arrived but produced no text", and
-/// measures how long recognition takes to show the first text of each utterance.
+/// measures time from a provider speech-activity event to the next text event.
+/// This excludes capture/queue/inference delay before that activity event; it is not end-to-end latency.
 /// `observe` runs on the capture callback thread and only keeps counters; audio is never stored.
 final class AudioFlowMonitor: @unchecked Sendable {
     enum Verdict: String, Codable { case noAudio, digitalSilence, audioWithoutText, recognized }
@@ -17,7 +18,8 @@ final class AudioFlowMonitor: @unchecked Sendable {
         var audibleFraction: Double
         var partials: Int
         var transcripts: Int
-        /// Speech onset to the first partial or final text of the same utterance.
+        /// Provider activity-event arrival to the next partial or final text event.
+        /// Events are not correlated by utterance ID; do not interpret as acoustic onset latency.
         var textLatencyMeanMS: Int?
         var textLatencyMaxMS: Int?
     }
