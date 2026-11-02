@@ -232,9 +232,13 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(setup.backgroundOnly, [LocalModelKind.embedding.title])
     }
     func testKnownSizesMatchPinnedDistributionManifestAndUnknownDigestStaysUnknown() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("docs/oss-model-manifest.json"))) as? [String: Any])
-        let zip = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent("docs/zipformer-model-manifest.json"))) as? [String: Any])
+        // Bundled test resources, not `#filePath`: reading the checkout from the test host prompts for
+        // Documents access whenever the worktree is under ~/Documents and the ad-hoc signature changes.
+        let resources = Bundle(for: Self.self)
+        let manifest = try XCTUnwrap(resources.url(forResource: "oss-model-manifest", withExtension: "json"))
+        let zipManifest = try XCTUnwrap(resources.url(forResource: "zipformer-model-manifest", withExtension: "json"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: manifest)) as? [String: Any])
+        let zip = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: zipManifest)) as? [String: Any])
         let entries = try XCTUnwrap(object["objects"] as? [[String: Any]]) + XCTUnwrap(zip["objects"] as? [[String: Any]])
         for kind in LocalModelKind.allCases {
             for download in kind.downloads {

@@ -80,6 +80,12 @@ targets:
       - path: Tests/RetrievalPreparationTests.swift
       - path: Tests/AnswerLatencyTests.swift
       - path: Tests/ConfiguredAnalysisChecks.swift
+      # Copied into the test bundle at build time so the test host never reads the source tree,
+      # which may sit in a TCC-protected folder such as ~/Documents.
+      - path: ../docs/oss-model-manifest.json
+        buildPhase: resources
+      - path: ../docs/zipformer-model-manifest.json
+        buildPhase: resources
     dependencies:
       - target: LiveCopilot
       - framework: build/SparkleTools/Sparkle.framework
