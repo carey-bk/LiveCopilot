@@ -52,7 +52,11 @@ final class LocalInferenceWorker: @unchecked Sendable {
                         var message = payload; message["id"] = id.uuidString
                         var bytes = try JSONSerialization.data(withJSONObject: message)
                         guard bytes.count < 4 * 1024 * 1024 else { throw CopilotError.message("Local model input is too large.") }
-                        bytes.append(10); try input!.write(contentsOf: bytes)
+                        bytes.append(10)
+                        do { try input!.write(contentsOf: bytes) } catch {
+                            lock.lock(); if diagnosticCode != "timeout" { diagnosticCode = "process_ended" }; lock.unlock()
+                            throw CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")
+                        }
                         let response = try readMessage()
                         guard response["id"] as? String == id.uuidString else { throw CopilotError.message("Local model returned an invalid response.") }
                         if response["error"] as? String == "embedding_context" {
@@ -105,6 +109,10 @@ final class LocalInferenceWorker: @unchecked Sendable {
         do { try child.run(); CaptureDiagnostics.record(.workerStart, details: .init(workerMode: mode, workerPID: child.processIdentifier)) } catch { process = nil; diagnosticCode = "runtime_start"; lock.unlock(); recordFailure("runtime_start"); throw CopilotError.message("Local runtime could not start. Reinstall the complete LiveCopilot app.") }
         lock.unlock()
         input = stdin.fileHandleForWriting; output = stdout.fileHandleForReading; buffer.removeAll(keepingCapacity: true)
+        // A worker that exits or is terminated while we write must surface EPIPE, not SIGPIPE:
+        // the default signal action terminates the whole app without a crash report.
+        let noSignal: Int32 = 1
+        _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, noSignal)
         let response = try readMessage()
         guard response["ready"] as? Bool == true else {
             let code = response["error"] as? String ?? "model_load_failed"

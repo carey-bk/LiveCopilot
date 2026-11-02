@@ -259,6 +259,18 @@ enum CoreChecks {
         do { _ = try await timedWorker.call(["op": "ping"], timeout: 0.2); throw CheckError(description: "hung worker succeeded") }
         catch is CopilotError { passed.append("local worker timeout terminates inference and returns a visible error") }
         timedWorker.close()
+        // The worker closes its stdin before reporting ready, so the next request writes to a pipe
+        // without a reader. Without F_SETNOSIGPIPE that write delivers SIGPIPE and kills this process.
+        let deaf = localFixture.appendingPathComponent("deaf-worker")
+        try "#!/bin/sh\nexec 0<&-\nprintf '%s\\n' '{\"ready\":true}'\nsleep 5\n".write(to: deaf, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: deaf.path)
+        let deafWorker = LocalInferenceWorker(mode: "paraformer", modelDirectory: localFixture, executable: deaf)
+        do { _ = try await deafWorker.call(["op": "audio", "pcm": String(repeating: "A", count: 32_000)], timeout: 15); throw CheckError(description: "write to exited worker succeeded") }
+        catch is CopilotError {
+            try expect(deafWorker.failureCode == "process_ended", "broken worker pipe was not classified as process_ended")
+            passed.append("writing to an exited local worker fails visibly instead of terminating the app")
+        }
+        deafWorker.close()
         let fixture = "Experiment A has 128 samples. Method B latency is 42 ms. Revenue in 2025 was 18.7 million."
         let chunks = DocumentChunker.chunk([.init(text: String(repeating: fixture + "\n", count: 40), page: 3)], documentID: "doc", name: "study.pdf", maxCharacters: 256, overlap: 30)
         try check("chunk bounds and page/source metadata") {
