@@ -220,3 +220,14 @@ Owner decisions: keep the test-resource and out-of-Documents build changes; **do
 4. `project.yml`: the manifests are test-target resources only, not app resources.
 
 Branch state: local commits only. Nothing pushed, merged, versioned, signed, notarised or installed. The worktree and acceptance material (`StealthApp/build/claude-r*-results.xcresult`) are kept for integration.
+
+
+## Codex integration review of rounds 2–4 (2026-11-02)
+
+- Reviewed the microphone restart/tap lifecycle, Apple input accounting, local recognition timings, diagnostic isolation, and bundled test resources against `7540db3`.
+- Fixed a stale retry edge case: every microphone configuration change now advances `captureRevision`, so a delayed retry from an older route cannot run during a newer route's settling period. Existing Stop/session guards remain. This is a code-review correction; physical device-switch validation remains outstanding.
+- Independently ran `scripts/test-core.sh`: **77 deterministic checks passed**. Original-source full XCTest: **260 tests, 24 skipped, 0 failures** (94.964 s). Final reviewed-source full XCTest: **260 tests, 24 skipped, 0 failures** (93.932 s), including the core acceptance checks.
+- Built Release for **arm64 + x86_64** successfully, using DerivedData outside Documents. Debug tests used `~/Library/Developer/Xcode/DerivedData/LiveCopilot-codex-integration`; Release used `~/Library/Developer/Xcode/DerivedData/LiveCopilot-codex-install`.
+- Local evidence remains in this Claude worktree: `StealthApp/build/codex-round2-review.xcresult`, `StealthApp/build/codex-round2-final.xcresult`, and `StealthApp/build/codex-round2-review-logs/`. Existing Claude evidence is preserved.
+- The owner authorized local integration and replacement of the existing installed app for manual hardware testing. GitHub publication is outside this integration. Public version remains 2.7.0; local signing assigns a new internal build.
+- Final-lag statistics use captured audio duration, assume continuous capture, exclude capture-callback buffering, and cannot by themselves establish end-to-end wall-clock recognition latency. No hardware recovery or user-crash resolution is claimed by these automated checks.

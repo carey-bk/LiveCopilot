@@ -116,6 +116,8 @@ final class MicCaptureManager: ObservableObject {
     /// Rebuild the tap for the new format instead of leaving the session silently without audio.
     /// Bounded so a device that keeps reconfiguring cannot cause a restart loop.
     private func recoverFromConfigurationChange() {
+        // A new route change supersedes retries waiting for the previous route to settle.
+        captureRevision = UUID()
         CaptureDiagnostics.record(.micDeviceChanged)
         let now = ProcessInfo.processInfo.systemUptime
         recoveries = recoveries.filter { now - $0 < 30 } + [now]
