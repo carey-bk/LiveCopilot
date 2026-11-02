@@ -1,21 +1,21 @@
-# 给作者反馈问题
+# Reporting a problem to the author
 
-私下反馈优先提供 **LiveCopilot-support.zip**。ZIP 已含摘要，无需另发 TXT。公开 GitHub Issue 使用检查过的 **LiveCopilot-diagnostics.txt** 摘要；不要公开包含原始崩溃报告的 ZIP。
+For private troubleshooting, provide **LiveCopilot-support.zip**. The ZIP already includes the summary, so a separate TXT is unnecessary. For a public GitHub Issue, use a reviewed **LiveCopilot-diagnostics.txt** summary. Do not publicly post a ZIP containing raw crash reports.
 
-1. 复现后先导出诊断，不要先重启应用或重新开始监听，否则本轮自动触发计数会清空。
-2. 打开反馈问题 → 导出详细 ZIP，私下反馈。
-3. 填写发生时间和时区、操作步骤、预期表现、实际表现、麦克风/耳机类型。如为闪退，选择对应时间的崩溃报告并确认包含它。
-4. 点右下角“导出 ZIP…”，选择保存位置。
-5. 查看访达中保存的 ZIP，检查后，通过与作者约定的私下渠道发送。软件不会自动发送。
-6. “关闭”只关闭窗口，不会保存描述、导出文件或发送反馈。
+1. Export diagnostics immediately after reproducing the problem. Do not restart the app or start another listening session first: doing so resets the automatic-trigger counters for that session.
+2. Open Report a Problem → Export Detailed ZIP for private troubleshooting.
+3. Enter the occurrence time and time zone, steps, expected and actual behavior, and microphone/headphone type. For a crash, select the report matching that time and explicitly include it.
+4. Click “Export ZIP…” at the bottom right and choose a save location.
+5. Review the saved ZIP in Finder, then send it through a private channel agreed with the author. The app does not send it automatically.
+6. “Close” only closes the window. It does not save the description, export a file, or send feedback.
 
-附上与故障对应的截图或短录屏，避免包含会议隐私、密钥或账号信息。
+Include a relevant screenshot or short screen recording, avoiding private meeting content, keys, and account information.
 
-## 当前覆盖范围
+## Current coverage
 
-- 自动回答：配置、阶段计数、最近32条无文本事件，可缩小到提交、评分或后续等待阶段；不含逐问题文本及完整关联追踪。
-- 录音/识别：结构化阶段、进程与退出信息，可帮助定位启动/终止边界。
-- 闪退：需要相关 `.ips` 和作者保存的同构建 dSYM 才能深入定位调用栈。没有 `.ips` 不代表没有闪退。
-- 卡死：当前ZIP不自动包含卡死时的进程采样，需要另行采集。
-- 回答质量、翻译错位、界面问题：需要具体复现说明与截图。日志有意不收集录音、对话、知识库或密钥。
-- `dispatched` 是提交自动回答，不代表回答已经成功完成。停止监听后的 `disabled` 不等于用户漏开自动建议。
+- Automatic answers: configuration, stage counters, and the latest 32 events without transcript text help narrow the problem to submission, scoring, or subsequent waiting stages. They do not include per-question text or complete correlated tracing.
+- Recording/recognition: structured stages, process information, and exit information help locate startup/shutdown boundaries.
+- Crashes: deeper stack analysis requires the relevant `.ips` report and the author's matching-build dSYM. No `.ips` report does not mean no crash occurred.
+- Hangs: the current ZIP does not automatically include a process sample from the hang; this must be collected separately.
+- Answer quality, translation misalignment, and UI issues require concrete reproduction steps and screenshots. Logs intentionally omit recordings, conversations, knowledge-base content, and keys.
+- `dispatched` means an automatic answer was submitted, not that it completed successfully. `disabled` after listening stops does not mean the user forgot to enable automatic suggestions.
