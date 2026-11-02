@@ -22,6 +22,8 @@ final class LocalLiveProvider: LiveProvider {
     private var nextTerms: [String] = []
     private var displayTerms: [String] = []
     private var sentTerms: [String]?
+    /// Largest amount of captured audio waiting for the worker, a direct measure of recognition lag.
+    private(set) var maxBacklogMS = 0
 
     init(directory: URL, speaker: Speaker, sessionStart: Date = Date(), executable: URL? = nil, contextual: Bool = false, terms: [String] = [], displayTerms: [String]? = nil) {
         self.speaker = speaker; self.sessionStart = sessionStart
@@ -60,7 +62,7 @@ final class LocalLiveProvider: LiveProvider {
             partial = ""; onEvent?(.partialTranscript(""))
             onEvent?(.failed("Local recognition fell behind. Stop/start listening and reduce other heavy workloads.")); return
         }
-        pending.append(data); drain()
+        pending.append(data); maxBacklogMS = max(maxBacklogMS, pending.count / 32); drain()
     }
     private func drain() {
         guard ready, pump == nil else { return }

@@ -195,6 +195,8 @@ enum L10n {
         "Speech service connection successful.": "语音服务连接成功。",
         "Live connection failed. Check your network.": "实时服务连接失败，请检查网络。",
         "Microphone device configuration changed. Stop/start listening to use the current device.": "麦克风配置已改变，请重新开始监听以使用当前设备。",
+        "Microphone started but no audio has arrived. Stop/start listening; if it persists, check System Settings → Sound → Input.": "麦克风已启动，但尚未收到任何音频。请重新开始监听；若仍如此，请检查“系统设置 → 声音 → 输入”。",
+        "Microphone input is completely silent. Check the selected input device, any hardware mute switch and System Settings → Sound → Input.": "麦克风输入完全无声。请检查所选输入设备、硬件静音开关，以及“系统设置 → 声音 → 输入”。",
         "Microphone permission denied. Enable LiveCopilot in System Settings → Privacy & Security → Microphone.": "未获麦克风权限，请在系统设置 → 隐私与安全性 → 麦克风中允许 LiveCopilot。",
         "No microphone input available.": "没有可用的麦克风输入。",
         "Could not delete session history. Check disk permissions.": "无法删除会话记录，请检查磁盘权限。",

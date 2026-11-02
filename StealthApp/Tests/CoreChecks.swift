@@ -271,6 +271,43 @@ enum CoreChecks {
             passed.append("writing to an exited local worker fails visibly instead of terminating the app")
         }
         deafWorker.close()
+        try check("audio flow separates no audio, digital silence, untranscribed audio and recognition") {
+            var now: TimeInterval = 100
+            let flow = AudioFlowMonitor(clock: { now })
+            flow.begin(sampleRate: 16_000)
+            try expect(flow.snapshot().verdict == .noAudio && flow.snapshot().peakDBFS == nil, "empty source was not reported as no audio")
+            now = 100.25
+            flow.observe(Data(count: 3_200)) // 100 ms of exact zeros
+            var snapshot = flow.snapshot()
+            try expect(snapshot.verdict == .digitalSilence && snapshot.peakDBFS == -96 && snapshot.firstAudioMS == 250, "digital silence misclassified")
+            try expect(snapshot.audioSeconds == 0.1 && snapshot.audibleFraction == 0, "silent duration or level miscounted")
+            var loud = Data(count: 3_200)
+            loud.withUnsafeMutableBytes { $0.storeBytes(of: Int16(-16_384).littleEndian, toByteOffset: 2, as: Int16.self) }
+            flow.observe(loud)
+            snapshot = flow.snapshot()
+            try expect(snapshot.verdict == .audioWithoutText && snapshot.peakDBFS == -6 && snapshot.audibleFraction == 0.5, "audible audio without text misclassified")
+            flow.speechStarted(); now = 100.65; flow.notePartial(); flow.noteTranscript()
+            flow.speechStarted(); now = 101.85; flow.noteTranscript()
+            snapshot = flow.snapshot()
+            try expect(snapshot.verdict == .recognized && snapshot.partials == 1 && snapshot.transcripts == 2, "recognition counts lost")
+            try expect(snapshot.textLatencyMeanMS == 800 && snapshot.textLatencyMaxMS == 1_200, "first-text latency measured from the wrong onset")
+            flow.begin(sampleRate: 16_000)
+            try expect(flow.snapshot() == AudioFlowMonitor(clock: { now }).snapshot(), "new capture inherited the previous session's counters")
+        }
+        try check("capture journal keeps readable events beside unknown stages and prints numbers only") {
+            let journal = localFixture.appendingPathComponent("capture-diagnostics.json")
+            let flow = AudioFlowMonitor(); flow.begin(sampleRate: 16_000); flow.observe(Data(count: 320))
+            let event = CaptureDiagnostics.Event(time: Date(timeIntervalSince1970: 0), stage: .audioSummary, code: nil,
+                                                 details: CaptureDiagnostics.audioDetails(flow.snapshot(), speaker: "You", backlogMaxMS: 40))
+            try CaptureDiagnostics.append(event, to: journal)
+            var rows = try JSONSerialization.jsonObject(with: Data(contentsOf: journal)) as! [[String: Any]]
+            rows.insert(["time": 0, "stage": "stageFromANewerBuild"], at: 0)
+            try JSONSerialization.data(withJSONObject: rows).write(to: journal)
+            let events = CaptureDiagnostics.read(from: journal)
+            try expect(events.count == 1 && events[0].stage == .audioSummary, "one unknown stage discarded the whole journal")
+            let line = CaptureDiagnostics.summaryLine(events[0])
+            try expect(line.contains("speaker=You verdict=digitalSilence") && line.contains("backlog_ms_max=40"), "audio summary fields missing")
+        }
         let fixture = "Experiment A has 128 samples. Method B latency is 42 ms. Revenue in 2025 was 18.7 million."
         let chunks = DocumentChunker.chunk([.init(text: String(repeating: fixture + "\n", count: 40), page: 3)], documentID: "doc", name: "study.pdf", maxCharacters: 256, overlap: 30)
         try check("chunk bounds and page/source metadata") {

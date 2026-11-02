@@ -417,6 +417,18 @@ final class NativeTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path).count, 2)
     }
 
+    @MainActor func testMicrophoneHintsOnlyForMissingOrDigitallySilentInputInAllLanguages() {
+        XCTAssertNil(AppCoordinator.microphoneHint(.audioWithoutText), "Quiet rooms or unrecognized speech are not device faults")
+        XCTAssertNil(AppCoordinator.microphoneHint(.recognized))
+        for verdict in [AudioFlowMonitor.Verdict.noAudio, .digitalSilence] {
+            let hint = try! XCTUnwrap(AppCoordinator.microphoneHint(verdict))
+            let simplified = L10n.text(hint, language: .simplifiedChinese), traditional = L10n.text(hint, language: .traditionalChinese)
+            XCTAssertTrue(simplified.contains("麦克风"), "Missing Simplified Chinese for \(verdict)")
+            XCTAssertTrue(traditional.contains("麥克風"), "Missing Traditional Chinese for \(verdict)")
+            XCTAssertEqual(L10n.text(hint, language: .english), hint)
+        }
+    }
+
     func testCoreAcceptanceChecks() async throws {
         let checks = try await CoreChecks.run()
         XCTAssertGreaterThanOrEqual(checks.count, 25)

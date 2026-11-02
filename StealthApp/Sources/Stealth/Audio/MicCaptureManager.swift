@@ -19,15 +19,16 @@ final class MicCaptureManager: ObservableObject {
     private let pcmConverter = PCMConverter()
     private var configurationObserver: NSObjectProtocol?
     private var captureRevision = UUID()
+    private var recoveries: [TimeInterval] = []
+    /// Optional content-free level/arrival accounting; observed on the audio thread.
+    var flow: AudioFlowMonitor?
     func configure(sampleRate: Double) { if !isCapturing { pcmConverter.configure(sampleRate: sampleRate) } }
 
     init() {
         configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isCapturing else { return }
-                CaptureDiagnostics.record(.micDeviceChanged)
-                self.stop()
-                self.lastError = "Microphone device configuration changed. Stop/start listening to use the current device."
+                self.recoverFromConfigurationChange()
             }
         }
     }
@@ -46,7 +47,13 @@ final class MicCaptureManager: ObservableObject {
         }
         guard !isCapturing else { return }
         lastError = nil
+        recoveries = []
+        if startEngine() { isCapturing = true }
+    }
 
+    /// Reads the current input format, installs the tap and starts the engine.
+    /// On failure, leaves no tap installed and sets `lastError`.
+    private func startEngine() -> Bool {
         let input = engine.inputNode
 
         // Apple's voice processing (acoustic echo cancellation + noise suppression)
@@ -72,28 +79,50 @@ final class MicCaptureManager: ObservableObject {
             CaptureDiagnostics.record(.micFailed)
             lastError = "No microphone input available."
             DebugLog.log("MIC no input format")
-            return
+            return false
         }
 
-        let worker = pcmConverter, emit = onPCM16
+        let worker = pcmConverter, emit = onPCM16, flow = self.flow
         CaptureDiagnostics.record(.micTap)
         input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { buffer, _ in
-            if let data = worker.convert(buffer) { emit?(data) }
+            if let data = worker.convert(buffer) { flow?.observe(data); emit?(data) }
         }
 
         do {
             CaptureDiagnostics.record(.micEngine)
             engine.prepare()
             try engine.start()
-            isCapturing = true
-            CaptureDiagnostics.record(.micReady)
+            CaptureDiagnostics.record(.micReady, details: .init(sampleRate: inputFormat.sampleRate, channels: inputFormat.channelCount))
             DebugLog.log("MIC capture started OK (input \(inputFormat.sampleRate)Hz)")
+            return true
         } catch {
             CaptureDiagnostics.record(.micFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
             lastError = error.localizedDescription
             DebugLog.log("MIC capture FAILED: \(error.localizedDescription)")
             input.removeTap(onBus: 0)
+            return false
         }
+    }
+
+    /// AVAudioEngine stops itself when the input/output hardware format changes, e.g. when a
+    /// Bluetooth headset switches profile as its microphone opens, or the default device changes.
+    /// Rebuild the tap for the new format instead of leaving the session silently without audio.
+    /// Bounded so a device that keeps reconfiguring cannot cause a restart loop.
+    private func recoverFromConfigurationChange() {
+        CaptureDiagnostics.record(.micDeviceChanged)
+        let now = ProcessInfo.processInfo.systemUptime
+        recoveries = recoveries.filter { now - $0 < 30 } + [now]
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        pcmConverter.reset()
+        if recoveries.count <= 3, startEngine() {
+            DebugLog.log("MIC recovered after device configuration change")
+            return
+        }
+        isCapturing = false
+        CaptureDiagnostics.record(.micStopped)
+        lastError = "Microphone device configuration changed. Stop/start listening to use the current device."
+        DebugLog.log("MIC stopped after device configuration change")
     }
 
     func stop() {

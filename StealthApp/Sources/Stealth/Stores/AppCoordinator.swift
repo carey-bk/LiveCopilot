@@ -145,6 +145,10 @@ final class AppCoordinator: ObservableObject {
     }
     let systemAudio = AudioCaptureManager()
     let mic = MicCaptureManager()
+    private let systemFlow = AudioFlowMonitor(), micFlow = AudioFlowMonitor()
+    /// Sources whose capture began in this listening session and still owe an audio summary.
+    private var flowSources: [Speaker] = []
+    private var audioCheckTask: Task<Void, Never>?
     let isMock: Bool
     private let settingsDefaults: UserDefaults
     private(set) var knowledge: KnowledgeIndex?
@@ -303,11 +307,13 @@ final class AppCoordinator: ObservableObject {
         refreshAnalysisKeyState()
         systemAudio.onPCM16 = { [weak self] data in Task { @MainActor in self?.systemLive?.sendAudio(data) } }
         mic.onPCM16 = { [weak self] data in Task { @MainActor in self?.micLive?.sendAudio(data) } }
+        systemAudio.flow = systemFlow; mic.flow = micFlow
         systemAudio.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
         mic.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
         systemAudio.$isCapturing.dropFirst().sink { [weak self] capturing in
             guard let self, !capturing, self.isRunning, !self.isTransitioning else { return }
             let provider = self.systemLive; self.systemLive = nil
+            self.finishAudioFlow(.them, provider: provider)
             Task { await provider?.disconnect() }
             self.speakingSources.remove(.them)
             self.layaGate.reset()
@@ -317,6 +323,7 @@ final class AppCoordinator: ObservableObject {
         mic.$isCapturing.dropFirst().sink { [weak self] capturing in
             guard let self, !capturing, self.isRunning, !self.isTransitioning else { return }
             let provider = self.micLive; self.micLive = nil
+            self.finishAudioFlow(self.settings.mode == .inPerson ? .room : .you, provider: provider)
             Task { await provider?.disconnect() }
             self.speakingSources.remove(self.settings.mode == .inPerson ? .room : .you)
             self.layaGate.reset()
@@ -759,6 +766,9 @@ final class AppCoordinator: ObservableObject {
             }
             systemAudio.configure(sampleRate: settings.listeningService.sampleRate)
             mic.configure(sampleRate: settings.listeningService.sampleRate)
+            systemFlow.begin(sampleRate: settings.listeningService.sampleRate)
+            micFlow.begin(sampleRate: settings.listeningService.sampleRate)
+            flowSources = []
             statusMessage = "Starting audio capture…"
             // Acquire permissions/capture first; never leave paid sockets open after a capture failure.
             if settings.mode == .remote { await systemAudio.start() }
@@ -777,6 +787,9 @@ final class AppCoordinator: ObservableObject {
                 let speaker: Speaker = settings.mode == .inPerson ? .room : .you
                 micLive = makeLive(key: key, speaker: speaker, epoch: epoch); micLive?.connect(context: "")
             }
+            if systemAudio.isCapturing { flowSources.append(.them) }
+            if mic.isCapturing { flowSources.append(settings.mode == .inPerson ? .room : .you) }
+            scheduleAudioCheck(epoch: epoch)
             statusMessage = systemAudio.lastError ?? mic.lastError ?? (settings.listeningService.isLocal ? "Loading local speech model…" : "Connecting Live…")
         } catch { statusMessage = error.localizedDescription; sessionStartedAt = nil }
     }
@@ -804,6 +817,7 @@ final class AppCoordinator: ObservableObject {
         switch event {
         case .speechActivity(let active):
             if usesLaya, isRunning { recordLaya(speaker == .you ? (active ? .ownSpeechStarted : .ownSpeechEnded) : (active ? .otherSpeechStarted : .otherSpeechEnded)) }
+            if active { flow(for: speaker).speechStarted() }
             if active { speakingSources.insert(speaker); if pendingAutomatic?.speaker == speaker { questionTask?.cancel() } }
             else { speakingSources.remove(speaker); if pendingAutomatic != nil { scheduleAutomatic() } }
             if usesLaya, isRunning { layaGate.setSpeaking(active, speaker: speaker) }
@@ -814,12 +828,13 @@ final class AppCoordinator: ObservableObject {
         case .partialTranscript(let text):
             transcript.setPartial(text, speaker: speaker)
             translation.updatePreview(text, speaker: speaker)
-            if !text.isEmpty { questionState = QuestionPhase.forming.rawValue }
+            if !text.isEmpty { questionState = QuestionPhase.forming.rawValue; flow(for: speaker).notePartial() }
             if !text.isEmpty { submitLaya(speaker: speaker, partial: text) }
         case .transcript(let fragment):
             transcript.clearPartial(speaker)
             translation.updatePreview("", speaker: speaker)
             guard conversation.append(fragment) else { return }
+            flow(for: speaker).noteTranscript()
             transcript.ingest(fragment)
             translation.update(lines: transcript.lines)
             if speaker == .you { systemLive?.appendContext("You said: " + fragment.text, delegationID: nil) }
@@ -852,6 +867,40 @@ final class AppCoordinator: ObservableObject {
             translation.updatePreview("", speaker: speaker)
             if !finalized, settings.listeningService.isLocal { incompleteLocalStop = true; DebugLog.log("local.close incomplete_flush") }
             else if !finalized { DebugLog.log("live.close final_usage_unconfirmed speaker=\(speaker.rawValue)") }
+        }
+    }
+    private func flow(for speaker: Speaker) -> AudioFlowMonitor { speaker == .them ? systemFlow : micFlow }
+    private func recordAudioFlow(_ stage: CaptureDiagnostics.Stage, speaker: Speaker, provider: (any LiveProvider)?) {
+        guard !isMock else { return }
+        CaptureDiagnostics.record(stage, details: CaptureDiagnostics.audioDetails(flow(for: speaker).snapshot(), speaker: speaker.rawValue,
+                                                                                    backlogMaxMS: (provider as? LocalLiveProvider)?.maxBacklogMS))
+    }
+    private func finishAudioFlow(_ speaker: Speaker, provider: (any LiveProvider)?) {
+        guard let index = flowSources.firstIndex(of: speaker) else { return }
+        flowSources.remove(at: index)
+        recordAudioFlow(.audioSummary, speaker: speaker, provider: provider)
+    }
+    /// One early, content-free check per session. A working microphone always delivers some
+    /// noise floor; nothing at all, or exact digital zeros, points at the device or a mute.
+    /// System audio is legitimately silent when nothing plays, so it is only recorded.
+    private func scheduleAudioCheck(epoch: UUID) {
+        audioCheckTask?.cancel()
+        audioCheckTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled, let self, self.liveEpoch == epoch, self.isRunning else { return }
+            for speaker in self.flowSources {
+                self.recordAudioFlow(.audioCheck, speaker: speaker, provider: speaker == .them ? self.systemLive : self.micLive)
+            }
+            guard self.mic.isCapturing, let hint = Self.microphoneHint(self.micFlow.snapshot().verdict) else { return }
+            DebugLog.log("audio.check mic_verdict=\(self.micFlow.snapshot().verdict.rawValue)")
+            self.statusMessage = hint
+        }
+    }
+    static func microphoneHint(_ verdict: AudioFlowMonitor.Verdict) -> String? {
+        switch verdict {
+        case .noAudio: return "Microphone started but no audio has arrived. Stop/start listening; if it persists, check System Settings → Sound → Input."
+        case .digitalSilence: return "Microphone input is completely silent. Check the selected input device, any hardware mute switch and System Settings → Sound → Input."
+        case .audioWithoutText, .recognized: return nil
         }
     }
     private func scheduleAutomatic() {
@@ -897,12 +946,14 @@ final class AppCoordinator: ObservableObject {
         isRunning = false
         invalidateAutomaticTrigger()
         speakingSources = []
-        questionTask?.cancel(); pendingAutomatic = nil; mockTask?.cancel()
+        questionTask?.cancel(); pendingAutomatic = nil; mockTask?.cancel(); audioCheckTask?.cancel()
         await systemAudio.stop(); mic.stop()
         let a = systemLive, b = micLive; systemLive = nil; micLive = nil
         async let closeA: Void = a?.disconnect() ?? ()
         async let closeB: Void = b?.disconnect() ?? ()
         _ = await (closeA, closeB)
+        // After the final flush, so finals produced by Stop are counted.
+        for speaker in flowSources { finishAudioFlow(speaker, provider: speaker == .them ? a : b) }
         liveEpoch = UUID()
         saveSession()
         statusMessage = incompleteLocalStop ? "Listening stopped. The final local speech segment could not be completed." : "Listening stopped — manual questions remain available"
@@ -1009,11 +1060,13 @@ final class AppCoordinator: ObservableObject {
         Task {
             if micEnabled {
                 do {
-                    let key = settings.listeningService == .openAI ? try credential() : ""; await mic.start()
+                    let key = settings.listeningService == .openAI ? try credential() : ""
+                    micFlow.begin(sampleRate: settings.listeningService.sampleRate); await mic.start()
                     guard mic.isCapturing, liveEpoch == epoch, isRunning, !isShuttingDown, micEnabled else { return }
                     micLive = makeLive(key: key, speaker: .you, epoch: liveEpoch); micLive?.connect(context: conversation.context())
+                    if !flowSources.contains(.you) { flowSources.append(.you) }
                 } catch { statusMessage = error.localizedDescription }
-            } else { mic.stop(); let previous = micLive; micLive = nil; await previous?.disconnect() }
+            } else { mic.stop(); let previous = micLive; micLive = nil; await previous?.disconnect(); finishAudioFlow(.you, provider: previous) }
         }
     }
     func requestSuggestion(mode: SuggestionMode = .reply) {

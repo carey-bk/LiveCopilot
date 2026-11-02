@@ -6,6 +6,8 @@ enum CaptureDiagnostics {
         case appLaunch, cleanExit, listeningStart, systemStart, systemReady, systemFailed, systemStopped
         case micPermission, micFormat, micTap, micEngine, micReady, micFailed, micStopped, micDeviceChanged
         case speechConnecting, speechReady, speechFailed, listeningStop, workerStart, workerExit, workerFailure
+        /// Per-source audio flow, a few seconds after capture starts and when the source stops.
+        case audioCheck, audioSummary
     }
     enum Failure: String, Codable {
         case unknown, embedding_context, inference_failed, timeout, runtime_missing, runtime_start
@@ -17,6 +19,14 @@ enum CaptureDiagnostics {
         var listeningService: String?; var captureMode: String?; var automatic: Bool?
         var speaker: String?; var workerMode: String?; var workerPID: Int32?
         var terminationReason: Int?; var failure: Failure?
+        var audioVerdict: AudioFlowMonitor.Verdict?; var audioSeconds: Double?; var firstAudioMS: Int?
+        var peakDBFS: Int?; var audibleFraction: Double?; var partials: Int?; var transcripts: Int?
+        var textLatencyMeanMS: Int?; var textLatencyMaxMS: Int?; var backlogMaxMS: Int?
+    }
+    static func audioDetails(_ flow: AudioFlowMonitor.Snapshot, speaker: String, backlogMaxMS: Int? = nil) -> Details {
+        Details(speaker: speaker, audioVerdict: flow.verdict, audioSeconds: flow.audioSeconds, firstAudioMS: flow.firstAudioMS,
+                peakDBFS: flow.peakDBFS, audibleFraction: flow.audibleFraction, partials: flow.partials, transcripts: flow.transcripts,
+                textLatencyMeanMS: flow.textLatencyMeanMS, textLatencyMaxMS: flow.textLatencyMaxMS, backlogMaxMS: backlogMaxMS)
     }
     struct Event: Codable {
         let time: Date; let stage: Stage; let code: Int?
@@ -60,13 +70,37 @@ enum CaptureDiagnostics {
     static func read(from source: URL) -> [Event] {
         guard let size = try? source.resourceValues(forKeys: [.fileSizeKey]).fileSize, size < 512_000,
               let data = try? Data(contentsOf: source) else { return [] }
-        return (try? JSONDecoder().decode([Event].self, from: data)) ?? []
+        // Skip individual records this build cannot decode (e.g. a stage added by a newer build)
+        // instead of discarding, and later overwriting, the whole journal.
+        guard let rows = try? JSONDecoder().decode([Lossy].self, from: data) else { return [] }
+        return rows.compactMap(\.event)
+    }
+    private struct Lossy: Decodable {
+        let event: Event?
+        init(from decoder: Decoder) throws { event = try? Event(from: decoder) }
+    }
+    /// Numbers only: never transcript text, device names or paths.
+    static func summaryLine(_ event: Event) -> String {
+        var line = "\(ISO8601DateFormatter().string(from: event.time)) \(event.stage.rawValue)\(event.code.map { " code=\($0)" } ?? "")"
+        guard let d = event.details, d.audioVerdict != nil else { return line }
+        var fields: [String] = []
+        if let v = d.speaker { fields.append("speaker=\(v)") }
+        if let v = d.audioVerdict { fields.append("verdict=\(v.rawValue)") }
+        if let v = d.audioSeconds { fields.append("audio_s=\(v)") }
+        if let v = d.firstAudioMS { fields.append("first_audio_ms=\(v)") }
+        if let v = d.peakDBFS { fields.append("peak_dbfs=\(v)") }
+        if let v = d.audibleFraction { fields.append("audible=\(v)") }
+        if let v = d.partials { fields.append("partials=\(v)") }
+        if let v = d.transcripts { fields.append("finals=\(v)") }
+        if let v = d.textLatencyMeanMS { fields.append("text_ms_mean=\(v)") }
+        if let v = d.textLatencyMaxMS { fields.append("text_ms_max=\(v)") }
+        if let v = d.backlogMaxMS { fields.append("backlog_ms_max=\(v)") }
+        line += " " + fields.joined(separator: " ")
+        return line
     }
     static func journal() -> Data { queue.sync { (try? JSONEncoder().encode(read(from: url))) ?? Data("[]".utf8) } }
     static func snapshot() -> String {
-        queue.sync { read(from: url).suffix(20).map {
-            "\(ISO8601DateFormatter().string(from: $0.time)) \($0.stage.rawValue)\($0.code.map { " code=\($0)" } ?? "")"
-        }.joined(separator: "\n") }
+        queue.sync { read(from: url).suffix(20).map(summaryLine).joined(separator: "\n") }
     }
     static func previousExitSummary(events: [Event]) -> String {
         guard let lastLaunch = events.last(where: { $0.stage == .appLaunch && $0.launchID != launchID }), let id = lastLaunch.launchID else {
