@@ -20,6 +20,8 @@ final class MicCaptureManager: ObservableObject {
     private var configurationObserver: NSObjectProtocol?
     private var captureRevision = UUID()
     private var recoveries: [TimeInterval] = []
+    /// AVAudioEngine raises an Objective-C exception, which Swift cannot catch, on a second tap.
+    private var tapInstalled = false
     /// Optional content-free level/arrival accounting; observed on the audio thread.
     var flow: AudioFlowMonitor?
     func configure(sampleRate: Double) { if !isCapturing { pcmConverter.configure(sampleRate: sampleRate) } }
@@ -84,9 +86,14 @@ final class MicCaptureManager: ObservableObject {
 
         let worker = pcmConverter, emit = onPCM16, flow = self.flow
         CaptureDiagnostics.record(.micTap)
-        input.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { buffer, _ in
+        removeTap()
+        // `nil` taps the bus's current format. Passing the format read above raises an uncatchable
+        // exception if the hardware format changes first (for example a Bluetooth headset switching
+        // profile as its microphone opens). The converter follows each buffer's own format.
+        input.installTap(onBus: 0, bufferSize: 2048, format: nil) { buffer, _ in
             if let data = worker.convert(buffer) { flow?.observe(data); emit?(data) }
         }
+        tapInstalled = true
 
         do {
             CaptureDiagnostics.record(.micEngine)
@@ -99,7 +106,7 @@ final class MicCaptureManager: ObservableObject {
             CaptureDiagnostics.record(.micFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
             lastError = error.localizedDescription
             DebugLog.log("MIC capture FAILED: \(error.localizedDescription)")
-            input.removeTap(onBus: 0)
+            removeTap()
             return false
         }
     }
@@ -112,13 +119,28 @@ final class MicCaptureManager: ObservableObject {
         CaptureDiagnostics.record(.micDeviceChanged)
         let now = ProcessInfo.processInfo.systemUptime
         recoveries = recoveries.filter { now - $0 < 30 } + [now]
-        engine.inputNode.removeTap(onBus: 0)
+        removeTap()
         engine.stop()
         pcmConverter.reset()
-        if recoveries.count <= 3, startEngine() {
+        guard recoveries.count <= 3 else { stopAfterDeviceChange(); return }
+        if startEngine() {
+            lastError = nil
             DebugLog.log("MIC recovered after device configuration change")
             return
         }
+        // The new route's format can be briefly unavailable while it settles; retry once.
+        let revision = captureRevision
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard let self, self.isCapturing, self.captureRevision == revision, !self.tapInstalled else { return }
+            if self.startEngine() {
+                self.lastError = nil
+                DebugLog.log("MIC recovered after device configuration change (retry)")
+            } else { self.stopAfterDeviceChange() }
+        }
+    }
+
+    private func stopAfterDeviceChange() {
         isCapturing = false
         CaptureDiagnostics.record(.micStopped)
         lastError = "Microphone device configuration changed. Stop/start listening to use the current device."
@@ -128,7 +150,7 @@ final class MicCaptureManager: ObservableObject {
     func stop() {
         captureRevision = UUID()
         guard isCapturing else { return }
-        engine.inputNode.removeTap(onBus: 0)
+        removeTap()
         engine.stop()
         pcmConverter.reset()
         isCapturing = false
@@ -136,4 +158,9 @@ final class MicCaptureManager: ObservableObject {
         DebugLog.log("MIC capture stopped")
     }
 
+    private func removeTap() {
+        guard tapInstalled else { return }
+        engine.inputNode.removeTap(onBus: 0)
+        tapInstalled = false
+    }
 }
