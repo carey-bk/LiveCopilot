@@ -53,8 +53,11 @@ enum CaptureDiagnostics {
         return Details(errorDomain: known.contains(domain) ? domain : "other")
     }
     static func record(_ stage: Stage, code: Int? = nil, details: Details? = nil) {
-        // Do not record test hosts or synthetic fixture workers in production diagnostics.
-        guard Bundle.main.bundleIdentifier == "com.livecopilot.app", ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
+        // Do not record test hosts, mock runs or synthetic fixture workers. Development builds record
+        // into their own journal (see `url`) so hardware checks of a local build leave evidence.
+        let environment = ProcessInfo.processInfo.environment
+        guard ["com.livecopilot.app", "com.livecopilot.development"].contains(Bundle.main.bundleIdentifier ?? ""),
+              environment["XCTestConfigurationFilePath"] == nil, environment["LIVECOPILOT_MOCK"] != "1",
               !ProcessInfo.processInfo.arguments.contains("--mock") else { return }
         queue.sync {
             if stage == .listeningStart { captureID = UUID() }
