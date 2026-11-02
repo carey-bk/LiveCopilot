@@ -34,7 +34,7 @@ enum AppleSpeechSupport {
 /// Apple owns inference and downloaded assets; this provider never falls back to
 /// server recognition. Laya decides whether a final local transcript needs analysis.
 @available(macOS 26, *)
-@MainActor final class AppleLiveProvider: LiveProvider {
+@MainActor final class AppleLiveProvider: LiveProvider, RecognitionStatsReporting {
     var onEvent: ((LiveEvent) -> Void)?
     private let speaker: Speaker
     private let language: AppleSpeechLanguage
@@ -54,6 +54,9 @@ enum AppleSpeechSupport {
     private var heardSpeech = false
     private var audioFrames: Int64 = 0, offsetMS = 0
     private var textState = SpeechPreviewState()
+    private(set) var recognitionStats = RecognitionStats()
+    private var connectedAt: TimeInterval = 0
+    private var backlog = AudioBacklog()
 
     init(speaker: Speaker, language: AppleSpeechLanguage, sessionStart: Date = Date()) {
         self.speaker = speaker; self.language = language; self.sessionStart = sessionStart
@@ -78,7 +81,12 @@ enum AppleSpeechSupport {
         self.analyzer = analyzer
         try await analyzer.prepareToAnalyze(in: format)
         try Task.checkCancellation()
-        let input = AsyncStream<AnalyzerInput>(bufferingPolicy: .bufferingOldest(64)) { self.continuation = $0 }
+        // Bounded by duration in `sendAudio`, not by buffer count: capture callbacks deliver
+        // device-dependent buffer sizes, so a count bound tolerated very different amounts of lag.
+        let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
+        self.continuation = continuation
+        let backlog = AudioBacklog(); self.backlog = backlog
+        let input = stream.map { item in backlog.removeOldest(); return item }
         resultTask = Task { [weak self] in
             do {
                 for try await result in transcriber.results {
@@ -94,11 +102,13 @@ enum AppleSpeechSupport {
         active = true
         heardSpeech = false; endpoint = PCMEndpoint()
         offsetMS = max(0, Int(Date().timeIntervalSince(sessionStart) * 1000))
+        connectedAt = ProcessInfo.processInfo.systemUptime
         loading = Task { [weak self] in
             guard let self else { return }
             do {
                 try await self.prepare()
                 guard self.active, !Task.isCancelled else { return }
+                self.recognitionStats.readyMS = Int((ProcessInfo.processInfo.systemUptime - self.connectedAt) * 1000)
                 self.ready = true; self.onEvent?(.ready)
                 let queued = self.pending; self.pending.removeAll(); self.sendAudio(queued)
             } catch {
@@ -108,10 +118,10 @@ enum AppleSpeechSupport {
     }
     func sendAudio(_ data: Data) {
         guard active, !closing, !data.isEmpty else { return }
-        guard data.count % 2 == 0, data.count <= 16000 * 2 * 12 else { fail(); return }
+        guard data.count % 2 == 0, data.count / 32 <= RecognitionStats.maximumBacklogMS else { fail(); return }
         guard ready else {
-            guard pending.count + data.count <= 16000 * 2 * 12 else { fail(); return }
-            pending.append(data); return
+            guard (pending.count + data.count) / 32 <= RecognitionStats.maximumBacklogMS else { overflow(); return }
+            pending.append(data); recognitionStats.noteBacklog(ms: pending.count / 32); return
         }
         // Bounded 250 ms input buffers; never silently drop queued speech.
         for offset in stride(from: 0, to: data.count, by: 8000) {
@@ -119,6 +129,9 @@ enum AppleSpeechSupport {
             guard let buffer = makeBuffer(bytes) else { fail(); return }
             let time = CMTime(value: audioFrames, timescale: 16000)
             audioFrames += Int64(bytes.count / 2)
+            let outstanding = backlog.add(Double(buffer.frameLength) / buffer.format.sampleRate * 1000)
+            guard outstanding <= Double(RecognitionStats.maximumBacklogMS) else { overflow(); return }
+            recognitionStats.noteBacklog(ms: Int(outstanding))
             guard case .enqueued = continuation?.yield(AnalyzerInput(buffer: buffer, bufferStartTime: time)) else { fail(); return }
             for event in endpoint.consume(bytes) {
                 switch event {
@@ -173,12 +186,20 @@ enum AppleSpeechSupport {
         let text = String(result.text.characters)
         if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { heardSpeech = true }
         if let part = textState.accept(startMS: start, endMS: end, text: text, final: result.isFinal) {
+            if !closing { recognitionStats.noteFinal(capturedMS: Int(audioFrames / 16), endMS: part.endMS) }
             let id = "apple-\(speaker.rawValue)-\(part.startMS)-\(part.endMS)"
             let stable = part.text.trimmingCharacters(in: .whitespacesAndNewlines)
             onEvent?(.transcript(.init(id: id, speaker: speaker, text: " " + stable, startMS: offsetMS + part.startMS,
                                       endMS: offsetMS + part.endMS, receivedAt: Date())))
         }
         onEvent?(.partialTranscript(textState.preview))
+    }
+    private func overflow() {
+        let failure = RecognitionStats.overflowFailure(ready: ready)
+        recognitionStats.failure = failure
+        fail(message: failure == .speech_load_slow
+             ? "Apple speech took too long to start. Stop/start listening to retry."
+             : "Apple speech fell behind. Stop/start listening and reduce other heavy workloads.")
     }
     private func fail(message: String? = nil) {
         guard !failed else { return }

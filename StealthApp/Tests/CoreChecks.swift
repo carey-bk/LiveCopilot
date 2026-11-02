@@ -297,8 +297,9 @@ enum CoreChecks {
         try check("capture journal keeps readable events beside unknown stages and prints numbers only") {
             let journal = localFixture.appendingPathComponent("capture-diagnostics.json")
             let flow = AudioFlowMonitor(); flow.begin(sampleRate: 16_000); flow.observe(Data(count: 320))
+            var recognition = RecognitionStats(); recognition.noteBacklog(ms: 40)
             let event = CaptureDiagnostics.Event(time: Date(timeIntervalSince1970: 0), stage: .audioSummary, code: nil,
-                                                 details: CaptureDiagnostics.audioDetails(flow.snapshot(), speaker: "You", backlogMaxMS: 40))
+                                                 details: CaptureDiagnostics.audioDetails(flow.snapshot(), speaker: "You", recognition: recognition))
             try CaptureDiagnostics.append(event, to: journal)
             var rows = try JSONSerialization.jsonObject(with: Data(contentsOf: journal)) as! [[String: Any]]
             rows.insert(["time": 0, "stage": "stageFromANewerBuild"], at: 0)
@@ -307,6 +308,33 @@ enum CoreChecks {
             try expect(events.count == 1 && events[0].stage == .audioSummary, "one unknown stage discarded the whole journal")
             let line = CaptureDiagnostics.summaryLine(events[0])
             try expect(line.contains("speaker=You verdict=digitalSilence") && line.contains("backlog_ms_max=40"), "audio summary fields missing")
+        }
+        try check("recognition stats measure final lag on the audio timeline and name overflow causes") {
+            var stats = RecognitionStats()
+            try expect(stats.finalLagMeanMS == nil, "empty stats reported a lag")
+            stats.noteFinal(capturedMS: 1_000, endMS: 300)
+            stats.noteFinal(capturedMS: 5_000, endMS: 3_900)
+            stats.noteFinal(capturedMS: 100, endMS: 400) // a segment ending past captured audio is not negative lag
+            try expect(stats.finalLagCount == 3 && stats.finalLagMeanMS == 600 && stats.finalLagMaxMS == 1_100, "final lag miscounted")
+            stats.noteBacklog(ms: 900); stats.noteBacklog(ms: 200)
+            try expect(stats.backlogMaxMS == 900, "backlog maximum lost")
+            try expect(RecognitionStats.overflowFailure(ready: false) == .speech_load_slow
+                       && RecognitionStats.overflowFailure(ready: true) == .speech_behind, "overflow cause misattributed")
+            let backlog = AudioBacklog()
+            for _ in 0..<500 { _ = backlog.add(20) } // 500 small callbacks, far beyond a 64-buffer bound
+            try expect(backlog.add(0) == 10_000, "outstanding duration miscounted")
+            for _ in 0..<500 { backlog.removeOldest() }
+            backlog.removeOldest()
+            try expect(backlog.add(0) == 0, "consumed audio left a backlog or went negative")
+            stats.readyMS = 2_837; stats.failure = .speech_behind
+            let flow = AudioFlowMonitor(); flow.begin(sampleRate: 16_000)
+            let summary = CaptureDiagnostics.summaryLine(.init(time: Date(timeIntervalSince1970: 0), stage: .audioSummary, code: nil,
+                                                                details: CaptureDiagnostics.audioDetails(flow.snapshot(), speaker: "Them", recognition: stats)))
+            try expect(summary.contains("ready_ms=2837") && summary.contains("backlog_ms_max=900")
+                       && summary.contains("final_lag_ms_mean=600 final_lag_ms_max=1100"), "recognition timing missing from summary")
+            let failed = CaptureDiagnostics.summaryLine(.init(time: Date(timeIntervalSince1970: 0), stage: .speechFailed, code: nil,
+                                                               details: .init(speaker: "You", failure: .speech_load_slow)))
+            try expect(failed.hasSuffix("speechFailed speaker=You failure=speech_load_slow"), "speech failure cause missing from summary")
         }
         let fixture = "Experiment A has 128 samples. Method B latency is 42 ms. Revenue in 2025 was 18.7 million."
         let chunks = DocumentChunker.chunk([.init(text: String(repeating: fixture + "\n", count: 40), page: 3)], documentID: "doc", name: "study.pdf", maxCharacters: 256, overlap: 30)

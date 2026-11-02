@@ -846,10 +846,10 @@ final class AppCoordinator: ObservableObject {
             if activeDelegations.count > 400 { activeDelegations = [id] }
             pendingAutomatic = (speaker, id, Date().addingTimeInterval(25))
             scheduleAutomatic()
-        case .ready: if !isMock { CaptureDiagnostics.record(.speechReady, details: .init(speaker: speaker.rawValue)) }; speechRuntime = .ready; statusMessage = "Listening · \(settings.mode.rawValue) · \(speaker.rawValue) ready"
+        case .ready: if !isMock { CaptureDiagnostics.record(.speechReady, details: .init(speaker: speaker.rawValue, readyMS: recognition(for: speaker)?.readyMS)) }; speechRuntime = .ready; statusMessage = "Listening · \(settings.mode.rawValue) · \(speaker.rawValue) ready"
         case .status(let message): statusMessage = message
         case .failed(let message):
-            if !isMock { CaptureDiagnostics.record(.speechFailed, details: .init(speaker: speaker.rawValue)) }
+            if !isMock { CaptureDiagnostics.record(.speechFailed, details: .init(speaker: speaker.rawValue, failure: recognition(for: speaker)?.failure)) }
             speechRuntime = .failed
             layaGate.reset()
             transcript.clearPartial(speaker)
@@ -870,10 +870,13 @@ final class AppCoordinator: ObservableObject {
         }
     }
     private func flow(for speaker: Speaker) -> AudioFlowMonitor { speaker == .them ? systemFlow : micFlow }
+    private func recognition(for speaker: Speaker) -> RecognitionStats? {
+        ((speaker == .them ? systemLive : micLive) as? RecognitionStatsReporting)?.recognitionStats
+    }
     private func recordAudioFlow(_ stage: CaptureDiagnostics.Stage, speaker: Speaker, provider: (any LiveProvider)?) {
         guard !isMock else { return }
         CaptureDiagnostics.record(stage, details: CaptureDiagnostics.audioDetails(flow(for: speaker).snapshot(), speaker: speaker.rawValue,
-                                                                                    backlogMaxMS: (provider as? LocalLiveProvider)?.maxBacklogMS))
+                                                                                    recognition: (provider as? RecognitionStatsReporting)?.recognitionStats))
     }
     private func finishAudioFlow(_ speaker: Speaker, provider: (any LiveProvider)?) {
         guard let index = flowSources.firstIndex(of: speaker) else { return }

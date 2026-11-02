@@ -3,7 +3,7 @@ import Foundation
 /// Local streaming transcription. Paraformer
 /// emits replaceable previews while its streaming decoder is still listening.
 @MainActor
-final class LocalLiveProvider: LiveProvider {
+final class LocalLiveProvider: LiveProvider, RecognitionStatsReporting {
     var onEvent: ((LiveEvent) -> Void)?
     private let speaker: Speaker
     private let worker: LocalInferenceWorker
@@ -22,8 +22,10 @@ final class LocalLiveProvider: LiveProvider {
     private var nextTerms: [String] = []
     private var displayTerms: [String] = []
     private var sentTerms: [String]?
-    /// Largest amount of captured audio waiting for the worker, a direct measure of recognition lag.
-    private(set) var maxBacklogMS = 0
+    private(set) var recognitionStats = RecognitionStats()
+    private var connectedAt: TimeInterval = 0
+    /// All audio accepted since `connect`; worker segment times share this timeline.
+    private var capturedBytes = 0
 
     init(directory: URL, speaker: Speaker, sessionStart: Date = Date(), executable: URL? = nil, contextual: Bool = false, terms: [String] = [], displayTerms: [String]? = nil) {
         self.speaker = speaker; self.sessionStart = sessionStart
@@ -45,24 +47,31 @@ final class LocalLiveProvider: LiveProvider {
         guard !active else { return }
         active = true; closing = false
         offsetMS = max(0, Int(Date().timeIntervalSince(sessionStart) * 1000))
+        connectedAt = ProcessInfo.processInfo.systemUptime
         loading = Task { [weak self] in
             guard let self else { return }
             do {
                 try await self.prepare()
                 guard self.active, !Task.isCancelled else { return }
+                self.recognitionStats.readyMS = Int((ProcessInfo.processInfo.systemUptime - self.connectedAt) * 1000)
                 self.ready = true; self.onEvent?(.ready); self.drain()
             } catch { if self.active { self.fail() } }
         }
     }
     func sendAudio(_ data: Data) {
         guard active, !closing else { return }
-        // At most 12 seconds. Never silently drop audio then pretend the transcript is complete.
-        guard pending.count + data.count <= 16000 * 2 * 12 else {
+        // Bounded. Never silently drop audio then pretend the transcript is complete.
+        guard (pending.count + data.count) / 32 <= RecognitionStats.maximumBacklogMS else {
+            let failure = RecognitionStats.overflowFailure(ready: ready)
+            recognitionStats.failure = failure
             active = false; inferenceFailed = true; pending.removeAll(); worker.close()
             partial = ""; onEvent?(.partialTranscript(""))
-            onEvent?(.failed("Local recognition fell behind. Stop/start listening and reduce other heavy workloads.")); return
+            onEvent?(.failed(failure == .speech_load_slow
+                ? "Local speech model took too long to load. Close other heavy apps, then stop/start listening."
+                : "Local recognition fell behind. Stop/start listening and reduce other heavy workloads.")); return
         }
-        pending.append(data); maxBacklogMS = max(maxBacklogMS, pending.count / 32); drain()
+        pending.append(data); capturedBytes += data.count
+        recognitionStats.noteBacklog(ms: pending.count / 32); drain()
     }
     private func drain() {
         guard ready, pump == nil else { return }
@@ -75,12 +84,12 @@ final class LocalLiveProvider: LiveProvider {
                 do {
                     try await self.applyTerms()
                     let result = try await self.worker.call(["op": "audio", "pcm": data.base64EncodedString()])
-                    if self.active || self.closing { self.consume(result) }
+                    if self.active || self.closing { self.consume(result, flush: false) }
                 } catch { self.inferenceFailed = true; if self.active { self.fail() }; return }
             }
         }
     }
-    private func consume(_ response: [String: Any]) {
+    private func consume(_ response: [String: Any], flush: Bool) {
         let wasSpeaking = speaking
         speaking = response["speaking"] as? Bool ?? false
         if wasSpeaking != speaking { onEvent?(.speechActivity(speaking)) }
@@ -89,6 +98,7 @@ final class LocalLiveProvider: LiveProvider {
             let cleaned = raw.replacingOccurrences(of: #"<\|[^>]+\|>"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
             let text = contextual ? TranscriptCasing.format(cleaned, terms: displayTerms) : cleaned
             guard !text.isEmpty else { continue }
+            if !flush { recognitionStats.noteFinal(capturedMS: capturedBytes / 32, endMS: end) }
             let id = "local-" + UUID().uuidString
             onEvent?(.transcript(.init(id: id, speaker: speaker, text: " " + text, startMS: offsetMS + start,
                                       endMS: offsetMS + end, receivedAt: Date())))
@@ -115,7 +125,7 @@ final class LocalLiveProvider: LiveProvider {
         if ready {
             await pump?.value
             if !inferenceFailed, let result = try? await worker.call(["op": "flush"], timeout: 15) {
-                consume(result); finalized = pending.isEmpty
+                consume(result, flush: true); finalized = pending.isEmpty
             } else { finalized = false }
         }
         worker.close(); pump?.cancel(); pending.removeAll(); ready = false

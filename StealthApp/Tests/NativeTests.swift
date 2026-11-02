@@ -428,6 +428,89 @@ final class NativeTests: XCTestCase {
         for file in files { XCTAssertLessThanOrEqual(try Data(contentsOf: file).count, 1_000) }
     }
 
+    /// A synthetic stdio worker: `onAudio` is shell code run for each audio request with `$id` set.
+    private func speechWorker(startup: String = "", onAudio: String) throws -> (URL, URL) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LiveCopilot-SpeechStats-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = directory.appendingPathComponent("worker")
+        try """
+        #!/bin/sh
+        \(startup)
+        printf '%s\\n' '{"ready":true}'
+        audio=0
+        while IFS= read -r row; do
+          id=$(printf '%s' "$row" | sed -n 's/.*"id":"\\([^"]*\\)".*/\\1/p')
+          case "$row" in
+            *'"op":"audio"'*) audio=$((audio+1)); \(onAudio) ;;
+            *) printf '{"id":"%s"}\\n' "$id" ;;
+          esac
+        done
+        """.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        return (directory, script)
+    }
+    @MainActor private func waitUntil(_ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(10)
+        while !condition() && Date() < deadline { try await Task.sleep(nanoseconds: 20_000_000) }
+    }
+
+    @MainActor func testLocalRecognitionReportsReadyTimeAndFinalLagOnTheAudioTimeline() async throws {
+        // The first audio request returns a final segment ending 300 ms into the stream.
+        let (directory, worker) = try speechWorker(onAudio: """
+        if [ "$audio" = 1 ]; then printf '{"id":"%s","segments":[{"text":"x","start_ms":0,"end_ms":300}]}\\n' "$id"; else printf '{"id":"%s"}\\n' "$id"; fi
+        """)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let provider = LocalLiveProvider(directory: directory, speaker: .them, executable: worker)
+        var ready = false, finals = 0, failure: String?
+        provider.onEvent = { event in
+            switch event {
+            case .ready: ready = true
+            case .transcript: finals += 1
+            case .failed(let message): failure = message
+            default: break
+            }
+        }
+        provider.connect(context: "")
+        try await waitUntil { ready || failure != nil }
+        XCTAssertTrue(ready, failure ?? "worker never became ready")
+        provider.sendAudio(Data(count: 32_000)) // 1 s captured before the result arrives
+        try await waitUntil { finals > 0 || failure != nil }
+        let stats = provider.recognitionStats
+        XCTAssertEqual(finals, 1)
+        XCTAssertNotNil(stats.readyMS)
+        XCTAssertEqual(stats.finalLagCount, 1)
+        XCTAssertEqual(stats.finalLagMeanMS, 700, "1000 ms captured minus a segment ending at 300 ms")
+        XCTAssertEqual(stats.backlogMaxMS, 1_000)
+        XCTAssertNil(stats.failure)
+        await provider.disconnect()
+        XCTAssertEqual(provider.recognitionStats.finalLagCount, 1, "the stop-time flush must not count as live lag")
+    }
+
+    @MainActor func testLocalRecognitionNamesSlowModelLoadSeparatelyFromFallingBehind() async throws {
+        for (slowLoad, expected, text) in [(true, CaptureDiagnostics.Failure.speech_load_slow, "took too long to load"),
+                                           (false, .speech_behind, "fell behind")] {
+            // Slow load: ready only after 30 s. Behind: ready at once, but audio is never answered.
+            let (directory, worker) = try speechWorker(startup: slowLoad ? "sleep 30" : "", onAudio: "exec sleep 30")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let provider = LocalLiveProvider(directory: directory, speaker: .room, executable: worker)
+            var ready = false, failure: String?
+            provider.onEvent = { event in
+                if case .ready = event { ready = true }
+                if case .failed(let message) = event { failure = message }
+            }
+            provider.connect(context: "")
+            if !slowLoad { try await waitUntil { ready } ; XCTAssertTrue(ready) }
+            for _ in 0..<14 where failure == nil {
+                provider.sendAudio(Data(count: 32_000))
+                await Task.yield()
+            }
+            XCTAssertEqual(provider.recognitionStats.failure, expected)
+            XCTAssertTrue(failure?.contains(text) == true, failure ?? "no failure for \(expected)")
+            XCTAssertNotNil(L10n.text(failure ?? "", language: .simplifiedChinese).range(of: "监听"), "missing Simplified Chinese for \(expected)")
+            await provider.disconnect()
+        }
+    }
+
     @MainActor func testMicrophoneHintsOnlyForMissingOrDigitallySilentInputInAllLanguages() {
         XCTAssertNil(AppCoordinator.microphoneHint(.audioWithoutText), "Quiet rooms or unrecognized speech are not device faults")
         XCTAssertNil(AppCoordinator.microphoneHint(.recognized))

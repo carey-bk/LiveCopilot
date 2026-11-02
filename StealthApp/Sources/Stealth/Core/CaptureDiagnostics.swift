@@ -12,6 +12,8 @@ enum CaptureDiagnostics {
     enum Failure: String, Codable {
         case unknown, embedding_context, inference_failed, timeout, runtime_missing, runtime_start
         case embedding_load, model_load_failed, process_ended
+        /// Captured audio exceeded the bound while the speech model loaded, or after it was ready.
+        case speech_load_slow, speech_behind
     }
     struct Details: Codable {
         var sampleRate: Double?; var channels: UInt32?; var echoCancellation: Bool?
@@ -22,11 +24,13 @@ enum CaptureDiagnostics {
         var audioVerdict: AudioFlowMonitor.Verdict?; var audioSeconds: Double?; var firstAudioMS: Int?
         var peakDBFS: Int?; var audibleFraction: Double?; var partials: Int?; var transcripts: Int?
         var textLatencyMeanMS: Int?; var textLatencyMaxMS: Int?; var backlogMaxMS: Int?
+        var readyMS: Int?; var finalLagMeanMS: Int?; var finalLagMaxMS: Int?
     }
-    static func audioDetails(_ flow: AudioFlowMonitor.Snapshot, speaker: String, backlogMaxMS: Int? = nil) -> Details {
+    static func audioDetails(_ flow: AudioFlowMonitor.Snapshot, speaker: String, recognition: RecognitionStats? = nil) -> Details {
         Details(speaker: speaker, audioVerdict: flow.verdict, audioSeconds: flow.audioSeconds, firstAudioMS: flow.firstAudioMS,
                 peakDBFS: flow.peakDBFS, audibleFraction: flow.audibleFraction, partials: flow.partials, transcripts: flow.transcripts,
-                textLatencyMeanMS: flow.textLatencyMeanMS, textLatencyMaxMS: flow.textLatencyMaxMS, backlogMaxMS: backlogMaxMS)
+                textLatencyMeanMS: flow.textLatencyMeanMS, textLatencyMaxMS: flow.textLatencyMaxMS, backlogMaxMS: recognition?.backlogMaxMS,
+                readyMS: recognition?.readyMS, finalLagMeanMS: recognition?.finalLagMeanMS, finalLagMaxMS: recognition?.finalLagMaxMS)
     }
     struct Event: Codable {
         let time: Date; let stage: Stage; let code: Int?
@@ -82,9 +86,11 @@ enum CaptureDiagnostics {
     /// Numbers only: never transcript text, device names or paths.
     static func summaryLine(_ event: Event) -> String {
         var line = "\(ISO8601DateFormatter().string(from: event.time)) \(event.stage.rawValue)\(event.code.map { " code=\($0)" } ?? "")"
-        guard let d = event.details, d.audioVerdict != nil else { return line }
+        guard let d = event.details, d.audioVerdict != nil || d.failure != nil || d.readyMS != nil else { return line }
         var fields: [String] = []
         if let v = d.speaker { fields.append("speaker=\(v)") }
+        if let v = d.failure { fields.append("failure=\(v.rawValue)") }
+        if let v = d.readyMS { fields.append("ready_ms=\(v)") }
         if let v = d.audioVerdict { fields.append("verdict=\(v.rawValue)") }
         if let v = d.audioSeconds { fields.append("audio_s=\(v)") }
         if let v = d.firstAudioMS { fields.append("first_audio_ms=\(v)") }
@@ -95,6 +101,8 @@ enum CaptureDiagnostics {
         if let v = d.textLatencyMeanMS { fields.append("activity_to_text_ms_mean=\(v)") }
         if let v = d.textLatencyMaxMS { fields.append("activity_to_text_ms_max=\(v)") }
         if let v = d.backlogMaxMS { fields.append("backlog_ms_max=\(v)") }
+        if let v = d.finalLagMeanMS { fields.append("final_lag_ms_mean=\(v)") }
+        if let v = d.finalLagMaxMS { fields.append("final_lag_ms_max=\(v)") }
         line += " " + fields.joined(separator: " ")
         return line
     }
