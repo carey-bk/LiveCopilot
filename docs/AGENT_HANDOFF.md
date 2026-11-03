@@ -231,3 +231,14 @@ Branch state: local commits only. Nothing pushed, merged, versioned, signed, not
 - Local evidence remains in this Claude worktree: `StealthApp/build/codex-round2-review.xcresult`, `StealthApp/build/codex-round2-final.xcresult`, and `StealthApp/build/codex-round2-review-logs/`. Existing Claude evidence is preserved.
 - The owner authorized local integration and replacement of the existing installed app for manual hardware testing. GitHub publication is outside this integration. Public version remains 2.7.0; local signing assigns a new internal build.
 - Final-lag statistics use captured audio duration, assume continuous capture, exclude capture-callback buffering, and cannot by themselves establish end-to-end wall-clock recognition latency. No hardware recovery or user-crash resolution is claimed by these automated checks.
+
+
+## AirPods hardware feedback and recovery correction (2026-11-03)
+
+- The owner reproduced an automatic listening stop when putting on AirPods in In-Person mode, build `20261102.151529`. The app process remained alive.
+- Capture diagnostics at 22:04:28–22:04:29 (+08:00) show `micDeviceChanged`, two `micFailed` events with `com.apple.coreaudio.avfaudio` / `-10868`, then `micStopped`. Recognition before the switch was working; the provider loaded in 393 ms, with a maximum queued backlog of 255 ms.
+- The OS audio log explicitly reports `Input HW format: 1 ch, 24000 Hz` versus `tap format: 1 ch, 48000 Hz` on both attempts. Reinstalling a nil-format tap on the stopped engine reused its stale bus format. This establishes the cause of this listening stop, not a general cause of reported crashes.
+- The microphone manager now recreates AVAudioEngine on a new listening start, route recovery, and the delayed retry. It removes the old observer/tap, stops the old engine, resets the converter, and registers the new observer. An engine generation guard discards queued notifications from the old engine. Replacement runs in the deferred MainActor task, outside the notification callback, as required by Apple's AVAudioEngineConfigurationChange documentation.
+- Existing capture-revision cancellation and the bounded recovery policy remain. The fix requires a repeat of the same physical AirPods switch to confirm recovery; automated tests cannot establish that result.
+- Content-free evidence is preserved locally under `StealthApp/build/airpods-recovery-evidence-20261103/` (capture events and filtered audio-only logs); it is not committed. Claude's later system-audio commits are separate and have not been included in this microphone correction.
+- Verification of this correction: **77 core checks passed; 260 XCTest cases, 24 skipped, 0 failures; universal Release build succeeded**. Signed application inventory: 10 verified Mach-O binaries. No microphone capture or device switching was performed by the automated tests.

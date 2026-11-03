@@ -15,7 +15,8 @@ final class MicCaptureManager: ObservableObject {
     var onPCM16: ((Data) -> Void)?
 
     private let log = Logger(subsystem: "com.livecopilot.app", category: "mic")
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
+    private var engineRevision = UUID()
     private let pcmConverter = PCMConverter()
     private var configurationObserver: NSObjectProtocol?
     private var captureRevision = UUID()
@@ -26,10 +27,13 @@ final class MicCaptureManager: ObservableObject {
     var flow: AudioFlowMonitor?
     func configure(sampleRate: Double) { if !isCapturing { pcmConverter.configure(sampleRate: sampleRate) } }
 
-    init() {
+    init() { observeEngine() }
+
+    private func observeEngine() {
+        let revision = engineRevision
         configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.isCapturing else { return }
+                guard let self, self.isCapturing, self.engineRevision == revision else { return }
                 self.recoverFromConfigurationChange()
             }
         }
@@ -50,6 +54,7 @@ final class MicCaptureManager: ObservableObject {
         guard !isCapturing else { return }
         lastError = nil
         recoveries = []
+        rebuildEngine()
         if startEngine() { isCapturing = true }
     }
 
@@ -121,9 +126,7 @@ final class MicCaptureManager: ObservableObject {
         CaptureDiagnostics.record(.micDeviceChanged)
         let now = ProcessInfo.processInfo.systemUptime
         recoveries = recoveries.filter { now - $0 < 30 } + [now]
-        removeTap()
-        engine.stop()
-        pcmConverter.reset()
+        rebuildEngine()
         guard recoveries.count <= 3 else { stopAfterDeviceChange(); return }
         if startEngine() {
             lastError = nil
@@ -135,6 +138,7 @@ final class MicCaptureManager: ObservableObject {
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard let self, self.isCapturing, self.captureRevision == revision, !self.tapInstalled else { return }
+            self.rebuildEngine()
             if self.startEngine() {
                 self.lastError = nil
                 DebugLog.log("MIC recovered after device configuration change (retry)")
@@ -164,5 +168,20 @@ final class MicCaptureManager: ObservableObject {
         guard tapInstalled else { return }
         engine.inputNode.removeTap(onBus: 0)
         tapInstalled = false
+    }
+
+    /// A stopped engine can retain the old input-bus format after a Bluetooth route change.
+    /// Replacing the graph refreshes that format; reinstalling a nil-format tap on the old
+    /// graph still inherited 48 kHz while the AirPods hardware had moved to 24 kHz (-10868).
+    /// Called on MainActor after the notification callback returns, never from that callback.
+    private func rebuildEngine() {
+        engineRevision = UUID()
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
+        configurationObserver = nil
+        removeTap()
+        engine.stop()
+        pcmConverter.reset()
+        engine = AVAudioEngine()
+        observeEngine()
     }
 }
