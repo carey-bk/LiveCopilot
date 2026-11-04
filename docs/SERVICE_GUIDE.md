@@ -23,10 +23,10 @@ Manual generation is always available (current default Control–Option–Space;
 | Preset | Default model | Default base URL | Thinking |
 | --- | --- | --- | --- |
 | Qwen / Alibaba Model Studio | `qwen3.8-flash` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `enable_thinking`, off by default |
-| GLM / Zhipu | `glm-5.3-flash` | `https://open.bigmodel.cn/api/paas/v4` | Mandatory for supported Flash models; model default |
+| GLM / Zhipu | `glm-5.3-flashx` (`glm-5.3-flash` also listed) | `https://open.bigmodel.cn/api/paas/v4` | Cannot be turned off for these models; Low by default |
 | Kimi / Moonshot | `kimi-k2.6` | `https://api.moonshot.cn/v1` | `thinking.type` |
 
-These presets use streaming `/chat/completions` with editable model/endpoint/thinking. Qwen/Kimi optional thinking defaults off to reduce waiting; GLM-5.3-Flash/FlashX cannot disable thinking, so UI offers model default/on. OpenAI's current default is `gpt-6.1-sol`; DeepSeek uses `deepseek-flash`. Low reasoning is preferred where supported. New defaults do not overwrite saved choices, keys, documents, or indexes. Changing the answer model does not require reindexing.
+These presets use streaming `/chat/completions` with editable model/endpoint/thinking. Qwen/Kimi optional thinking defaults off to reduce waiting; GLM-5.3-Flash/FlashX cannot disable thinking, so the UI offers Low, High or Max. OpenAI's current default is `gpt-6-sol` (`gpt-6-luna` and `gpt-6.1-sol` are also listed); DeepSeek uses `deepseek-flash`. Low reasoning is preferred where supported. New defaults do not overwrite saved choices, keys, documents, or indexes. Changing the answer model does not require reindexing.
 
 Qwen keys must match the region; new workspaces may supply a new console endpoint, while the older Beijing URL is a starting preset. International Z.AI uses `https://api.z.ai/api/paas/v4`; international Moonshot uses `https://api.moonshot.ai/v1`. Credentials, available models, and prices may differ by region/account. Coding Plan subscriptions are not general API credit.
 
