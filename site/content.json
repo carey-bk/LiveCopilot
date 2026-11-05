@@ -24,8 +24,6 @@
     "privacy_title": "你的资料，\n可以留在你的 Mac 上。",
     "privacy_link": "阅读完整隐私说明",
     "install_title": "下一次对话，\n更从容。",
-    "edge_hint": "演示贴边隐藏",
-    "edge_reveal": "唤回窗口",
     "nav_services": "服务与隐私",
     "nav_download": "下载",
     "pill_text": "新版本",
@@ -95,7 +93,7 @@
     "mode_kb": "仅知识库",
     "f_edge_title": "贴边隐藏",
     "edge_visible_note": "窗口停靠右侧；隐藏后没有常驻把手",
-    "edge_hidden_note": "窗口已隐藏 · 移到右侧边缘或点按钮唤回",
+    "edge_hidden_note": "窗口已隐藏 · 鼠标移到右侧边缘即可唤回",
     "f_history_title": "完整会话，随时回看",
     "f_history_body": "转写、回答和来源保存在本机，可按日期浏览和搜索。",
     "history_search": "搜索会话内容",
@@ -190,7 +188,10 @@
     "mode_general_body": "不查资料，用通用知识回答。",
     "mode_hybrid_body": "问题需要时才引用你的资料，其余用通用知识。",
     "mode_kb_body": "只依据你的资料；找不到依据时会说明缺口。",
-    "eng_note_laya": "本地语音搭配 Laya 也能自动判断何时回答，Laya 仅支持 Apple Silicon。"
+    "eng_note_laya": "本地语音搭配 Laya 也能自动判断何时回答，Laya 仅支持 Apple Silicon。",
+    "tr_pop_enable": "开启翻译",
+    "mode_general_answer": "一般可以看三点：用户价值、实现成本，以及它是不是后续功能的基础。先上线价值高、成本可控的那一个。",
+    "mode_kb_answer": "按产品策略，优先解决高频用户问题；路线图也把基础能力排在扩展之前。所以我会先上线最高频、又能为后续打基础的功能。"
   },
   "en": {
     "page_title": "LiveCopilot — AI for the conversation in front of you",
@@ -217,8 +218,6 @@
     "privacy_title": "Your materials can stay on your Mac.",
     "privacy_link": "Read the full privacy notes",
     "install_title": "Your next conversation.\nA little more composed.",
-    "edge_hint": "Try edge hiding",
-    "edge_reveal": "Reveal window",
     "nav_services": "Services & privacy",
     "nav_download": "Download",
     "pill_text": "New in",
@@ -288,7 +287,7 @@
     "mode_kb": "Knowledge Base Only",
     "f_edge_title": "Edge docking",
     "edge_visible_note": "Docked at the right edge; no handle stays visible when hidden",
-    "edge_hidden_note": "Hidden · hover the right edge or press the button",
+    "edge_hidden_note": "Hidden · move the pointer to the right edge to bring it back",
     "f_history_title": "Your conversations, together",
     "f_history_body": "Transcripts, answers and sources stay on your Mac. Browse by date or search.",
     "history_search": "Search conversations",
@@ -383,7 +382,10 @@
     "mode_general_body": "Answers from general knowledge without your documents.",
     "mode_hybrid_body": "Cites your documents only when the question needs them.",
     "mode_kb_body": "Relies on your documents alone and says when evidence is missing.",
-    "eng_note_laya": "Local speech can also decide when to answer with Laya, which requires Apple Silicon."
+    "eng_note_laya": "Local speech can also decide when to answer with Laya, which requires Apple Silicon.",
+    "tr_pop_enable": "Enable translation",
+    "mode_general_answer": "A common approach weighs three things: user value, cost to build, and whether it lays the groundwork for later features. Ship the one with high value and manageable cost.",
+    "mode_kb_answer": "The product strategy puts frequent user problems first, and the roadmap places core capabilities ahead of expansion. So I would ship the most frequent need that also lays the groundwork."
   },
   "zh-Hant": {
     "page_title": "LiveCopilot — 實時對話中的 AI 助手",
@@ -410,8 +412,6 @@
     "privacy_title": "你的資料，\n可以留在你的 Mac 上。",
     "privacy_link": "閱讀完整隱私說明",
     "install_title": "下一次對話，\n更從容。",
-    "edge_hint": "演示貼邊隱藏",
-    "edge_reveal": "喚回窗口",
     "nav_services": "服務與隱私",
     "nav_download": "下載",
     "pill_text": "新版本",
@@ -481,7 +481,7 @@
     "mode_kb": "僅知識庫",
     "f_edge_title": "貼邊隱藏",
     "edge_visible_note": "視窗停靠右側；隱藏後沒有常駐把手",
-    "edge_hidden_note": "視窗已隱藏 · 移到右側邊緣或點按鈕喚回",
+    "edge_hidden_note": "視窗已隱藏 · 滑鼠移到右側邊緣即可喚回",
     "f_history_title": "完整會話，隨時回看",
     "f_history_body": "轉寫、回答和來源儲存在本機，可按日期瀏覽和搜尋。",
     "history_search": "搜索會話內容",
@@ -576,6 +576,9 @@
     "mode_general_body": "不查資料，用通用知識回答。",
     "mode_hybrid_body": "問題需要時才引用你的資料，其餘用通用知識。",
     "mode_kb_body": "只依據你的資料；找不到依據時會說明缺口。",
-    "eng_note_laya": "本地語音搭配 Laya 也能自動判斷何時回答，Laya 僅支援 Apple Silicon。"
+    "eng_note_laya": "本地語音搭配 Laya 也能自動判斷何時回答，Laya 僅支援 Apple Silicon。",
+    "tr_pop_enable": "開啓翻譯",
+    "mode_general_answer": "一般可以看三點：使用者價值、實現成本，以及它是不是後續功能的基礎。先上線價值高、成本可控的那一個。",
+    "mode_kb_answer": "按產品策略，優先解決高頻使用者問題；路線圖也把基礎能力排在擴展之前。所以我會先上線最高頻、又能為後續打基礎的功能。"
   }
 }

@@ -45,19 +45,45 @@
   document.querySelectorAll(".tr-window .fold").forEach(button =>
     bindFold(button, button.closest(".p"), { expand: button.dataset.expand, collapse: button.dataset.collapse }));
 
-  // Edge docking demo: the window slides past the right edge and leaves no handle behind.
-  const desk = document.querySelector(".desk"), edgeToggle = document.querySelector(".edge-toggle"), edgeNote = document.querySelector(".edge-note");
-  if (desk) {
-    const setHidden = hidden => {
+  // Edge docking demo plays by itself while on screen: every 2 s the window slides past the
+  // right edge, then a pointer reaches the edge and brings it back.
+  const desk = document.querySelector(".desk"), edgeNote = document.querySelector(".edge-note");
+  if (desk && !reduced) {
+    let timer = 0, onScreen = false;
+    const flip = () => {
+      const hidden = desk.dataset.hidden !== "true";
       desk.dataset.hidden = hidden;
-      edgeToggle.setAttribute("aria-pressed", hidden);
-      edgeToggle.textContent = hidden ? edgeToggle.dataset.reveal : edgeToggle.dataset.hide;
       edgeNote.textContent = hidden ? edgeNote.dataset.hidden : edgeNote.dataset.visible;
     };
-    edgeToggle.addEventListener("click", () => setHidden(desk.dataset.hidden !== "true"));
-    desk.querySelector(".desk-edge").addEventListener("pointerenter", () => setHidden(false));
-    desk.querySelector(".desk-edge").addEventListener("click", () => setHidden(false));
+    const loop = () => { clearInterval(timer); timer = onScreen && !document.hidden ? setInterval(flip, 2000) : 0; };
+    new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; loop(); }, { threshold: .4 }).observe(desk);
+    document.addEventListener("visibilitychange", loop);
   }
+
+  // Workflow step 2: the matching documents light up in turn each time the step comes into view.
+  const docsStep = document.querySelector(".docs")?.closest(".step-visual");
+  if (docsStep && !reduced) {
+    docsStep.classList.add("armed");
+    new IntersectionObserver(([e]) => {
+      if (e.intersectionRatio >= .6) docsStep.classList.add("in");
+      else if (!e.isIntersecting) docsStep.classList.remove("in");
+    }, { threshold: [0, .6] }).observe(docsStep);
+  }
+
+  // Below the last dark page the page background turns light, so the browser's own bars and
+  // overscroll match the light footer instead of showing a dark band.
+  const privacy = $("privacy"), themeColor = document.querySelector("meta[name=theme-color]");
+  let light = null;
+  const tint = () => {
+    const now = privacy.getBoundingClientRect().bottom < innerHeight / 2;
+    if (now === light) return;
+    light = now;
+    document.documentElement.classList.toggle("end", now);
+    themeColor.content = now ? "#F4F5F7" : "#07080B";
+  };
+  addEventListener("scroll", tint, { passive: true });
+  addEventListener("resize", tint);
+  tint();
 
   // Segmented controls: a pill slides to the selected option; swapped content fades in.
   const pills = [...document.querySelectorAll(".switcher, .case-tabs")].map(list => {
@@ -75,6 +101,100 @@
   });
   const movePills = () => pills.forEach(place => place());
   const fadeIn = el => { el.classList.remove("swap-in"); void el.offsetWidth; el.classList.add("swap-in"); };
+
+  // Pop-up menus inside the demonstration windows; one is open at a time.
+  let openMenu = null;
+  const closeMenu = focus => {
+    if (!openMenu) return;
+    const [button, list] = openMenu;
+    list.hidden = true; button.setAttribute("aria-expanded", false); openMenu = null;
+    if (focus) button.focus();
+  };
+  function popup(button, choose) {
+    const list = button.nextElementSibling, items = [...list.querySelectorAll("[role=menuitemradio]")];
+    const check = value => items.forEach(item => item.setAttribute("aria-checked", item.dataset.value === value));
+    button.addEventListener("click", () => {
+      const wasOpen = openMenu && openMenu[1] === list;
+      closeMenu();
+      if (wasOpen) return;
+      list.hidden = false; button.setAttribute("aria-expanded", true); openMenu = [button, list];
+      (items.find(item => item.getAttribute("aria-checked") === "true") || items[0]).focus({ preventScroll: true });
+    });
+    items.forEach((item, i) => {
+      item.tabIndex = -1;
+      item.addEventListener("click", () => { check(item.dataset.value); choose(item.dataset.value); closeMenu(true); });
+      item.addEventListener("keydown", e => {
+        const next = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 }[e.key];
+        if (next !== undefined) { e.preventDefault(); items[(next + items.length) % items.length].focus(); }
+        else if (e.key === "Tab") closeMenu();
+      });
+    });
+    return check;
+  }
+  document.addEventListener("click", e => { if (openMenu && !openMenu[0].parentNode.contains(e.target)) closeMenu(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(true); });
+
+  // Transcript translation: as in the app, the menu picks a language and "Apply" switches the
+  // translated lines to it; "Stop translation" hides them. Sample sentences only, no service calls.
+  const TRANSLATIONS = {
+    "简体中文": ["我们先从第三季度的数据说起。", "留存提升了，但新用户上手仍然偏慢。", "你会先上线什么？为什么？"],
+    "繁體中文": ["我們先從第三季的數據說起。", "留存提升了，但新用戶上手仍然偏慢。", "你會先上線什麼？為什麼？"],
+    "English": ["Let's start with the Q3 numbers.", "Retention is up, but onboarding is still slow.", "What would you ship first, and why?"],
+    "日本語": ["まず第3四半期の数字から始めましょう。", "定着率は上がっていますが、オンボーディングはまだ時間がかかっています。", "最初に何をリリースしますか？その理由は？"],
+    "한국어": ["3분기 수치부터 시작하죠.", "리텐션은 올랐지만 온보딩은 여전히 느립니다.", "무엇을 먼저 출시하시겠어요? 이유는요?"],
+    "Français": ["Commençons par les chiffres du T3.", "La rétention progresse, mais l'onboarding reste lent.", "Que livreriez-vous en premier, et pourquoi ?"],
+    "Deutsch": ["Fangen wir mit den Zahlen für Q3 an.", "Die Bindung steigt, aber das Onboarding ist noch langsam.", "Was würden Sie zuerst ausliefern, und warum?"],
+    "Español": ["Empecemos por las cifras del T3.", "La retención ha subido, pero la incorporación sigue siendo lenta.", "¿Qué lanzarías primero y por qué?"]
+  };
+  const trPop = $("tr-pop");
+  if (trPop) {
+    const trWindow = document.querySelector(".tr-window"), label = $("tr-label"), labelText = label.querySelector("span");
+    const target = $("tr-target"), apply = $("tr-apply"), stop = $("tr-stop");
+    const translated = [...trWindow.querySelectorAll(".p-line.tr span")];
+    let picked = target.textContent, applied = picked;
+    popup(trPop.querySelector(".select"), value => { picked = value; target.textContent = value; })(picked);
+    const render = () => {
+      trWindow.classList.toggle("tr-off", !applied);
+      label.classList.toggle("on", !!applied);
+      labelText.textContent = applied || label.dataset.off;
+      apply.textContent = applied ? apply.dataset.apply : apply.dataset.enable;
+      stop.hidden = !applied;
+    };
+    apply.addEventListener("click", () => {
+      applied = picked;
+      TRANSLATIONS[applied].forEach((text, i) => translated[i].textContent = text);
+      render(); fadeIn(trWindow.querySelector(".p-lines"));
+    });
+    stop.addEventListener("click", () => { applied = null; render(); apply.focus(); });
+  }
+
+  // Knowledge modes: the radio list and the overlay's own mode menu choose the same answer.
+  const modeDemo = document.querySelector(".mode-demo");
+  if (modeDemo) {
+    const radios = [...document.querySelectorAll(".mode-list [role=radio]")];
+    const cards = [...modeDemo.querySelectorAll(".mode-answers > .p-card")];
+    let checkMenu = () => {};
+    const setMode = (mode, focus) => {
+      radios.forEach(r => {
+        const on = r.dataset.mode === mode;
+        r.setAttribute("aria-checked", on); r.tabIndex = on ? 0 : -1;
+        if (on && focus) r.focus();
+      });
+      cards.forEach(c => { c.hidden = c.dataset.mode !== mode; if (!c.hidden) fadeIn(c); });
+      $("mode-label").textContent = radios.find(r => r.dataset.mode === mode).querySelector("b").textContent;
+      checkMenu(mode);
+    };
+    checkMenu = popup(modeDemo.querySelector(".mode-menu"), mode => setMode(mode));
+    radios.forEach((radio, i) => {
+      radio.addEventListener("click", () => setMode(radio.dataset.mode));
+      radio.addEventListener("keydown", e => {
+        const next = { ArrowDown: i + 1, ArrowRight: i + 1, ArrowUp: i - 1, ArrowLeft: i - 1 }[e.key];
+        if (next === undefined) return;
+        e.preventDefault();
+        setMode(radios[(next + radios.length) % radios.length].dataset.mode, true);
+      });
+    });
+  }
 
   // Answer preferences: two settings share one demonstration area.
   const switches = [...document.querySelectorAll(".switcher [role=tab]")];
@@ -113,6 +233,16 @@
     fadeIn(panel); movePills();
     if (focus) tab.focus();
   }
+  function reserveCases() {
+    const current = tabs.find(t => t.getAttribute("aria-selected") === "true");
+    panel.style.minHeight = "";
+    let tallest = 0;
+    tabs.forEach(t => { selectCase(t); tallest = Math.max(tallest, panel.offsetHeight); });
+    selectCase(current);
+    panel.style.minHeight = tallest + "px";
+  }
+  let caseWidth = 0;
+  new ResizeObserver(() => { if (panel.offsetWidth !== caseWidth) { caseWidth = panel.offsetWidth; reserveCases(); } }).observe(panel);
   tabs.forEach((tab, i) => {
     tab.addEventListener("click", () => selectCase(tab));
     tab.addEventListener("keydown", e => {

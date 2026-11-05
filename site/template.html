@@ -199,7 +199,7 @@
               <div class="p p-frag tr-window">
                 <div class="p-row p-fold">
                   <button type="button" class="fold" aria-expanded="false" data-expand="$p_expand" data-collapse="$p_collapse"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg><span>$p_expand</span></button>
-                  <span class="p-lang on"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2.5 3.5h11v7.5H8l-3 2.5V11H2.5Z" /><text x="8" y="9.4" font-size="5.6" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">$p_glyph</text></svg>$tr_pop_value</span>
+                  <span class="p-lang on" id="tr-label" data-off="$p_translate"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2.5 3.5h11v7.5H8l-3 2.5V11H2.5Z" /><text x="8" y="9.4" font-size="5.6" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">$p_glyph</text></svg><span>$tr_pop_value</span></span>
                 </div>
                 <div class="p-transcript"><div class="p-lines">
                   <div class="p-utt"><div class="p-line them"><b>$p_them</b><span>$tr_l1</span></div><div class="p-line tr"><b>$p_tr</b><span>$tr_l1_tr</span></div></div>
@@ -208,11 +208,17 @@
                 </div></div>
                 <div class="p-follow"><span class="switch"><span>$p_follow</span><i></i></span></div>
               </div>
-              <div class="p popover" aria-hidden="true">
+              <div class="p popover" id="tr-pop">
                 <b class="pop-title">$tr_pop_title</b>
-                <div class="pop-row"><span>$tr_pop_target</span><span class="select">$tr_pop_value<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m2 3.5 3 3 3-3" /></svg></span></div>
+                <div class="pop-row"><span id="tr-target-name">$tr_pop_target</span>
+                  <div class="dropdown">
+                    <button type="button" class="select" aria-haspopup="menu" aria-expanded="false" aria-labelledby="tr-target-name tr-target"><span id="tr-target">$tr_pop_value</span><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m2 3.5 3 3 3-3" /></svg></button>
+                    <div class="popup" role="menu" aria-labelledby="tr-target-name" hidden><button type="button" role="menuitemradio" aria-checked="false" data-value="简体中文">简体中文</button><button type="button" role="menuitemradio" aria-checked="false" data-value="繁體中文">繁體中文</button><button type="button" role="menuitemradio" aria-checked="false" data-value="English">English</button><button type="button" role="menuitemradio" aria-checked="false" data-value="日本語">日本語</button><button type="button" role="menuitemradio" aria-checked="false" data-value="한국어">한국어</button><button type="button" role="menuitemradio" aria-checked="false" data-value="Français">Français</button><button type="button" role="menuitemradio" aria-checked="false" data-value="Deutsch">Deutsch</button><button type="button" role="menuitemradio" aria-checked="false" data-value="Español">Español</button></div>
+                  </div>
+                </div>
                 <p>$tr_pop_note</p>
-                <span class="pop-btn">$tr_pop_apply</span><span class="pop-btn">$tr_pop_stop</span>
+                <button type="button" class="pop-btn" id="tr-apply" data-apply="$tr_pop_apply" data-enable="$tr_pop_enable">$tr_pop_apply</button>
+                <button type="button" class="pop-btn" id="tr-stop">$tr_pop_stop</button>
               </div>
             </div>
             <figcaption>$tr_caption</figcaption>
@@ -240,23 +246,56 @@
           <div class="modes-layout" id="knowledge">
             <div>
               <h3>$modes_title</h3>
-              <dl class="mode-list">
-                <div><dt>$mode_general</dt><dd>$mode_general_body</dd></div>
-                <div class="on"><dt>$mode_hybrid</dt><dd>$mode_hybrid_body</dd></div>
-                <div><dt>$mode_kb</dt><dd>$mode_kb_body</dd></div>
-              </dl>
+              <div class="mode-list" role="radiogroup" aria-label="$modes_title">
+                <button type="button" role="radio" aria-checked="false" tabindex="-1" data-mode="general"><b>$mode_general</b><span>$mode_general_body</span></button>
+                <button type="button" role="radio" aria-checked="true" data-mode="hybrid"><b>$mode_hybrid</b><span>$mode_hybrid_body</span></button>
+                <button type="button" role="radio" aria-checked="false" tabindex="-1" data-mode="kb"><b>$mode_kb</b><span>$mode_kb_body</span></button>
+              </div>
             </div>
             <figure class="answer-figure">
-              <div class="p p-frag p-card show done">
-                <div class="p-q">
-                  <div class="p-q-head"><span><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
-                  <p>$workflow_question</p>
+              <div class="p p-frag mode-demo">
+                <div class="p-row p-opts"><span class="switch" aria-hidden="true"><span>$p_context</span><i></i></span>
+                  <div class="dropdown">
+                    <button type="button" class="chip mode-menu" aria-haspopup="menu" aria-expanded="false" aria-label="$modes_title"><span id="mode-label">$mode_hybrid</span><svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m2 3.5 3 3 3-3" /></svg></button>
+                    <div class="popup" role="menu" aria-label="$modes_title" hidden><button type="button" role="menuitemradio" aria-checked="false" data-value="general">$mode_general</button><button type="button" role="menuitemradio" aria-checked="true" data-value="hybrid">$mode_hybrid</button><button type="button" role="menuitemradio" aria-checked="false" data-value="kb">$mode_kb</button></div>
+                  </div>
                 </div>
-                <div class="p-body">
-                  <div class="p-st"><span>$p_completed</span><span class="copy">$p_copy</span></div>
-                  <p class="p-text">$workflow_answer</p>
-                  <details class="show" open><summary>$p_evidence</summary><p class="plain">$workflow_evidence_text</p></details>
-                  <details class="show" open><summary>$p_sources</summary><p>$workflow_source1</p><p>$workflow_source2</p></details>
+                <div class="p-rule"></div>
+                <div class="mode-answers">
+                  <div class="p-card show done" data-mode="general" hidden>
+                    <div class="p-q">
+                      <div class="p-q-head"><span><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
+                      <p>$workflow_question</p>
+                    </div>
+                    <div class="p-body">
+                      <div class="p-st"><span>$p_completed</span><span class="copy">$p_copy</span></div>
+                      <p class="p-text">$mode_general_answer</p>
+                    </div>
+                  </div>
+                  <div class="p-card show done" data-mode="hybrid">
+                    <div class="p-q">
+                      <div class="p-q-head"><span><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
+                      <p>$workflow_question</p>
+                    </div>
+                    <div class="p-body">
+                      <div class="p-st"><span>$p_completed</span><span class="copy">$p_copy</span></div>
+                      <p class="p-text">$workflow_answer</p>
+                      <details class="show" open><summary>$p_evidence</summary><p class="plain">$workflow_evidence_text</p></details>
+                      <details class="show" open><summary>$p_sources</summary><p>$workflow_source1</p><p>$workflow_source2</p></details>
+                    </div>
+                  </div>
+                  <div class="p-card show done" data-mode="kb" hidden>
+                    <div class="p-q">
+                      <div class="p-q-head"><span><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
+                      <p>$workflow_question</p>
+                    </div>
+                    <div class="p-body">
+                      <div class="p-st"><span>$p_completed</span><span class="copy">$p_copy</span></div>
+                      <p class="p-text">$mode_kb_answer</p>
+                      <details class="show" open><summary>$p_evidence</summary><p class="plain">$workflow_evidence_text</p></details>
+                      <details class="show" open><summary>$p_sources</summary><p>$workflow_source1</p><p>$workflow_source2</p></details>
+                    </div>
+                  </div>
                 </div>
               </div>
               <figcaption>$answer_caption</figcaption>
@@ -335,11 +374,10 @@
                   <span class="p-brand"><img src="${prefix}assets/logo.png" width="14" height="14" alt="" />LiveCopilot</span>
                   <i></i><i></i><i class="short"></i>
                 </div>
-                <button type="button" class="desk-edge" aria-label="$edge_reveal" tabindex="-1"></button>
+                <svg class="desk-cursor" viewBox="0 0 12 16" aria-hidden="true"><path d="M1 1v12.5l3.2-3 2.3 5 2-.9-2.2-4.9H10Z" fill="#fff" stroke="#111" stroke-width="1" stroke-linejoin="round" /></svg>
               </div>
               <figcaption class="edge-controls">
-                <span><b>$f_edge_title</b><span class="edge-note" aria-live="polite" data-visible="$edge_visible_note" data-hidden="$edge_hidden_note">$edge_visible_note</span></span>
-                <button type="button" class="edge-toggle" aria-pressed="false" data-hide="$edge_hint" data-reveal="$edge_reveal">$edge_hint</button>
+                <span><b>$f_edge_title</b><span class="edge-note" data-visible="$edge_visible_note" data-hidden="$edge_hidden_note">$edge_visible_note</span></span>
               </figcaption>
             </figure>
             <figure id="history">

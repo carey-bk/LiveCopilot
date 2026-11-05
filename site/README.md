@@ -30,25 +30,33 @@ disclosures: model comparisons, prices, endpoints, installation, shortcuts and t
 live in the linked README and `docs/` guides. API keys, charges and cloud data boundaries are
 stated in short sentences where they apply.
 
-1. **Hero** — a static LS Graphics MacBook (`assets/ls-front-hardware.webp`) on the left, slogan and
-   download on the right (stacked, copy first, below 1024 px). The 2.7 overlay rises from the
+1. **Hero** — slogan and download on the left, a static LS Graphics MacBook
+   (`assets/ls-front-hardware.webp`) on the right (stacked, copy first, below 1024 px). The 2.7 overlay rises from the
    screen's right edge as an enlarged close-up (CSS `zoom` on wide screens); a true-scale copy on the
-   screen stays in sync with it. The "2.7" pill links to the release notes.
+   screen stays in sync with it. Phones (below 720 px) show the overlay alone, without the laptop.
+   The "2.7" pill links to the release notes.
 2. **How it works** (`#workflow`) — one screen: speech transcription, finding materials, answering.
+   The matching documents light up in turn as step 2 scrolls into view.
 3. **Speech transcription** (`#transcript`, dark, one screen) — the three-line fold in a real overlay
-   excerpt, transcript translation with its eight targets, and the speech engines (Zipformer,
+   excerpt, transcript translation with a working target-language menu (Apply / Stop as in the app,
+   sample sentences in all eight targets), and the speech engines (Zipformer,
    Apple Speech, OpenAI Live) with their language options.
-4. **Materials and answers** (`#answers`) — knowledge modes beside a real answer card; answer style
-   and sentence pairs share one demonstration with a two-option switch.
+4. **Materials and answers** (`#answers`) — the three knowledge modes as a radio group, synced with
+   the overlay's own mode menu, switch the answer card (General has no sources); answer style and
+   sentence pairs share one demonstration with a two-option switch. Alternatives share one grid cell,
+   so switching never moves the content below; use cases reserve their tallest example the same way.
 5. **Use cases** (`#scenarios`) — four tabs sharing one panel, data from `examples.json`.
-6. **Overlay and history** (`#overlay`) — the interactive edge-docking demo and the history window.
+6. **Overlay and history** (`#overlay`) — the edge-docking demo plays by itself while on screen
+   (every 2 s the window slides away, then a pointer at the edge brings it back) and the history window.
 7. **Services** (`#services`) — one ruled list of the three steps and a link to `docs/SERVICE_GUIDE.md`.
 8. **Privacy** (`#privacy`, dark) — statement, four facts, data route and boundary note.
 9. **Download** (`#download`) — button, GitHub fallback, one line of version and requirements, and
    text links to the user guide, requirements and release history.
 
-Segmented controls get a sliding indicator and swapped content fades in; buttons ease their colour
-and settle slightly when pressed. Reduced motion turns these off.
+Past the privacy page the body background and `theme-color` turn light, so browser bars and
+overscroll match the footer. Segmented controls get a sliding indicator and swapped content fades in; buttons ease their colour
+and settle slightly when pressed. Reduced motion turns these off, keeps the edge demo still and
+shows the document highlights without animation.
 
 Anchors from earlier layouts are redirected by `demo.js` to the section that now holds them.
 
