@@ -307,3 +307,28 @@ Known limit: a user quieter at the mic than the speaker replay can be held, or l
 - Full XCTest (DerivedData `~/Library/Developer/Xcode/DerivedData/LiveCopilot-claude-echo-main`): **265 executed, 24 skipped, 0 failures, `TEST SUCCEEDED`**.
 
 **Needs hardware.** Run the owner's six acceptance scenarios with the real WAV played through the speakers and through headphones, in the owner's room and device setup. Then export diagnostics and check `echo_*`. Thresholds (`ownExcessDB`, `echoExcessDB`, evidence durations) may need tuning from those numbers.
+
+### Hardware iterations of the echo guard (2026-11-05, owner's Mac, built-in speakers, Debug build)
+
+Each round was driven by the owner's screenshots and the content-free `audioSummary` numbers; each fix has an XCTest that fails with the fix removed (negative control run every time).
+
+1. **Arrival vs capture time.** First run: `echo_held=1 echo_confirmed=1` after 282 ms, no path learned. Streams were aligned by arrival time. Fix: frames carry capture host time (mic `AVAudioTime.hostTime`, ScreenCaptureKit presentation time; `EchoMonitor.captureEnd` falls back to arrival when implausible). Assessments are clamped to what the later-arriving reference covers, and a missing reference (no system audio for 1 s) counts as absent rather than silent. Measured afterwards: `delivery_ms_max_system=52`, `delivery_ms_max_mic=10`.
+2. **Real-room match is moderate.** Second run: `echo_best_corr=77 echo_best_lag_ms=80`, no path (threshold was 0.8), and every turn was accepted at once because low correlation meant "own". Fixes:
+   - Both streams are high-passed at 300 Hz before computing energy. The next run learned `echo_lag_ms=80`, with best correlation 0.96.
+   - A path is learned from correlation ≥ 0.65 when ≥ 6 recent votes, a majority, agree on the delay within ±20 ms.
+   - Without a path, only ≥ 0.75 is echo; anything lower is *unclear*, never own.
+   - `micEvidence` adds timing plus text (`EchoText`: CJK character bigrams, other scripts words). While the far end is audible, microphone text that mostly (≥ 0.6) repeats the far end's recent recognized text is replay. Clearly different words (≤ 0.3, ≥ 9 tokens, the last 3 ignored for recognizer lag) confirm barge-in.
+   - Acoustic own evidence (silent far end, louder than the predicted replay, or no reference) takes precedence for finals, so quoting the far end after it stops is kept.
+3. **Long replayed question promoted by scattered loud frames.** Third run: a ~10 s held turn was confirmed (`echo_confirm_ms_max=9997`). Fix: while the far end is audible, a held turn whose words repeat it stays held, regardless of a short window of loud frames. Finals are still judged on their whole window.
+4. **Reply after a replay kept the replay.** Fourth run: the held replayed question and the user's "好的" (far end silent) shared one microphone turn. Accepting the reply also kept the earlier replayed final, because confirmed turns skipped the final check. Fix: every final is judged on its own audio. The segment's provider times map to the uptime clock through the session start, with the earlier look-back as fallback. `echo_confirmed_turn_echo` counts these.
+
+Results at this commit: `scripts/test-core.sh` **78 passed**; full XCTest **269 executed, 24 skipped, 0 failures**. The owner reports simple speaker tests now behave correctly. Not yet covered:
+- a full-length run of the six acceptance scenarios;
+- Bluetooth speakers;
+- other rooms and microphones;
+- double talk with the user quieter than the replay (known weak spot).
+
+Debug-build testing notes:
+- Each rebuild changes the ad-hoc cdhash, so Screen Recording must be removed and re-added in System Settings.
+- Stale copies with the same bundle ID (including Trash and `/private/tmp` builds) make TCC record the grant against the wrong code. They were unregistered from LaunchServices, but Spotlight re-registers Trash copies until the Trash is emptied.
+- The Debug app keeps separate settings (analysis API key, Laya model) under `LiveCopilot/Development`.
