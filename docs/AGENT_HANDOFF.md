@@ -242,3 +242,68 @@ Branch state: local commits only. Nothing pushed, merged, versioned, signed, not
 - Existing capture-revision cancellation and the bounded recovery policy remain. The fix requires a repeat of the same physical AirPods switch to confirm recovery; automated tests cannot establish that result.
 - Content-free evidence is preserved locally under `StealthApp/build/airpods-recovery-evidence-20261103/` (capture events and filtered audio-only logs); it is not committed. Claude's later system-audio commits are separate and have not been included in this microphone correction.
 - Verification of this correction: **77 core checks passed; 260 XCTest cases, 24 skipped, 0 failures; universal Release build succeeded**. Signed application inventory: 10 verified Mach-O binaries. No microphone capture or device switching was performed by the automated tests.
+
+## Remote-mode speaker echo interrupting automatic answers (2026-11-05, uncommitted on `main`)
+
+**Report.** In Remote mode with automatic suggestions, the owner played a simulated interviewer through the Mac's speakers. The same sentence appeared under both Them and You, the overlay showed "Laya 我方转写中断了待回答问题", and automatic answers were interrupted.
+
+**Event chain (code evidence).** The microphone is `.you` in Remote mode. Its events reached the gate with no check of where the sound came from, through three paths:
+1. `.speechActivity(true)` → `LayaTriggerController.setSpeaking(true, .you)` → `invalidateCurrent(rememberCurrent: true)`. This retires the pending Them candidate and any Laya judgement in flight, and remembers the candidate's key as handled, so it cannot be dispatched later.
+2. Every non-empty `.partialTranscript` from You → `submitLaya(.you)` → `layaGate.manualIntervention()` + `.ownTranscript`. This is the status the owner saw. Without the guard, the new regression test reproduces it.
+3. A final You fragment → `ConversationState.append`. A You fragment newer than Them's last makes `candidate(.them)` return `nil` with phase `.answered`, so `dispatchLaya` reports `staleCandidate` even if the Them final arrives later.
+
+What was cancelled: the pending question and/or its question judgement. Laya's diagnostics now name this as `candidateRetired` / `predictionRetired`. An answer that is already generating is not cancelled by microphone events; queued answers only wait while a source is speaking (`drainQuestions`).
+
+**Audio layer.** The likely cause is acoustic: the speakers replay system audio into the microphone. `Config.micEchoCancellation` stayed false. Apple voice processing was evaluated from the SDK (`AVAudioIONode.h`), not on hardware:
+- It requires the output node in voice-processing mode.
+- It removes "audio that is played from the device", but does not document whether other apps' output is included.
+- It ducks "other audio" by default, which would lower the meeting itself.
+- The existing code comment reports over-suppression of the user's own voice.
+
+It was therefore not enabled. If the owner wants it A/B-tested, `startEngine()` re-applies it after each engine recreation, so device-change recovery is unaffected.
+
+**Fix: an app-level guard that uses system audio as the echo reference.**
+- `Core/EchoMonitor.swift` (new) keeps 20 ms energy frames of both sources on the uptime clock; no audio or text is stored.
+  - It learns the speaker-to-mic delay (−160 to +480 ms searched) and coupling gain while the mic clearly follows the far end (contour correlation ≥ 0.8 over 1 s).
+  - It classifies each speech-level mic frame:
+    - `own`: the far end is silent at every plausible delay, or the frame is more than 4 dB above the predicted echo (reverberation tail included).
+    - `echo`: at most 2 dB above the predicted echo.
+    - `unclear`: in between.
+  - Without a learned path (for example headphones), only a sustained contour match counts as echo.
+- `AppCoordinator` handles Remote-mode `.you` events through an `OwnTurn`. It applies when system audio is capturing; In-Person and mic-only listening are unchanged.
+  - A mic turn becomes the user's speech only after 240 ms of `own` evidence, counted from 0.6 s before the VAD report. Until then it is held: no `setSpeaking(.you)`, no `speakingSources` entry, no You preview and no Laya interruption. It is rechecked every 120 ms, so real barge-in is promoted mid-utterance and keeps its existing effect.
+  - A final from a turn that was never accepted is discarded only when its audio window is mostly echo (`echo ≥ 200 ms` and `≥ 3×` own). Text is never compared. Unclear finals are kept as the user's.
+- Degraded capture: when Remote listening runs without system audio (failed at start, or lost mid-session while the mic continues), `captureNotice` shows a persistent orange overlay line. Strings are en and zh-Hans; zh-Hant comes from the existing transform.
+- Diagnostics:
+  - `audioSummary speaker=You` gains `echo_held`, `echo_confirmed`, `echo_ignored`, `echo_unclear`, `echo_confirm_ms_max`, `echo_lag_ms` and `echo_gain_db`.
+  - The Laya timeline gains `echoHeld`, `echoIgnored`, `candidateRetired` and `predictionRetired`.
+  - One `DebugLog` line per discarded final, numbers only.
+
+**Offline evaluation (not hardware).** The owner's synthetic WAV (197 s, 7 far-end utterances) was used as system audio. A modelled speaker path (delay, gain, five reflections, low-pass, −62 dBFS noise) was fed through `EchoMonitor` exactly as the coordinator polls it. The harness lives in the Claude session scratchpad (`echo/main.swift`) and is not committed.
+
+| Scenario | Result |
+| --- | --- |
+| Speaker echo only, delay 40/150/300 ms × gain −12/−22/−32 dB (63 turns) | 0 false interruptions; 63/63 finals classified echo |
+| Headphones, user talks over the far end | 6/6 accepted, ≤ 540 ms |
+| User repeats the far end's words after it stops | accepted in 300 ms; preceding echo turn not accepted |
+| Double talk, user 6 dB above the echo | 14/14 accepted, 620–740 ms; finals own |
+| Double talk, user at the echo level | 14/14 accepted, 1.1–4.2 s; finals own |
+| Double talk, user 6 dB below the echo | zh 7/7 accepted after 4.9–8.2 s; en 2/7 accepted, 5 finals discarded as echo |
+
+Known limit: a user quieter at the mic than the speaker replay can be held, or lose a final. Lower speaker volume or use headphones. Real rooms, AGC, Bluetooth latency and the actual ASR were not exercised.
+
+**Tests.**
+- `CoreChecks`: one check with deterministic synthetic speech covering echo, barge-in, silent far end, headphones and the learned delay.
+- `LayaCoordinatorTests` (+5):
+  - echo neither retires the question nor appears as You, and the question is still answered;
+  - real barge-in still interrupts and is transcribed;
+  - quoting the far end word for word after it stops stays the user's;
+  - the gate names a retired question or judgement;
+  - degraded notice logic and localization.
+- Negative control: with `echoGuardApplies` forced to false, the echo test fails exactly as reported. There are 0 requests, the status is `ownTranscript` and a You line appears.
+
+**Results.**
+- `scripts/test-core.sh`: **78 deterministic checks passed**.
+- Full XCTest (DerivedData `~/Library/Developer/Xcode/DerivedData/LiveCopilot-claude-echo-main`): **265 executed, 24 skipped, 0 failures, `TEST SUCCEEDED`**.
+
+**Needs hardware.** Run the owner's six acceptance scenarios with the real WAV played through the speakers and through headphones, in the owner's room and device setup. Then export diagnostics and check `echo_*`. Thresholds (`ownExcessDB`, `echoExcessDB`, evidence durations) may need tuning from those numbers.
