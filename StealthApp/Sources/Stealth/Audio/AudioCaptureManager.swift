@@ -17,6 +17,8 @@ final class AudioCaptureManager: NSObject, ObservableObject {
     var onPCM16: ((Data) -> Void)?
     /// Optional content-free level/arrival accounting; observed on the capture queue.
     var flow: AudioFlowMonitor?
+    /// Optional speaker-echo reference; observed on the capture queue with the buffer's capture time.
+    var echo: EchoMonitor?
 
     private let log = Logger(subsystem: "com.livecopilot.app", category: "audio")
     private var stream: SCStream?
@@ -64,7 +66,7 @@ final class AudioCaptureManager: NSObject, ObservableObject {
             cfg.queueDepth = 6
 
             let stream = SCStream(filter: filter, configuration: cfg, delegate: self)
-            let output = AudioStreamOutput(emit: onPCM16, flow: flow, sampleRate: outputSampleRate)
+            let output = AudioStreamOutput(emit: onPCM16, flow: flow, echo: echo, sampleRate: outputSampleRate)
             try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: outputQueue)
             self.output = output
             try await stream.startCapture()
@@ -128,13 +130,19 @@ private final class AudioStreamOutput: NSObject, SCStreamOutput {
     private let converter = PCMConverter()
     private let emit: ((Data) -> Void)?
     private let flow: AudioFlowMonitor?
-    init(emit: ((Data) -> Void)?, flow: AudioFlowMonitor?, sampleRate: Double) {
-        self.emit = emit; self.flow = flow; converter.configure(sampleRate: sampleRate)
+    private let echo: EchoMonitor?
+    init(emit: ((Data) -> Void)?, flow: AudioFlowMonitor?, echo: EchoMonitor?, sampleRate: Double) {
+        self.emit = emit; self.flow = flow; self.echo = echo; converter.configure(sampleRate: sampleRate)
     }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, sampleBuffer.isValid, let buffer = sampleBuffer.toPCMBuffer(),
               let data = converter.convert(buffer) else { return }
         flow?.observe(data)
+        // Presentation time is on the host clock. ScreenCaptureKit delivers later than the
+        // microphone tap, so arrival time would misalign the echo reference.
+        let start = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        echo?.observe(data, source: .system, at: EchoMonitor.captureEnd(
+            start: start.isValid ? start.seconds : nil, duration: Double(buffer.frameLength) / buffer.format.sampleRate))
         emit?(data)
     }
 }

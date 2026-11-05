@@ -108,8 +108,10 @@ enum CaptureDiagnostics {
         if let v = d.finalLagMeanMS { fields.append("final_lag_ms_mean=\(v)") }
         if let v = d.finalLagMaxMS { fields.append("final_lag_ms_max=\(v)") }
         if let e = d.echo {
-            fields.append("echo_held=\(e.heldTurns) echo_confirmed=\(e.confirmedTurns) echo_ignored=\(e.ignoredFinals) echo_unclear=\(e.unclearFinals) echo_confirm_ms_max=\(e.confirmMSMax)")
+            fields.append("echo_held=\(e.heldTurns) echo_confirmed=\(e.confirmedTurns) echo_ignored=\(e.ignoredFinals) echo_unclear=\(e.unclearFinals) echo_confirm_ms_max=\(e.confirmMSMax) echo_text_finals=\(e.textEchoFinals) echo_text_confirms=\(e.textOwnConfirms) echo_confirmed_turn_echo=\(e.confirmedTurnEchoFinals)")
             if let lag = e.pathLagMS, let gain = e.pathGainDB { fields.append("echo_lag_ms=\(lag) echo_gain_db=\(gain)") }
+            if let corr = e.bestCorrelationPercent, let lag = e.bestLagMS { fields.append("echo_best_corr=\(corr) echo_best_lag_ms=\(lag)") }
+            fields.append("delivery_ms_max_system=\(e.systemDelayMSMax) delivery_ms_max_mic=\(e.micDelayMSMax)")
         }
         line += " " + fields.joined(separator: " ")
         return line

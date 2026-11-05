@@ -150,8 +150,10 @@ final class AppCoordinator: ObservableObject {
     let echo = EchoMonitor()
     /// A Remote-mode microphone turn. Until it shows speech the far end cannot explain, it is
     /// treated as possible speaker echo and does not act as the user's own speech.
-    private struct OwnTurn { let startedAt: TimeInterval; var speaking: Bool; var confirmed = false; var held = false }
+    private struct OwnTurn { let startedAt: TimeInterval; var speaking: Bool; var confirmed = false; var held = false; var text: String? }
     private var ownTurn: OwnTurn?
+    /// What the far end's recognizer produced in the last seconds, in memory only (never stored or logged).
+    private var farEndTexts: [(at: TimeInterval, text: String)] = []
     private var ownTurnCheck: Task<Void, Never>?
     /// Persistent while listening when a selected source is missing (Remote mode without system audio).
     @Published private(set) var captureNotice: String?
@@ -318,10 +320,10 @@ final class AppCoordinator: ObservableObject {
         else if settings.requiresOpenAIKey { refreshKeyState() }
         else { keyStatus = "OpenAI is not required by the selected local services." }
         refreshAnalysisKeyState()
-        let echo = self.echo
-        systemAudio.onPCM16 = { [weak self] data in echo.observe(data, source: .system); Task { @MainActor in self?.systemLive?.sendAudio(data) } }
-        mic.onPCM16 = { [weak self] data in echo.observe(data, source: .mic); Task { @MainActor in self?.micLive?.sendAudio(data) } }
+        systemAudio.onPCM16 = { [weak self] data in Task { @MainActor in self?.systemLive?.sendAudio(data) } }
+        mic.onPCM16 = { [weak self] data in Task { @MainActor in self?.micLive?.sendAudio(data) } }
         systemAudio.flow = systemFlow; mic.flow = micFlow
+        systemAudio.echo = echo; mic.echo = echo
         systemAudio.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
         mic.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
         systemAudio.$isCapturing.dropFirst().sink { [weak self] capturing in
@@ -839,7 +841,8 @@ final class AppCoordinator: ObservableObject {
             else { applySpeechActivity(active, speaker: speaker) }
         case .partialTranscript(let text):
             // Possible speaker echo: neither shown as You nor allowed to retire the pending question.
-            if speaker == .you, echoGuardApplies, !text.isEmpty, !confirmOwnTurn() { holdOwnTurn(); return }
+            if speaker == .them || speaker == .room { noteFarEndText(text) }
+            if speaker == .you, echoGuardApplies, !text.isEmpty, !confirmOwnTurn(text: text) { holdOwnTurn(); return }
             transcript.setPartial(text, speaker: speaker)
             translation.updatePreview(text, speaker: speaker)
             if !text.isEmpty { questionState = QuestionPhase.forming.rawValue; flow(for: speaker).notePartial() }
@@ -847,6 +850,7 @@ final class AppCoordinator: ObservableObject {
         case .transcript(let fragment):
             transcript.clearPartial(speaker)
             translation.updatePreview("", speaker: speaker)
+            if speaker == .them { noteFarEndText(fragment.text) }
             if speaker == .you, echoGuardApplies, isSpeakerEcho(fragment) { return }
             guard conversation.append(fragment) else { return }
             flow(for: speaker).noteTranscript()
@@ -900,6 +904,8 @@ final class AppCoordinator: ObservableObject {
     private var echoGuardApplies: Bool { settings.mode == .remote && (isMock || systemAudio.isCapturing) }
     /// VAD and ASR report speech 0.3–0.6 s after its acoustic onset; include that lead-in as evidence.
     private static let ownTurnLeadIn: TimeInterval = 0.6
+    /// System audio arrives up to ~0.2 s after the microphone; the window covers that plus evidence.
+    private static let ownTurnWindow: TimeInterval = 1.2
     private func ownSpeechActivity(_ active: Bool) {
         let now = ProcessInfo.processInfo.systemUptime
         if active {
@@ -913,13 +919,56 @@ final class AppCoordinator: ObservableObject {
             if turn.confirmed { applySpeechActivity(false, speaker: .you) }
         }
     }
-    /// Accepts the current microphone turn as the user's own speech once the far end cannot
-    /// explain it (or the far end is silent). Real barge-in is promoted here, mid-utterance.
-    @discardableResult private func confirmOwnTurn() -> Bool {
+    private enum MicEvidence { case own, echo, unknown }
+    /// Decides a microphone turn from acoustic evidence first, then from timing plus text: while
+    /// the far end is audible, words that repeat what its recognizer just heard are replay, and
+    /// clearly different words are the user talking over it. Acoustic evidence of the user (a silent
+    /// far end, speech louder than the replay) always wins, so quoting the other side after it stops
+    /// is never discarded.
+    private func micEvidence(text: String?, from start: TimeInterval, to end: TimeInterval? = nil, now: TimeInterval, final: Bool) -> MicEvidence {
+        let assessment = echo.assess(from: start, to: end ?? now, now: now)
+        let recent = farEndTexts.filter { $0.at >= start - 1 }.map(\.text)
+        let repeatsFarEnd = text.flatMap { EchoText.similarity($0, to: recent) }.map { $0 >= EchoText.echoSimilarity } ?? false
+        // While the far end is audible, a held turn whose words repeat it stays held: a few frames
+        // louder than the predicted replay (a longer room tail, noise) must not promote a replayed
+        // question to the user's speech. A final is judged on its whole window below instead.
+        if !final, assessment.systemActive, repeatsFarEnd { return .echo }
+        if assessment.isOwn { return .own }
+        guard assessment.systemActive else { return assessment.isEcho ? .echo : .unknown }
+        if repeatsFarEnd {
+            if final { echo.note { $0.textEchoFinals += 1 } }
+            return .echo
+        }
+        if assessment.isEcho { return .echo }
+        // The far end's recognizer may lag the microphone by a few words; compare without them.
+        if let text, !final, now - start >= Self.ownTurnLeadIn + 0.4 {
+            let tokens = EchoText.tokens(text)
+            if tokens.count >= EchoText.minimumOwnTokens + 3,
+               let similarity = EchoText.similarity(tokens.dropLast(3).joined(separator: " "), to: recent), similarity <= EchoText.ownSimilarity {
+                echo.note { $0.textOwnConfirms += 1 }
+                return .own
+            }
+        }
+        return .unknown
+    }
+    private func noteFarEndText(_ text: String) {
+        guard echoGuardApplies, !text.isEmpty else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        farEndTexts.append((now, text))
+        farEndTexts.removeAll { now - $0.at > 12 }
+        if farEndTexts.count > 64 { farEndTexts.removeFirst(farEndTexts.count - 64) }
+    }
+    /// Accepts the current microphone turn as the user's own speech once the evidence shows it.
+    /// Real barge-in is promoted here, mid-utterance.
+    @discardableResult private func confirmOwnTurn(text: String? = nil) -> Bool {
         let now = ProcessInfo.processInfo.systemUptime
         var turn = ownTurn ?? OwnTurn(startedAt: now - Self.ownTurnLeadIn, speaking: false)
-        if turn.confirmed { return true }
-        guard echo.assess(from: turn.startedAt, to: now, now: now).isOwn else { ownTurn = turn; return false }
+        if let text { turn.text = text }
+        if turn.confirmed { ownTurn = turn; return true }
+        // Recent evidence only: barge-in late in a long replay must not be outweighed by the replay.
+        guard micEvidence(text: turn.text, from: max(turn.startedAt, now - Self.ownTurnWindow), now: now, final: false) == .own else {
+            ownTurn = turn; return false
+        }
         turn.confirmed = true; ownTurn = turn
         ownTurnCheck?.cancel(); ownTurnCheck = nil
         if turn.held {
@@ -948,29 +997,37 @@ final class AppCoordinator: ObservableObject {
             }
         }
     }
-    /// A final from an unaccepted turn is discarded only on acoustic evidence that it replays the
-    /// far end, never because its text matches the other side; unclear audio is kept as the user's.
+    /// Every final is judged on its own audio, even in a turn already accepted as the user's: one
+    /// turn can hold a replayed question and then the user's reply, and accepting the reply must not
+    /// keep the replay. Discarded only as replay (see `micEvidence`); unclear evidence keeps it.
     private func isSpeakerEcho(_ fragment: TranscriptFragment) -> Bool {
+        let confirmed = ownTurn?.confirmed == true
         defer { if ownTurn?.speaking != true { ownTurn = nil } }
-        guard ownTurn?.confirmed != true else { return false }
         let now = ProcessInfo.processInfo.systemUptime
-        // Finals arrive after endpointing: cover the utterance, its lead-in and the endpoint silence.
         let duration = Double(max(0, fragment.endMS - fragment.startMS)) / 1000
-        let assessment = echo.assess(from: now - duration - 1.2, to: now, now: now)
-        switch assessment.verdict {
+        // Fallback: reach back over the utterance, its lead-in, the endpoint silence and the
+        // later-arriving system audio.
+        var start = now - duration - 1.8, end = now
+        if let session = sessionStartedAt {
+            // Provider segment times are on the session clock (connect offset plus captured audio).
+            let base = now - Date().timeIntervalSince(session)
+            let segmentStart = base + Double(fragment.startMS) / 1000, segmentEnd = base + Double(fragment.endMS) / 1000
+            if segmentEnd <= now + 0.5, segmentStart >= now - 8 { start = segmentStart - 0.3; end = min(now, segmentEnd + 0.3) }
+        }
+        switch micEvidence(text: fragment.text, from: start, to: end, now: now, final: true) {
         case .echo:
-            echo.note { $0.ignoredFinals += 1 }
+            echo.note { $0.ignoredFinals += 1; if confirmed { $0.confirmedTurnEchoFinals += 1 } }
             if usesLaya, isRunning { recordLaya(.echoIgnored) }
-            DebugLog.log("echo.final ignored echo_ms=\(assessment.echoMS) own_ms=\(assessment.ownMS)")
+            DebugLog.log("echo.final ignored confirmed_turn=\(confirmed)")
             return true
-        case .unclear:
-            echo.note { $0.unclearFinals += 1 }
+        case .unknown:
+            if !confirmed { echo.note { $0.unclearFinals += 1 } }
             return false
         case .own:
             return false
         }
     }
-    private func endOwnTurn() { ownTurnCheck?.cancel(); ownTurnCheck = nil; ownTurn = nil }
+    private func endOwnTurn() { ownTurnCheck?.cancel(); ownTurnCheck = nil; ownTurn = nil; farEndTexts = [] }
     private func flow(for speaker: Speaker) -> AudioFlowMonitor { speaker == .them ? systemFlow : micFlow }
     private func recognition(for speaker: Speaker) -> RecognitionStats? {
         ((speaker == .them ? systemLive : micLive) as? RecognitionStatsReporting)?.recognitionStats

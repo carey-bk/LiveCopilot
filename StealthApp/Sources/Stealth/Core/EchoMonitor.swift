@@ -4,7 +4,8 @@ import Foundation
 /// the speakers (Remote mode with speakers instead of headphones).
 ///
 /// System audio is the exact signal the speakers play, so it is the echo reference. Both sources
-/// are reduced to 20 ms energy frames on the shared uptime clock; no audio is kept. A microphone
+/// are high-passed (laptop speakers reproduce little below a few hundred hertz, where speech energy
+/// peaks) and reduced to 20 ms energy frames on the shared uptime clock; no audio is kept. A microphone
 /// frame is `echo` when the recent microphone level contour follows the system contour at some
 /// acoustic delay, `own` when the system was silent or the contours disagree (the user is talking,
 /// including over the far end), and `unclear` in between. Decisions use durations of these
@@ -17,13 +18,15 @@ final class EchoMonitor: @unchecked Sendable {
         var echoMS = 0, ownMS = 0, unclearMS = 0
         /// Any system audio above the activity level near the assessed interval.
         var systemActive = false
+        /// No system audio has arrived for a second: there is nothing to compare with.
+        var referenceAbsent = false
 
-        /// Enough microphone speech that does not follow the far end, or no far end at all.
-        var isOwn: Bool { !systemActive || ownMS >= EchoMonitor.ownEvidenceMS }
-        /// Mostly far-end replay with too little independent speech to be the user.
-        var isEcho: Bool {
-            systemActive && ownMS < EchoMonitor.ownEvidenceMS && echoMS >= EchoMonitor.echoEvidenceMS && echoMS >= 3 * ownMS
-        }
+        /// Enough microphone speech that the far end cannot explain (a silent far end included),
+        /// and not outweighed by replay, or no reference at all. Scattered misjudged frames in a long
+        /// replay therefore do not add up to the user's speech.
+        var isOwn: Bool { referenceAbsent || (ownMS >= EchoMonitor.ownEvidenceMS && 2 * ownMS >= echoMS) }
+        /// Mostly far-end replay.
+        var isEcho: Bool { !referenceAbsent && systemActive && echoMS >= EchoMonitor.echoEvidenceMS && echoMS > 2 * ownMS }
         var verdict: Verdict { isOwn ? .own : isEcho ? .echo : .unclear }
     }
 
@@ -33,10 +36,18 @@ final class EchoMonitor: @unchecked Sendable {
         var heldTurns = 0, confirmedTurns = 0
         /// Finals discarded as echo, and finals kept although the evidence was unclear.
         var ignoredFinals = 0, unclearFinals = 0
+        /// Of those decisions, made from timing plus text: replayed finals, and barge-ins confirmed.
+        var textEchoFinals = 0, textOwnConfirms = 0
+        /// Replayed finals discarded inside a turn already accepted as the user's (a reply after it).
+        var confirmedTurnEchoFinals = 0
         /// Longest wait from a held turn's onset until it was accepted (double-talk latency).
         var confirmMSMax = 0
         /// Learned loudspeaker-to-microphone path, when echo was observed.
         var pathLagMS: Int?, pathGainDB: Int?
+        /// Strongest microphone/system contour match seen (percent) and its delay, learned or not.
+        var bestCorrelationPercent: Int?, bestLagMS: Int?
+        /// Largest delivery delay after capture, per source: how late each stream reaches the app.
+        var systemDelayMSMax = 0, micDelayMSMax = 0
     }
 
     static let frameSeconds = 0.02
@@ -44,9 +55,16 @@ final class EchoMonitor: @unchecked Sendable {
     static let echoEvidenceMS = 200
     /// Searched loudspeaker-to-microphone delay, including capture-callback timing differences
     /// and Bluetooth output latency. Negative values cover system audio that arrives late.
-    static let lags = stride(from: -0.16, through: 0.48, by: 0.02).map { $0 }
-    static let pathWindow = 1.0
-    static let pathCorrelation: Float = 0.8
+    static let lags = stride(from: -0.16, through: 0.6, by: 0.02).map { $0 }
+    static let pathWindow = 1.5
+    /// A real room (speaker response, reverberation, microphone processing) measured a best match
+    /// of 0.77, so a path is learned from moderate matches that agree on the delay.
+    static let pathCorrelation: Float = 0.65
+    static let pathVotes = 6
+    /// Without a learned path a strong match is echo; anything else is unclear, never the user:
+    /// a real room matched at most 0.77, and independent speech can match moderately by chance.
+    static let fallbackEchoCorrelation: Float = 0.75
+    static let highPassHz = 300.0
     static let pathLifetime: TimeInterval = 20
     static let systemActiveDB: Float = -50
     /// Microphone frames this far above the predicted echo are the user; at most this far, echo.
@@ -59,7 +77,10 @@ final class EchoMonitor: @unchecked Sendable {
     private struct Track {
         var frames: [Frame] = []
         var sum = 0.0, count = 0
+        var x1 = 0.0, x2 = 0.0, y1 = 0.0, y2 = 0.0
     }
+    /// Second-order Butterworth high-pass coefficients (b0, b1, b2, a1, a2).
+    private var filter = (0.0, 0.0, 0.0, 0.0, 0.0)
 
     private let lock = NSLock()
     private var frameSamples = 320
@@ -74,23 +95,40 @@ final class EchoMonitor: @unchecked Sendable {
     func begin(sampleRate: Double) {
         lock.withLock {
             frameSamples = max(1, Int(sampleRate * Self.frameSeconds))
+            let w = 2 * Double.pi * min(Self.highPassHz, sampleRate / 4) / max(1, sampleRate)
+            let alpha = sin(w) / (2 * 0.5.squareRoot()), c = cos(w), a0 = 1 + alpha
+            filter = ((1 + c) / 2 / a0, -(1 + c) / a0, (1 + c) / 2 / a0, -2 * c / a0, (1 - alpha) / a0)
             system = Track(); mic = Track(); counters = Counters(); floorDB = nil
             path = nil; lagVotes = []; gainVotes = []
         }
     }
 
-    /// PCM16 mono little-endian, called on capture threads. `time` is the uptime at which the last
-    /// sample of `data` arrived.
+    /// End of a captured buffer on the uptime clock. Capture timestamps (host time) align the two
+    /// sources; arrival time does not, because each stream reaches the app with its own delay.
+    /// Falls back to `now` for a missing or implausible timestamp.
+    static func captureEnd(start: TimeInterval?, duration: TimeInterval, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TimeInterval {
+        guard let start, start.isFinite, duration.isFinite, abs(start + duration - now) < 2 else { return now }
+        return start + duration
+    }
+
+    /// PCM16 mono little-endian, called on capture threads. `time` is when the last sample of
+    /// `data` was captured, on the uptime clock (see `captureEnd`).
     func observe(_ data: Data, source: Source, at time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         let count = data.count / 2
         guard count > 0 else { return }
+        let delay = Int(max(0, ProcessInfo.processInfo.systemUptime - time) * 1000)
         lock.withLock {
+            if source == .system { counters.systemDelayMSMax = max(counters.systemDelayMSMax, delay) }
+            else { counters.micDelayMSMax = max(counters.micDelayMSMax, delay) }
             let rate = Double(frameSamples) / Self.frameSeconds
             var track = source == .system ? system : mic
+            let (b0, b1, b2, a1, a2) = filter
             data.withUnsafeBytes { raw in
                 let samples = raw.bindMemory(to: Int16.self)
                 for index in 0..<count {
-                    let value = Double(Int16(littleEndian: samples[index])) / 32768
+                    let input = Double(Int16(littleEndian: samples[index])) / 32768
+                    let value = b0 * input + b1 * track.x1 + b2 * track.x2 - a1 * track.y1 - a2 * track.y2
+                    track.x2 = track.x1; track.x1 = input; track.y2 = track.y1; track.y1 = value
                     track.sum += value * value; track.count += 1
                     guard track.count == frameSamples else { continue }
                     let rms = (track.sum / Double(track.count)).squareRoot()
@@ -105,11 +143,16 @@ final class EchoMonitor: @unchecked Sendable {
         }
     }
 
-    /// Microphone verdict durations for frames arriving in `start...end`.
-    func assess(from start: TimeInterval, to end: TimeInterval, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Assessment {
+    /// Microphone verdict durations for frames captured in `start...end`, judged only as far as
+    /// the system reference has arrived (it is delivered later than the microphone).
+    func assess(from start: TimeInterval, to requestedEnd: TimeInterval, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Assessment {
         lock.withLock {
             classify(now: now)
             var result = Assessment()
+            let latest = system.frames.last?.time
+            let present = latest.map { now - $0 < 1 } ?? false
+            result.referenceAbsent = !present
+            let end = present ? min(requestedEnd, latest ?? requestedEnd) : requestedEnd
             let frameMS = Int(Self.frameSeconds * 1000)
             for frame in mic.frames where frame.time >= start && frame.time <= end {
                 switch frame.verdict {
@@ -136,8 +179,10 @@ final class EchoMonitor: @unchecked Sendable {
     // MARK: - Classification (under lock)
 
     private func classify(now: TimeInterval) {
-        // Leave time for late-arriving system frames at the most negative lag.
-        let ready = now + (Self.lags.first ?? 0) - Self.frameSeconds
+        // A microphone frame is judged once the system frames it may be compared with have
+        // arrived (the reference stream can be delivered later), or after a second without them.
+        let covered = (system.frames.last?.time ?? -.infinity) + (Self.lags.first ?? 0) - Self.frameSeconds
+        let ready = max(covered, now - 1)
         for index in mic.frames.indices where !mic.frames[index].classified && mic.frames[index].time <= ready {
             let db = mic.frames[index].db
             let floor = floorDB.map { db < $0 ? db : min($0 + 0.05, db) } ?? db
@@ -162,14 +207,17 @@ final class EchoMonitor: @unchecked Sendable {
             if excess > Self.ownExcessDB { return .own }
             return excess <= Self.echoExcessDB ? .echo : .unclear
         }
-        // No echo path observed yet (for example headphones): only a sustained contour match counts.
-        return bestCorrelation(at: index).value >= Self.pathCorrelation ? .echo : .own
+        // No echo path observed yet (for example headphones): only a strong contour match decides.
+        return bestCorrelation(at: index).value >= Self.fallbackEchoCorrelation ? .echo : .unclear
     }
 
     /// Learns the loudspeaker-to-microphone delay and coupling while the microphone clearly
     /// follows the far end. Votes are bounded; the path expires when no echo is seen.
     private func learnPath(at index: Int) {
         let (lag, value) = bestCorrelation(at: index)
+        if value > Float(counters.bestCorrelationPercent ?? -100) / 100 {
+            counters.bestCorrelationPercent = Int((value * 100).rounded()); counters.bestLagMS = Int((lag * 1000).rounded())
+        }
         guard value >= Self.pathCorrelation else { return }
         let end = mic.frames[index].time
         let window = mic.frames[...index].reversed().prefix { end - $0.time < Self.pathWindow }
@@ -181,10 +229,16 @@ final class EchoMonitor: @unchecked Sendable {
         guard gains.count >= 10 else { return }
         lagVotes = Array((lagVotes + [lag]).suffix(30))
         gainVotes = Array((gainVotes + [gains[gains.count / 2]]).suffix(30))
-        let counts = Dictionary(grouping: lagVotes) { ($0 * 50).rounded() }.mapValues(\.count)
-        let modeLag = (counts.max { $0.value < $1.value }?.key ?? (lag * 50).rounded()) / 50
+        // A path needs repeated matches at one delay (±20 ms), most of the recent ones; unrelated
+        // speech scatters its lags.
+        let buckets = lagVotes.map { Int(($0 * 50).rounded()) }
+        guard let mode = Set(buckets).max(by: { a, b in
+            buckets.filter { abs($0 - a) <= 1 }.count < buckets.filter { abs($0 - b) <= 1 }.count
+        }) else { return }
+        let agreeing = buckets.filter { abs($0 - mode) <= 1 }.count
+        guard agreeing >= Self.pathVotes, 2 * agreeing >= buckets.count else { return }
         let sortedGains = gainVotes.sorted()
-        path = Path(lag: modeLag, gainDB: sortedGains[sortedGains.count / 2], updatedAt: end)
+        path = Path(lag: Double(mode) / 50, gainDB: sortedGains[sortedGains.count / 2], updatedAt: end)
     }
 
     private func bestCorrelation(at index: Int) -> (lag: Double, value: Float) {
@@ -243,5 +297,37 @@ final class EchoMonitor: @unchecked Sendable {
         }
         guard varianceA > 1e-3, varianceB > 1e-3 else { return 0 }
         return covariance / (varianceA * varianceB).squareRoot()
+    }
+}
+
+/// How much of a microphone transcript repeats what the far end's recognizer heard. Only used
+/// together with timing: the far end must have been audible during the microphone turn, and
+/// acoustic evidence of the user's own voice always wins, so a user who repeats or quotes the other
+/// side after it stops is never discarded. Text is compared in memory only, never stored or logged.
+enum EchoText {
+    /// At least this share of the microphone's tokens also in the far end's recent text: replay.
+    static let echoSimilarity = 0.6
+    /// At most this share, with enough tokens: different words, so the user's own speech.
+    static let ownSimilarity = 0.3
+    static let minimumOwnTokens = 6
+
+    /// CJK text compares character bigrams; other text compares lowercased words.
+    static func tokens(_ text: String) -> [String] {
+        let kept = text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) || $0 == " " }
+        let cleaned = String(String.UnicodeScalarView(kept))
+        let cjk = cleaned.unicodeScalars.filter { (0x3400...0x9FFF).contains($0.value) || (0xF900...0xFAFF).contains($0.value) }
+        if cjk.count * 2 >= cleaned.unicodeScalars.filter({ $0 != " " }).count, cjk.count >= 2 {
+            let characters = Array(cleaned.replacingOccurrences(of: " ", with: ""))
+            return characters.count < 2 ? characters.map(String.init) : (0..<(characters.count - 1)).map { String(characters[$0...$0 + 1]) }
+        }
+        return cleaned.split(separator: " ").map(String.init)
+    }
+
+    /// Share of `text`'s tokens found in any of `recent`; nil when either side has no tokens.
+    static func similarity(_ text: String, to recent: [String]) -> Double? {
+        let mine = tokens(text)
+        let theirs = Set(recent.flatMap(tokens))
+        guard !mine.isEmpty, !theirs.isEmpty else { return nil }
+        return Double(mine.filter(theirs.contains).count) / Double(mine.count)
     }
 }

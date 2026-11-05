@@ -565,7 +565,153 @@ final class LayaCoordinatorTests: XCTestCase {
         final(app, text: text, id: "you", speaker: .you, offset: 3000)
         await pause(0.3)
         XCTAssertEqual(app.transcript.lines.filter { $0.speaker == .you }.count, 1, "identical text alone must never discard own speech")
-        XCTAssertEqual(app.echo.snapshot.heldTurns, 0)
+        XCTAssertEqual(app.echo.snapshot.ignoredFinals, 0)
+        XCTAssertEqual(app.echo.snapshot.unclearFinals, 0, "a silent far end is clear evidence of own speech")
+        await app.shutdown()
+    }
+
+    /// The hardware report: a real room matched the replay only moderately, so audio alone could not
+    /// decide. While the far end is audible, the microphone repeating its words is replay.
+    @MainActor func testReplayIsDiscardedWhenAcousticsAloneCannotTellItApart() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning)
+        await app.start()
+        let question = "你好我们开始今天的面试请你用一分钟介绍一下自己"
+        // Far end audible; the microphone's contour does not match it (undecided acoustically).
+        feedEcho(app, far: SyntheticTalk.speech(seed: 1, seconds: 4), mic: SyntheticTalk.speech(seed: 5, seconds: 4, level: 0.1))
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
+        app.receiveMockEvent(.partialTranscript("你好我们开始今天的面试"), speaker: .them)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        app.receiveMockEvent(.partialTranscript("你好我们开始今天的面试请你用"), speaker: .you)
+        await pause(0.3)
+        XCTAssertTrue(app.transcript.partialYou.isEmpty)
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
+        final(app, text: question, id: "them")
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        final(app, text: "你好我们开始今天的面试请你用一分钟介绍一下自己以及", id: "you-echo", speaker: .you, offset: 100)
+        await pause(1.0)
+        XCTAssertEqual(reasoning.requests.count, 1, "the far end's question must still be answered")
+        XCTAssertFalse(app.transcript.lines.contains { $0.speaker == .you })
+        XCTAssertEqual(app.echo.snapshot.confirmedTurns, 0)
+        XCTAssertEqual(app.echo.snapshot.ignoredFinals, 1)
+        XCTAssertEqual(app.echo.snapshot.textEchoFinals, 1)
+        await app.shutdown()
+    }
+
+    /// Hardware report 2: a long replayed question was held for ~10 s, then a few frames louder than
+    /// the predicted replay promoted it to the user's speech. Repeating words keep it held.
+    @MainActor func testScatteredLoudFramesDoNotPromoteAReplayedQuestion() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning)
+        await app.start()
+        // A long question replayed throughout; only its last second carries frames well above the
+        // replay, enough to look like the user in a short window but not over the whole utterance.
+        let far = SyntheticTalk.speech(seed: 1, seconds: 8)
+        var mic = SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count)
+        let bursts = SyntheticTalk.speech(seed: 7, seconds: 1.0, level: 0.6)
+        for i in bursts.indices { mic[Int(7.0 * SyntheticTalk.rate) + i] += bursts[i] }
+        let question = "如果产品上线以后有用户反馈异常但是你在自己的电脑上一直无法复现你会怎么排查"
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
+        app.receiveMockEvent(.partialTranscript("如果产品上线以后有用户反馈异常但是你在自己的电脑上"), speaker: .them)
+        // The first 7 s have arrived when the microphone reports speech; the last second (with the
+        // loud frames) arrives while the turn is held, so the recent window spans all of it.
+        let cut = Int(7.0 * SyntheticTalk.rate)
+        let start = ProcessInfo.processInfo.systemUptime
+        SyntheticTalk.feed(app.echo, system: Array(far[..<cut]), mic: Array(mic[..<cut]), base: start - 7)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        XCTAssertEqual(app.echo.snapshot.heldTurns, 1)
+        await pause(0.7)
+        SyntheticTalk.feed(app.echo, system: Array(far[cut...]), mic: Array(mic[cut...]), base: start)
+        // Precondition: audio alone, over the recent window, would call this the user's speech.
+        let now = ProcessInfo.processInfo.systemUptime
+        XCTAssertTrue(app.echo.assess(from: now - 1.2, to: now, now: now).isOwn, "fixture must reproduce the misleading frames")
+        XCTAssertTrue(app.echo.assess(from: now - 8.8, to: now, now: now).isEcho, "fixture must still be replay overall")
+        app.receiveMockEvent(.partialTranscript("如果产品上线以后有用户反馈异常但是你在自己的电脑"), speaker: .you)
+        await pause(0.4)
+        XCTAssertEqual(app.echo.snapshot.confirmedTurns, 0, "replayed words must stay held despite loud frames")
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
+        app.receiveMockEvent(.transcript(.init(id: "them", speaker: .them, text: question, startMS: 0, endMS: 7000, receivedAt: Date())), speaker: .them)
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        app.receiveMockEvent(.transcript(.init(id: "you-echo", speaker: .you, text: question, startMS: 100, endMS: 7100, receivedAt: Date())), speaker: .you)
+        await pause(1.0)
+        XCTAssertEqual(reasoning.requests.count, 1, "the far end's question must still be answered")
+        XCTAssertFalse(app.transcript.lines.contains { $0.speaker == .you })
+        await app.shutdown()
+    }
+
+    /// Hardware report 3: one microphone turn held a replayed question and then the user's own reply
+    /// after the far end stopped. Accepting the reply kept the replayed question as You too.
+    @MainActor func testAcceptingAReplyDoesNotKeepTheReplayedQuestionBeforeIt() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning)
+        await app.start()
+        let rate = SyntheticTalk.rate
+        let session = ProcessInfo.processInfo.systemUptime // audio t = 0 at the session start
+        let far = SyntheticTalk.speech(seed: 1, seconds: 4) + [Float](repeating: 0, count: Int(2.4 * rate))
+        var mic = SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count)
+        let reply = SyntheticTalk.speech(seed: 8, seconds: 0.9)
+        for i in reply.indices { mic[Int(4.8 * rate) + i] += reply[i] }
+        var fed = 0
+        /// Streams audio up to session time `t` in real time, as capture does.
+        func stream(until t: Double) async {
+            while true {
+                let now = ProcessInfo.processInfo.systemUptime - session
+                let target = min(Int(min(t, now) * rate) / 320 * 320, far.count)
+                if target > fed {
+                    SyntheticTalk.feed(app.echo, system: Array(far[fed..<target]), mic: Array(mic[fed..<target]), base: session + Double(fed) / rate)
+                    fed = target
+                }
+                if now >= t { return }
+                try? await Task.sleep(nanoseconds: 40_000_000)
+            }
+        }
+        let question = "如果产品上线以后有用户反馈异常但是你在自己的电脑上一直无法复现你会怎么排查"
+        await stream(until: 0.8)
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
+        app.receiveMockEvent(.partialTranscript("如果产品上线以后"), speaker: .them)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        await stream(until: 2.5)
+        app.receiveMockEvent(.partialTranscript("如果产品上线以后有用户反馈异常但是你在自己的电脑上"), speaker: .them)
+        app.receiveMockEvent(.partialTranscript("如果产品上线以后有用户反馈异常但是你在自己的电脑"), speaker: .you)
+        await stream(until: 4.7)
+        XCTAssertEqual(app.echo.snapshot.confirmedTurns, 0, "the replayed question stays held")
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
+        app.receiveMockEvent(.transcript(.init(id: "them", speaker: .them, text: question, startMS: 0, endMS: 4000, receivedAt: Date())), speaker: .them)
+        // The far end is silent; the user replies within the same microphone turn.
+        await stream(until: 6.4)
+        XCTAssertEqual(app.echo.snapshot.confirmedTurns, 1, "the user's reply over a silent far end is accepted")
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        app.receiveMockEvent(.transcript(.init(id: "you-echo", speaker: .you, text: question, startMS: 120, endMS: 4120, receivedAt: Date())), speaker: .you)
+        app.receiveMockEvent(.transcript(.init(id: "you-reply", speaker: .you, text: "好的", startMS: 4800, endMS: 5700, receivedAt: Date())), speaker: .you)
+        await pause(0.3)
+        let mine = app.transcript.lines.filter { $0.speaker == .you }.map(\.content)
+        XCTAssertFalse(mine.joined().contains("无法复现"), "the replayed question must not appear as You")
+        XCTAssertTrue(mine.joined().contains("好的"), "the user's reply is kept")
+        XCTAssertEqual(app.echo.snapshot.confirmedTurnEchoFinals, 1)
+        await app.shutdown()
+    }
+
+    @MainActor func testDifferentWordsOverTheFarEndAreConfirmedAsBargeIn() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning)
+        await app.start()
+        feedEcho(app, far: SyntheticTalk.speech(seed: 1, seconds: 4), mic: SyntheticTalk.speech(seed: 5, seconds: 4, level: 0.1))
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
+        app.receiveMockEvent(.partialTranscript("Please introduce your most recent project"), speaker: .them)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        XCTAssertEqual(app.echo.snapshot.heldTurns, 1, "undecided audio is held first")
+        await pause(0.5)
+        app.receiveMockEvent(.partialTranscript("Sorry could I quickly finish answering the previous question about caching"), speaker: .you)
+        XCTAssertTrue([.ownSpeech, .ownTranscript].contains(app.layaGateStatus), "different words while the far end talks are the user")
+        XCTAssertFalse(app.transcript.partialYou.isEmpty)
+        final(app, text: "Please introduce your most recent project", id: "them")
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        final(app, text: "Sorry could I quickly finish answering the previous question about caching", id: "you", speaker: .you)
+        await pause(1.0)
+        XCTAssertTrue(reasoning.requests.isEmpty, "a real interruption keeps its effect")
+        XCTAssertTrue(app.transcript.lines.contains { $0.speaker == .you })
+        XCTAssertEqual(app.echo.snapshot.textOwnConfirms, 1)
         await app.shutdown()
     }
 

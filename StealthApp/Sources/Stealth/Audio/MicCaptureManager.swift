@@ -25,6 +25,8 @@ final class MicCaptureManager: ObservableObject {
     private var tapInstalled = false
     /// Optional content-free level/arrival accounting; observed on the audio thread.
     var flow: AudioFlowMonitor?
+    /// Optional speaker-echo evidence; observed on the audio thread with the buffer's capture time.
+    var echo: EchoMonitor?
     func configure(sampleRate: Double) { if !isCapturing { pcmConverter.configure(sampleRate: sampleRate) } }
 
     init() { observeEngine() }
@@ -89,14 +91,20 @@ final class MicCaptureManager: ObservableObject {
             return false
         }
 
-        let worker = pcmConverter, emit = onPCM16, flow = self.flow
+        let worker = pcmConverter, emit = onPCM16, flow = self.flow, echo = self.echo
         CaptureDiagnostics.record(.micTap)
         removeTap()
         // `nil` taps the bus's current format. Passing the format read above raises an uncatchable
         // exception if the hardware format changes first (for example a Bluetooth headset switching
         // profile as its microphone opens). The converter follows each buffer's own format.
-        input.installTap(onBus: 0, bufferSize: 2048, format: nil) { buffer, _ in
-            if let data = worker.convert(buffer) { flow?.observe(data); emit?(data) }
+        input.installTap(onBus: 0, bufferSize: 2048, format: nil) { buffer, when in
+            if let data = worker.convert(buffer) {
+                flow?.observe(data)
+                echo?.observe(data, source: .mic, at: EchoMonitor.captureEnd(
+                    start: when.isHostTimeValid ? AVAudioTime.seconds(forHostTime: when.hostTime) : nil,
+                    duration: Double(buffer.frameLength) / buffer.format.sampleRate))
+                emit?(data)
+            }
         }
         tapInstalled = true
 

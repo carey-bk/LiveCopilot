@@ -309,7 +309,7 @@ enum CoreChecks {
             let line = CaptureDiagnostics.summaryLine(events[0])
             try expect(line.contains("speaker=You verdict=digitalSilence") && line.contains("backlog_ms_max=40"), "audio summary fields missing")
         }
-        try check("speaker echo is told apart from the user's own speech by audio, not text") {
+        try check("speaker echo is told apart from the user's own speech by audio, timing and text") {
             let rate = 16000.0, far = SyntheticTalk.speech(seed: 1, seconds: 6)
             let echoOnly = SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count)
             func monitor(system: [Float], mic: [Float]) -> EchoMonitor {
@@ -330,8 +330,27 @@ enum CoreChecks {
             // Far end silent (the user repeats its words afterwards), or headphones: own speech.
             let silent = [Float](repeating: 0, count: far.count)
             try expect(monitor(system: silent, mic: far).assess(from: 100.5, to: 105.5, now: 106).isOwn, "speech with a silent far end not own")
+            // Independent speech during the far end (headphones) is never taken for replay; without
+            // a learned path it stays undecided acoustically and timing plus text decide.
             let headphones = monitor(system: far, mic: SyntheticTalk.speech(seed: 3, seconds: 6))
-            try expect(headphones.assess(from: 100.5, to: 105.5, now: 106).isOwn, "independent speech during the far end not own")
+            try expect(!headphones.assess(from: 100.5, to: 105.5, now: 106).isEcho, "independent speech during the far end taken for echo")
+            // Text overlap: replay recognized slightly differently, different words, CJK and English.
+            let heard = ["你好我们开始今天的面试", "你好我们开始今天的面试请你用一分钟介绍一下自己"]
+            try expect((EchoText.similarity("你好我们开始今天的面试请你用", to: heard) ?? 0) >= EchoText.echoSimilarity, "CJK replay not matched")
+            try expect((EchoText.similarity("我之前负责的是支付系统的重构", to: heard) ?? 1) <= EchoText.ownSimilarity, "different CJK words matched")
+            try expect((EchoText.similarity("please introduce your most recent projects", to: ["Please introduce your most recent project."]) ?? 0) >= EchoText.echoSimilarity, "English replay not matched")
+            try expect((EchoText.similarity("sorry may I answer the previous one first", to: ["Please introduce your most recent project."]) ?? 1) <= EchoText.ownSimilarity, "different English words matched")
+            try expect(EchoText.similarity("，。", to: heard) == nil, "punctuation-only text compared")
+            // ScreenCaptureKit delivers system audio later than the microphone tap. With capture
+            // timestamps, a replay whose reference has not arrived yet must not pass as own speech.
+            let late = EchoMonitor(); late.begin(sampleRate: rate)
+            let cut = far.count - Int(0.5 * rate)
+            SyntheticTalk.feed(late, system: Array(far[..<cut]), mic: echoOnly, base: 100)
+            try expect(!late.assess(from: 105.0, to: 106.0, now: 106.0).isOwn, "replay judged before its reference arrived")
+            try expect(late.assess(from: 100.5, to: 106.0, now: 106.0).isEcho, "replay covered by the late reference not echo")
+            try expect(EchoMonitor.captureEnd(start: 99.9, duration: 0.05, now: 100.2) == 99.95
+                       && EchoMonitor.captureEnd(start: nil, duration: 0.05, now: 100.2) == 100.2
+                       && EchoMonitor.captureEnd(start: 10, duration: 0.05, now: 100.2) == 100.2, "capture time not used, or implausible time trusted")
             let learned = monitor(system: far, mic: echoOnly)
             _ = learned.assess(from: 100, to: 106, now: 106.5)
             let lag = learned.snapshot.pathLagMS ?? -1
