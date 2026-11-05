@@ -309,6 +309,34 @@ enum CoreChecks {
             let line = CaptureDiagnostics.summaryLine(events[0])
             try expect(line.contains("speaker=You verdict=digitalSilence") && line.contains("backlog_ms_max=40"), "audio summary fields missing")
         }
+        try check("speaker echo is told apart from the user's own speech by audio, not text") {
+            let rate = 16000.0, far = SyntheticTalk.speech(seed: 1, seconds: 6)
+            let echoOnly = SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count)
+            func monitor(system: [Float], mic: [Float]) -> EchoMonitor {
+                let m = EchoMonitor(); m.begin(sampleRate: rate)
+                SyntheticTalk.feed(m, system: system, mic: mic, base: 100)
+                return m
+            }
+            // Speakers replay the far end into the microphone: echo, never the user's speech.
+            let replay = monitor(system: far, mic: echoOnly).assess(from: 100.5, to: 105.5, now: 106.5)
+            try expect(replay.isEcho && !replay.isOwn, "speaker replay counted as own speech \(replay)")
+            // The user talks over the far end, louder than the replay: own speech within a second.
+            let own = SyntheticTalk.speech(seed: 2, seconds: 2.5)
+            var doubleTalk = echoOnly
+            for i in own.indices { doubleTalk[Int(3 * rate) + i] += own[i] }
+            let both = monitor(system: far, mic: doubleTalk)
+            try expect(both.assess(from: 100.5, to: 102.9, now: 103).isEcho, "echo before the user spoke not recognized")
+            try expect(both.assess(from: 102.6, to: 104.0, now: 104.0).isOwn, "barge-in over the far end not recognized within 1 s")
+            // Far end silent (the user repeats its words afterwards), or headphones: own speech.
+            let silent = [Float](repeating: 0, count: far.count)
+            try expect(monitor(system: silent, mic: far).assess(from: 100.5, to: 105.5, now: 106).isOwn, "speech with a silent far end not own")
+            let headphones = monitor(system: far, mic: SyntheticTalk.speech(seed: 3, seconds: 6))
+            try expect(headphones.assess(from: 100.5, to: 105.5, now: 106).isOwn, "independent speech during the far end not own")
+            let learned = monitor(system: far, mic: echoOnly)
+            _ = learned.assess(from: 100, to: 106, now: 106.5)
+            let lag = learned.snapshot.pathLagMS ?? -1
+            try expect(abs(lag - 120) <= 40 && learned.snapshot.heldTurns == 0, "loudspeaker delay not learned: \(lag) ms")
+        }
         try check("recognition stats measure final lag on the audio timeline and name overflow causes") {
             var stats = RecognitionStats()
             try expect(stats.finalLagMeanMS == nil, "empty stats reported a lag")
@@ -747,5 +775,51 @@ final class RecordingTransport: HTTPTransport, @unchecked Sendable {
     func lines(for request: URLRequest) -> AsyncThrowingStream<String, Error> {
         lock.withLock { captured.append(request) }
         return AsyncThrowingStream { c in events.forEach { c.yield($0) }; c.finish() }
+    }
+}
+
+/// Deterministic speech-like signals (syllable bursts of harmonics with pauses) and a simple
+/// loudspeaker-to-microphone path, for echo checks without recordings.
+enum SyntheticTalk {
+    static let rate = 16000.0
+    static func speech(seed: UInt64, seconds: Double, level: Float = 0.25) -> [Float] {
+        var state = seed &* 0x9E3779B97F4A7C15 | 1
+        func random() -> Double { state ^= state << 13; state ^= state >> 7; state ^= state << 17; return Double(state % 1_000_000) / 1_000_000 }
+        var out = [Float](repeating: 0, count: Int(seconds * rate))
+        var i = 0
+        while i < out.count {
+            let burst = Int((0.12 + random() * 0.18) * rate), amplitude = Float(0.2 + random() * 0.8) * level
+            let pitch = 110 + random() * 120
+            for k in 0..<burst where i + k < out.count {
+                let t = Double(k) / rate, envelope = Float(sin(Double.pi * Double(k) / Double(burst)))
+                out[i + k] = amplitude * envelope * Float(sin(2 * .pi * pitch * t) + 0.5 * sin(4 * .pi * pitch * t) + 0.25 * sin(6 * .pi * pitch * t)) / 1.75
+            }
+            i += burst + Int((0.04 + random() * (random() < 0.15 ? 0.5 : 0.12)) * rate)
+        }
+        return out
+    }
+    static func echo(_ x: [Float], delay: Double, gain: Float, count: Int) -> [Float] {
+        var y = [Float](repeating: 0, count: count)
+        for (offset, weight) in [(0.0, Float(1)), (0.04, 0.4), (0.1, 0.2)] {
+            let d = Int((delay + offset) * rate)
+            for i in x.indices where i + d < count { y[i + d] += x[i] * weight * gain }
+        }
+        var noise: UInt64 = 0x2545F4914F6CDD1D
+        for i in y.indices { noise ^= noise << 13; noise ^= noise >> 7; noise ^= noise << 17; y[i] += Float(Int(noise % 2001) - 1000) / 1_000_000 }
+        return y
+    }
+    static func pcm(_ x: ArraySlice<Float>) -> Data {
+        var data = Data(capacity: x.count * 2)
+        for v in x { var s = Int16(max(-32767, min(32767, v * 32767))).littleEndian; withUnsafeBytes(of: &s) { data.append(contentsOf: $0) } }
+        return data
+    }
+    /// Delivers both sources in 20 ms buffers on the uptime clock starting at `base`.
+    static func feed(_ monitor: EchoMonitor, system: [Float], mic: [Float], base: TimeInterval) {
+        let step = Int(rate * 0.02)
+        for start in stride(from: 0, to: max(system.count, mic.count), by: step) {
+            let end = start + step, at = base + Double(end) / rate
+            if start < system.count { monitor.observe(pcm(system[start..<min(end, system.count)]), source: .system, at: at) }
+            if start < mic.count { monitor.observe(pcm(mic[start..<min(end, mic.count)]), source: .mic, at: at + 0.003) }
+        }
     }
 }

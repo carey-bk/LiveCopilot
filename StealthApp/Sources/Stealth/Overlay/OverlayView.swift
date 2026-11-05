@@ -112,6 +112,12 @@ struct OverlayView: View {
         VStack(alignment: .leading, spacing: 10) {
             header.padding(.trailing, 16)
             Text(t(coordinator.statusMessage)).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
+            if coordinator.isRunning, let notice = coordinator.captureNotice {
+                Label(t(notice), systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(.orange).lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("capture-notice")
+            }
             if coordinator.isRunning {
                 HStack {
                     Text(t(coordinator.questionState)).font(.caption2).foregroundStyle(.secondary)

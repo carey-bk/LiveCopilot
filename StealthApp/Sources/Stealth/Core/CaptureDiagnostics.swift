@@ -25,12 +25,13 @@ enum CaptureDiagnostics {
         var peakDBFS: Int?; var audibleFraction: Double?; var partials: Int?; var transcripts: Int?
         var textLatencyMeanMS: Int?; var textLatencyMaxMS: Int?; var backlogMaxMS: Int?
         var readyMS: Int?; var finalLagMeanMS: Int?; var finalLagMaxMS: Int?
+        var echo: EchoMonitor.Counters?
     }
-    static func audioDetails(_ flow: AudioFlowMonitor.Snapshot, speaker: String, recognition: RecognitionStats? = nil) -> Details {
+    static func audioDetails(_ flow: AudioFlowMonitor.Snapshot, speaker: String, recognition: RecognitionStats? = nil, echo: EchoMonitor.Counters? = nil) -> Details {
         Details(speaker: speaker, audioVerdict: flow.verdict, audioSeconds: flow.audioSeconds, firstAudioMS: flow.firstAudioMS,
                 peakDBFS: flow.peakDBFS, audibleFraction: flow.audibleFraction, partials: flow.partials, transcripts: flow.transcripts,
                 textLatencyMeanMS: flow.textLatencyMeanMS, textLatencyMaxMS: flow.textLatencyMaxMS, backlogMaxMS: recognition?.backlogMaxMS,
-                readyMS: recognition?.readyMS, finalLagMeanMS: recognition?.finalLagMeanMS, finalLagMaxMS: recognition?.finalLagMaxMS)
+                readyMS: recognition?.readyMS, finalLagMeanMS: recognition?.finalLagMeanMS, finalLagMaxMS: recognition?.finalLagMaxMS, echo: echo)
     }
     struct Event: Codable {
         let time: Date; let stage: Stage; let code: Int?
@@ -106,6 +107,10 @@ enum CaptureDiagnostics {
         if let v = d.backlogMaxMS { fields.append("backlog_ms_max=\(v)") }
         if let v = d.finalLagMeanMS { fields.append("final_lag_ms_mean=\(v)") }
         if let v = d.finalLagMaxMS { fields.append("final_lag_ms_max=\(v)") }
+        if let e = d.echo {
+            fields.append("echo_held=\(e.heldTurns) echo_confirmed=\(e.confirmedTurns) echo_ignored=\(e.ignoredFinals) echo_unclear=\(e.unclearFinals) echo_confirm_ms_max=\(e.confirmMSMax)")
+            if let lag = e.pathLagMS, let gain = e.pathGainDB { fields.append("echo_lag_ms=\(lag) echo_gain_db=\(gain)") }
+        }
         line += " " + fields.joined(separator: " ")
         return line
     }

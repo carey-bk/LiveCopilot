@@ -7,6 +7,10 @@ enum LayaGateEvent: String, CaseIterable, Sendable {
     case disabled, loading, unavailable, captureInactive, ownSpeech, ownTranscript
     case emptyInput, shortPreview, noCandidate, duplicate, expired, predicting
     case waitingFinal, waitingSilence, belowThreshold, cooldown, busy, failed, idle, staleCandidate
+    /// Remote-mode microphone speech that follows the far end (speaker echo): held, or discarded.
+    case echoHeld, echoIgnored
+    /// What an interruption retired: a pending question, and/or a question-judgement in flight.
+    case candidateRetired, predictionRetired
 
     func label(_ language: AppLanguage) -> String {
         let pair: (String, String)
@@ -34,6 +38,10 @@ enum LayaGateEvent: String, CaseIterable, Sendable {
         case .busy: pair = ("Answer pipeline busy", "回答通道忙，等待重试")
         case .failed: pair = ("Prediction failed — check settings", "判断失败，请检查设置")
         case .staleCandidate: pair = ("Question context changed", "问题上下文已变化，取消提交")
+        case .echoHeld: pair = ("Speaker echo on microphone — waiting for your own voice", "麦克风收到扬声器回声，等待确认本人发言")
+        case .echoIgnored: pair = ("Speaker echo ignored — question kept", "已忽略扬声器回声，保留待回答问题")
+        case .candidateRetired: pair = ("Pending question retired", "已撤销待回答问题")
+        case .predictionRetired: pair = ("Question judgement discarded", "已丢弃进行中的问题判断")
         }
         return ServiceGuide.text(pair.0, pair.1, language)
     }
@@ -353,8 +361,12 @@ struct LayaTriggerInput: Equatable, Sendable {
 
     private func invalidateCurrent(rememberCurrent: Bool) {
         if rememberCurrent {
-            if let key = candidate?.key { remember(key) }
-            if let key = flight?.key { remember(key) }
+            if let key = candidate?.key { remember(key); onEvent?(.candidateRetired) }
+            if let flight {
+                remember(flight.key)
+                // An older flight was already retired by a previous interruption.
+                if flight.generation == generation { onEvent?(.predictionRetired) }
+            }
         }
         generation &+= 1
         candidate = nil

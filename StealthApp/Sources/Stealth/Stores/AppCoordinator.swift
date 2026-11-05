@@ -146,6 +146,19 @@ final class AppCoordinator: ObservableObject {
     let systemAudio = AudioCaptureManager()
     let mic = MicCaptureManager()
     private let systemFlow = AudioFlowMonitor(), micFlow = AudioFlowMonitor()
+    /// Far-end reference for Remote mode: content-free energy frames of both sources.
+    let echo = EchoMonitor()
+    /// A Remote-mode microphone turn. Until it shows speech the far end cannot explain, it is
+    /// treated as possible speaker echo and does not act as the user's own speech.
+    private struct OwnTurn { let startedAt: TimeInterval; var speaking: Bool; var confirmed = false; var held = false }
+    private var ownTurn: OwnTurn?
+    private var ownTurnCheck: Task<Void, Never>?
+    /// Persistent while listening when a selected source is missing (Remote mode without system audio).
+    @Published private(set) var captureNotice: String?
+    nonisolated static let systemAudioMissingNotice = "System audio is not being captured. Only your microphone is transcribed; the other side may be missing or appear as You."
+    nonisolated static func captureNotice(mode: OperatingMode, systemCapturing: Bool, micCapturing: Bool) -> String? {
+        mode == .remote && !systemCapturing && micCapturing ? systemAudioMissingNotice : nil
+    }
     /// Sources whose capture began in this listening session and still owe an audio summary.
     private var flowSources: [Speaker] = []
     private var audioCheckTask: Task<Void, Never>?
@@ -246,7 +259,7 @@ final class AppCoordinator: ObservableObject {
     @Published var questionState = QuestionPhase.listening.rawValue
     @Published private(set) var layaGateStatus: LayaGateEvent = .idle
     private func recordLaya(_ event: LayaGateEvent) {
-        if ![.ownSpeechStarted, .ownSpeechEnded, .otherSpeechStarted, .otherSpeechEnded, .inputReceived, .received, .predictionStarted, .predictionCompleted, .discarded].contains(event) { layaGateStatus = event }
+        if ![.ownSpeechStarted, .ownSpeechEnded, .otherSpeechStarted, .otherSpeechEnded, .inputReceived, .received, .predictionStarted, .predictionCompleted, .discarded, .candidateRetired, .predictionRetired].contains(event) { layaGateStatus = event }
         if !isMock { LayaGateDiagnostics.record(event) }
     }
     @Published private(set) var layaLastScore: Double?
@@ -305,13 +318,15 @@ final class AppCoordinator: ObservableObject {
         else if settings.requiresOpenAIKey { refreshKeyState() }
         else { keyStatus = "OpenAI is not required by the selected local services." }
         refreshAnalysisKeyState()
-        systemAudio.onPCM16 = { [weak self] data in Task { @MainActor in self?.systemLive?.sendAudio(data) } }
-        mic.onPCM16 = { [weak self] data in Task { @MainActor in self?.micLive?.sendAudio(data) } }
+        let echo = self.echo
+        systemAudio.onPCM16 = { [weak self] data in echo.observe(data, source: .system); Task { @MainActor in self?.systemLive?.sendAudio(data) } }
+        mic.onPCM16 = { [weak self] data in echo.observe(data, source: .mic); Task { @MainActor in self?.micLive?.sendAudio(data) } }
         systemAudio.flow = systemFlow; mic.flow = micFlow
         systemAudio.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
         mic.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
         systemAudio.$isCapturing.dropFirst().sink { [weak self] capturing in
             guard let self, !capturing, self.isRunning, !self.isTransitioning else { return }
+            self.captureNotice = Self.captureNotice(mode: self.settings.mode, systemCapturing: false, micCapturing: self.mic.isCapturing)
             let provider = self.systemLive; self.systemLive = nil
             self.finishAudioFlow(.them, provider: provider)
             Task { await provider?.disconnect() }
@@ -742,6 +757,8 @@ final class AppCoordinator: ObservableObject {
         guard sessionStartedAt == nil else { statusMessage = sessions.lastError ?? "Session history could not be saved."; return }
         translation.resetSession(); conversation.reset(); transcript.clear(); activeDelegations = []; speakingSources = []
         sessionStartedAt = Date(); sessionWasVoice = true; sessionAnswerIDs = []
+        echo.begin(sampleRate: settings.listeningService.sampleRate)
+        endOwnTurn(); captureNotice = nil
         if isMock {
             isRunning = true; statusMessage = "MOCK listening — sample conversation"
             configureAutomaticTrigger()
@@ -779,6 +796,8 @@ final class AppCoordinator: ObservableObject {
                 statusMessage = mic.lastError ?? systemAudio.lastError ?? "No audio capture source available."
                 sessionStartedAt = nil; return
             }
+            // Mic-only Remote listening is degraded: say so for the whole session, not one status line.
+            captureNotice = Self.captureNotice(mode: settings.mode, systemCapturing: systemAudio.isCapturing, micCapturing: mic.isCapturing)
             CaptureDiagnostics.record(.speechConnecting)
             isRunning = true
             configureAutomaticTrigger()
@@ -816,16 +835,11 @@ final class AppCoordinator: ObservableObject {
         guard epoch == liveEpoch else { return }
         switch event {
         case .speechActivity(let active):
-            if usesLaya, isRunning { recordLaya(speaker == .you ? (active ? .ownSpeechStarted : .ownSpeechEnded) : (active ? .otherSpeechStarted : .otherSpeechEnded)) }
-            if active { flow(for: speaker).speechStarted() }
-            if active { speakingSources.insert(speaker); if pendingAutomatic?.speaker == speaker { questionTask?.cancel() } }
-            else { speakingSources.remove(speaker); if pendingAutomatic != nil { scheduleAutomatic() } }
-            if usesLaya, isRunning { layaGate.setSpeaking(active, speaker: speaker) }
-            if !active {
-                if settings.continuousQuestionPolicy == .complete { questions.postponeUntilQuiet() }
-                drainQuestions()
-            }
+            if speaker == .you, echoGuardApplies { ownSpeechActivity(active) }
+            else { applySpeechActivity(active, speaker: speaker) }
         case .partialTranscript(let text):
+            // Possible speaker echo: neither shown as You nor allowed to retire the pending question.
+            if speaker == .you, echoGuardApplies, !text.isEmpty, !confirmOwnTurn() { holdOwnTurn(); return }
             transcript.setPartial(text, speaker: speaker)
             translation.updatePreview(text, speaker: speaker)
             if !text.isEmpty { questionState = QuestionPhase.forming.rawValue; flow(for: speaker).notePartial() }
@@ -833,6 +847,7 @@ final class AppCoordinator: ObservableObject {
         case .transcript(let fragment):
             transcript.clearPartial(speaker)
             translation.updatePreview("", speaker: speaker)
+            if speaker == .you, echoGuardApplies, isSpeakerEcho(fragment) { return }
             guard conversation.append(fragment) else { return }
             flow(for: speaker).noteTranscript()
             transcript.ingest(fragment)
@@ -860,6 +875,7 @@ final class AppCoordinator: ObservableObject {
             }
         case .closed(let finalized):
             if speechRuntime != .failed { speechRuntime = .idle }
+            if speaker == .you { endOwnTurn() }
             speakingSources.remove(speaker)
             layaGate.reset()
             configureAutomaticTrigger(prepare: false)
@@ -869,6 +885,92 @@ final class AppCoordinator: ObservableObject {
             else if !finalized { DebugLog.log("live.close final_usage_unconfirmed speaker=\(speaker.rawValue)") }
         }
     }
+    private func applySpeechActivity(_ active: Bool, speaker: Speaker) {
+        if usesLaya, isRunning { recordLaya(speaker == .you ? (active ? .ownSpeechStarted : .ownSpeechEnded) : (active ? .otherSpeechStarted : .otherSpeechEnded)) }
+        if active { flow(for: speaker).speechStarted() }
+        if active { speakingSources.insert(speaker); if pendingAutomatic?.speaker == speaker { questionTask?.cancel() } }
+        else { speakingSources.remove(speaker); if pendingAutomatic != nil { scheduleAutomatic() } }
+        if usesLaya, isRunning { layaGate.setSpeaking(active, speaker: speaker) }
+        if !active {
+            if settings.continuousQuestionPolicy == .complete { questions.postponeUntilQuiet() }
+            drainQuestions()
+        }
+    }
+    /// Remote mode with a far-end reference: speakers can replay the other side into the microphone.
+    private var echoGuardApplies: Bool { settings.mode == .remote && (isMock || systemAudio.isCapturing) }
+    /// VAD and ASR report speech 0.3–0.6 s after its acoustic onset; include that lead-in as evidence.
+    private static let ownTurnLeadIn: TimeInterval = 0.6
+    private func ownSpeechActivity(_ active: Bool) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if active {
+            if ownTurn?.speaking != true { ownTurn = OwnTurn(startedAt: now - Self.ownTurnLeadIn, speaking: true) }
+            if !confirmOwnTurn() { holdOwnTurn() }
+        } else {
+            ownTurnCheck?.cancel(); ownTurnCheck = nil
+            guard var turn = ownTurn, turn.speaking else { return }
+            turn.speaking = false; ownTurn = turn
+            // Only speech that was ever accepted as the user's ends as the user's.
+            if turn.confirmed { applySpeechActivity(false, speaker: .you) }
+        }
+    }
+    /// Accepts the current microphone turn as the user's own speech once the far end cannot
+    /// explain it (or the far end is silent). Real barge-in is promoted here, mid-utterance.
+    @discardableResult private func confirmOwnTurn() -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        var turn = ownTurn ?? OwnTurn(startedAt: now - Self.ownTurnLeadIn, speaking: false)
+        if turn.confirmed { return true }
+        guard echo.assess(from: turn.startedAt, to: now, now: now).isOwn else { ownTurn = turn; return false }
+        turn.confirmed = true; ownTurn = turn
+        ownTurnCheck?.cancel(); ownTurnCheck = nil
+        if turn.held {
+            let waited = Int((now - turn.startedAt - Self.ownTurnLeadIn) * 1000)
+            echo.note { $0.confirmedTurns += 1; $0.confirmMSMax = max($0.confirmMSMax, waited) }
+        }
+        if turn.speaking { applySpeechActivity(true, speaker: .you) }
+        return true
+    }
+    private func holdOwnTurn() {
+        guard var turn = ownTurn, !turn.confirmed else { return }
+        if !turn.held {
+            turn.held = true; ownTurn = turn
+            echo.note { $0.heldTurns += 1 }
+            if usesLaya, isRunning { recordLaya(.echoHeld) }
+        }
+        guard turn.speaking else { return }
+        ownTurnCheck?.cancel()
+        let epoch = liveEpoch
+        ownTurnCheck = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                guard !Task.isCancelled, let self, self.liveEpoch == epoch,
+                      self.ownTurn?.speaking == true, self.ownTurn?.confirmed == false else { return }
+                if self.confirmOwnTurn() { return }
+            }
+        }
+    }
+    /// A final from an unaccepted turn is discarded only on acoustic evidence that it replays the
+    /// far end, never because its text matches the other side; unclear audio is kept as the user's.
+    private func isSpeakerEcho(_ fragment: TranscriptFragment) -> Bool {
+        defer { if ownTurn?.speaking != true { ownTurn = nil } }
+        guard ownTurn?.confirmed != true else { return false }
+        let now = ProcessInfo.processInfo.systemUptime
+        // Finals arrive after endpointing: cover the utterance, its lead-in and the endpoint silence.
+        let duration = Double(max(0, fragment.endMS - fragment.startMS)) / 1000
+        let assessment = echo.assess(from: now - duration - 1.2, to: now, now: now)
+        switch assessment.verdict {
+        case .echo:
+            echo.note { $0.ignoredFinals += 1 }
+            if usesLaya, isRunning { recordLaya(.echoIgnored) }
+            DebugLog.log("echo.final ignored echo_ms=\(assessment.echoMS) own_ms=\(assessment.ownMS)")
+            return true
+        case .unclear:
+            echo.note { $0.unclearFinals += 1 }
+            return false
+        case .own:
+            return false
+        }
+    }
+    private func endOwnTurn() { ownTurnCheck?.cancel(); ownTurnCheck = nil; ownTurn = nil }
     private func flow(for speaker: Speaker) -> AudioFlowMonitor { speaker == .them ? systemFlow : micFlow }
     private func recognition(for speaker: Speaker) -> RecognitionStats? {
         ((speaker == .them ? systemLive : micLive) as? RecognitionStatsReporting)?.recognitionStats
@@ -876,7 +978,8 @@ final class AppCoordinator: ObservableObject {
     private func recordAudioFlow(_ stage: CaptureDiagnostics.Stage, speaker: Speaker, provider: (any LiveProvider)?) {
         guard !isMock else { return }
         CaptureDiagnostics.record(stage, details: CaptureDiagnostics.audioDetails(flow(for: speaker).snapshot(), speaker: speaker.rawValue,
-                                                                                    recognition: (provider as? RecognitionStatsReporting)?.recognitionStats))
+                                                                                    recognition: (provider as? RecognitionStatsReporting)?.recognitionStats,
+                                                                                    echo: speaker == .you && settings.mode == .remote ? echo.snapshot : nil))
     }
     private func finishAudioFlow(_ speaker: Speaker, provider: (any LiveProvider)?) {
         guard let index = flowSources.firstIndex(of: speaker) else { return }
@@ -950,6 +1053,7 @@ final class AppCoordinator: ObservableObject {
         invalidateAutomaticTrigger()
         speakingSources = []
         questionTask?.cancel(); pendingAutomatic = nil; mockTask?.cancel(); audioCheckTask?.cancel()
+        endOwnTurn(); captureNotice = nil
         await systemAudio.stop(); mic.stop()
         let a = systemLive, b = micLive; systemLive = nil; micLive = nil
         async let closeA: Void = a?.disconnect() ?? ()

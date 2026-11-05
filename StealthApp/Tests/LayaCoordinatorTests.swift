@@ -485,6 +485,118 @@ final class LayaCoordinatorTests: XCTestCase {
         XCTAssertTrue(app.isRunning)
         await app.shutdown()
     }
+    // MARK: Remote-mode speaker echo (synthetic energy frames; no recordings)
+
+    /// Feeds `seconds` of far-end audio ending now, with `mic` as the microphone signal.
+    @MainActor private func feedEcho(_ app: AppCoordinator, far: [Float], mic: [Float]) {
+        let seconds = Double(max(far.count, mic.count)) / SyntheticTalk.rate
+        SyntheticTalk.feed(app.echo, system: far, mic: mic, base: ProcessInfo.processInfo.systemUptime - seconds)
+    }
+
+    @MainActor func testSpeakerEchoOnTheMicrophoneNeitherRetiresTheQuestionNorAppearsAsYou() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning)
+        await app.start()
+        let far = SyntheticTalk.speech(seed: 1, seconds: 4)
+        // Speakers replay the far end into the microphone ~120 ms later at about -20 dB.
+        feedEcho(app, far: far, mic: SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count))
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
+        app.receiveMockEvent(.partialTranscript("Please introduce your"), speaker: .them)
+        // The replay's early events arrive before the far end's final, as they did in the report.
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        app.receiveMockEvent(.partialTranscript("Please introduce your"), speaker: .you)
+        await pause(0.45)
+        XCTAssertEqual(app.echo.snapshot.heldTurns, 1, "replayed speech is held, not treated as the user's")
+        XCTAssertFalse([.ownSpeech, .ownTranscript].contains(app.layaGateStatus), "the far end's question must stay pending")
+        XCTAssertTrue(app.transcript.partialYou.isEmpty, "echo preview must not be shown as You")
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
+        final(app, text: "Please introduce your most recent project", id: "them")
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        // Recognized differently and segmented separately from the far end's final.
+        final(app, text: "please introduce your most recent projects", id: "you-echo", speaker: .you, offset: 200)
+        await pause(1.0)
+        XCTAssertEqual(reasoning.requests.count, 1, "the far end's question must still be answered")
+        XCTAssertFalse(app.transcript.lines.contains { $0.speaker == .you })
+        XCTAssertNotEqual(app.layaGateStatus, .ownTranscript)
+        XCTAssertEqual(app.echo.snapshot.heldTurns, 1)
+        XCTAssertEqual(app.echo.snapshot.confirmedTurns, 0)
+        XCTAssertEqual(app.echo.snapshot.ignoredFinals, 1)
+        await app.shutdown()
+    }
+
+    @MainActor func testRealBargeInOverSpeakerEchoStillInterruptsAndIsTranscribed() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning)
+        await app.start()
+        let far = SyntheticTalk.speech(seed: 1, seconds: 4)
+        var mic = SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count)
+        // The user starts talking over the far end 1.5 s before these events, louder than the replay.
+        let own = SyntheticTalk.speech(seed: 2, seconds: 1.5)
+        for i in own.indices { mic[Int(2.5 * SyntheticTalk.rate) + i] += own[i] }
+        feedEcho(app, far: far, mic: mic)
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
+        app.receiveMockEvent(.partialTranscript("Please introduce your"), speaker: .them)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        XCTAssertEqual(app.layaGateStatus, .ownSpeech, "real double talk must take effect immediately")
+        final(app, text: "Please introduce your most recent project", id: "them")
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        final(app, text: "Sorry, may I answer the previous one first", id: "you", speaker: .you)
+        await pause(1.0)
+        XCTAssertTrue(reasoning.requests.isEmpty, "a real interruption keeps its existing effect")
+        XCTAssertTrue(app.transcript.lines.contains { $0.speaker == .you })
+        XCTAssertEqual(app.echo.snapshot.ignoredFinals, 0)
+        await app.shutdown()
+    }
+
+    @MainActor func testRepeatingTheFarEndsWordsAfterItStopsIsStillYourSpeech() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning)
+        await app.start()
+        let text = "Please introduce your most recent project"
+        final(app, text: text, id: "them")
+        await pause(0.6)
+        XCTAssertEqual(reasoning.requests.count, 1)
+        // The far end is silent now; the user quotes it word for word.
+        let own = SyntheticTalk.speech(seed: 4, seconds: 2)
+        feedEcho(app, far: [Float](repeating: 0, count: own.count), mic: own)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        final(app, text: text, id: "you", speaker: .you, offset: 3000)
+        await pause(0.3)
+        XCTAssertEqual(app.transcript.lines.filter { $0.speaker == .you }.count, 1, "identical text alone must never discard own speech")
+        XCTAssertEqual(app.echo.snapshot.heldTurns, 0)
+        await app.shutdown()
+    }
+
+    @MainActor func testInterruptionReportsWhetherItRetiredAQuestionOrAJudgement() async {
+        var events: [LayaGateEvent] = []
+        var dispatched = 0
+        let gate = LayaTriggerController(predict: { _, _ in try await Task.sleep(nanoseconds: 300_000_000); return 0.99 },
+                                         onTrigger: { _ in dispatched += 1; return true })
+        gate.onEvent = { events.append($0) }
+        gate.configure(enabled: true, threshold: 0.5, cooldown: 0)
+        gate.submit(.init(text: "Please introduce your project", context: "", speaker: .them, isFinal: true, sourceID: "a"))
+        await pause(0.1)
+        XCTAssertTrue(events.contains(.predictionStarted))
+        gate.setSpeaking(true, speaker: .you)
+        XCTAssertTrue(events.contains(.candidateRetired))
+        XCTAssertTrue(events.contains(.predictionRetired))
+        XCTAssertEqual(events.last, .ownSpeech)
+        await pause(0.4)
+        XCTAssertEqual(dispatched, 0)
+        XCTAssertTrue(events.contains(.discarded), "the judgement's late result is discarded, not dispatched")
+    }
+
+    func testRemoteListeningWithoutSystemAudioShowsADegradedNotice() {
+        let notice = AppCoordinator.captureNotice(mode: .remote, systemCapturing: false, micCapturing: true)
+        XCTAssertEqual(notice, AppCoordinator.systemAudioMissingNotice)
+        XCTAssertNil(AppCoordinator.captureNotice(mode: .remote, systemCapturing: true, micCapturing: true))
+        XCTAssertNil(AppCoordinator.captureNotice(mode: .inPerson, systemCapturing: false, micCapturing: true))
+        XCTAssertNotEqual(L10n.text(AppCoordinator.systemAudioMissingNotice, language: .simplifiedChinese), AppCoordinator.systemAudioMissingNotice)
+        XCTAssertNotEqual(L10n.text(AppCoordinator.systemAudioMissingNotice, language: .traditionalChinese), AppCoordinator.systemAudioMissingNotice)
+    }
+
     @MainActor private func make(_ reasoning: CountingLayaReasoning,
                                 predictor: ((String, String) async throws -> Double)? = { _, _ in 0.95 }) -> AppCoordinator {
         let suiteName = "LiveCopilot-Laya-Tests-" + UUID().uuidString
