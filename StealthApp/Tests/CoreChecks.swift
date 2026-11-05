@@ -309,6 +309,18 @@ enum CoreChecks {
             let line = CaptureDiagnostics.summaryLine(events[0])
             try expect(line.contains("speaker=You verdict=digitalSilence") && line.contains("backlog_ms_max=40"), "audio summary fields missing")
         }
+        try check("mixed Mandarin turn keeps the reply without copying the interview question") {
+            let question = "你好我们开始今天的面试请你用一分钟介绍一下自己以及你最近做的一个项目"
+            let mixed = "开始今天的面试请你用一分钟介绍一下自己以及你最近好的我来介绍一下"
+            let both = EchoMonitor.Assessment(echoMS: 1400, ownMS: 480, systemActive: true)
+            let secondQuestion = "这个项目里最难解决的问题是什么"
+            let answer = "最难解决的部分我觉得主要还是"
+            try expect(EchoText.mixedReply(answer, references: [secondQuestion], assessment: both) == nil, "short shared wording must stay intact")
+            try expect(EchoText.mixedReply("这个项目里" + answer, references: [secondQuestion], assessment: both) == answer, "keep the user's modifier attached to its noun")
+            try expect(EchoText.mixedReply(mixed, references: [question], assessment: both) == "好的我来介绍一下", "mixed prefix reached own transcript")
+            try expect(EchoText.mixedReply(mixed, references: [question], assessment: .init(ownMS: 1800, systemActive: true)) == nil, "removed an independent quotation")
+            try expect(EchoText.mixedReply(question, references: [question], assessment: both) == nil, "invented a reply from pure replay")
+        }
         try check("speaker echo is told apart from the user's own speech by audio, timing and text") {
             let rate = 16000.0, far = SyntheticTalk.speech(seed: 1, seconds: 6)
             let echoOnly = SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count)

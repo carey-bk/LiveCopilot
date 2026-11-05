@@ -20,6 +20,8 @@ final class EchoMonitor: @unchecked Sendable {
         var systemActive = false
         /// No system audio has arrived for a second: there is nothing to compare with.
         var referenceAbsent = false
+        /// A recently learned acoustic coupling, required before text can support an echo decision.
+        var echoPathKnown = false
 
         /// Enough microphone speech that the far end cannot explain (a silent far end included),
         /// and not outweighed by replay, or no reference at all. Scattered misjudged frames in a long
@@ -152,6 +154,7 @@ final class EchoMonitor: @unchecked Sendable {
             let latest = system.frames.last?.time
             let present = latest.map { now - $0 < 1 } ?? false
             result.referenceAbsent = !present
+            result.echoPathKnown = path.map { now - $0.updatedAt < Self.pathLifetime } ?? false
             let end = present ? min(requestedEnd, latest ?? requestedEnd) : requestedEnd
             let frameMS = Int(Self.frameSeconds * 1000)
             for frame in mic.frames where frame.time >= start && frame.time <= end {
@@ -321,6 +324,43 @@ enum EchoText {
             return characters.count < 2 ? characters.map(String.init) : (0..<(characters.count - 1)).map { String(characters[$0...$0 + 1]) }
         }
         return cleaned.split(separator: " ").map(String.init)
+    }
+
+    /// Rescue a distinct reply following a long verbatim Mandarin replay in one ASR
+    /// segment. Require actual mixed audio evidence; never strip a quotation on text alone.
+    /// Only trim at the leading edge: word-by-word subtraction invents sentences.
+    static func mixedReply(_ text: String, references: [String], assessment: EchoMonitor.Assessment) -> String? {
+        guard assessment.systemActive, assessment.echoMS >= EchoMonitor.echoEvidenceMS,
+              assessment.ownMS >= 120, !references.isEmpty, text.count <= 512 else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = trimmed.prefix { ch in ch.unicodeScalars.allSatisfy { (0x3400...0x9fff).contains($0.value) } }
+        guard prefix.count >= 8 else { return nil }
+        let unique = Set(references.suffix(16).map { String($0.suffix(768)) })
+        var best = 0
+        for ref in unique {
+            var lo = best + 1, hi = prefix.count
+            while lo <= hi {
+                let n = (lo + hi) / 2
+                if ref.contains(String(prefix.prefix(n))) { best = max(best, n); lo = n + 1 } else { hi = n - 1 }
+            }
+        }
+        guard best >= 8 else { return nil }
+        let rest = String(trimmed.dropFirst(best)).trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        let remaining = tokens(rest), known = Set(unique.flatMap(tokens))
+        // A reply can reuse words from the question ("介绍一下"); require new
+        // material at its beginning and a majority of independently recognized pairs.
+        guard remaining.count >= 2, remaining.prefix(2).allSatisfy({ !known.contains($0) }),
+              remaining.filter({ !known.contains($0) }).count * 2 > remaining.count else { return nil }
+        // A shared modifier can belong to the user's following noun. A matched
+        // prefix ending in 的 is an ambiguous cut (最难解决的 | 部分). Keep
+        // the modifier when there is a clear start, otherwise retain the ASR text.
+        let matched = trimmed.prefix(best)
+        if matched.last == "的" {
+            guard let marker = matched.lastIndex(of: "最"),
+                  matched.distance(from: marker, to: matched.endIndex) <= 10 else { return nil }
+            return String(trimmed[marker...])
+        }
+        return rest
     }
 
     /// Share of `text`'s tokens found in any of `recent`; nil when either side has no tokens.

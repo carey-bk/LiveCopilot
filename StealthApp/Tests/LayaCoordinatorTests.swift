@@ -570,31 +570,85 @@ final class LayaCoordinatorTests: XCTestCase {
         await app.shutdown()
     }
 
-    /// The hardware report: a real room matched the replay only moderately, so audio alone could not
-    /// decide. While the far end is audible, the microphone repeating its words is replay.
-    @MainActor func testReplayIsDiscardedWhenAcousticsAloneCannotTellItApart() async {
+    /// Independent audio is not proof of replay, even when the user quotes the far end.
+    @MainActor func testIndependentRepeatedWordsAreNotDeletedAsEcho() async {
+        let app = make(CountingLayaReasoning())
+        await app.start()
+        let question = "Please introduce your recent project"
+        feedEcho(app, far: SyntheticTalk.speech(seed: 1, seconds: 4), mic: SyntheticTalk.speech(seed: 5, seconds: 4, level: 0.1))
+        app.receiveMockEvent(.partialTranscript(question), speaker: .them)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        app.receiveMockEvent(.partialTranscript("your recent project"), speaker: .you)
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        final(app, text: "your recent project", id: "own-quote", speaker: .you)
+        XCTAssertTrue(app.transcript.lines.contains { $0.speaker == .you && $0.content.contains("your recent project") })
+        XCTAssertEqual(app.echo.snapshot.ignoredFinals, 0)
+        await app.shutdown()
+    }
+
+    @MainActor func testShortIndependentInterruptionIsAcceptedBeforeFinal() async {
+        for text in ["等一下", "Sorry wait"] {
+            let app = make(CountingLayaReasoning())
+            await app.start()
+            feedEcho(app, far: SyntheticTalk.speech(seed: 1, seconds: 4), mic: SyntheticTalk.speech(seed: 5, seconds: 4, level: 0.1))
+            app.receiveMockEvent(.partialTranscript("Please introduce your recent project"), speaker: .them)
+            app.receiveMockEvent(.speechActivity(true), speaker: .you)
+            await pause(0.45)
+            app.receiveMockEvent(.partialTranscript(text), speaker: .you)
+            XCTAssertEqual(app.transcript.partialYou, text)
+            XCTAssertEqual(app.layaGateStatus, .ownTranscript)
+            await app.shutdown()
+        }
+    }
+
+    @MainActor func testConfirmedTurnDoesNotPassLaterEchoPreview() async {
         let reasoning = CountingLayaReasoning()
         let app = make(reasoning)
         await app.start()
-        let question = "你好我们开始今天的面试请你用一分钟介绍一下自己"
-        // Far end audible; the microphone's contour does not match it (undecided acoustically).
-        feedEcho(app, far: SyntheticTalk.speech(seed: 1, seconds: 4), mic: SyntheticTalk.speech(seed: 5, seconds: 4, level: 0.1))
-        app.receiveMockEvent(.speechActivity(true), speaker: .them)
-        app.receiveMockEvent(.partialTranscript("你好我们开始今天的面试"), speaker: .them)
+        let own = SyntheticTalk.speech(seed: 4, seconds: 2)
+        feedEcho(app, far: [], mic: own)
         app.receiveMockEvent(.speechActivity(true), speaker: .you)
-        app.receiveMockEvent(.partialTranscript("你好我们开始今天的面试请你用"), speaker: .you)
-        await pause(0.3)
-        XCTAssertTrue(app.transcript.partialYou.isEmpty)
-        app.receiveMockEvent(.speechActivity(false), speaker: .them)
-        final(app, text: question, id: "them")
-        app.receiveMockEvent(.speechActivity(false), speaker: .you)
-        final(app, text: "你好我们开始今天的面试请你用一分钟介绍一下自己以及", id: "you-echo", speaker: .you, offset: 100)
+        app.receiveMockEvent(.partialTranscript("Let me explain"), speaker: .you)
+        XCTAssertEqual(app.transcript.partialYou, "Let me explain")
+        // Replace the evidence window, leaving the coordinator's VAD turn continuously active.
+        app.echo.begin(sampleRate: SyntheticTalk.rate)
+        let far = SyntheticTalk.speech(seed: 1, seconds: 4)
+        feedEcho(app, far: far, mic: SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count))
+        let question = "Please introduce your recent project"
+        app.receiveMockEvent(.partialTranscript(question), speaker: .you)
+        XCTAssertNotEqual(app.transcript.partialYou, question)
+        XCTAssertEqual(app.transcript.lines.filter { $0.speaker == .you }.map(\.content), ["Let me explain"])
+        XCTAssertGreaterThan(app.echo.snapshot.heldTurns, 0)
+        final(app, text: question, id: "new-question")
         await pause(1.0)
-        XCTAssertEqual(reasoning.requests.count, 1, "the far end's question must still be answered")
-        XCTAssertFalse(app.transcript.lines.contains { $0.speaker == .you })
-        XCTAssertEqual(app.echo.snapshot.confirmedTurns, 0)
-        XCTAssertEqual(app.echo.snapshot.ignoredFinals, 1)
-        XCTAssertEqual(app.echo.snapshot.textEchoFinals, 1)
+        XCTAssertEqual(reasoning.requests.count, 1, "later echo must not retire the new question or keep the microphone marked speaking")
+        await app.shutdown()
+    }
+
+    @MainActor func testDelayedOwnFinalUpdatesPreservedLineAcrossRemoteQuestion() {
+        let store = TranscriptStore()
+        store.preserveOwnPreview("我之前做過")
+        store.commit("你負責哪一部分？", speaker: .them)
+        store.ingest(.init(id: "late", speaker: .you, text: "我之前做過一個專案", startMS: 0, endMS: 1000, receivedAt: Date()))
+        XCTAssertEqual(store.lines.map(\.content), ["我之前做過一個專案", "你負責哪一部分？"])
+    }
+
+    @MainActor func testMixedQuestionAndReplyInOneFinalKeepsOnlyReply() async {
+        let app = make(CountingLayaReasoning())
+        await app.start()
+        let far = SyntheticTalk.speech(seed: 1, seconds: 6)
+        var mic = SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count)
+        let own = SyntheticTalk.speech(seed: 2, seconds: 2.5)
+        for i in own.indices { mic[Int(3 * SyntheticTalk.rate) + i] += own[i] }
+        feedEcho(app, far: far, mic: mic)
+        let question = "你好我们开始今天的面试请你用一分钟介绍一下自己以及你最近做的一个项目"
+        final(app, text: question, id: "question")
+        let mixed = "开始今天的面试请你用一分钟介绍一下自己以及你最近好的我来介绍一下"
+        app.receiveMockEvent(.partialTranscript(mixed), speaker: .you)
+        XCTAssertFalse(app.transcript.partialYou.contains("今天的面试"))
+        app.receiveMockEvent(.transcript(.init(id: "mixed", speaker: .you, text: mixed, startMS: 100, endMS: 5900, receivedAt: Date())), speaker: .you)
+        XCTAssertEqual(app.transcript.lines.filter { $0.speaker == .you }.map { $0.content.trimmingCharacters(in: .whitespaces) }, ["好的我来介绍一下"])
+        XCTAssertTrue(app.transcript.lines.contains { $0.speaker == .them && $0.content.contains(question) })
         await app.shutdown()
     }
 

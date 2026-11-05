@@ -50,6 +50,12 @@ final class HybridLanguageTests: XCTestCase {
         XCTAssertEqual(TranscriptCasing.format("我使用 API AND PYTHON"), "我使用 API and Python")
         XCTAssertEqual(TranscriptCasing.format("Already Mixed iPhone"), "Already Mixed iPhone")
         XCTAssertEqual(TranscriptCasing.format("纯中文"), "纯中文")
+        let terms = ProfessionalTerms.examples
+        XCTAssertEqual(ProfessionalTerms.spokenForm("GPT-6"), "GPT SIX")
+        XCTAssertEqual(TranscriptCasing.format("我们用NEXT JS和GPT六以及LIVE COPILOT", terms: terms), "我们用Next.js和GPT-6以及LiveCopilot")
+        XCTAssertEqual(TranscriptCasing.format("TYPE SCRIPT PIE TORCH", terms: terms), "TypeScript PyTorch")
+        XCTAssertEqual(TranscriptCasing.format("I LIKE THE VIEW", terms: terms), "I like the view")
+
     }
     func testTranslationRequestIsIsolatedFromAnswerAndKnowledgeInstructions() {
         var request = AnswerRequest(query: .init(question: "ignored", semantic: "", lexical: ""), conversation: "PRIVATE CONTEXT", scenario: .interview, sources: [])
@@ -140,6 +146,27 @@ final class HybridLanguageTests: XCTestCase {
             if !app.suggestion.isLoading { return }
         }
         XCTFail("Answer did not settle")
+    }
+    @MainActor func testSavedStyleReachesNewAnswers() async throws {
+        let reasoner = PolicyReasoner(), app = app(reasoner)
+        app.settings.knowledgeMode = .general
+        app.settings.bilingualAnswers = true
+        app.settings.additionalAnswerInstructions = "回答都写成七言绝句的形式"
+        let suite = "Style-Save-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        app.settings.save(defaults: defaults)
+        XCTAssertEqual(AppSettings.load(defaults: defaults).additionalAnswerInstructions, app.settings.additionalAnswerInstructions)
+        app.askText("什么是缓存？")
+        await settled(app)
+        let request = try XCTUnwrap(reasoner.requests.last)
+        XCTAssertTrue(request.instructions.contains("回答都写成七言绝句的形式"))
+        XCTAssertTrue(request.instructions.contains("Follow explicit user style and format preferences above when they conflict"))
+        app.settings.additionalAnswerInstructions = "只用一句话"
+        app.askText("什么是索引？")
+        await settled(app)
+        XCTAssertEqual(reasoner.requests.last?.additionalAnswerInstructions, "只用一句话")
+        await app.shutdown()
     }
     @MainActor func testGeneralKnowledgeSkipsPopulatedLibrary() async throws {
         let reasoner = PolicyReasoner(), app = app(reasoner)

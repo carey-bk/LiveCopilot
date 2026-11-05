@@ -120,18 +120,17 @@ struct OverlayView: View {
             }
             if coordinator.isRunning {
                 HStack {
-                    Text(t(coordinator.questionState)).font(.caption2).foregroundStyle(.secondary)
+                    if coordinator.settings.automaticSuggestions,
+                       coordinator.settings.listeningService.isLocal {
+                        Text(coordinator.layaGateStatus.label(coordinator.settings.language))
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .accessibilityIdentifier("laya-gate-status")
+                    }
                     Spacer()
                     Toggle(t("Auto"), isOn: $coordinator.settings.automaticSuggestions)
                         .toggleStyle(OverlaySwitchStyle()).accessibilityIdentifier("automatic-suggestions")
-                }
-                if coordinator.settings.automaticSuggestions,
-                   coordinator.settings.listeningService.isLocal {
-                    Text("Laya " + coordinator.layaGateStatus.label(coordinator.settings.language) +
-                         (coordinator.layaLastScore.map { String(format: " · %@ %.2f / %.2f", t("Latest score"), $0, coordinator.settings.layaThreshold) } ?? ""))
-                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                        .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("laya-gate-status")
+                        .fixedSize()
                 }
                 if coordinator.settings.listeningService == .apple {
                     Text(t("Apple ASR uses one language. For mixed Chinese/English, select another speech recognition engine in Services."))

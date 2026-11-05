@@ -4,7 +4,7 @@ import Foundation
 enum TranscriptCasing {
     static func format(_ text: String, terms: [String] = []) -> String {
         let letters = text.unicodeScalars.filter { CharacterSet.letters.contains($0) && $0.isASCII }
-        guard !letters.isEmpty, !letters.contains(where: { CharacterSet.lowercaseLetters.contains($0) }) else { return text }
+        guard !letters.isEmpty, !letters.contains(where: { CharacterSet.lowercaseLetters.contains($0) }) else { return restoreTerms(text, terms: terms) }
         var result = text.lowercased()
         var names = ["AI", "API", "SQL", "HTTP", "HTTPS", "URL", "JSON", "HTML", "CSS", "CPU", "GPU", "RAM", "SDK", "UI", "UX", "USB", "TCP", "IP", "DNS", "LLM", "GPT", "iOS", "macOS", "GitHub", "OpenAI", "ChatGPT", "Python", "JavaScript", "TypeScript", "SQL", "I", "I'm", "I've", "I'll", "I'd"]
         names.append(contentsOf: terms.filter { !$0.isEmpty })
@@ -22,6 +22,27 @@ enum TranscriptCasing {
             if word != word.lowercased() || names.contains(where: { $0 == word }) { continue }
             result.replaceSubrange(range, with: word.prefix(1).uppercased() + word.dropFirst())
         }
-        return result
+        return restoreTerms(result, terms: terms)
+    }
+    private static func restoreTerms(_ text: String, terms: [String]) -> String {
+        var input = text
+        for term in terms where term.contains(where: { $0.isASCII && $0.isLetter }) {
+            var forms = [term]
+            switch term.uppercased() {
+            case "GPT-6": forms += ["GPT SIX", "GPT六", "G P T SIX", "GPT 6"]
+            case "NEXT.JS": forms += ["NEXT JS", "NEXT J S", "NEXT DOT JS"]
+            case "TYPESCRIPT": forms.append("TYPE SCRIPT")
+            case "PYTORCH": forms += ["PY TORCH", "PIE TORCH"]
+            case "LIVECOPILOT": forms += ["LIVE CO PILOT", "LIVE COPILOT"]
+            default: break
+            }
+            for form in forms where !form.isEmpty {
+                let words = form.split(separator: " ").map { NSRegularExpression.escapedPattern(for: String($0)) }
+                let pattern = "(?i)(?<![A-Za-z0-9_])" + words.joined(separator: #"\s*"#) + "(?![A-Za-z0-9_])"
+                guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+                input = regex.stringByReplacingMatches(in: input, range: NSRange(input.startIndex..., in: input), withTemplate: NSRegularExpression.escapedTemplate(for: term))
+            }
+        }
+        return input
     }
 }

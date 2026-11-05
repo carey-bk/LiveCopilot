@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
@@ -7,6 +8,7 @@ struct SettingsView: View {
     @ObservedObject var laya: LayaRuntimeManager
     @ObservedObject var localModels: LocalModelManager
     @ObservedObject var updates: AppUpdateController
+    @StateObject private var permissions: OnboardingPermissions
     @State private var showDiagnostics = false
     @State private var page = SettingsPage.general
     @State private var serviceRole = 0
@@ -17,7 +19,8 @@ struct SettingsView: View {
     @State private var showOpenAIKey = false
     @State private var shortcutConflict = false
     @State private var professionalTermsDraft = ""
-    init(coordinator: AppCoordinator, initialPage: SettingsPage = .general, initialServiceRole: Int = 0) { _page = State(initialValue: initialPage); _serviceRole = State(initialValue: initialServiceRole); self.coordinator = coordinator; hotkeys = coordinator.hotkeys; laya = coordinator.laya; updates = coordinator.updates; localModels = coordinator.localModels }
+    @State private var answerInstructionsDraft = ""
+    init(coordinator: AppCoordinator, initialPage: SettingsPage = .general, initialServiceRole: Int = 0) { _permissions = StateObject(wrappedValue: OnboardingPermissions(mock: coordinator.isMock)); _page = State(initialValue: initialPage); _serviceRole = State(initialValue: initialServiceRole); self.coordinator = coordinator; hotkeys = coordinator.hotkeys; laya = coordinator.laya; updates = coordinator.updates; localModels = coordinator.localModels }
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     private func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
     private var locked: Bool { coordinator.isRunning || coordinator.isTransitioning }
@@ -62,7 +65,7 @@ struct SettingsView: View {
         .preferredColorScheme(.light)
         .toggleStyle(TrailingSwitchStyle())
         .environment(\.locale, coordinator.settings.language.locale)
-        .onAppear { loadCustomDraft() }
+        .onAppear { loadCustomDraft(); answerInstructionsDraft = coordinator.settings.additionalAnswerInstructions }
         .onChange(of: updates.managementRequest) { _, _ in page = .about }
         .sheet(isPresented: $showDiagnostics) { DiagnosticFeedbackView(settings: coordinator.settings) }
         .sheet(isPresented: $showOpenAIKey) {
@@ -208,7 +211,24 @@ struct SettingsView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                 }.padding(10)
             } label: { Label(t("Conversation tools"), systemImage: "list.bullet.rectangle") }
-            CapturePermissionCard(language: coordinator.settings.language)
+            liveSection(b("Audio permissions", "音频权限")) {
+                ForEach([true, false], id: \.self) { microphone in
+                    HStack {
+                        Text(microphone ? b("Microphone", "麦克风") : b("System audio", "系统音频"))
+                        let allowed = microphone ? permissions.microphone == .authorized : permissions.screenAudio
+                        Text(allowed ? b("Allowed", "已允许") : b("Not allowed", "尚未允许")).foregroundStyle(.secondary)
+                        Spacer()
+                        if microphone && permissions.microphone == .notDetermined {
+                            Button(b("Request access", "申请权限")) { Task { await permissions.requestMicrophone() } }
+                        } else if !microphone && !allowed {
+                            Button(b("Request access", "申请权限")) { permissions.requestScreenAudio() }
+                        }
+                        Button(b("Open settings", "打开系统设置")) { permissions.openSettings(microphone: microphone) }
+                    }
+                }
+            }
+            .onAppear { permissions.refresh() }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in permissions.refresh() }
 
         }.padding(.bottom, 4)
     }
@@ -271,9 +291,6 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            if coordinator.settings.listeningService == .zipformer {
-                professionalTermsSection
-            }
             liveSection(b("Model connection and download management", "模型连接与下载管理")) {
                 if coordinator.settings.listeningService == .apple {
                     VStack(alignment: .leading, spacing: 12) {
@@ -310,6 +327,9 @@ struct SettingsView: View {
                     }
                 }
             }
+            if coordinator.settings.listeningService == .zipformer {
+                professionalTermsSection
+            }
         }.task(id: coordinator.settings.appleSpeechLanguage) {
             if coordinator.settings.listeningService == .apple { await coordinator.appleSpeech.refresh(coordinator.settings.appleSpeechLanguage) }
         }.task(id: coordinator.settings.listeningService) {
@@ -317,7 +337,7 @@ struct SettingsView: View {
         }
     }
     private var professionalTermsSection: some View {
-        liveSection(b("Professional terminology", "专业术语识别")) {
+        liveSection(b("Professional terminology", "专业术语识别"), beta: true) {
             Toggle(b("Enable terminology enhancement", "启用术语增强"), isOn: Binding(
                 get: { coordinator.settings.listeningService == .zipformer && coordinator.settings.professionalTermsEnabled },
                 set: { coordinator.settings.professionalTermsEnabled = $0 }))
@@ -362,9 +382,21 @@ struct SettingsView: View {
         .onAppear { professionalTermsDraft = coordinator.settings.professionalTerms.joined(separator: "\n") }
         .onChange(of: professionalTermsDraft) { _, value in coordinator.settings.professionalTerms = ProfessionalTerms.clean(value) }
     }
-    private func liveSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func liveSection<Content: View>(_ title: String, beta: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.headline)
+            HStack(spacing: 8) {
+                Text(title).font(.headline)
+                if beta {
+                    Capsule().fill(Color.blue)
+                        .overlay {
+                            Text("Beta").font(.system(size: 10, weight: .bold, design: .rounded))
+                                .blendMode(.destinationOut)
+                        }
+                        .compositingGroup()
+                        .frame(width: 40, height: 18)
+                        .accessibilityLabel("Beta")
+                }
+            }
             content()
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
@@ -441,7 +473,7 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                     Divider()
                     Text(b("Additional answer instructions", "个性化额外提示词")).font(.headline)
-                    TextEditor(text: Binding(get: { coordinator.settings.additionalAnswerInstructions }, set: { coordinator.settings.additionalAnswerInstructions = String($0.prefix(4000)) }))
+                    TextEditor(text: Binding(get: { answerInstructionsDraft }, set: { answerInstructionsDraft = String($0.prefix(4000)) }))
                         .font(.body).frame(height: 100).padding(6)
                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(.secondary.opacity(0.25)))
                         .accessibilityLabel(b("Additional answer instructions", "个性化额外提示词"))
@@ -449,8 +481,22 @@ struct SettingsView: View {
                     HStack {
                         Text(b("Example: Use short sentences and explain technical terms. Sent to your analysis service with each request.", "例如：用短句回答，并解释专业术语。每次请求会随问题发送给分析服务。"))
                         Spacer()
-                        Text("\(coordinator.settings.additionalAnswerInstructions.count)/4000").monospacedDigit()
+                        Text("\(answerInstructionsDraft.count)/4000").monospacedDigit()
                     }.font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Text(answerInstructionsDraft == coordinator.settings.additionalAnswerInstructions
+                             ? b("Saved · applies to new answers", "已保存 · 对新回答生效")
+                             : b("Unsaved changes", "有未保存的修改"))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(b("Save", "保存")) {
+                            coordinator.settings.additionalAnswerInstructions = answerInstructionsDraft
+                        }
+                        .disabled(answerInstructionsDraft == coordinator.settings.additionalAnswerInstructions)
+                        .accessibilityIdentifier("save-answer-instructions")
+                    }
+                    Text(b("Your instructions take priority over default answer style, including bilingual formatting. Factual accuracy still applies.", "自定义要求优先于默认回答风格和中英对照格式，但不会改变事实准确性要求。"))
+                        .font(.caption).foregroundStyle(.secondary)
                 }.padding(10)
             } label: { Text(b("Answer style", "回答风格")) }
         }

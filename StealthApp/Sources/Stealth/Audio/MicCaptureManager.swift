@@ -65,25 +65,11 @@ final class MicCaptureManager: ObservableObject {
     private func startEngine() -> Bool {
         let input = engine.inputNode
 
-        // Apple's voice processing (acoustic echo cancellation + noise suppression)
-        // subtracts speaker bleed so it isn't mislabeled "You" — but it can also
-        // over-suppress the user's own voice, leaving the "You" side silent. Gated by
-        // Config so we can isolate that. NOTE: enabling changes the input format, so
-        // read the format AFTER.
-        if Config.micEchoCancellation {
-            do {
-                try input.setVoiceProcessingEnabled(true)
-                DebugLog.log("MIC voice processing (AEC) enabled")
-            } catch {
-                DebugLog.log("MIC AEC enable failed (continuing without): \(error.localizedDescription)")
-            }
-        } else {
-            DebugLog.log("MIC voice processing (AEC) DISABLED (Config.micEchoCancellation=false)")
-        }
-
+        // Use the hardware microphone format. Voice processing can expose a
+        // multichannel input which converts to digital silence on built-in Macs.
         CaptureDiagnostics.record(.micFormat)
         let inputFormat = input.outputFormat(forBus: 0)
-        CaptureDiagnostics.record(.micFormat, details: .init(sampleRate: inputFormat.sampleRate.isFinite ? inputFormat.sampleRate : nil, channels: inputFormat.channelCount, echoCancellation: Config.micEchoCancellation))
+        CaptureDiagnostics.record(.micFormat, details: .init(sampleRate: inputFormat.sampleRate.isFinite ? inputFormat.sampleRate : nil, channels: inputFormat.channelCount, echoCancellation: input.isVoiceProcessingEnabled))
         guard inputFormat.sampleRate.isFinite, inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             CaptureDiagnostics.record(.micFailed)
             lastError = "No microphone input available."

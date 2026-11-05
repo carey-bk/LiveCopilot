@@ -254,7 +254,7 @@ struct AnswerRequest {
         return """
         You are LiveCopilot, a text-only personal conversation copilot.
         \(answerLanguage.instructions)
-        This response-language instruction has priority over scenario style, evidence language and history.
+        This response-language instruction has priority over scenario style, evidence language and history, unless the user explicitly requests another language or format in their answer style preferences.
         \(scenario.instructions)
         \(taskInstructions)
         \(answerStyleInstructions)
@@ -278,10 +278,10 @@ struct AnswerRequest {
         var result = ""
         let extra = String(additionalAnswerInstructions.prefix(4000)).trimmingCharacters(in: .whitespacesAndNewlines)
         if !extra.isEmpty {
-            result += "User's answer style and format preferences (override default brevity, tone and layout, but never evidence accuracy, citation integrity or personal-fact constraints):\n" + extra + "\nEnd of user style preferences.\n"
+            result += "User's answer style and format preferences (override default brevity, tone, layout, response language and bilingual formatting when they conflict, but never evidence accuracy, citation integrity or personal-fact constraints):\n" + extra + "\nEnd of user style preferences.\n"
         }
         if bilingualAnswers {
-            result += "Bilingual output is enabled and takes precedence over single-language and conflicting style preferences. For each sentence in the spoken answer, write the Chinese sentence immediately followed by its English equivalent on the next line. Keep each pair together, preserving meaning; do not separate the answer into full Chinese and English blocks. Evidence and notes remain a separate section."
+            result += "Bilingual output is enabled by default. Follow explicit user style and format preferences above when they conflict; otherwise use the following bilingual format. For each sentence in the spoken answer, write the Chinese sentence immediately followed by its English equivalent on the next line. Keep each pair together, preserving meaning; do not separate the answer into full Chinese and English blocks. Evidence and notes remain a separate section."
         }
         return result
     }
@@ -349,12 +349,26 @@ enum ProfessionalTerms {
     static func supportsNativeEnhancement(_ service: ListeningService) -> Bool { service == .zipformer }
     // Application latency budget, not a claimed model hard limit. Extra saved entries remain editable.
     static let maximumActiveTerms = 100
+    // The model emits spoken words for digits and often splits product names.
+    // Use the same pronunciation forms for decoder bias and display spelling.
+    static func spokenForm(_ term: String) -> String {
+        let digits = ["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE"]
+        let components = term.uppercased().components(separatedBy: CharacterSet.punctuationCharacters.union(.symbols).union(.whitespacesAndNewlines))
+        return components.filter { !$0.isEmpty }.map { word in
+            if let digit = Int(word), word.count == 1, digits.indices.contains(digit) { return digits[digit] }
+            switch word {
+            case "PYTORCH": return "PIE TORCH"
+            case "LIVECOPILOT": return "LIVE COPILOT"
+            default: return word
+            }
+        }.joined(separator: " ")
+    }
+
     static func recognitionTerms(_ terms: [String], tokensURL: URL) -> [String] {
         guard let contents = try? String(contentsOf: tokensURL, encoding: .utf8) else { return [] }
         let symbols = Set(contents.split(separator: "\n").compactMap { $0.split(separator: " ").first.map(String.init) })
         return clean(terms.joined(separator: "\n")).prefix(maximumActiveTerms).compactMap { term in
-            let words = term.uppercased().components(separatedBy: CharacterSet.punctuationCharacters.union(.symbols).union(.whitespacesAndNewlines)).filter { !$0.isEmpty }
-            let normalized = words.joined(separator: " ")
+            let normalized = spokenForm(term)
             guard !normalized.isEmpty, normalized.utf16.count <= 100,
                   normalized.allSatisfy({ $0 == " " || symbols.contains(String($0)) }) else { return nil }
             return normalized

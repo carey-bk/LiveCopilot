@@ -74,6 +74,24 @@ final class TranscriptStore: ObservableObject {
         lines = Array(archivedLines.suffix(Config.transcriptLineLimit))
     }
 
+    private var protectedPreview: (id: UUID, text: String, at: Date)?
+
+    func preserveOwnPreview(_ text: String, at now: Date = Date()) {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        if let saved = protectedPreview, now.timeIntervalSince(saved.at) < 12,
+           value.hasPrefix(saved.text), let index = archivedLines.firstIndex(where: { $0.id == saved.id }) {
+            archivedLines[index] = TranscriptLine(id: saved.id, speaker: .you, at: saved.at, content: value)
+            protectedPreview = (saved.id, value, now)
+            lines = Array(archivedLines.suffix(Config.transcriptLineLimit))
+            clearPartial(.you)
+            return
+        }
+        commit(value, speaker: .you, now: now)
+        protectedPreview = archivedLines.last.map { ($0.id, value, now) }
+        clearPartial(.you)
+    }
+
     /// Recent transcript (speaker-labelled) for suggestion requests.
     func recentContext(now: Date = Date()) -> String {
         let cutoff = now.addingTimeInterval(-Config.suggestionContextWindow)
@@ -95,6 +113,18 @@ final class TranscriptStore: ObservableObject {
             archivedLines[index] = TranscriptLine(id: old.id, speaker: old.speaker, at: old.at, content: parts.map(\.text).joined())
             return
         }
+        if fragment.speaker == .you, let saved = protectedPreview {
+            protectedPreview = nil
+            let final = fragment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if fragment.receivedAt.timeIntervalSince(saved.at) < 12, final.hasPrefix(saved.text),
+               let index = archivedLines.firstIndex(where: { $0.id == saved.id }) {
+                archivedLines[index] = TranscriptLine(id: saved.id, speaker: .you, at: saved.at, content: final)
+                fragmentsByLine[saved.id] = [fragment]
+                fragmentLine[fragment.id] = saved.id
+                lastFragmentEnd[.you] = fragment.endMS
+                return
+            }
+        }
         if let last = archivedLines.last, last.speaker == fragment.speaker,
            let end = lastFragmentEnd[fragment.speaker], fragment.startMS >= end,
            fragment.startMS - end < 1600, last.content.count < 1800 {
@@ -109,6 +139,7 @@ final class TranscriptStore: ObservableObject {
     }
 
     func clear() {
+        protectedPreview = nil
         fragmentsByLine = [:]; fragmentLine = [:]
         lastFragmentEnd = [:]
         archivedLines = []; fragmentRevisions = []

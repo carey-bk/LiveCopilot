@@ -5,8 +5,6 @@ enum Config {
     static let realtimeSampleRate: Double = 24_000
     static let suggestionContextWindow: TimeInterval = 90
     static let transcriptLineLimit = 400
-    // Upstream's current working default is off. Headphones reduce remote/mic bleed.
-    static let micEchoCancellation = false
 }
 
 enum ReplyTone: String, CaseIterable, Identifiable {

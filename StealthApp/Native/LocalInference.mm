@@ -34,7 +34,10 @@ public:
         SherpaOnnxOnlineRecognizerConfig config{};
         config.feat_config.sample_rate = 16000; config.feat_config.feature_dim = 80;
         config.decoding_method = contextual ? "modified_beam_search" : "greedy_search";
-        config.max_active_paths = 4; config.hotwords_score = 1.5f;
+        config.max_active_paths = 4;
+        // Dynamic Zipformer terms need enough weight to retain competing spellings.
+        // On the same audio, 3 recovers 启衡系统; widening the beam gave no further gain.
+        config.hotwords_score = 3.0f;
         config.model_config.num_threads = 2; config.model_config.provider = "cpu";
         config.model_config.tokens = tokens.c_str();
         const auto joiner = root + "/joiner.int8.onnx", bpe = root + "/bpe.vocab";
