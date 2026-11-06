@@ -1,188 +1,261 @@
 {
-  "zh": {
-    "interview": {
-      "question": "为什么选择 early-exit 架构？",
-      "documents": [
-        "Project Report.pdf",
-        "README.md"
-      ],
-      "passage": "浅层出口负责处理简单样本，困难样本继续进入深层网络。这样可以在保持准确率的同时，减少不必要的计算开销。",
-      "answer": "我选择 early-exit，主要是为了让计算量跟样本难度匹配。简单样本可以在浅层提前输出，复杂样本再继续推理，从而在准确率和推理成本之间取得平衡。",
-      "title": "基于项目资料 · 实时回答",
-      "sources": [
-        "[S1] Project Report.pdf · Early Exit",
-        "[S2] README.md · Architecture"
-      ],
-      "sourcePassage2": "README.md 说明浅层出口与深层网络的分工。"
-    },
-    "meeting": {
-      "question": "如果只能先上线一个功能，你会怎么判断优先级？",
-      "documents": [
-        "Product Strategy.md",
-        "Roadmap.docx"
-      ],
-      "passage": "优先评估用户覆盖范围、问题发生频率和实现成本；如果同时是后续功能的基础能力，则提高优先级。",
-      "answer": "我会先看三个因素：用户价值、实现成本，以及它是不是后续能力的基础。优先上线覆盖高频场景、成本可控，同时能解锁更多后续能力的功能。",
-      "title": "结合上下文 · 实时建议",
-      "sources": [
-        "[S1] Product Strategy.md · Priorities",
-        "[S2] Roadmap.docx · Q3"
-      ],
-      "sourcePassage2": "Roadmap 将基础能力排在后续扩展之前。"
-    },
-    "defense": {
-      "question": "为什么这里使用 ubRMSE？",
-      "documents": [
-        "Thesis.pdf",
-        "Experiment Results.pdf"
-      ],
-      "passage": "ubRMSE 去除平均偏差的影响，更适合观察随机误差；实验中同时报告 Bias、RMSE 与 ubRMSE。",
-      "answer": "因为我想把系统性偏差和随机误差分开看。ubRMSE 去除了平均偏差的影响，更能反映随机误差；再结合 Bias 和 RMSE，可以更完整地评价模型表现。",
-      "title": "基于论文资料 · 实时回答",
-      "sources": [
-        "[S1] Thesis.pdf · Evaluation Metrics",
-        "[S2] Experiment Results.pdf · Table 3"
-      ],
-      "sourcePassage2": "实验结果同时列出 Bias、RMSE 与 ubRMSE。"
-    },
-    "manual": {
-      "question": "帮我总结一下这个项目最值得讲的三个点。",
-      "documents": [
-        "Project Overview.md",
-        "Review Notes.txt"
-      ],
-      "passage": "项目围绕真实问题展开，通过明确的技术取舍完成实现，并使用可复现的实验验证结果与局限。",
-      "answer": "可以重点讲三点：第一，解决了什么真实问题；第二，为什么选择这条技术路线；第三，用什么实验验证结果。最后补充当前局限，会让项目介绍更完整。",
-      "title": "综合本地资料 · 即时整理",
-      "sources": [
-        "[S1] Project Overview.md · Summary",
-        "[S2] Review Notes.txt · Key Points"
-      ],
-      "sourcePassage2": "复盘笔记列出技术取舍、验证结果与局限。"
-    }
+ "zh": {
+  "hero": {
+   "question": [
+    "你会先上线",
+    "哪个功能？",
+    "为什么？"
+   ],
+   "answer": [
+    "我会先上线最高频、",
+    "又能为后续功能打基础的那一个。",
+    "判断时看用户价值、",
+    "实现成本和依赖关系。"
+   ],
+   "wait": "等待讲话结束",
+   "ready": "问题已完整",
+   "generating": "生成中",
+   "completed": "已完成",
+   "empty": "开启监听后，对话会显示在这里。",
+   "expand": "展开转写",
+   "collapse": "折叠转写",
+   "copy": "复制",
+   "copied": "已复制",
+   "replay": "重播示范",
+   "pause": "暂停示范",
+   "play": "播放示范"
   },
-  "en": {
-    "interview": {
-      "question": "Why did you choose an early-exit architecture?",
-      "documents": [
-        "Project Report.pdf",
-        "README.md"
-      ],
-      "passage": "Shallow exits handle easy samples, while harder ones continue through deeper layers. This avoids unnecessary computation while preserving accuracy.",
-      "answer": "I chose early exits to match computation to sample difficulty. Easy inputs can leave at a shallow layer, while complex ones keep going. That balances accuracy with inference cost.",
-      "title": "From project files · Live answer",
-      "sources": [
-        "[S1] Project Report.pdf · Early Exit",
-        "[S2] README.md · Architecture"
-      ],
-      "sourcePassage2": "The README describes the roles of shallow exits and deeper layers."
-    },
-    "meeting": {
-      "question": "If you could ship only one feature first, how would you prioritize it?",
-      "documents": [
-        "Product Strategy.md",
-        "Roadmap.docx"
-      ],
-      "passage": "Compare user reach, how often the problem occurs, and development cost. Give extra weight to features that enable later work.",
-      "answer": "I would weigh user value, development cost, and whether the feature enables what comes next. I would ship a manageable solution to a frequent problem first, especially if it unlocks later capabilities.",
-      "title": "With conversation context · Live suggestion",
-      "sources": [
-        "[S1] Product Strategy.md · Priorities",
-        "[S2] Roadmap.docx · Q3"
-      ],
-      "sourcePassage2": "The Roadmap places core capabilities before later expansion."
-    },
-    "defense": {
-      "question": "Why use ubRMSE here?",
-      "documents": [
-        "Thesis.pdf",
-        "Experiment Results.pdf"
-      ],
-      "passage": "ubRMSE removes mean bias to reveal random error. The experiments report Bias, RMSE, and ubRMSE together.",
-      "answer": "I wanted to separate systematic bias from random error. ubRMSE removes mean bias, so it reflects random error more clearly. I report it with Bias and RMSE to evaluate the model more fully.",
-      "title": "From thesis files · Live answer",
-      "sources": [
-        "[S1] Thesis.pdf · Evaluation Metrics",
-        "[S2] Experiment Results.pdf · Table 3"
-      ],
-      "sourcePassage2": "The results report Bias, RMSE, and ubRMSE together."
-    },
-    "manual": {
-      "question": "Summarize the three most useful points to discuss about this project.",
-      "documents": [
-        "Project Overview.md",
-        "Review Notes.txt"
-      ],
-      "passage": "The project addresses a real problem through clear technical choices, with reproducible experiments to test the results and limits.",
-      "answer": "I would cover three points: the real problem, why I chose this technical approach, and how experiments validated the result. I would finish with the current limitations.",
-      "title": "From local files · Instant summary",
-      "sources": [
-        "[S1] Project Overview.md · Summary",
-        "[S2] Review Notes.txt · Key Points"
-      ],
-      "sourcePassage2": "The review notes cover trade-offs, results, and limitations."
-    }
+  "interview": {
+   "question": "为什么选择 early-exit 架构？",
+   "documents": [
+    "Project Report.pdf",
+    "README.md"
+   ],
+   "passage": "浅层出口负责处理简单样本，困难样本继续进入深层网络。这样可以在保持准确率的同时，减少不必要的计算开销。",
+   "answer": "我选择 early-exit，主要是为了让计算量跟样本难度匹配。简单样本可以在浅层提前输出，复杂样本再继续推理，从而在准确率和推理成本之间取得平衡。",
+   "title": "基于项目资料 · 实时回答",
+   "sources": [
+    "[S1] Project Report.pdf · Early Exit",
+    "[S2] README.md · Architecture"
+   ],
+   "sourcePassage2": "README.md 说明浅层出口与深层网络的分工。"
   },
-  "zh-Hant": {
-    "interview": {
-      "question": "為什麼選擇 early-exit 架構？",
-      "documents": [
-        "Project Report.pdf",
-        "README.md"
-      ],
-      "passage": "淺層出口負責處理簡單樣本，困難樣本繼續進入深層網絡。這樣可以在保持準確率的同時，減少不必要的計算開銷。",
-      "answer": "我選擇 early-exit，主要是為了讓計算量跟樣本難度匹配。簡單樣本可以在淺層提前輸出，複雜樣本再繼續推理，從而在準確率和推理成本之間取得平衡。",
-      "title": "基於項目資料 · 實時回答",
-      "sources": [
-        "[S1] Project Report.pdf · Early Exit",
-        "[S2] README.md · Architecture"
-      ],
-      "sourcePassage2": "README.md 說明淺層出口與深層網絡的分工。"
-    },
-    "meeting": {
-      "question": "如果只能先上線一個功能，你會怎麼判斷優先級？",
-      "documents": [
-        "Product Strategy.md",
-        "Roadmap.docx"
-      ],
-      "passage": "優先評估使用者覆蓋範圍、問題發生頻率和實現成本；如果同時是後續功能的基礎能力，則提高優先級。",
-      "answer": "我會先看三個因素：使用者價值、實現成本，以及它是不是後續能力的基礎。優先上線覆蓋高頻場景、成本可控，同時能解鎖更多後續能力的功能。",
-      "title": "結合上下文 · 實時建議",
-      "sources": [
-        "[S1] Product Strategy.md · Priorities",
-        "[S2] Roadmap.docx · Q3"
-      ],
-      "sourcePassage2": "Roadmap 將基礎能力排在後續擴展之前。"
-    },
-    "defense": {
-      "question": "為什麼這裡使用 ubRMSE？",
-      "documents": [
-        "Thesis.pdf",
-        "Experiment Results.pdf"
-      ],
-      "passage": "ubRMSE 去除平均偏差的影響，更適合觀察隨機誤差；實驗中同時報告 Bias、RMSE 與 ubRMSE。",
-      "answer": "因為我想把系統性偏差和隨機誤差分開看。ubRMSE 去除了平均偏差的影響，更能反映隨機誤差；再結合 Bias 和 RMSE，可以更完整地評價模型表現。",
-      "title": "基於論文資料 · 實時回答",
-      "sources": [
-        "[S1] Thesis.pdf · Evaluation Metrics",
-        "[S2] Experiment Results.pdf · Table 3"
-      ],
-      "sourcePassage2": "實驗結果同時列出 Bias、RMSE 與 ubRMSE。"
-    },
-    "manual": {
-      "question": "幫我總結一下這個項目最值得講的三個點。",
-      "documents": [
-        "Project Overview.md",
-        "Review Notes.txt"
-      ],
-      "passage": "項目圍繞真實問題展開，通過明確的技術取捨完成實現，並使用可復現的實驗驗證結果與局限。",
-      "answer": "可以重點講三點：第一，解決了什麼真實問題；第二，為什麼選擇這條技術路線；第三，用什麼實驗驗證結果。最後補充當前局限，會讓項目介紹更完整。",
-      "title": "綜合本地資料 · 即時整理",
-      "sources": [
-        "[S1] Project Overview.md · Summary",
-        "[S2] Review Notes.txt · Key Points"
-      ],
-      "sourcePassage2": "復盤筆記列出技術取捨、驗證結果與局限。"
-    }
+  "meeting": {
+   "question": "如果只能先上线一个功能，你会怎么判断优先级？",
+   "documents": [
+    "Product Strategy.md",
+    "Roadmap.docx"
+   ],
+   "passage": "优先评估用户覆盖范围、问题发生频率和实现成本；如果同时是后续功能的基础能力，则提高优先级。",
+   "answer": "我会先看三个因素：用户价值、实现成本，以及它是不是后续能力的基础。优先上线覆盖高频场景、成本可控，同时能解锁更多后续能力的功能。",
+   "title": "结合上下文 · 实时建议",
+   "sources": [
+    "[S1] Product Strategy.md · Priorities",
+    "[S2] Roadmap.docx · Q3"
+   ],
+   "sourcePassage2": "Roadmap 将基础能力排在后续扩展之前。"
+  },
+  "defense": {
+   "question": "为什么这里使用 ubRMSE？",
+   "documents": [
+    "Thesis.pdf",
+    "Experiment Results.pdf"
+   ],
+   "passage": "ubRMSE 去除平均偏差的影响，更适合观察随机误差；实验中同时报告 Bias、RMSE 与 ubRMSE。",
+   "answer": "因为我想把系统性偏差和随机误差分开看。ubRMSE 去除了平均偏差的影响，更能反映随机误差；再结合 Bias 和 RMSE，可以更完整地评价模型表现。",
+   "title": "基于论文资料 · 实时回答",
+   "sources": [
+    "[S1] Thesis.pdf · Evaluation Metrics",
+    "[S2] Experiment Results.pdf · Table 3"
+   ],
+   "sourcePassage2": "实验结果同时列出 Bias、RMSE 与 ubRMSE。"
+  },
+  "manual": {
+   "question": "帮我总结一下这个项目最值得讲的三个点。",
+   "documents": [
+    "Project Overview.md",
+    "Review Notes.txt"
+   ],
+   "passage": "项目围绕真实问题展开，通过明确的技术取舍完成实现，并使用可复现的实验验证结果与局限。",
+   "answer": "可以重点讲三点：第一，解决了什么真实问题；第二，为什么选择这条技术路线；第三，用什么实验验证结果。最后补充当前局限，会让项目介绍更完整。",
+   "title": "综合本地资料 · 即时整理",
+   "sources": [
+    "[S1] Project Overview.md · Summary",
+    "[S2] Review Notes.txt · Key Points"
+   ],
+   "sourcePassage2": "复盘笔记列出技术取舍、验证结果与局限。"
   }
+ },
+ "en": {
+  "hero": {
+   "question": [
+    "What would you ship first,",
+    "and why?"
+   ],
+   "answer": [
+    "I'd ship what serves the most frequent need",
+    "and unlocks later work,",
+    "weighing value, cost and dependencies."
+   ],
+   "wait": "Waiting for a pause",
+   "ready": "Question ready",
+   "generating": "Generating",
+   "completed": "Completed",
+   "empty": "Conversation appears here when listening.",
+   "expand": "Expand transcript",
+   "collapse": "Collapse transcript",
+   "copy": "Copy",
+   "copied": "Copied",
+   "replay": "Replay demo",
+   "pause": "Pause demo",
+   "play": "Play demo"
+  },
+  "interview": {
+   "question": "Why did you choose an early-exit architecture?",
+   "documents": [
+    "Project Report.pdf",
+    "README.md"
+   ],
+   "passage": "Shallow exits handle easy samples, while harder ones continue through deeper layers. This avoids unnecessary computation while preserving accuracy.",
+   "answer": "I chose early exits to match computation to sample difficulty. Easy inputs can leave at a shallow layer, while complex ones keep going. That balances accuracy with inference cost.",
+   "title": "From project files · Live answer",
+   "sources": [
+    "[S1] Project Report.pdf · Early Exit",
+    "[S2] README.md · Architecture"
+   ],
+   "sourcePassage2": "The README describes the roles of shallow exits and deeper layers."
+  },
+  "meeting": {
+   "question": "If you could ship only one feature first, how would you prioritize it?",
+   "documents": [
+    "Product Strategy.md",
+    "Roadmap.docx"
+   ],
+   "passage": "Compare user reach, how often the problem occurs, and development cost. Give extra weight to features that enable later work.",
+   "answer": "I would weigh user value, development cost, and whether the feature enables what comes next. I would ship a manageable solution to a frequent problem first, especially if it unlocks later capabilities.",
+   "title": "With conversation context · Live suggestion",
+   "sources": [
+    "[S1] Product Strategy.md · Priorities",
+    "[S2] Roadmap.docx · Q3"
+   ],
+   "sourcePassage2": "The Roadmap places core capabilities before later expansion."
+  },
+  "defense": {
+   "question": "Why use ubRMSE here?",
+   "documents": [
+    "Thesis.pdf",
+    "Experiment Results.pdf"
+   ],
+   "passage": "ubRMSE removes mean bias to reveal random error. The experiments report Bias, RMSE, and ubRMSE together.",
+   "answer": "I wanted to separate systematic bias from random error. ubRMSE removes mean bias, so it reflects random error more clearly. I report it with Bias and RMSE to evaluate the model more fully.",
+   "title": "From thesis files · Live answer",
+   "sources": [
+    "[S1] Thesis.pdf · Evaluation Metrics",
+    "[S2] Experiment Results.pdf · Table 3"
+   ],
+   "sourcePassage2": "The results report Bias, RMSE, and ubRMSE together."
+  },
+  "manual": {
+   "question": "Summarize the three most useful points to discuss about this project.",
+   "documents": [
+    "Project Overview.md",
+    "Review Notes.txt"
+   ],
+   "passage": "The project addresses a real problem through clear technical choices, with reproducible experiments to test the results and limits.",
+   "answer": "I would cover three points: the real problem, why I chose this technical approach, and how experiments validated the result. I would finish with the current limitations.",
+   "title": "From local files · Instant summary",
+   "sources": [
+    "[S1] Project Overview.md · Summary",
+    "[S2] Review Notes.txt · Key Points"
+   ],
+   "sourcePassage2": "The review notes cover trade-offs, results, and limitations."
+  }
+ },
+ "zh-Hant": {
+  "hero": {
+   "question": [
+    "你會先上線",
+    "哪個功能？",
+    "為什麼？"
+   ],
+   "answer": [
+    "我會先上線最高頻、",
+    "又能為後續功能打基礎的那一個。",
+    "判斷時看使用者價值、",
+    "實現成本和依賴關係。"
+   ],
+   "wait": "等待講話結束",
+   "ready": "問題已完整",
+   "generating": "生成中",
+   "completed": "已完成",
+   "empty": "開啓監聽後，對話會顯示在這裡。",
+   "expand": "展開轉寫",
+   "collapse": "折疊轉寫",
+   "copy": "複製",
+   "copied": "已複製",
+   "replay": "重播示範",
+   "pause": "暫停示範",
+   "play": "播放示範"
+  },
+  "interview": {
+   "question": "為什麼選擇 early-exit 架構？",
+   "documents": [
+    "Project Report.pdf",
+    "README.md"
+   ],
+   "passage": "淺層出口負責處理簡單樣本，困難樣本繼續進入深層網絡。這樣可以在保持準確率的同時，減少不必要的計算開銷。",
+   "answer": "我選擇 early-exit，主要是為了讓計算量跟樣本難度匹配。簡單樣本可以在淺層提前輸出，複雜樣本再繼續推理，從而在準確率和推理成本之間取得平衡。",
+   "title": "基於項目資料 · 實時回答",
+   "sources": [
+    "[S1] Project Report.pdf · Early Exit",
+    "[S2] README.md · Architecture"
+   ],
+   "sourcePassage2": "README.md 說明淺層出口與深層網絡的分工。"
+  },
+  "meeting": {
+   "question": "如果只能先上線一個功能，你會怎麼判斷優先級？",
+   "documents": [
+    "Product Strategy.md",
+    "Roadmap.docx"
+   ],
+   "passage": "優先評估使用者覆蓋範圍、問題發生頻率和實現成本；如果同時是後續功能的基礎能力，則提高優先級。",
+   "answer": "我會先看三個因素：使用者價值、實現成本，以及它是不是後續能力的基礎。優先上線覆蓋高頻場景、成本可控，同時能解鎖更多後續能力的功能。",
+   "title": "結合上下文 · 實時建議",
+   "sources": [
+    "[S1] Product Strategy.md · Priorities",
+    "[S2] Roadmap.docx · Q3"
+   ],
+   "sourcePassage2": "Roadmap 將基礎能力排在後續擴展之前。"
+  },
+  "defense": {
+   "question": "為什麼這裡使用 ubRMSE？",
+   "documents": [
+    "Thesis.pdf",
+    "Experiment Results.pdf"
+   ],
+   "passage": "ubRMSE 去除平均偏差的影響，更適合觀察隨機誤差；實驗中同時報告 Bias、RMSE 與 ubRMSE。",
+   "answer": "因為我想把系統性偏差和隨機誤差分開看。ubRMSE 去除了平均偏差的影響，更能反映隨機誤差；再結合 Bias 和 RMSE，可以更完整地評價模型表現。",
+   "title": "基於論文資料 · 實時回答",
+   "sources": [
+    "[S1] Thesis.pdf · Evaluation Metrics",
+    "[S2] Experiment Results.pdf · Table 3"
+   ],
+   "sourcePassage2": "實驗結果同時列出 Bias、RMSE 與 ubRMSE。"
+  },
+  "manual": {
+   "question": "幫我總結一下這個項目最值得講的三個點。",
+   "documents": [
+    "Project Overview.md",
+    "Review Notes.txt"
+   ],
+   "passage": "項目圍繞真實問題展開，通過明確的技術取捨完成實現，並使用可復現的實驗驗證結果與局限。",
+   "answer": "可以重點講三點：第一，解決了什麼真實問題；第二，為什麼選擇這條技術路線；第三，用什麼實驗驗證結果。最後補充當前局限，會讓項目介紹更完整。",
+   "title": "綜合本地資料 · 即時整理",
+   "sources": [
+    "[S1] Project Overview.md · Summary",
+    "[S2] Review Notes.txt · Key Points"
+   ],
+   "sourcePassage2": "復盤筆記列出技術取捨、驗證結果與局限。"
+  }
+ }
 }

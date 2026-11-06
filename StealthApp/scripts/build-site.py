@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / 'site'
 OUTPUT = ROOT / '_site'
 BASE = 'https://carey-bk.github.io/LiveCopilot/'
+ASSETS = ['styles.css', 'demo.js']
 download = json.loads((SOURCE / 'download.json').read_text())
 github_download = download['github_url']
 mirror_download = download.get('mirror_url')
@@ -22,60 +23,72 @@ for url in [github_download, mirror_download]:
     parsed = urlsplit(url)
     if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError('Download URLs must be public HTTPS URLs without credentials, query strings or fragments.')
+version = download['version']
+assert re.fullmatch(r'\d+\.\d+\.\d+', version), 'download.json needs a semantic version.'
+assert re.fullmatch(r'[0-9a-f]{64}', download['sha256']), 'download.json needs a SHA-256 digest.'
+release_url = f'https://github.com/carey-bk/LiveCopilot/releases/tag/v{version}'
+size = f"{download['size'] / 1_000_000:.2f} MB"
 content = json.loads((SOURCE / 'content.json').read_text())
 assert all(copy.keys() == content['en'].keys() for copy in content.values()), 'All language pages need matching content.'
 locales = {'zh': ('', 'zh-Hans'), 'en': ('en', 'en'), 'zh-Hant': ('zh-Hant', 'zh-Hant')}
 examples = json.loads((SOURCE / 'examples.json').read_text())
+assert all(examples[language].keys() == examples['en'].keys() for language in locales), 'All languages need matching examples.'
 template = Template((SOURCE / 'template.html').read_text())
+asset_version = hashlib.sha256(b''.join((SOURCE / name).read_bytes() for name in ASSETS)).hexdigest()[:12]
 # Output is disposable; clean it so retired runtime assets cannot ship.
 if OUTPUT.exists():
     shutil.rmtree(OUTPUT)
 OUTPUT.mkdir()
+
+
+def phrases(text, english):
+    """Chinese copy marked with | breaks only between phrases; English wraps normally."""
+    parts = [html.escape(part, quote=True) for part in text.split('|')]
+    return ' '.join(parts) if english else '<wbr>'.join(f'<span class="ph">{part}</span>' for part in parts)
+
+
 for language, copy in content.items():
     english = language == 'en'
-    # Only explicitly marked display strings support Markdown emphasis. Escape
-    # first so supplied copy cannot introduce arbitrary HTML or attributes.
-    data = {key: (re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html.escape(value, quote=True))
-                  if key.endswith('_rich') else html.escape(value, quote=True))
-            for key, value in copy.items()}
-    data['asset_version'] = hashlib.sha256(b''.join((SOURCE / name).read_bytes() for name in ['demo.js', 'phase5.css', 'product.css', 'styles.css'])).hexdigest()[:12]
+    # Version and size come from download.json so the copy cannot drift from the release.
+    copy = {key: value.replace('{version}', version).replace('{size}', size) for key, value in copy.items()}
+    data = {key: html.escape(value, quote=True) for key, value in copy.items()}
+    sample = examples[language]
+    hero = sample['hero']
+    case = sample['meeting']
     path, lang = locales[language]
     prefix = '../' if path else ''
-    data.update(lang=lang, prefix=prefix, home='./',
-                zh_url=prefix or './', en_url=prefix + 'en/', hant_url=prefix + 'zh-Hant/',
-                zh_current='aria-current="page"' if language == 'zh' else '',
-                en_current='aria-current="page"' if english else '',
-                hant_current='aria-current="page"' if language == 'zh-Hant' else '',
-                canonical=BASE + (path + '/' if path else ''),
-                demo_examples=json.dumps(examples[language], ensure_ascii=False).replace('<', '\\u003c'),
-                download_url=html.escape(mirror_download or github_download, quote=True),
-                download_fallback=('<p class="install-note"><a class="text-link" href="' + html.escape(github_download, quote=True) + '">' + ('Alternative: GitHub download' if english else ('備用：GitHub 下載' if language == 'zh-Hant' else '备用：GitHub 下载')) + '</a></p>') if mirror_download else '')
-    title_lines = copy['hero_title'].split('\n')
-    data['hero_title_markup'] = ''.join('<span class="title-line">' + ''.join('<span class="title-character">' + html.escape(c) + '</span>' for c in line) + '</span>' for line in title_lines) + '<span class="title-cursor" aria-hidden="true"></span>'
-    # One product structure for every section; translated text is already escaped.
-    components = SOURCE / 'components'
-    answer_template = Template((components / 'product-answer.html').read_text())
-    transcript_template = Template((components / 'product-transcript.html').read_text())
-    product_template = Template((components / 'product-ui.html').read_text())
-    answer = answer_template.substitute(data)
-    transcript = transcript_template.substitute(data)
-    for instance in ['hero', 'edge']:
-        data['product_' + instance] = product_template.substitute(
-            data, variant=instance, instance=instance,
-            product_answer_fragment=answer, product_transcript_fragment=transcript)
-    data['product_hero'] = data['product_hero'].replace('<h4>', '<h4 aria-level="2">')
-    data['product_edge'] = data['product_edge'].replace(data['product_status'], data['product_ready'])
-    data['product_edge'] = re.sub(r'(data-part="empty")\s+hidden', r'\1', data['product_edge'])
-    data['product_answer'] = '<div data-product="answer">' + answer + '</div>'
-    data['product_transcript'] = '<div data-product="transcript">' + transcript + '</div>'
-    short_copy = dict(data, demo_reply=data['demo_reply'],
-                      product_evidence_text=data['workflow_evidence_text'])
-    data['product_workflow_answer'] = '<div data-product="workflow">' + answer_template.substitute(short_copy) + '</div>'
-    data['product_case_answer'] = '<div data-product="case">' + answer + '</div>'
+    badge = '<b>' + '.'.join(version.split('.')[:2]) + '</b>'
+    label = '<span>' + data['pill_text'] + '</span>'
+    data.update(
+        lang=lang, prefix=prefix, home='./', version=version, sha256=download['sha256'],
+        asset_version=asset_version, release_url=release_url,
+        zh_url=prefix or './', en_url=prefix + 'en/', hant_url=prefix + 'zh-Hant/',
+        zh_current='aria-current="page"' if language == 'zh' else '',
+        en_current='aria-current="page"' if english else '',
+        hant_current='aria-current="page"' if language == 'zh-Hant' else '',
+        canonical=BASE + (path + '/' if path else ''),
+        demo_examples=json.dumps(sample, ensure_ascii=False).replace('<', '\\u003c'),
+        download_url=html.escape(mirror_download or github_download, quote=True),
+        fallback_markup=('<a class="fallback" href="' + html.escape(github_download, quote=True) + '">' + data['download_fallback_label'] + '</a>') if mirror_download else '',
+        # English reads "New in 2.7", so the version badge follows the text there.
+        # The pill opens the published release notes.
+        pill_markup='<a class="release-pill' + (' end' if english else '') + '" href="' + release_url + '">' + (label + badge if english else badge + label) + '</a>',
+        # The settings counter shows the example's real length against the app's 4000-character limit.
+        style_count=str(len(copy['style_example'])),
+        hero_subtitle_markup=phrases(copy['hero_subtitle_phrases'], english),
+        hero_cost_markup=phrases(copy['hero_cost_phrases'], english),
+        hero_question=html.escape((' ' if english else '').join(hero['question'])),
+        hero_answer_markup=(' ' if english else '').join(f'<span class="ph">{html.escape(part)}</span>' for part in hero['answer']),
+        # The scenario panel is complete without JavaScript; the script swaps examples in place.
+        case_question=html.escape(case['question']), case_answer=html.escape(case['answer']),
+        case_passage_text=html.escape(case['passage']),
+        case_documents_markup=''.join(f'<span>{html.escape(name)}</span>' for name in case['documents']),
+        case_sources_markup=''.join(f'<p>{html.escape(source)}</p>' for source in case['sources']),
+    )
     destination = OUTPUT / path
     destination.mkdir(exist_ok=True)
     (destination / 'index.html').write_text(template.substitute(data))
-for name in ['styles.css', 'product.css', 'phase5.css', 'demo.js']:
+for name in ASSETS:
     shutil.copyfile(SOURCE / name, OUTPUT / name)
 shutil.copytree(SOURCE / 'assets', OUTPUT / 'assets', dirs_exist_ok=True)
 if (SOURCE / 'updates').exists():
