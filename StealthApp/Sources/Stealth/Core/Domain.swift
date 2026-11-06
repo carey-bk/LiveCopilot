@@ -51,7 +51,7 @@ struct AppSettings: Codable, Equatable {
     var language = AppLanguage.system
     var background = AppBackground.glass
     var overlayAutoHeight = true
-    var overlayEdgeHide = true
+    var overlayEdgeHide = false
     var showMenuBarIcon = true
     var excludeOverlayFromCapture = false
     var reasoningService = ReasoningService.sharedOpenAI

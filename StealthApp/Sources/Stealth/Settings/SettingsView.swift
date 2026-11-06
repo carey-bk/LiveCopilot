@@ -389,8 +389,8 @@ struct SettingsView: View {
                 if beta {
                     Capsule().fill(Color.blue)
                         .overlay {
-                            Text("Beta").font(.system(size: 10, weight: .bold, design: .rounded))
-                                .blendMode(.destinationOut)
+                            Text("Beta").font(.custom(AppBrandTitle.fontName, size: 11))
+                                .foregroundStyle(Color.white)
                         }
                         .compositingGroup()
                         .frame(width: 40, height: 18)
