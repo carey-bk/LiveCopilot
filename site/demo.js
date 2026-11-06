@@ -386,3 +386,26 @@
   }
   toggle.hidden = false;
 })();
+
+for (const link of document.querySelectorAll('a[data-download-mirror]')) {
+  let pending = false;
+  link.addEventListener('click', async event => {
+    if (!link.dataset.downloadMirror || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    if (pending) return;
+    pending = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    let destination = link.href;
+    try {
+      // GitHub release redirects are cross-origin. HEAD probes the route without fetching the installer.
+      await fetch(destination, { method: 'HEAD', mode: 'no-cors', credentials: 'omit', cache: 'no-store', signal: controller.signal });
+    } catch {
+      destination = link.dataset.downloadMirror;
+    } finally {
+      clearTimeout(timeout);
+      pending = false;
+    }
+    window.location.assign(destination);
+  });
+}

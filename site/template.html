@@ -40,7 +40,7 @@
         <div class="languages" aria-label="$language_label">
           <a href="$zh_url" lang="zh-Hans" hreflang="zh-Hans" $zh_current>简</a><a href="$hant_url" lang="zh-Hant" hreflang="zh-Hant" $hant_current>繁</a><a href="$en_url" lang="en" hreflang="en" $en_current>EN</a>
         </div>
-        <a class="nav-download" href="$download_url">$nav_download</a>
+        <a class="nav-download" href="$download_url" data-download-mirror="$mirror_url">$nav_download</a>
         <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="$nav_menu" data-open="$nav_menu" data-close="$menu_close">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 6h14M3 10h14M3 14h14" /></svg>
         </button>
@@ -55,8 +55,7 @@
             <h1 id="hero-heading"><span>$hero_title_a</span><span>$hero_title_b</span></h1>
             <p class="hero-sub">$hero_subtitle_markup</p>
             <div class="actions">
-              <a class="btn primary" href="$download_url"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>$download_label</a>
-              $fallback_markup
+              <a class="btn primary" href="$download_url" data-download-mirror="$mirror_url"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>$download_label</a>
             </div>
             <ul class="meta"><li>$hero_meta</li><li>$hero_cost_markup</li></ul>
           </div>
@@ -427,8 +426,7 @@
           <h2 id="download-heading">$install_title</h2>
           <p class="download-intro">$install_intro</p>
           <div class="actions">
-            <a class="btn primary dark" href="$download_url"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>$download_label</a>
-            $fallback_markup
+            <a class="btn primary dark" href="$download_url" data-download-mirror="$mirror_url"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>$download_label</a>
           </div>
           <p class="download-meta">$download_meta</p>
           <p class="guide-links"><a href="$readme_url$guide_anchor">$guide_link</a><a href="$readme_url$requirements_anchor">$requirements_link</a><a href="https://github.com/carey-bk/LiveCopilot/releases">$releases_link</a></p>
