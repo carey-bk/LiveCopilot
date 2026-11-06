@@ -69,7 +69,7 @@ for language, copy in content.items():
         canonical=BASE + (path + '/' if path else ''),
         demo_examples=json.dumps(sample, ensure_ascii=False).replace('<', '\\u003c'),
         download_url=html.escape(github_download, quote=True),
-        fallback_markup=('<a class="fallback" href="' + html.escape(mirror_download, quote=True) + '">' + data['download_fallback_label'] + '</a>') if mirror_download else '',
+        fallback_markup=('<a class="btn secondary mirror-download" href="' + html.escape(mirror_download, quote=True) + '">' + data['download_fallback_label'] + '</a>') if mirror_download else '',
         # English reads "New in 2.7", so the version badge follows the text there.
         # The pill opens the published release notes.
         pill_markup='<a class="release-pill' + (' end' if english else '') + '" href="' + release_url + '">' + (label + badge if english else badge + label) + '</a>',
