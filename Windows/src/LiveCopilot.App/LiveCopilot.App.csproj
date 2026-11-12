@@ -1,4 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF><ApplicationManifest>app.manifest</ApplicationManifest></PropertyGroup>
-  <ItemGroup><ProjectReference Include="../LiveCopilot.Core/LiveCopilot.Core.csproj" /><ProjectReference Include="../LiveCopilot.Platform.Windows/LiveCopilot.Platform.Windows.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../LiveCopilot.Core/LiveCopilot.Core.csproj" /><ProjectReference Include="../LiveCopilot.Platform.Windows/LiveCopilot.Platform.Windows.csproj" /><ProjectReference Include="../LiveCopilot.LocalInference/LiveCopilot.LocalInference.csproj" /></ItemGroup>
 </Project>

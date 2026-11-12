@@ -13,8 +13,8 @@ using LiveCopilot.Platform.Windows.Native;
 
 namespace LiveCopilot.Platform.Windows.Overlay;
 
-/// Reusable shell only. Call Configure when preferences change and ContentHeightChanged
-/// when future card content changes. Its HWND remains alive while edge-hidden.
+/// Non-activating session card. Configure and SetContent run on the UI thread.
+/// Its HWND remains alive while edge-hidden.
 public sealed class OverlayWindow : Window
 {
     private readonly WindowCaptureProtection protection;
@@ -27,6 +27,12 @@ public sealed class OverlayWindow : Window
     private double scale = 1;
     private WindowNative.Point? dragStart;
     private LayoutRect dragFrame;
+    private readonly StackPanel card = new();
+    private readonly TextBlock statusText = new() { Text = "未开始聆听", TextWrapping = TextWrapping.Wrap, Foreground = Brushes.LightGray, Margin = new Thickness(0, 16, 0, 0) };
+    private readonly StackPanel transcriptLines = new() { Margin = new Thickness(0, 12, 0, 0) };
+    private readonly TextBlock partialThem = new() { Foreground = Brushes.LightSkyBlue, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock partialYou = new() { Foreground = Brushes.LightGreen, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock suggestionText = new() { Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
     public CaptureProtectionStatus CaptureProtectionStatus => protection.Status;
     public event Action<CaptureProtectionStatus>? CaptureProtectionChanged;
     public bool EdgeHidden => controller.Hidden;
@@ -45,17 +51,21 @@ public sealed class OverlayWindow : Window
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
         AllowsTransparency = true; Background = Brushes.Transparent;
         Focusable = false;
+        card.Children.Add(new TextBlock { Text = "LiveCopilot", FontSize = 22, Foreground = Brushes.White });
+        card.Children.Add(statusText);
+        card.Children.Add(transcriptLines);
+        card.Children.Add(partialThem);
+        card.Children.Add(partialYou);
+        card.Children.Add(suggestionText);
         Content = new Border
         {
             CornerRadius = new CornerRadius(16), Padding = new Thickness(24),
             Background = new SolidColorBrush(Color.FromArgb(232, 28, 32, 40)),
             BorderBrush = new SolidColorBrush(Color.FromArgb(100, 160, 174, 190)), BorderThickness = new Thickness(1),
-            Child = new StackPanel { Children =
-            {
-                new TextBlock { Text = "LiveCopilot", FontSize = 22, Foreground = Brushes.White },
-                new TextBlock { Text = "浮窗已就绪", Margin = new Thickness(0, 16, 0, 0), FontSize = 14, Foreground = Brushes.LightGray }
-            } }
+            Child = new ScrollViewer { Content = card, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Focusable = false }
         };
+        card.SizeChanged += (_, _) => MeasureContent();
         edgeTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(50), DispatcherPriority.Background, (_, _) => PollEdge(), Dispatcher);
         edgeTimer.Stop();
         SourceInitialized += (_, _) => InitializeHandle();
@@ -79,6 +89,7 @@ public sealed class OverlayWindow : Window
         controller.Configure(settings);
         RefreshProtection();
         ApplyFrame();
+        MeasureContent();
         if (settings.OverlayEdgeHide) Dispatcher.BeginInvoke(() => { if (!closed) ApplyVisibility(); });
     }
 
@@ -92,6 +103,32 @@ public sealed class OverlayWindow : Window
         if (hwnd != 0) ApplyVisibility();
     }
     public void ContentHeightChanged(double height) { Dispatcher.VerifyAccess(); controller.ContentHeightChanged(height); ApplyFrame(); }
+    public void SetContent(OverlayContent value)
+    {
+        Dispatcher.VerifyAccess();
+        if (closed) return;
+        statusText.Text = value.Status;
+        transcriptLines.Children.Clear();
+        foreach (var line in value.Lines.TakeLast(8))
+            transcriptLines.Children.Add(new TextBlock
+            {
+                Text = $"{(line.Speaker == Speaker.You ? "You · 我" : "Them · 对方")}  {line.Content}",
+                Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap,
+                FontSize = settings.TranscriptFontSize, Margin = new Thickness(0, 0, 0, 8)
+            });
+        partialThem.Text = value.PartialThem.Length == 0 ? "" : "Them · 对方（未定稿）  " + value.PartialThem;
+        partialYou.Text = value.PartialYou.Length == 0 ? "" : "You · 我（未定稿）  " + value.PartialYou;
+        partialThem.FontSize = partialYou.FontSize = settings.TranscriptFontSize;
+        suggestionText.Text = value.SuggestionStatus ?? "";
+        MeasureContent();
+    }
+    private void MeasureContent()
+    {
+        if (closed) return;
+        // Allow a scrollbar at the geometry cap; measure full content for auto-height.
+        card.Measure(new Size(Math.Max(1, controller.Frame.Width - 68), double.PositiveInfinity));
+        ContentHeightChanged(card.DesiredSize.Height + 50);
+    }
     public void ToggleVisibility() { Dispatcher.VerifyAccess(); controller.Toggle(); ApplyVisibility(); }
     public void Reveal() { Dispatcher.VerifyAccess(); controller.Reveal(); ApplyVisibility(); }
 

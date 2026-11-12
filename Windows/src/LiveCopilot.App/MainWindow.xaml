@@ -1,1 +1,23 @@
-<Window x:Class="LiveCopilot.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="LiveCopilot" Height="450" Width="800"><Grid /></Window>
+<Window x:Class="LiveCopilot.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="LiveCopilot — 聆听会话" Height="520" Width="760" MinHeight="360" MinWidth="520">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="28">
+            <TextBlock Text="LiveCopilot · 本地聆听" FontSize="26" Margin="0,0,0,12" />
+            <TextBlock Text="点击开始后采集系统声音和麦克风；停止后保存已定稿转写。" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Margin="0,20,0,16">
+                <Button x:Name="StartButton" Content="开始聆听" Padding="20,8" Click="StartListening" IsEnabled="False" />
+                <Button x:Name="StopButton" Content="停止" Padding="20,8" Margin="12,0,0,0" Click="StopListening" IsEnabled="False" />
+            </StackPanel>
+            <TextBlock x:Name="StateText" Text="未开始聆听" FontSize="18" TextWrapping="Wrap" />
+            <TextBlock x:Name="ErrorText" Foreground="DarkRed" TextWrapping="Wrap" Margin="0,8,0,0" />
+            <TextBlock x:Name="SystemText" TextWrapping="Wrap" Margin="0,14,0,0" />
+            <TextBlock x:Name="MicrophoneText" TextWrapping="Wrap" Margin="0,8,0,0" />
+            <TextBlock x:Name="SuggestionText" TextWrapping="Wrap" Margin="0,14,0,0" />
+            <TextBlock x:Name="HostErrorText" Foreground="DarkRed" TextWrapping="Wrap" Margin="0,8,0,0" />
+            <TextBlock Text="转写显示在浮窗。Alt+H 显示/隐藏浮窗；回答快捷键仅记录请求，推理服务尚未接入。"
+                       TextWrapping="Wrap" Foreground="DimGray" Margin="0,20,0,0" />
+        </StackPanel>
+    </ScrollViewer>
+</Window>
