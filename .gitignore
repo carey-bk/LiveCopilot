@@ -64,3 +64,8 @@ StealthApp/build-layout-release/
 *.booproj
 nuget.exe
 TestResults/
+
+# Windows local inference model weights and optional native deployments
+Windows/**/*.gguf
+Windows/**/*.onnx
+Windows/**/native/sherpa/
