@@ -1,6 +1,6 @@
-# LiveCopilot Windows：Core / Stores 与本地推理（第 3 线）
+# LiveCopilot Windows：Core、本地推理与平台层（第 4 线）
 
-本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。WPF 项目目前只有一个空窗口，尚不是可用的 Windows 客户端。原有 `StealthApp/` 源码与资源保持不变。
+本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。第 4 线增加 WASAPI 音频、WPF 浮窗壳和全局快捷键；宿主仅演示浮窗与快捷键，没有连接采集、推理或回答服务，尚不是完整 Windows 客户端。原有 `StealthApp/` 源码与资源保持不变。
 
 ## 解决方案结构
 
@@ -20,10 +20,13 @@ Windows/
 │   │   ├── Support/                      # JSON、值语义集合、原子文件写入等
 │   │   └── Resources/                    # 嵌入式 JSON 字典、提示词和分析数据
 │   ├── LiveCopilot.LocalInference/        # net8.0，sherpa-onnx / LLamaSharp，独立于 Core
-│   └── LiveCopilot.App/                   # net8.0-windows，WPF 空壳
+│   ├── LiveCopilot.Platform/              # net8.0，可注入音频/快捷键/浮窗逻辑
+│   ├── LiveCopilot.Platform.Windows/      # net8.0-windows，NAudio WASAPI、Win32、WPF 壳
+│   └── LiveCopilot.App/                   # net8.0-windows，薄演示宿主
 ├── tests/
 │   ├── LiveCopilot.Core.Tests/            # xUnit，临时目录及合成提供器
-│   └── LiveCopilot.LocalInference.Tests/  # 无权重契约测试 + 可跳过的真实模型测试
+│   ├── LiveCopilot.LocalInference.Tests/  # 无权重契约测试 + 可跳过的真实模型测试
+│   └── LiveCopilot.Platform.Tests/        # net8.0 / net8.0-windows，假源测试 + 显式跳过桌面探针
 └── tools/import-localization.py          # 从 Swift 只读导入界面字典的维护工具
 ```
 
@@ -40,16 +43,19 @@ export DOTNET_EnableWindowsTargeting=true
 export DOTNET_CLI_HOME="/tmp/dotnet-home"
 export DOTNET_NOLOGO=1
 export LIVECOPILOT_INFERENCE_CPU=1
-cd /workspace/livecopilot-windows-inference/Windows
+cd /workspace/livecopilot-windows-platform/Windows
 
 /home/box/.dotnet/dotnet restore LiveCopilot.Windows.sln
-/home/box/.dotnet/dotnet build src/LiveCopilot.Core/LiveCopilot.Core.csproj -c Release
+/home/box/.dotnet/dotnet build LiveCopilot.Windows.sln -c Release
 /home/box/.dotnet/dotnet test tests/LiveCopilot.Core.Tests/LiveCopilot.Core.Tests.csproj -c Release \
-  --logger 'trx;LogFileName=Core.Release.line3.trx' \
+  --logger 'trx;LogFileName=Core.Release.line4.trx' \
   --results-directory /workspace/codex/livecopilot-windows/validation
 /home/box/.dotnet/dotnet build src/LiveCopilot.LocalInference/LiveCopilot.LocalInference.csproj -c Release
 /home/box/.dotnet/dotnet test tests/LiveCopilot.LocalInference.Tests/LiveCopilot.LocalInference.Tests.csproj -c Release \
-  --logger 'trx;LogFileName=LocalInference.Release.line3.trx' \
+  --logger 'trx;LogFileName=LocalInference.Release.line4.trx' \
+  --results-directory /workspace/codex/livecopilot-windows/validation
+/home/box/.dotnet/dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -c Release -f net8.0 \
+  --logger 'trx;LogFileName=Platform.Release.line4.trx' \
   --results-directory /workspace/codex/livecopilot-windows/validation
 ```
 
@@ -136,18 +142,78 @@ dotnet test tests/LiveCopilot.LocalInference.Tests/LiveCopilot.LocalInference.Te
 
 ## Windows 完整构建
 
-包含 WPF 的完整构建和运行验证需在安装 .NET 8 SDK 的 Windows，或 GitHub Actions 的 `windows-latest` runner 上进行：
+桌面运行验证需安装 .NET 8 SDK 的 Windows；包含 WPF 的编译也可在启用 Windows targeting 的 Linux 上完成。Windows 构建命令如下：
 
 ```powershell
 cd Windows
 dotnet restore LiveCopilot.Windows.sln
 dotnet build LiveCopilot.Windows.sln -c Release --no-restore
 dotnet test tests/LiveCopilot.Core.Tests/LiveCopilot.Core.Tests.csproj -c Release --no-build
-# 本地 Windows 可启动空窗口：
+# 本地 Windows 可启动浮窗壳演示（不会开始采集）：
 dotnet run --project src/LiveCopilot.App/LiveCopilot.App.csproj -c Release
 ```
 
-Linux 的 Core 测试通过不构成 WPF 编译、桌面交互或 Windows 原生能力验收。本批不添加 CI 工作流，也不签名或打包发布。
+Linux 可以交叉编译 WPF，但不能运行窗口；假源测试通过不构成真实桌面、声卡、会议共享或 Windows 原生能力验收。本批不添加 CI 工作流，也不签名或打包发布。
+
+## 第 4 线：音频契约与 WASAPI
+
+`LiveCopilot.Platform` 不引用原生包，`LiveCopilot.Platform.Windows` 固定引用官方 [NAudio.Wasapi 2.3.0](https://www.nuget.org/packages/NAudio.Wasapi/2.3.0)（依赖 NAudio.Core 2.3.0）。Core / LocalInference 不增加 NAudio、WPF 或 Win32 依赖。
+
+```csharp
+var factory = new WasapiAudioSourceFactory();
+await using var system = new AudioCaptureManager(factory, AudioInput.System);
+await using var mic = new AudioCaptureManager(factory, AudioInput.Microphone);
+system.Configure(settings.ListeningService.SampleRate());
+mic.Configure(settings.ListeningService.SampleRate());
+system.Pcm16Available += pcm => ConsumeSystemPcmPromptly(pcm);
+mic.Pcm16Available += pcm => ConsumeMicPcmPromptly(pcm);
+await system.StartAsync();
+await mic.StartAsync();
+// 检查 IsCapturing / LastError / SourceDescription，并把 Error 通知转到 UI Dispatcher。
+await mic.StopAsync();
+await system.StopAsync();
+```
+
+以上为未来宿主的接入示意，`Consume*` 由宿主提供。每路转换器独立，默认 16000 Hz，运行及恢复期间 `Configure` 不生效；停止后可改为 24000 Hz。输出单声道 PCM16 little-endian：16 kHz 每毫秒 32 字节，24 kHz 每毫秒 48 字节。`ListeningService.SampleRate()` 按本批 Windows 契约：Zipformer / Paraformer 16000，其余 24000；Apple 只是保留枚举，没有实现 AppleSpeech。当前 Swift 的 `isLocal` 还包含 Apple，Windows 在这一保留值上遵循本批要求。
+
+转换支持 PCM16/24/32 和 float32，等权下混，再用 128 tap Blackman-windowed sinc 滤波重采样，避免直接抽点混叠。分块边界可落在单个采样字节中；状态跨块保留，停止/重置与转换互斥。重采样有约 63.5 个输入帧的固定滤波延迟（48 kHz 约 1.32 ms），停止时丢弃滤波尾部和不完整输入帧，不在停止后补发音频。同步回调不创建音频队列；消费者应快速返回，不能在回调内同步等待 `StopAsync`。若消费过慢导致 WASAPI discontinuity，明确报错而不是把缺失段伪装成静音。
+
+麦克风使用默认 Capture / Console endpoint 的 shared-mode WASAPI；系统音频在 Windows build 20348+ 优先通过 `ActivateAudioInterfaceAsync` + `AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK` + `EXCLUDE_TARGET_PROCESS_TREE` 排除当前进程及子进程，再用 NAudio `AudioClient` / `AudioCaptureClient` 读取。这个公开模式跨所有 render endpoints，而不是只绑定默认输出；见 [Microsoft Application Loopback 示例](https://learn.microsoft.com/en-us/samples/microsoft/windows-classic-samples/applicationloopbackaudio-sample/)。旧系统或激活/初始化失败时，回退到默认 Render / Console endpoint 的 WASAPI loopback，**包含本程序音频**；`SourceDescription` 写明模式与回退原因，不声称排除成功，也不以合成静音代替采集。进程激活最多等待 5 秒，迟到的 COM 结果会释放；本批没有虚拟声卡依赖。
+
+原生源用单个 MTA worker 拥有 COM client 和事件句柄，启动返回前实际完成 `IAudioClient.Start`，停止等待 worker 退出并释放资源。endpoint 通知和 device-invalidated 错误触发设备变更：麦克风在滚动 30 秒内最多恢复 3 次，每次先重开；失败后等待 500 ms，仅再试一次。拒绝隐私权限不重试；超限/再次失败明确停止并提示检查设置后重新开始。系统设备变化直接报错停止。麦克风 5 秒无任何数据包也进入有界恢复；系统 loopback 在没有播放声音时不产生包是正常状态。无设备、隐私拒绝、启动失败、数据丢失都有可读错误。
+
+## 第 4 线：浮窗与快捷键
+
+`OverlayWindow` 是可复用壳：Topmost、透明无边框卡片、`ShowActivated=false`，HWND 增加 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`，`WM_MOUSEACTIVATE` 返回 `MA_NOACTIVATE`。默认工作区右上方 24 DIP 边距，尺寸属性 min 400×240 / max 700×1000。所有定位/自动高度/贴边经过已有 `OverlayLayout.Fitted`，因此自动拟合保留 Core 的 900 高度上限；没有修改 Core 几何常量。DIP 与 Win32 物理像素按窗口 DPI 转换，Y 轴通过 `yCore = -top - height` 翻转，支持负坐标显示器。宿主 manifest 启用 PerMonitorV2；独立宿主也应声明 DPI awareness。
+
+`Configure(AppSettings)` 应在偏好变化时由 UI 线程调用，`ContentHeightChanged` 接受未来卡片内容高度。贴边隐藏复用 `OverlayHoverState`，右边缘停留 0.16 秒显示、离开 0.9 秒隐藏，交互重置计时；隐藏保留 HWND 和轮询以便跨显示器唤回。贴边关闭时允许拖动，打开时禁用自由拖动。这里只提供占位卡片，没有对话区、设置页、分栏 UI 或手动缩放手柄；既有 `OverlayLayout.Panes` 保留供未来完整 UI 使用。
+
+捕获排除由 `ExcludeOverlayFromCapture` 显式选择，默认 false。HWND 建立后调用 `SetWindowDisplayAffinity(hwnd, 0x00000011)`；关闭则调用 `WDA_NONE (0)`，DPI/显示器变化和句柄初始化时重新应用。`CaptureProtectionStatus` 暴露 HWND、请求标志、真实 BOOL 返回值和错误码；未有 HWND 时返回值为 null。API 成功只说明请求被接受，**没有证明 Teams / Zoom / 腾讯会议的共享画面隐藏成功**。Windows 10 2004 前的兼容行为也不同，见 [SetWindowDisplayAffinity 官方说明](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowdisplayaffinity)。需在真实会议客户端分别验收整屏/窗口共享；Topmost/tool-window 不等价于 Mac `canJoinAllSpaces`，不会自动固定到所有虚拟桌面，也不保证覆盖独占全屏、UAC 安全桌面或更高权限窗口。
+
+`HotkeyStore(IPreferenceStore)` 使用原键 `hotkeyCombos.v1` / `overlayHotkey.v1`，JSON 的角色名为 `reply` / `recap` / `followUp`，组合字段为 `keyCode` / `modifiers`。数值是 Windows VK / MOD，不是 Carbon 物理键码，不自动导入 Mac 数值。默认 Reply Ctrl+Alt+Space、Recap Ctrl+Alt+S、FollowUp Ctrl+Alt+X、显示/隐藏 Alt+H。跨全部角色检查唯一性；reset 仅在默认键空闲时生效；损坏或冲突的持久化快照回退默认值且读取不写盘。
+
+`Win32HotkeyRegistrar` 在运行 Dispatcher 的线程创建 message-only HWND；`WM_HOTKEY` 在该线程调用回调，设置 `MOD_NOREPEAT`。Store 改动自动整组重建，recording 时全部注销，禁用全部 conversation modes 后仍保留 overlay。注册冲突会撤销本次已成功的注册，给出组合和 Win32 错误码；Dispose 注销全部并销毁 HWND。重建换用新 ID，拒绝旧消息。详情见 [RegisterHotKey 官方说明](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey)。真实快捷键手感、焦点保持和与会议软件冲突不能靠 CI 验收。
+
+## 假源测试与留给第 2 线的 CI 步骤
+
+测试通过 `IAudioSourceFactory` 注入已知 PCM，不访问声卡；覆盖 16/24 kHz 字节时长、整数/float、下混、1 kHz 保真与高频混叠抑制、任意分块、同步发出、独立转换器、停止竞态和有界恢复。`ICaptureClock` 假时钟控制 500 ms 重试及 30 秒预算，不用真实等待。快捷键用假 registrar 验证收到的组合、no-repeat、整组回滚和回调；窗口用假 display-affinity API 验证 HWND/标志/错误，纯几何测试覆盖 DPI、负坐标、悬停时序。
+
+2026-11-12 第 4 线 Linux 最终验证：完整 solution Release 构建 **0 warnings / 0 errors**；Core **164 通过、0 跳过**，LocalInference **61 通过、2 个缺模型跳过**，Platform **72 通过、2 个 Windows 桌面探针跳过**，全部 0 失败。新增采样率测试位于 Platform.Tests，以保留原 Core 164 项回归测试。构建日志及三套 TRX 位于 `/workspace/codex/livecopilot-windows/validation/`，文件名均带 `line4`，没有覆盖 line1–3 日志。
+
+`Platform.Tests` 同时编译 net8.0 / net8.0-windows。Linux 只运行 `-f net8.0`，两项 HWND / RegisterHotKey 探针显式 skip。Windows CI 可运行 `-f net8.0-windows`，假源测试同样不需要麦克风；默认不设置 `LIVECOPILOT_WINDOWS_INTEGRATION`，两项交互探针也 skip。真机可设置该变量为 `1`，运行 `--filter FullyQualifiedName~WindowsIntegrationTests`；特殊 Ctrl+Alt+Shift+F24 探针被外部程序占用时会给出明确 Win32 失败信息，需关闭冲突程序。此变量不应在无交互桌面的 runner 中启用。本批未添加真实 WASAPI 集成测试，声卡、隐私弹窗、切换设备和进程排除均留待真机验收。
+
+本批**未编辑 `.github/workflows/`**。第 2 线可在已有 checkout 和 setup-dotnet 8.0.x 之后按以下精确步骤接入（PowerShell，工作目录 `Windows`）：
+
+```powershell
+$env:LIVECOPILOT_INFERENCE_CPU = "1"
+dotnet restore LiveCopilot.Windows.sln
+dotnet build LiveCopilot.Windows.sln -c Release --no-restore
+dotnet test tests/LiveCopilot.Core.Tests/LiveCopilot.Core.Tests.csproj -c Release --no-build --logger "trx;LogFileName=Core.Release.line4.trx" --results-directory TestResults
+dotnet test tests/LiveCopilot.LocalInference.Tests/LiveCopilot.LocalInference.Tests.csproj -c Release --no-build --logger "trx;LogFileName=LocalInference.Release.line4.trx" --results-directory TestResults
+dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -c Release -f net8.0-windows --no-build --logger "trx;LogFileName=Platform.Windows.Release.line4.trx" --results-directory TestResults
+```
+
+每条命令非零退出码应使 job 失败；使用已有 `actions/upload-artifact` 步骤在 `if: always()` 下收集 `Windows/TestResults/*.trx`，不要下载模型或启用真机探针。上面是交接说明，不是本分支新增 workflow。
 
 ## 存储和适配边界
 
@@ -162,8 +228,9 @@ Linux 的 Core 测试通过不构成 WPF 编译、桌面交互或 Windows 原生
 
 ## 明确不在本批范围
 
-- 不实现 WASAPI、全局快捷键、悬浮窗、`SetWindowDisplayAffinity` 或其它桌面原生集成。现有 `OverlayLayout` 仅为纯几何与状态计算。
-- 不移植或接入 Laya / MLX、决策模型分类器；不启动第 4 线。第 3 线只提供可调用的本地推理库，尚未接入 WPF 空壳。
+- 不实现完整 OverlayView 对话 UI、设置、入门或文档导入 UI；第 4 线仅提供平台能力和浮窗壳。
+- Laya / MLX、决策模型分类器、AppCoordinator 与云 Live providers 留待后续；本地推理尚未接入浮窗壳。
+- WASAPI 真机设备/权限/进程排除、会议共享隐藏和全局快捷键体验尚未验收；没有签名、安装器或发行打包。
 - 不翻译 `AppleSpeech*`、`AppleLiveProvider`、`Laya*`、`AudioFlowMonitor`、`EchoMonitor`、`AppCoordinator`。
 - 不新增 `OnboardingStore` 或 `DocumentImport`，不实现真实服务凭据管理。既有设置中的云服务兼容字段不代表真实网络服务已经接入。
 - 不修改 Mac 源码或资源，不进行签名、推送、PR、远程配置修改。
