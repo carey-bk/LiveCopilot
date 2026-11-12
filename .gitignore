@@ -53,3 +53,14 @@ StealthApp/Resources/LayaRuntime/ResponseModel/
 # Local verification build products
 StealthApp/build-install-tests/
 StealthApp/build-layout-release/
+
+# .NET / Visual Studio (Windows port)
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userosscache
+.vs/
+*.booproj
+nuget.exe
+TestResults/

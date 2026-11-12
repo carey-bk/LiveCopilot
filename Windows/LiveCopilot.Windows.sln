@@ -1,0 +1,43 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{AC795C1C-6251-44CD-8D8A-294DAB0F5E62}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LiveCopilot.Core", "src\LiveCopilot.Core\LiveCopilot.Core.csproj", "{1E50C8CA-225B-4CF6-9A12-D0271FE779CC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LiveCopilot.App", "src\LiveCopilot.App\LiveCopilot.App.csproj", "{20B09DA5-8A2B-4099-A5CA-7D5E6F08DA92}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{96EA155B-66A1-4D94-BEF5-5A8F5D01D960}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LiveCopilot.Core.Tests", "tests\LiveCopilot.Core.Tests\LiveCopilot.Core.Tests.csproj", "{7BB0FD20-BCB6-44C7-AEEA-E1507BB69FEC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1E50C8CA-225B-4CF6-9A12-D0271FE779CC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1E50C8CA-225B-4CF6-9A12-D0271FE779CC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1E50C8CA-225B-4CF6-9A12-D0271FE779CC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1E50C8CA-225B-4CF6-9A12-D0271FE779CC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{20B09DA5-8A2B-4099-A5CA-7D5E6F08DA92}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{20B09DA5-8A2B-4099-A5CA-7D5E6F08DA92}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{20B09DA5-8A2B-4099-A5CA-7D5E6F08DA92}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{20B09DA5-8A2B-4099-A5CA-7D5E6F08DA92}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7BB0FD20-BCB6-44C7-AEEA-E1507BB69FEC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7BB0FD20-BCB6-44C7-AEEA-E1507BB69FEC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7BB0FD20-BCB6-44C7-AEEA-E1507BB69FEC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7BB0FD20-BCB6-44C7-AEEA-E1507BB69FEC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{1E50C8CA-225B-4CF6-9A12-D0271FE779CC} = {AC795C1C-6251-44CD-8D8A-294DAB0F5E62}
+		{20B09DA5-8A2B-4099-A5CA-7D5E6F08DA92} = {AC795C1C-6251-44CD-8D8A-294DAB0F5E62}
+		{7BB0FD20-BCB6-44C7-AEEA-E1507BB69FEC} = {96EA155B-66A1-4D94-BEF5-5A8F5D01D960}
+	EndGlobalSection
+EndGlobal
