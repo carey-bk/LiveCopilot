@@ -13,6 +13,44 @@
                 <Button Content="清除" Padding="12,6" Margin="8,0,0,0" Click="ClearApiKey" />
                 <TextBlock x:Name="CredentialStatusText" Text="未保存" VerticalAlignment="Center" Margin="8,0,0,0" />
             </StackPanel>
+            <StackPanel x:Name="SharedKeyPanel" Margin="0,8,0,0" Visibility="Collapsed">
+                <TextBlock Text="知识库使用共享 OpenAI 密钥（独立于分析服务密钥）" />
+                <StackPanel Orientation="Horizontal">
+                    <PasswordBox x:Name="SharedApiKeyBox" Width="240" Padding="6" />
+                    <Button Content="保存共享密钥" Padding="12,6" Margin="8,0,0,0" Click="SaveSharedApiKey" />
+                    <Button Content="清除" Padding="12,6" Margin="8,0,0,0" Click="ClearSharedApiKey" />
+                </StackPanel>
+            </StackPanel>
+            <TextBlock Text="本地知识库" FontSize="20" Margin="0,20,0,8" />
+            <WrapPanel x:Name="KnowledgeSettingsPanel">
+                <TextBlock Text="回答模式" VerticalAlignment="Center" />
+                <ComboBox x:Name="KnowledgeModeBox" Width="130" Margin="8,0,16,0" SelectionChanged="KnowledgeSettingsChanged">
+                    <ComboBoxItem Content="通用" /><ComboBoxItem Content="混合" /><ComboBoxItem Content="仅知识库" />
+                </ComboBox>
+                <TextBlock Text="Embedding 服务" VerticalAlignment="Center" />
+                <ComboBox x:Name="EmbeddingServiceBox" Width="130" Margin="8,0,0,0" SelectionChanged="KnowledgeSettingsChanged">
+                    <ComboBoxItem Content="OpenAI" /><ComboBoxItem Content="本地 BGE-M3" />
+                </ComboBox>
+            </WrapPanel>
+            <TextBlock x:Name="EmbeddingModelText" Margin="0,6,0,0" TextWrapping="Wrap" Foreground="DimGray" />
+            <TextBlock Text="OpenAI 会发送文档分块与检索问题；本地 BGE-M3 不上传 embedding 文本。命中的来源会随回答请求发送给分析服务。" TextWrapping="Wrap" Foreground="DimGray" Margin="0,6,0,0" />
+            <StackPanel x:Name="KnowledgeActionsPanel" Orientation="Horizontal" Margin="0,8,0,8">
+                <Button Content="导入文档" Padding="12,6" Click="ImportDocuments" />
+                <Button Content="重新索引" Padding="12,6" Margin="8,0,0,0" Click="ReindexDocument" />
+                <Button Content="删除" Padding="12,6" Margin="8,0,0,0" Click="DeleteDocument" />
+            </StackPanel>
+            <ListView x:Name="DocumentsList" Height="160" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="名称" Width="160" DisplayMemberBinding="{Binding Name}" />
+                        <GridViewColumn Header="状态" Width="130" DisplayMemberBinding="{Binding StatusLabel}" />
+                        <GridViewColumn Header="分块数" Width="65" DisplayMemberBinding="{Binding ChunkCount}" />
+                        <GridViewColumn Header="Embedding 模型" Width="250" DisplayMemberBinding="{Binding EmbeddingModel}" />
+                    </GridView>
+                </ListView.View>
+            </ListView>
+            <ProgressBar x:Name="KnowledgeProgress" Minimum="0" Maximum="100" Height="6" Margin="0,8,0,0" />
+            <TextBlock x:Name="KnowledgeMessageText" TextWrapping="Wrap" Margin="0,6,0,0" />
             <StackPanel Orientation="Horizontal" Margin="0,20,0,16">
                 <Button x:Name="StartButton" Content="开始聆听" Padding="20,8" Click="StartListening" IsEnabled="False" />
                 <Button x:Name="StopButton" Content="停止" Padding="20,8" Margin="12,0,0,0" Click="StopListening" IsEnabled="False" />

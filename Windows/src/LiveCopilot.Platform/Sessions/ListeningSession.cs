@@ -19,6 +19,8 @@ public sealed class ListeningSession : IAsyncDisposable
     private readonly AppSettings settings;
     private readonly ICaptureClock? clock;
     private readonly Func<IReasoningProvider>? reasoningFactory;
+    private readonly IKnowledgeRetriever? knowledge;
+    private readonly Func<AppSettings, IEmbeddingProvider>? embeddingFactory;
     private readonly TimeSpan answerTimeout;
     private SuggestionRun? suggestion;
     private ListeningSnapshot snapshot = new();
@@ -31,7 +33,8 @@ public sealed class ListeningSession : IAsyncDisposable
     public ListeningSession(IAudioSourceFactory audioFactory,
         Func<Speaker, ListeningService, ListeningProvider> providerFactory, AppSettings settings,
         TranscriptStore? transcript = null, SessionStore? sessions = null, ICaptureClock? clock = null,
-        Func<IReasoningProvider>? reasoningFactory = null, TimeSpan? answerTimeout = null)
+        Func<IReasoningProvider>? reasoningFactory = null, TimeSpan? answerTimeout = null,
+        IKnowledgeRetriever? knowledgeRetriever = null, Func<AppSettings, IEmbeddingProvider>? embeddingFactory = null)
     {
         this.audioFactory = audioFactory;
         this.providerFactory = providerFactory;
@@ -40,8 +43,22 @@ public sealed class ListeningSession : IAsyncDisposable
         this.sessions = sessions;
         this.clock = clock;
         this.reasoningFactory = reasoningFactory;
+        knowledge = knowledgeRetriever;
+        this.embeddingFactory = embeddingFactory;
         this.answerTimeout = answerTimeout ?? TimeSpan.FromSeconds(90);
         if (this.answerTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(answerTimeout));
+    }
+
+    /// Applies to the next request; each active request retains its own selection.
+    public void ConfigureKnowledge(AppSettings value)
+    {
+        lock (sync)
+        {
+            settings.KnowledgeMode = value.KnowledgeMode;
+            settings.EmbeddingService = value.EmbeddingService;
+            settings.EmbeddingModel = value.EmbeddingModel;
+            settings.RetrievalCount = Math.Clamp(value.RetrievalCount, 1, 12);
+        }
     }
 
     /// Idempotent while active. Cancellation cancels this start; StopAsync also interrupts
@@ -235,7 +252,8 @@ public sealed class ListeningSession : IAsyncDisposable
             if (disposed || snapshot.IsStopping || !settings.IsEnabled(mode)) return;
             previous = InterruptSuggestion();
             var label = mode switch { SuggestionMode.Reply => "回答", SuggestionMode.Recap => "总结", _ => "追问" };
-            snapshot = snapshot with { LastRequestedMode = mode, SuggestionText = "", SuggestionError = null, SuggestionIsLoading = false };
+            snapshot = snapshot with { LastRequestedMode = mode, SuggestionText = "", SuggestionError = null,
+                SuggestionIsLoading = false, Sources = [], Warning = null };
             if (reasoningFactory is null)
                 snapshot = snapshot with { SuggestionStatus = $"已请求{label}，推理服务尚未接入" };
             else
@@ -262,7 +280,7 @@ public sealed class ListeningSession : IAsyncDisposable
                         BilingualAnswers = settings.BilingualAnswers, AdditionalAnswerInstructions = settings.AdditionalAnswerInstructions,
                         LanguageQuestion = latest
                     };
-                    next = new();
+                    next = new(settings with { });
                     next.Store.Begin(mode, query);
                     next.Store.Trace = new();
                     next.Store.Mark(PipelineStage.AnalysisDispatched);
@@ -306,7 +324,8 @@ public sealed class ListeningSession : IAsyncDisposable
     private void PublishSuggestion(SuggestionRun run, string status) => snapshot = snapshot with
     {
         SuggestionStatus = status, SuggestionText = run.Store.Text,
-        SuggestionIsLoading = run.Store.IsLoading, SuggestionError = run.Store.Error
+        SuggestionIsLoading = run.Store.IsLoading, SuggestionError = run.Store.Error,
+        Sources = run.Store.Sources, Warning = run.Store.Warning
     };
 
     private async Task WatchSuggestionAsync(SuggestionRun run)
@@ -330,7 +349,18 @@ public sealed class ListeningSession : IAsyncDisposable
         try
         {
             run.Token.ThrowIfCancellationRequested();
-            if (answer.KnowledgeMode == KnowledgeMode.KnowledgeBaseOnly)
+            answer = answer with { Sources = await RetrieveEvidenceAsync(run, answer).ConfigureAwait(false) };
+            run.Token.ThrowIfCancellationRequested();
+            lock (sync)
+            {
+                if (suggestion != run) return;
+                run.Store.Sources = answer.Sources;
+                run.Store.Mark(PipelineStage.RagComplete);
+                PublishSuggestion(run, "正在等待回答…");
+            }
+            Changed?.Invoke();
+            var missingEvidence = answer.KnowledgeMode == KnowledgeMode.KnowledgeBaseOnly && answer.Sources.Count == 0;
+            if (missingEvidence)
             {
                 var missing = answer.BilingualAnswers
                     ? AnswerLanguage.Chinese.MissingEvidence(answer.Query.Question) + "\n" + AnswerLanguage.English.MissingEvidence(answer.Query.Question)
@@ -376,7 +406,7 @@ public sealed class ListeningSession : IAsyncDisposable
                 if (suggestion != run) return;
                 run.Store.Mark(PipelineStage.AnswerComplete);
                 run.Store.Finish();
-                PublishSuggestion(run, answer.KnowledgeMode == KnowledgeMode.KnowledgeBaseOnly ? "未找到知识库证据" : "回答已完成");
+                PublishSuggestion(run, missingEvidence ? "未找到知识库证据" : "回答已完成");
                 suggestion = null;
             }
             Changed?.Invoke();
@@ -401,6 +431,60 @@ public sealed class ListeningSession : IAsyncDisposable
             try { await run.Cancellation.CancelAsync().ConfigureAwait(false); }
             catch (AggregateException) { }
             run.Cancellation.Dispose();
+        }
+    }
+
+    private async Task<ValueList<RetrievedSource>> RetrieveEvidenceAsync(SuggestionRun run, AnswerRequest answer)
+    {
+        if (!answer.KnowledgeMode.UsesKnowledgeBase()) return [];
+        var started = PipelineTrace.Uptime;
+        try
+        {
+            if (knowledge is null) throw new CopilotException("Knowledge unavailable");
+            var documents = knowledge.Documents();
+            run.Token.ThrowIfCancellationRequested();
+            if (!documents.Any(d => d.ChunkCount > 0)) return [];
+            var identity = run.Settings.SelectedEmbeddingIdentity;
+            IReadOnlyList<float>? vector = null;
+            if (documents.Any(d => d.ChunkCount > 0 && d.EmbeddingModel == identity))
+            {
+                try
+                {
+                    lock (sync) { if (suggestion != run) return []; run.Store.Mark(PipelineStage.EmbeddingStart); }
+                    var provider = embeddingFactory?.Invoke(run.Settings) ?? throw new CopilotException("Embedding unavailable");
+                    if (provider.Model != identity) throw new CopilotException("Embedding identity mismatch");
+                    var vectors = await provider.EmbedAsync([answer.Query.Semantic], run.Token).ConfigureAwait(false);
+                    run.Token.ThrowIfCancellationRequested();
+                    if (vectors.Count != 1 || vectors[0].Count == 0 || vectors[0].Any(v => !float.IsFinite(v)))
+                        throw new CopilotException("Invalid query vector");
+                    vector = vectors[0];
+                    lock (sync) { if (suggestion != run) return []; run.Store.Mark(PipelineStage.EmbeddingComplete); }
+                }
+                catch (Exception)
+                {
+                    run.Token.ThrowIfCancellationRequested();
+                    lock (sync) { if (suggestion != run) return []; run.Store.Warning = "语义检索不可用，已改用本地关键词检索"; }
+                }
+            }
+            run.Token.ThrowIfCancellationRequested();
+            lock (sync) { if (suggestion != run) return []; }
+            var limit = Math.Clamp(run.Settings.RetrievalCount, 1, 12);
+            return knowledge.Retrieve(answer.Query, vector, identity, limit).Take(limit).ToValueList();
+        }
+        catch (Exception)
+        {
+            run.Token.ThrowIfCancellationRequested();
+            lock (sync)
+            {
+                if (suggestion != run) return [];
+                run.Store.Warning = answer.KnowledgeMode == KnowledgeMode.Hybrid
+                    ? "知识库不可用，将根据通用知识和对话继续回答。" : "知识库不可用，仅知识库模式无法在没有证据时回答。";
+            }
+            return [];
+        }
+        finally
+        {
+            lock (sync) { if (suggestion == run) run.Store.RetrievalMs = (int)((PipelineTrace.Uptime - started) * 1000); }
         }
     }
 
@@ -511,10 +595,11 @@ public sealed class ListeningSession : IAsyncDisposable
 
     private sealed class SuggestionRun
     {
+        public AppSettings Settings { get; }
         public SuggestionStore Store { get; } = new();
         public CancellationTokenSource Cancellation { get; } = new();
         public CancellationToken Token { get; }
-        public SuggestionRun() { Token = Cancellation.Token; }
+        public SuggestionRun(AppSettings settings) { Settings = settings; Token = Cancellation.Token; }
     }
 
     private sealed class Run(IAudioSourceFactory factory, ICaptureClock? clock)

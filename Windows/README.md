@@ -1,6 +1,6 @@
-# LiveCopilot Windows：本地聆听、云端建议与凭据存储（第 6 线）
+# LiveCopilot Windows：本地聆听、云端建议与文档知识库（第 7 线）
 
-本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。第 4 线增加 WASAPI 音频、WPF 浮窗壳和全局快捷键；第 5 线通过可测试的 `ListeningSession` 连接双路采集与本地语音识别。第 6 线接入手动云端回答 / 总结 / 追问、流式浮窗正文及 Windows 凭据存储。云端听写和完整客户端 UI 尚未接入。原有 `StealthApp/` 源码与资源保持不变。
+本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。第 4 线增加 WASAPI 音频、WPF 浮窗壳和全局快捷键；第 5 线通过可测试的 `ListeningSession` 连接双路采集与本地语音识别。第 6 线接入手动云端回答 / 总结 / 追问、流式浮窗正文及 Windows 凭据存储；第 7 线增加文档导入、知识库检索和浮窗来源。云端听写和完整客户端 UI 尚未接入。原有 `StealthApp/` 源码与资源保持不变。
 
 ## 解决方案结构
 
@@ -189,13 +189,51 @@ Linux 可以交叉编译 WPF，但不能运行窗口；假源测试通过不构�
 
 每次请求有独立的 `SuggestionStore`，使用 `AppendDelta` 的引用清理，并通过同一会话锁发布不可变快照。浮窗按 `AnswerFontSize` 显示状态及逐步到达的答案正文，不显示 `reasoning_content` 或思考正文。新请求会取消并隔离旧请求；停止、释放和重新开始聆听也会取消旧建议。90 秒超时显示“回答超时，请手动重试。”，保留已到达的部分正文，迟到增量不会覆盖新答案。主窗口“停止”也可取消停止聆听后发起的建议。启动应用不自动聆听、不发送建议请求；即使设置中的 `AutomaticSuggestions` 为 true，本批也只响应手动快捷键。
 
-本批**没有文档 RAG**：Sources 始终为空。General / Hybrid 按现有 `AnswerRequest.Input` 明确告知 `No local evidence retrieved.`；KnowledgeBaseOnly 直接使用既有 `AnswerLanguage.MissingEvidence`（支持双语）并结束，不读取密钥、不调用模型。建议正文当前仅在浮窗中以纯文本显示，不解析 Markdown，也不写入会话回答历史；原有正式转写保存保持不变。
+第 6 线验收时尚未接入文档 RAG，Sources 始终为空；第 7 线已按下节接入。无证据时，General / Hybrid 的 `AnswerRequest.Input` 仍明确告知 `No local evidence retrieved.`；KnowledgeBaseOnly 使用既有 `AnswerLanguage.MissingEvidence`（支持双语）并结束，不创建分析提供器、不调用回答模型。建议正文当前仅在浮窗中以纯文本显示，不解析 Markdown，也不写入会话回答历史；原有正式转写保存保持不变。
 
 Core 的 `IHttpTransport` 可注入，真实 `HttpClientTransport` 使用 90 秒期限并在流式非 2xx 时最多读取 8192 字节错误体。UTF-8 framer 保留 LF / CRLF / CR 和空行，SSE 按空行分发、多 `data:` 行以换行拼接，单个事件最多 1,048,576 字节。无效 UTF-8、超大事件、缺少完成信号和中断都有明确错误；HTTP / in-stream 服务错误统一使用现有 `ServiceHTTPFailure` 安全分类，不展示服务原始错误体。
 
 Core.Tests 使用 fake transport / fake `HttpMessageHandler` 和固定字节，不发真实 HTTP；测试请求字段、各厂商差异、密钥路由、环境回退、SSE、错误和内存凭据。Platform.Tests 使用可控制增量及故意忽略取消的 fake provider，验证流式快照、旧流隔离、停止 / 释放、超时、空对话和无证据路径。新增测试均在已有项目，CI 自动发现，无需修改 `.github/workflows/`。Windows Credential Manager 和 WPF 仅完成交叉编译，本批未运行真实 Windows 凭据 / 桌面验收，也未调用云服务或下载权重。
 
 2026-11-13 第 6 线 Linux 验收：solution Release **0 warnings / 0 errors**；Core **241 通过**（原 164 + 新增 77），LocalInference **61 通过、2 跳过**，Platform `net8.0` **129 通过、2 跳过**（原 109 + 新增 20），全部 **0 失败**。证据位于 `/workspace/codex/livecopilot-windows/validation/` 的 `Build.Release.line6.log`、`Core.Release.line6.trx`、`LocalInference.Release.line6.trx`、`Platform.Release.line6.trx`；未覆盖 `line5` 或更早产物。详细命令和限制见 `/workspace/codex/livecopilot-windows/REPORT_REASONING.md`。
+
+## 第 7 线：文档导入与知识库检索
+
+1. 在宿主的「本地知识库」区域选择回答模式：通用、混合或仅知识库。选择 OpenAI 或本地 BGE-M3 embedding；选择通过已有 `AppSettings` / `FilePreferenceStore` 保存，重启后恢复。OpenAI 默认模型为 `text-embedding-3-small`，当前模型身份显示在下方；本批不提供完整模型设置页。
+2. OpenAI embedding 使用共享 OpenAI 密钥 `CredentialReference.Live`，缺失时回退 `OPENAI_API_KEY`。分析服务使用独立密钥时，界面另有「保存共享密钥」输入行；分析服务为共享 OpenAI 时复用原有密钥行。密钥仍存 Windows Credential Manager，不写入偏好文件。清除保存的密钥不会清除进程环境变量。
+3. 点击「导入文档」多选本地 PDF、MD、Markdown、TXT、DOCX。文档列表显示名称、状态、分块数和 embedding 模型；操作期间禁用导入、重建、删除和知识库选项，显示当前文件与进度。选中文档可重新索引或删除；删除仅移除知识库内的副本和索引，不删除外部原文件。多文件批次按顺序处理，某个文件失败时停止后续导入，之前成功的文件保留。
+4. 开始聆听并积累对话后，使用回答 `Ctrl+Alt+Space`、总结 `Ctrl+Alt+S` 或追问 `Ctrl+Alt+X`。浮窗在正文下方显示检索来源（`[S编号] 文档名 · 第 N 页`），以及降级警告；TXT/MD/DOCX 不虚构页码。来源数量受 `RetrievalCount` 限制，默认 5；编号只来自实际命中的分块，继续复用 `CitationPolicy` 去除越界引用。
+
+知识库目录为 `%LOCALAPPDATA%/LiveCopilot/Knowledge`：`knowledge.sqlite` 保存元数据、FTS5 和向量，`originals/<文档 ID>/` 保存原文副本。切换 embedding 服务/模型不会自动重新索引；旧索引仍可做关键词检索，需要语义检索时选中文档重建。复用既有 24 条一批、最多 4,000 分块、事务替换和失败保留旧索引的行为。导入本地 BGE-M3 前须已有通过校验的模型安装；未安装会中文提示，本界面不下载模型。
+
+| 模式 | 检索及回答行为 |
+| --- | --- |
+| 通用 | 会话请求不读取文档、不创建 embedding 提供器，按通用知识与对话回答。 |
+| 混合 | 有 `ChunkCount > 0` 的文档才检索；仅模型身份匹配时对 `RetrievalQuery.Semantic` 计算向量。语义失败警告「语义检索不可用，已改用本地关键词检索」；数据库失败警告后继续通用回答。 |
+| 仅知识库 | 检索流程与混合相同；无来源或数据库失败时使用 MissingEvidence，不创建分析提供器、不调用回答模型。 |
+
+`IKnowledgeRetriever` 与 embedding 工厂使会话可注入假实现，Platform 不依赖 LocalInference、WPF 或 NAudio。当前请求保留发起时的知识库设置，设置修改影响下次请求。原有替换请求、停止、销毁、90 秒超时和迟到结果拒绝逻辑继续生效，期限包含检索时间。
+
+解析器位于 net8.0 的 `LiveCopilot.Platform/Knowledge`，固定使用纯托管 `PdfPig 0.1.11`（命名空间 UglyToad.PdfPig）逐页提取 PDF；依赖不加到 Core。DOCX 直接用 `ZipArchive` 与禁用 DTD/外部实体的 XML reader 提取正文段落和表格单元格，不引入 OpenXml SDK。TXT/MD 支持严格 UTF-8（可带 BOM）、UTF-16 LE/BE（必须带 BOM）。只接受本地支持格式的常规文件，拒绝目录、文件链接及网络路径，按规范化路径保持顺序去重。文件超过 50,000,000 字节拒绝；DOCX 解压正文另有相同上限。加密/损坏文件给出中文错误；扫描版 PDF 和空文本提示先 OCR，本批不实现 OCR、复杂版面还原、DOCX 图片/批注/页眉页脚或页码推断。
+
+OpenAI 会接收导入文档分块和检索问题；本地 embedding 不上传这部分文本。检索命中的原文会随 `AnswerRequest` 发送给所选分析服务，本地 embedding 不代表回答模型离线。词法检索保留原有中文二元词与覆盖率门槛，语义结果保留原有相似度门槛；来源是检索候选，不保证每个候选都支持模型的每一句话。
+
+新增测试都放在原 Core.Tests / Platform.Tests 内，现有 CI 自动发现。测试仅用假 HTTP / embedding / reasoning、临时 SQLite 和运行时生成的 PDF/DOCX/TXT；包括中文 PDF ToUnicode、密码加密 PDF、UTF-16、大小限制、非法输入、三模式、模型身份、回退、取消/超时与来源显示，不下载字体、模型或二进制夹具。Linux 完成 WPF 交叉编译，文件选择器、凭据管理器和真实浮窗视觉仍需 Windows 真机复测。
+
+第 7 线证据写入 `/workspace/codex/livecopilot-windows/validation/` 的 `Build.Release.line7.log`、`Core.Release.line7.trx`、`LocalInference.Release.line7.trx`、`Platform.Release.line7.trx`、`Files.line7.txt`，不覆盖 line5/line6。完整命令、计数与限制见 `/workspace/codex/livecopilot-windows/REPORT_KNOWLEDGE.md`。已有依赖缓存时可离线运行（工作目录 `Windows`）：
+
+本轮 Linux Release 验收：完整 solution（含 WPF App）**0 warnings / 0 errors**；Core **273 通过**（241 + 32），LocalInference **61 通过、2 跳过**，Platform `net8.0` **198 通过、2 跳过**（129 + 69），全部 **0 失败**。未改变原有测试断言或警告策略。
+
+```bash
+export PATH=/home/box/.dotnet:$PATH DOTNET_EnableWindowsTargeting=true
+export DOTNET_CLI_HOME=/tmp/dotnet-home LIVECOPILOT_INFERENCE_CPU=1
+# 本次禁用远程包源与在线 NuGet 审计，保持 TreatWarningsAsErrors。
+export RestoreSources=/tmp/dotnet-home/.nuget/packages NuGetAudit=false
+dotnet build LiveCopilot.Windows.sln -c Release
+dotnet test tests/LiveCopilot.Core.Tests/LiveCopilot.Core.Tests.csproj -c Release --no-build --no-restore
+dotnet test tests/LiveCopilot.LocalInference.Tests/LiveCopilot.LocalInference.Tests.csproj -c Release --no-build --no-restore
+dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -c Release -f net8.0 --no-build --no-restore
+```
 
 ## 第 4 线：音频契约与 WASAPI
 
@@ -269,14 +307,14 @@ dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -
 - `AnswerPolicy.swift` 的语义分布在 `AnswerLanguage`、`KnowledgeMode`、`QuestionScope`、`CitationPolicy` 和 `AnswerRequest` 等类型中，没有重复添加 `AnswerPolicy` 类。
 - 同步 Store 由调用方串行调用，对应 Swift 的 MainActor 约束。`TranscriptTranslationStore` 自行同步异步状态，并用取消与代次检查丢弃过期结果；其通知可能来自工作线程，未来 UI 适配层需要转到 Dispatcher。
 - `IReasoningProvider`、`IEmbeddingProvider`、`ILiveProvider` 契约保持不变。第 6 线 Core 新增可注入的云推理 HTTP 实现；LocalInference 仍只实现本地语音与 embedding，音频采集留在 Platform。分析模型、价格和性能数据是仓库内 Swift 版本的快照，不进行在线刷新。
-- `TextDocumentParser` 内置 TXT / Markdown（UTF-8、UTF-16）解析；PDF / DOCX 留给 `IDocumentParser` 适配器，没有引入 PDF 原生依赖。保留现有 KnowledgeIndex 的导入、重建和检索逻辑，没有新增 DocumentImport 编排层。
+- Core 的 `TextDocumentParser` 保留轻量 TXT / Markdown 解析；WPF 宿主使用第 7 线 Platform 的完整 `DocumentParser` 和 `DocumentImport.Validate`。PDF / DOCX 不需要原生解析器或 Office，KnowledgeIndex 继续负责导入、重建和检索。
 - 界面简体字典与繁体转换快照保留原文边界，不转换用户文档或对话。自动回答语言使用可注入的 `ITextLanguageDetector`，默认实现为跨平台启发式，与 Apple NaturalLanguage 的统计结果不保证逐句一致。
 
 ## 明确不在本批范围
 
-- 不实现完整 OverlayView 对话 UI、设置、入门或文档导入 UI；第 6 线只在聆听宿主上增加密钥行和手动建议正文。
-- Laya / Jev / MLX、决策模型分类器、AppCoordinator、云 Live providers、自动建议、文档导入与 RAG 检索留待后续；本批不实现 embeddings HTTP。
+- 不实现完整 OverlayView 对话 UI、设置或入门；第 7 线仅补充最小文档管理、知识模式和 embedding 服务选择。
+- Laya / Jev / MLX、决策模型分类器、完整 AppCoordinator、云 Live providers 和自动建议留待后续；文档导入、手动请求 RAG 与 OpenAI embeddings HTTP 已接入。
 - WASAPI 真机设备/权限/进程排除、会议共享隐藏和全局快捷键体验尚未验收；没有签名、安装器或发行打包。
 - 不翻译 `AppleSpeech*`、`AppleLiveProvider`、`Laya*`、`AudioFlowMonitor`、`EchoMonitor`、`AppCoordinator`。
-- 不新增 `OnboardingStore` 或 `DocumentImport`；后续仍需完整设置、决策模型、Windows 真机与真实云服务验收、签名及发行打包。
+- 不新增 `OnboardingStore`；后续仍需完整设置、决策模型、Windows 真机与真实云服务验收、签名及发行打包。
 - 不修改 Mac 源码或资源，不进行签名、推送、PR、远程配置修改。

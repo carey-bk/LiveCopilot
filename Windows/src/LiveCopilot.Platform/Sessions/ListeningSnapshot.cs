@@ -28,6 +28,8 @@ public sealed record ListeningSnapshot
     public string SuggestionText { get; init; } = "";
     public bool SuggestionIsLoading { get; init; }
     public string? SuggestionError { get; init; }
+    public ValueList<RetrievedSource> Sources { get; init; } = [];
+    public string? Warning { get; init; }
     public string Status => IsStopping ? "正在停止并保存…" : State switch
     {
         ListeningState.Idle => "未开始聆听",

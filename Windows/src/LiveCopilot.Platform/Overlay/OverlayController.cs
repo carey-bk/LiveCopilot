@@ -4,7 +4,14 @@ namespace LiveCopilot.Platform.Overlay;
 
 /// Small display contract; the host supplies status and marshals updates to the UI thread.
 public sealed record OverlayContent(string Status, ValueList<TranscriptLine> Lines,
-    string PartialThem = "", string PartialYou = "", string? SuggestionStatus = null, string SuggestionText = "");
+    string PartialThem = "", string PartialYou = "", string? SuggestionStatus = null, string SuggestionText = "")
+{
+    public ValueList<RetrievedSource> Sources { get; init; } = [];
+    public string? Warning { get; init; }
+    // Labels are derived only from retrieved chunks; model-generated source names are never used.
+    public string SourceText(int limit) => string.Join("\n", Sources.Take(Math.Clamp(limit, 1, 12)).Select((s, i) =>
+        $"[S{i + 1}] {s.Chunk.DocumentName}" + (s.Chunk.Page is { } page ? $" · 第 {page} 页" : "")));
+}
 
 /// Coordinates must all use the same units. Negating Y about screen zero supports
 /// negative-origin monitors; no primary-display height assumption is needed.

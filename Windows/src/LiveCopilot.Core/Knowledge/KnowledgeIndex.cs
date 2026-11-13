@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 namespace LiveCopilot.Core;
 
 /// SQLite operations are serialized; embedding awaits release the lock so deletion can proceed.
-public sealed class KnowledgeIndex : IDisposable
+public sealed class KnowledgeIndex : IKnowledgeRetriever, IDisposable
 {
     private readonly object gate = new();
     private readonly IDocumentParser parser;
