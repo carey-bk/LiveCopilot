@@ -1,6 +1,6 @@
-# LiveCopilot Windows：Core、本地推理、平台层与聆听会话（第 5 线）
+# LiveCopilot Windows：本地聆听、云端建议与凭据存储（第 6 线）
 
-本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。第 4 线增加 WASAPI 音频、WPF 浮窗壳和全局快捷键；第 5 线通过可测试的 `ListeningSession` 连接双路采集与本地语音识别，宿主可手动开始/停止并显示实时转写。云端听写、回答推理和完整客户端 UI 尚未接入。原有 `StealthApp/` 源码与资源保持不变。
+本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。第 4 线增加 WASAPI 音频、WPF 浮窗壳和全局快捷键；第 5 线通过可测试的 `ListeningSession` 连接双路采集与本地语音识别。第 6 线接入手动云端回答 / 总结 / 追问、流式浮窗正文及 Windows 凭据存储。云端听写和完整客户端 UI 尚未接入。原有 `StealthApp/` 源码与资源保持不变。
 
 ## 解决方案结构
 
@@ -12,8 +12,8 @@ Windows/
 │   ├── LiveCopilot.Core/                  # net8.0，不依赖 WPF / Apple 框架
 │   │   ├── Domain/                       # 领域类型、回答策略、问题状态机
 │   │   ├── Analysis/                     # 模型能力、58 项预设、价格与性能参考
-│   │   ├── Preferences/                  # AppSettings、可注入的偏好存储
-│   │   ├── Providers/                    # 提供器接口与事件类型
+│   │   ├── Preferences/                  # AppSettings、偏好存储、ICredentialStore / 内存凭据
+│   │   ├── Providers/                    # 接口、Responses / Chat Completions、HTTP / SSE
 │   │   ├── Localization/                 # 界面翻译与可替换的语言检测接口
 │   │   ├── Stores/                       # 会话、转写、建议、异步转写翻译
 │   │   ├── Knowledge/                    # SQLite 索引、文本解析、分块与检索
@@ -21,7 +21,7 @@ Windows/
 │   │   └── Resources/                    # 嵌入式 JSON 字典、提示词和分析数据
 │   ├── LiveCopilot.LocalInference/        # net8.0，sherpa-onnx / LLamaSharp，独立于 Core
 │   ├── LiveCopilot.Platform/              # net8.0，可注入音频/快捷键/浮窗逻辑及聆听会话
-│   ├── LiveCopilot.Platform.Windows/      # net8.0-windows，NAudio WASAPI、Win32、WPF 壳
+│   ├── LiveCopilot.Platform.Windows/      # net8.0-windows，WASAPI、Win32、WPF、Credential Manager
 │   └── LiveCopilot.App/                   # net8.0-windows，手动开始/停止的薄宿主
 ├── tests/
 │   ├── LiveCopilot.Core.Tests/            # xUnit，临时目录及合成提供器
@@ -168,7 +168,34 @@ Linux 可以交叉编译 WPF，但不能运行窗口；假源测试通过不构�
 
 快照包含 Idle / Starting / Listening / Failed / Stopped、停止中标记、错误、两路采集状态和 `SourceDescription`、后端、正式转写、partials、语音活动及最近建议模式。`Changed` 可从工作线程触发，订阅者必须快速返回，不能同步等待生命周期方法；宿主合并通知并通过 `Dispatcher.BeginInvoke` 读取最新快照。浮窗显示状态、最近 8 行 Them / You 转写及双方未定稿文本，内容变化重新测量并调用 `ContentHeightChanged`，超出高度时可滚动；保留置顶、不抢焦点、贴边隐藏与捕获排除逻辑。
 
-Ctrl+Alt+Space / Ctrl+Alt+S / Ctrl+Alt+X 分别记录回答/总结/追问请求，并显示“已请求…，推理服务尚未接入”；不会调用 `IReasoningProvider`、网络或生成假答案。禁用模式不响应，Alt+H 仍控制浮窗显示/隐藏。构造、打开浮窗和按建议快捷键均不会自动开始采集。
+第 5 线的 Ctrl+Alt+Space / Ctrl+Alt+S / Ctrl+Alt+X 只记录回答/总结/追问请求；第 6 线宿主现已提供真实推理工厂，行为见下文。独立使用 `ListeningSession` 而不注入推理工厂时，仍准确显示“已请求回答，推理服务尚未接入”等提示，正文为空。禁用模式不响应，Alt+H 仍控制浮窗显示/隐藏。构造、打开浮窗和按建议快捷键均不会自动开始采集。
+
+## 第 6 线：手动云端建议与 API 密钥
+
+主窗口的 API 密钥行只针对已加载设置的 `AnalysisCredentialReference()`。默认服务仍为 SharedOpenAI；没有服务选择器、模型目录页或完整设置页。输入 PasswordBox 后点击“保存”，密钥写入当前 Windows 用户的 **Windows Credential Manager generic credential**；输入框随即清空，只显示“已保存”或“未保存”。点击“清除”删除当前账户的凭据，空白输入保存也执行清除。凭据目标为 `LiveCopilot-Credentials-v1/` 加 `reference.Service + "|" + reference.Account`，账户使用同一拼接格式；不写明文文件、偏好 JSON 或日志。Credential Manager 失败会显示安全错误，本批未采用 DPAPI 文件回退。Core 的 `MemoryCredentialStore` 仅保存进程内数据，供 Linux 和测试使用。
+
+仅在当前凭据账户没有密钥时，宿主工厂才读取环境变量：SharedOpenAI / SeparateOpenAI 使用 `OPENAI_API_KEY`，DeepSeek 使用 `DEEPSEEK_API_KEY`。环境值不会自动保存；清除已保存密钥后，已有环境变量仍可作为回退。Qwen / GLM / Kimi / compatible 没有环境变量回退，不读取 Live 的密钥。不要把密钥写进命令记录、设置 JSON 或仓库。缺少密钥时提示“请先配置分析服务 API 密钥”，缺少模型或无效 endpoint 明确失败，不切换服务。
+
+`ReasoningProviderFactory` 支持：
+
+| 设置服务 | HTTP 协议与配置 |
+| --- | --- |
+| SharedOpenAI / SeparateOpenAI | `https://api.openai.com/v1/responses`，分别使用 Live / 独立分析账户；显式发送 `store: false`、`service_tier` 和规范化 effort |
+| DeepSeek | `https://api.deepseek.com/chat/completions`，独立密钥及 `DeepSeekEffort` |
+| Qwen / GLM / Kimi | 使用现有 preset connection 的 endpoint / model / thinking；只发送该厂商字段，Kimi K3 不发送 K2.x thinking 开关 |
+| Compatible | 使用设置中的 HTTPS base URL、API path 与 model，默认不附加厂商 thinking 或采样字段 |
+
+开始聆听并获得正式转写或 Them 未定稿文本后，按回答 / 总结 / 追问快捷键发起请求。Reply 使用最新 Them / partial 文本的简单启发式；另外两种使用 Mac 同款任务提示词。请求复用 `RetrievalQuery` 和 `AnswerRequest`，携带场景、语言、双语及附加指令；关闭 `IncludeConversation` 时不会把对话上下文放入请求或检索语义字段，但仍要求本地有可回答内容。空对话提示“还没有对话。先开始听写，或等有转写后再请求。”，不调用工厂或网络。
+
+每次请求有独立的 `SuggestionStore`，使用 `AppendDelta` 的引用清理，并通过同一会话锁发布不可变快照。浮窗按 `AnswerFontSize` 显示状态及逐步到达的答案正文，不显示 `reasoning_content` 或思考正文。新请求会取消并隔离旧请求；停止、释放和重新开始聆听也会取消旧建议。90 秒超时显示“回答超时，请手动重试。”，保留已到达的部分正文，迟到增量不会覆盖新答案。主窗口“停止”也可取消停止聆听后发起的建议。启动应用不自动聆听、不发送建议请求；即使设置中的 `AutomaticSuggestions` 为 true，本批也只响应手动快捷键。
+
+本批**没有文档 RAG**：Sources 始终为空。General / Hybrid 按现有 `AnswerRequest.Input` 明确告知 `No local evidence retrieved.`；KnowledgeBaseOnly 直接使用既有 `AnswerLanguage.MissingEvidence`（支持双语）并结束，不读取密钥、不调用模型。建议正文当前仅在浮窗中以纯文本显示，不解析 Markdown，也不写入会话回答历史；原有正式转写保存保持不变。
+
+Core 的 `IHttpTransport` 可注入，真实 `HttpClientTransport` 使用 90 秒期限并在流式非 2xx 时最多读取 8192 字节错误体。UTF-8 framer 保留 LF / CRLF / CR 和空行，SSE 按空行分发、多 `data:` 行以换行拼接，单个事件最多 1,048,576 字节。无效 UTF-8、超大事件、缺少完成信号和中断都有明确错误；HTTP / in-stream 服务错误统一使用现有 `ServiceHTTPFailure` 安全分类，不展示服务原始错误体。
+
+Core.Tests 使用 fake transport / fake `HttpMessageHandler` 和固定字节，不发真实 HTTP；测试请求字段、各厂商差异、密钥路由、环境回退、SSE、错误和内存凭据。Platform.Tests 使用可控制增量及故意忽略取消的 fake provider，验证流式快照、旧流隔离、停止 / 释放、超时、空对话和无证据路径。新增测试均在已有项目，CI 自动发现，无需修改 `.github/workflows/`。Windows Credential Manager 和 WPF 仅完成交叉编译，本批未运行真实 Windows 凭据 / 桌面验收，也未调用云服务或下载权重。
+
+2026-11-13 第 6 线 Linux 验收：solution Release **0 warnings / 0 errors**；Core **241 通过**（原 164 + 新增 77），LocalInference **61 通过、2 跳过**，Platform `net8.0` **129 通过、2 跳过**（原 109 + 新增 20），全部 **0 失败**。证据位于 `/workspace/codex/livecopilot-windows/validation/` 的 `Build.Release.line6.log`、`Core.Release.line6.trx`、`LocalInference.Release.line6.trx`、`Platform.Release.line6.trx`；未覆盖 `line5` 或更早产物。详细命令和限制见 `/workspace/codex/livecopilot-windows/REPORT_REASONING.md`。
 
 ## 第 4 线：音频契约与 WASAPI
 
@@ -241,15 +268,15 @@ dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -
 - 会话保留 Swift JSON 字段与枚举值，日期采用 ISO 8601；普通领域 JSON 日期采用 Swift 的 2001-01-01 参考时间。旧会话缺少 answers/schemaVersion 时保持旧语义，不在加载时迁移写回。未完成的命名只在内存中标为失败。
 - `AnswerPolicy.swift` 的语义分布在 `AnswerLanguage`、`KnowledgeMode`、`QuestionScope`、`CitationPolicy` 和 `AnswerRequest` 等类型中，没有重复添加 `AnswerPolicy` 类。
 - 同步 Store 由调用方串行调用，对应 Swift 的 MainActor 约束。`TranscriptTranslationStore` 自行同步异步状态，并用取消与代次检查丢弃过期结果；其通知可能来自工作线程，未来 UI 适配层需要转到 Dispatcher。
-- `IReasoningProvider`、`IEmbeddingProvider`、`ILiveProvider` 在 Core 中只定义契约。LocalInference 实现本地语音与 embedding；没有实现网络服务或音频采集。分析模型、价格和性能数据是仓库内 Swift 版本的快照，不进行在线刷新。
+- `IReasoningProvider`、`IEmbeddingProvider`、`ILiveProvider` 契约保持不变。第 6 线 Core 新增可注入的云推理 HTTP 实现；LocalInference 仍只实现本地语音与 embedding，音频采集留在 Platform。分析模型、价格和性能数据是仓库内 Swift 版本的快照，不进行在线刷新。
 - `TextDocumentParser` 内置 TXT / Markdown（UTF-8、UTF-16）解析；PDF / DOCX 留给 `IDocumentParser` 适配器，没有引入 PDF 原生依赖。保留现有 KnowledgeIndex 的导入、重建和检索逻辑，没有新增 DocumentImport 编排层。
 - 界面简体字典与繁体转换快照保留原文边界，不转换用户文档或对话。自动回答语言使用可注入的 `ITextLanguageDetector`，默认实现为跨平台启发式，与 Apple NaturalLanguage 的统计结果不保证逐句一致。
 
 ## 明确不在本批范围
 
-- 不实现完整 OverlayView 对话 UI、设置、入门或文档导入 UI；第 5 线只增加聆听控制与转写卡片。
-- Laya / MLX、决策模型分类器、AppCoordinator、云 Live providers 与回答推理留待后续；本批仅接入本地语音识别。
+- 不实现完整 OverlayView 对话 UI、设置、入门或文档导入 UI；第 6 线只在聆听宿主上增加密钥行和手动建议正文。
+- Laya / Jev / MLX、决策模型分类器、AppCoordinator、云 Live providers、自动建议、文档导入与 RAG 检索留待后续；本批不实现 embeddings HTTP。
 - WASAPI 真机设备/权限/进程排除、会议共享隐藏和全局快捷键体验尚未验收；没有签名、安装器或发行打包。
 - 不翻译 `AppleSpeech*`、`AppleLiveProvider`、`Laya*`、`AudioFlowMonitor`、`EchoMonitor`、`AppCoordinator`。
-- 不新增 `OnboardingStore` 或 `DocumentImport`，不实现真实服务凭据管理。既有设置中的云服务兼容字段不代表真实网络服务已经接入。
+- 不新增 `OnboardingStore` 或 `DocumentImport`；后续仍需完整设置、决策模型、Windows 真机与真实云服务验收、签名及发行打包。
 - 不修改 Mac 源码或资源，不进行签名、推送、PR、远程配置修改。

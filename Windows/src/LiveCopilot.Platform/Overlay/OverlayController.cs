@@ -4,7 +4,7 @@ namespace LiveCopilot.Platform.Overlay;
 
 /// Small display contract; the host supplies status and marshals updates to the UI thread.
 public sealed record OverlayContent(string Status, ValueList<TranscriptLine> Lines,
-    string PartialThem = "", string PartialYou = "", string? SuggestionStatus = null);
+    string PartialThem = "", string PartialYou = "", string? SuggestionStatus = null, string SuggestionText = "");
 
 /// Coordinates must all use the same units. Negating Y about screen zero supports
 /// negative-origin monitors; no primary-display height assumption is needed.

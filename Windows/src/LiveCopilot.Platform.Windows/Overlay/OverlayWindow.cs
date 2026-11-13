@@ -33,6 +33,7 @@ public sealed class OverlayWindow : Window
     private readonly TextBlock partialThem = new() { Foreground = Brushes.LightSkyBlue, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock partialYou = new() { Foreground = Brushes.LightGreen, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock suggestionText = new() { Foreground = Brushes.LightGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) };
+    private readonly TextBlock answerText = new() { Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
     public CaptureProtectionStatus CaptureProtectionStatus => protection.Status;
     public event Action<CaptureProtectionStatus>? CaptureProtectionChanged;
     public bool EdgeHidden => controller.Hidden;
@@ -57,6 +58,7 @@ public sealed class OverlayWindow : Window
         card.Children.Add(partialThem);
         card.Children.Add(partialYou);
         card.Children.Add(suggestionText);
+        card.Children.Add(answerText);
         Content = new Border
         {
             CornerRadius = new CornerRadius(16), Padding = new Thickness(24),
@@ -120,6 +122,8 @@ public sealed class OverlayWindow : Window
         partialYou.Text = value.PartialYou.Length == 0 ? "" : "You · 我（未定稿）  " + value.PartialYou;
         partialThem.FontSize = partialYou.FontSize = settings.TranscriptFontSize;
         suggestionText.Text = value.SuggestionStatus ?? "";
+        answerText.Text = value.SuggestionText;
+        answerText.FontSize = settings.AnswerFontSize;
         MeasureContent();
     }
     private void MeasureContent()

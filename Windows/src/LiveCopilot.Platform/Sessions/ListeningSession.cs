@@ -5,7 +5,7 @@ namespace LiveCopilot.Platform.Sessions;
 
 /// Owns the injected stores exclusively until disposal. Provider events serialize store
 /// access, while lifecycle operations serialize separately. No external call is made with
-/// the state lock held (except the owned synchronous TranscriptStore).
+/// the state lock held (except the owned synchronous stores).
 /// Changed may run on any worker thread: observers must return promptly, never synchronously
 /// wait for lifecycle methods, and WPF hosts must use Dispatcher.BeginInvoke and read Snapshot.
 public sealed class ListeningSession : IAsyncDisposable
@@ -18,6 +18,9 @@ public sealed class ListeningSession : IAsyncDisposable
     private readonly SessionStore? sessions;
     private readonly AppSettings settings;
     private readonly ICaptureClock? clock;
+    private readonly Func<IReasoningProvider>? reasoningFactory;
+    private readonly TimeSpan answerTimeout;
+    private SuggestionRun? suggestion;
     private ListeningSnapshot snapshot = new();
     private Run? current;
     private bool disposed;
@@ -27,7 +30,8 @@ public sealed class ListeningSession : IAsyncDisposable
 
     public ListeningSession(IAudioSourceFactory audioFactory,
         Func<Speaker, ListeningService, ListeningProvider> providerFactory, AppSettings settings,
-        TranscriptStore? transcript = null, SessionStore? sessions = null, ICaptureClock? clock = null)
+        TranscriptStore? transcript = null, SessionStore? sessions = null, ICaptureClock? clock = null,
+        Func<IReasoningProvider>? reasoningFactory = null, TimeSpan? answerTimeout = null)
     {
         this.audioFactory = audioFactory;
         this.providerFactory = providerFactory;
@@ -35,6 +39,9 @@ public sealed class ListeningSession : IAsyncDisposable
         this.transcript = transcript ?? new();
         this.sessions = sessions;
         this.clock = clock;
+        this.reasoningFactory = reasoningFactory;
+        this.answerTimeout = answerTimeout ?? TimeSpan.FromSeconds(90);
+        if (this.answerTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(answerTimeout));
     }
 
     /// Idempotent while active. Cancellation cancels this start; StopAsync also interrupts
@@ -45,10 +52,12 @@ public sealed class ListeningSession : IAsyncDisposable
         try
         {
             Run run;
+            SuggestionRun? previous;
             lock (sync)
             {
                 ObjectDisposedException.ThrowIf(disposed, this);
                 if (current is not null) return;
+                previous = InterruptSuggestion();
                 if (settings.ListeningService is not (ListeningService.Zipformer or ListeningService.Paraformer))
                 {
                     snapshot = snapshot with { State = ListeningState.Failed,
@@ -63,6 +72,7 @@ public sealed class ListeningSession : IAsyncDisposable
                     snapshot = new() { State = ListeningState.Starting, SampleRate = settings.ListeningService.SampleRate() };
                 }
             }
+            CancelSuggestion(previous);
             Changed?.Invoke();
             if (run is null) return;
             using var registration = cancellationToken.Register(() => ScheduleStop(run));
@@ -201,12 +211,15 @@ public sealed class ListeningSession : IAsyncDisposable
 
     private void ScheduleStop(Run run)
     {
+        SuggestionRun? previous;
         lock (sync)
         {
             if (current != run || run.StopRequested) return;
             run.StopRequested = true;
+            previous = InterruptSuggestion();
             snapshot = snapshot with { IsStopping = true };
         }
+        CancelSuggestion(previous);
         // Never stop/cancel captures inline from a PCM/provider callback: it may hold a
         // provider or capture lock, and StopAsync must wait for that callback to finish.
         _ = Task.Run(() => StopRunAsync(run));
@@ -214,20 +227,190 @@ public sealed class ListeningSession : IAsyncDisposable
 
     public void Request(SuggestionMode mode)
     {
+        SuggestionRun? previous;
+        SuggestionRun? next = null;
+        AnswerRequest? answer = null;
         lock (sync)
         {
-            if (disposed || !settings.EnabledSuggestionModes.Contains(mode)) return;
+            if (disposed || snapshot.IsStopping || !settings.IsEnabled(mode)) return;
+            previous = InterruptSuggestion();
             var label = mode switch { SuggestionMode.Reply => "回答", SuggestionMode.Recap => "总结", _ => "追问" };
-            snapshot = snapshot with { LastRequestedMode = mode, SuggestionStatus = $"已请求{label}，推理服务尚未接入" };
+            snapshot = snapshot with { LastRequestedMode = mode, SuggestionText = "", SuggestionError = null, SuggestionIsLoading = false };
+            if (reasoningFactory is null)
+                snapshot = snapshot with { SuggestionStatus = $"已请求{label}，推理服务尚未接入" };
+            else
+            {
+                var context = transcript.RecentContext();
+                var partial = transcript.PartialThem.Trim();
+                if (partial.Length > 0) context = (context.Length > 0 ? context + "\n" : "") + "Them: " + partial;
+                if (context.Length == 0)
+                    snapshot = snapshot with { SuggestionStatus = "还没有对话。先开始听写，或等有转写后再请求。" };
+                else
+                {
+                    var latest = partial.Length > 0 ? partial : transcript.Lines.LastOrDefault(l => l.Speaker == Speaker.Them)?.Content;
+                    var query = mode switch
+                    {
+                        SuggestionMode.Reply => string.IsNullOrWhiteSpace(latest) ? "Help me answer the latest substantive question in this conversation." : latest.Trim(),
+                        SuggestionMode.Recap => "Summarize the recent conversation, decisions and unresolved questions.",
+                        _ => "Suggest one useful follow-up question based on this conversation."
+                    };
+                    // Exclude context from RetrievalQuery too: its semantic field can enter Input.
+                    var conversation = settings.IncludeConversation ? context : "";
+                    answer = new(RetrievalQuery.Formulate(query, conversation), conversation, settings.Scenario, [])
+                    {
+                        Mode = mode, KnowledgeMode = settings.KnowledgeMode, AnswerLanguage = settings.AnswerLanguage,
+                        BilingualAnswers = settings.BilingualAnswers, AdditionalAnswerInstructions = settings.AdditionalAnswerInstructions,
+                        LanguageQuestion = latest
+                    };
+                    next = new();
+                    next.Store.Begin(mode, query);
+                    next.Store.Trace = new();
+                    next.Store.Mark(PipelineStage.AnalysisDispatched);
+                    suggestion = next;
+                    PublishSuggestion(next, "正在等待回答…");
+                }
+            }
         }
+        CancelSuggestion(previous);
         Changed?.Invoke();
+        if (next is not null && answer is not null)
+        {
+            _ = WatchSuggestionAsync(next);
+            _ = Task.Run(() => GenerateSuggestionAsync(next, answer));
+        }
+    }
+
+    // Called only under sync. Identity guards protect against even non-cooperative providers.
+    private SuggestionRun? InterruptSuggestion()
+    {
+        var previous = suggestion;
+        if (previous is null) return null;
+        suggestion = null;
+        previous.Store.Mark(PipelineStage.Cancelled);
+        previous.Store.Interrupt();
+        PublishSuggestion(previous, "回答已取消");
+        return previous;
+    }
+
+    private static void CancelSuggestion(SuggestionRun? run)
+    {
+        if (run is not null) _ = CancelAsync(run);
+        static async Task CancelAsync(SuggestionRun run)
+        {
+            try { await run.Cancellation.CancelAsync().ConfigureAwait(false); }
+            catch (ObjectDisposedException) { }
+            catch (AggregateException) { /* A provider cancellation callback must not break session teardown. */ }
+        }
+    }
+
+    private void PublishSuggestion(SuggestionRun run, string status) => snapshot = snapshot with
+    {
+        SuggestionStatus = status, SuggestionText = run.Store.Text,
+        SuggestionIsLoading = run.Store.IsLoading, SuggestionError = run.Store.Error
+    };
+
+    private async Task WatchSuggestionAsync(SuggestionRun run)
+    {
+        try { await Task.Delay(answerTimeout, run.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException) { return; }
+        lock (sync)
+        {
+            if (suggestion != run) return;
+            suggestion = null;
+            run.Store.Mark(PipelineStage.Failed);
+            run.Store.Fail("回答超时，请手动重试。");
+            PublishSuggestion(run, run.Store.Error!);
+        }
+        CancelSuggestion(run);
+        Changed?.Invoke();
+    }
+
+    private async Task GenerateSuggestionAsync(SuggestionRun run, AnswerRequest answer)
+    {
+        try
+        {
+            run.Token.ThrowIfCancellationRequested();
+            if (answer.KnowledgeMode == KnowledgeMode.KnowledgeBaseOnly)
+            {
+                var missing = answer.BilingualAnswers
+                    ? AnswerLanguage.Chinese.MissingEvidence(answer.Query.Question) + "\n" + AnswerLanguage.English.MissingEvidence(answer.Query.Question)
+                    : answer.AnswerLanguage.MissingEvidence(answer.LanguageQuestion ?? answer.Query.Question);
+                lock (sync) { if (suggestion != run) return; run.Store.AppendDelta(missing); }
+            }
+            else
+            {
+                answer.OnStreamProgress = (stage, time) =>
+                {
+                    lock (sync)
+                    {
+                        if (suggestion != run) return Task.CompletedTask;
+                        run.Store.Mark(stage, time);
+                        if (stage == PipelineStage.ReasoningStarted && run.Store.Text.Length == 0) PublishSuggestion(run, "模型正在思考…");
+                    }
+                    Changed?.Invoke();
+                    return Task.CompletedTask;
+                };
+                var provider = reasoningFactory!();
+                run.Token.ThrowIfCancellationRequested();
+                lock (sync) { if (suggestion != run) return; run.Store.Mark(PipelineStage.ModelRequest); }
+                await foreach (var delta in provider.Stream(answer, run.Token).WithCancellation(run.Token).ConfigureAwait(false))
+                {
+                    run.Token.ThrowIfCancellationRequested();
+                    if (delta.Length == 0) continue;
+                    lock (sync)
+                    {
+                        if (suggestion != run) return;
+                        if (run.Store.FirstTextMs is null)
+                        {
+                            run.Store.Mark(PipelineStage.FirstToken);
+                            run.Store.FirstTextMs = run.Store.Trace!.Milliseconds(PipelineStage.FirstToken);
+                        }
+                        run.Store.AppendDelta(delta);
+                        PublishSuggestion(run, "正在生成回答…");
+                    }
+                    Changed?.Invoke();
+                }
+            }
+            lock (sync)
+            {
+                if (suggestion != run) return;
+                run.Store.Mark(PipelineStage.AnswerComplete);
+                run.Store.Finish();
+                PublishSuggestion(run, answer.KnowledgeMode == KnowledgeMode.KnowledgeBaseOnly ? "未找到知识库证据" : "回答已完成");
+                suggestion = null;
+            }
+            Changed?.Invoke();
+        }
+        catch (Exception error)
+        {
+            lock (sync)
+            {
+                if (suggestion != run) return;
+                var message = error.Message == ReasoningProviderFactory.MissingKeyMessage ? "请先配置分析服务 API 密钥"
+                    : error is OperationCanceledException ? "回答超时，请手动重试。" : error.Message;
+                run.Store.Mark(PipelineStage.Failed);
+                run.Store.Fail(message);
+                PublishSuggestion(run, message == "请先配置分析服务 API 密钥" || error is OperationCanceledException ? message : "回答失败：" + message);
+                suggestion = null;
+            }
+            Changed?.Invoke();
+        }
+        finally
+        {
+            // Cancel the deadline, without waiting for an uncooperative provider on Stop.
+            try { await run.Cancellation.CancelAsync().ConfigureAwait(false); }
+            catch (AggregateException) { }
+            run.Cancellation.Dispose();
+        }
     }
 
     public async Task StopAsync()
     {
         Run? run;
+        SuggestionRun? previous;
         lock (sync)
         {
+            previous = InterruptSuggestion();
             run = current;
             if (run is null)
             {
@@ -235,6 +418,7 @@ public sealed class ListeningSession : IAsyncDisposable
             }
             else { run.StopRequested = true; snapshot = snapshot with { IsStopping = true }; }
         }
+        CancelSuggestion(previous);
         Changed?.Invoke();
         if (run is not null) await StopRunAsync(run).ConfigureAwait(false);
     }
@@ -323,6 +507,14 @@ public sealed class ListeningSession : IAsyncDisposable
         public Speaker Speaker { get; } = speaker;
         public ListeningProvider? Live { get; set; }
         public TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class SuggestionRun
+    {
+        public SuggestionStore Store { get; } = new();
+        public CancellationTokenSource Cancellation { get; } = new();
+        public CancellationToken Token { get; }
+        public SuggestionRun() { Token = Cancellation.Token; }
     }
 
     private sealed class Run(IAudioSourceFactory factory, ICaptureClock? clock)

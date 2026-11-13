@@ -6,6 +6,13 @@
         <StackPanel Margin="28">
             <TextBlock Text="LiveCopilot · 本地聆听" FontSize="26" Margin="0,0,0,12" />
             <TextBlock Text="点击开始后采集系统声音和麦克风；停止后保存已定稿转写。" TextWrapping="Wrap" />
+            <TextBlock x:Name="CredentialServiceText" Text="分析服务 API 密钥" Margin="0,16,0,6" TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal">
+                <PasswordBox x:Name="ApiKeyBox" Width="240" Padding="6" />
+                <Button Content="保存" Padding="12,6" Margin="8,0,0,0" Click="SaveApiKey" />
+                <Button Content="清除" Padding="12,6" Margin="8,0,0,0" Click="ClearApiKey" />
+                <TextBlock x:Name="CredentialStatusText" Text="未保存" VerticalAlignment="Center" Margin="8,0,0,0" />
+            </StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,20,0,16">
                 <Button x:Name="StartButton" Content="开始聆听" Padding="20,8" Click="StartListening" IsEnabled="False" />
                 <Button x:Name="StopButton" Content="停止" Padding="20,8" Margin="12,0,0,0" Click="StopListening" IsEnabled="False" />
@@ -16,7 +23,7 @@
             <TextBlock x:Name="MicrophoneText" TextWrapping="Wrap" Margin="0,8,0,0" />
             <TextBlock x:Name="SuggestionText" TextWrapping="Wrap" Margin="0,14,0,0" />
             <TextBlock x:Name="HostErrorText" Foreground="DarkRed" TextWrapping="Wrap" Margin="0,8,0,0" />
-            <TextBlock Text="转写显示在浮窗。Alt+H 显示/隐藏浮窗；回答快捷键仅记录请求，推理服务尚未接入。"
+            <TextBlock Text="转写与流式回答显示在浮窗。Alt+H 显示/隐藏浮窗；回答 / 总结 / 追问快捷键会把最近对话发送给当前分析服务。无本地证据时不会编造引用。"
                        TextWrapping="Wrap" Foreground="DimGray" Margin="0,20,0,0" />
         </StackPanel>
     </ScrollViewer>

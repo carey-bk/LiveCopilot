@@ -6,6 +6,7 @@ using LiveCopilot.LocalInference;
 using LiveCopilot.Platform.Hotkeys;
 using LiveCopilot.Platform.Sessions;
 using LiveCopilot.Platform.Windows.Audio;
+using LiveCopilot.Platform.Windows.Credentials;
 using LiveCopilot.Platform.Windows.Hotkeys;
 using LiveCopilot.Platform.Windows.Overlay;
 
@@ -16,6 +17,9 @@ public partial class MainWindow : Window
     private OverlayWindow? overlay;
     private HotkeyManager? hotkeys;
     private ListeningSession? session;
+    private AppSettings settings = new();
+    private readonly ICredentialStore credentials = new WindowsCredentialStore();
+    private readonly HttpClientTransport transport = new();
     private bool closeRequested, closeComplete;
     private int refreshQueued;
 
@@ -32,9 +36,10 @@ public partial class MainWindow : Window
         try
         {
             var preferences = new FilePreferenceStore();
-            var settings = AppSettings.Load(preferences);
+            settings = AppSettings.Load(preferences);
             session = new(new WasapiAudioSourceFactory(), CreateProvider, settings,
-                new TranscriptStore(), new SessionStore());
+                new TranscriptStore(), new SessionStore(),
+                reasoningFactory: () => ReasoningProviderFactory.Make(settings, credentials, transport));
             session.Changed += QueueRefresh;
             overlay = new OverlayWindow(settings);
             overlay.Show();
@@ -42,8 +47,30 @@ public partial class MainWindow : Window
                 session.Request, overlay.ToggleVisibility, error => HostErrorText.Text = error);
             hotkeys.SetEnabledModes(settings.EnabledSuggestionModes);
             RefreshSession(); // Construction and Loaded never start audio or inference.
+            CredentialServiceText.Text = "分析服务 API 密钥 · " + settings.ReasoningService.Label();
+            RefreshCredentialStatus();
         }
         catch (Exception error) { HostErrorText.Text = "初始化失败：" + error.Message; }
+    }
+
+    private void RefreshCredentialStatus()
+    {
+        try { CredentialStatusText.Text = string.IsNullOrWhiteSpace(credentials.Read(settings.AnalysisCredentialReference())) ? "未保存" : "已保存"; }
+        catch (Exception error) { CredentialStatusText.Text = "读取失败"; HostErrorText.Text = error.Message; }
+    }
+
+    private void SaveApiKey(object sender, RoutedEventArgs e)
+    {
+        try { credentials.Save(settings.AnalysisCredentialReference(), ApiKeyBox.Password); HostErrorText.Text = ""; RefreshCredentialStatus(); }
+        catch (Exception error) { HostErrorText.Text = error.Message; }
+        finally { ApiKeyBox.Clear(); }
+    }
+
+    private void ClearApiKey(object sender, RoutedEventArgs e)
+    {
+        ApiKeyBox.Clear();
+        try { credentials.Clear(settings.AnalysisCredentialReference()); HostErrorText.Text = ""; RefreshCredentialStatus(); }
+        catch (Exception error) { HostErrorText.Text = error.Message; }
     }
 
     private static ListeningProvider CreateProvider(Speaker speaker, ListeningService service)
@@ -93,9 +120,9 @@ public partial class MainWindow : Window
         MicrophoneText.Text = Describe("麦克风 / You", view.Microphone);
         SuggestionText.Text = view.SuggestionStatus ?? "";
         StartButton.IsEnabled = !closeRequested && !view.IsStopping && view.State is not (ListeningState.Starting or ListeningState.Listening);
-        StopButton.IsEnabled = !closeRequested && !view.IsStopping && view.State is (ListeningState.Starting or ListeningState.Listening);
+        StopButton.IsEnabled = !closeRequested && !view.IsStopping && (view.SuggestionIsLoading || view.State is (ListeningState.Starting or ListeningState.Listening));
         overlay?.SetContent(new(view.Status + (view.Error is null ? "" : "\n" + view.Error),
-            view.Lines, view.PartialThem, view.PartialYou, view.SuggestionStatus));
+            view.Lines, view.PartialThem, view.PartialYou, view.SuggestionStatus, view.SuggestionText));
     }
 
     private static string Describe(string label, ListeningPathSnapshot path) =>
@@ -123,6 +150,7 @@ public partial class MainWindow : Window
         {
             if (session is not null) session.Changed -= QueueRefresh;
             hotkeys?.Dispose();
+            transport.Dispose();
             overlay?.Close();
             closeComplete = true;
             Close();

@@ -404,6 +404,7 @@ public sealed class ListeningSessionTests
         var view = test.Session.Snapshot;
         Assert.Equal(SuggestionMode.Reply, view.LastRequestedMode);
         Assert.Equal("已请求回答，推理服务尚未接入", view.SuggestionStatus);
+        Assert.Empty(view.SuggestionText); Assert.False(view.SuggestionIsLoading); Assert.Null(view.SuggestionError);
         Assert.Empty(view.Lines); Assert.Empty(view.PartialThem); Assert.Empty(view.PartialYou);
         Assert.Empty(test.Providers); Assert.Empty(test.Factory.Requested);
         test.Session.Request(SuggestionMode.Recap);
