@@ -6,6 +6,7 @@ using System.Windows.Input;
 using LiveCopilot.Core;
 using LiveCopilot.Platform.Hotkeys;
 using LiveCopilot.Platform.Knowledge;
+using LiveCopilot.Platform.Lifecycle;
 using LiveCopilot.Platform.Settings;
 
 namespace LiveCopilot.App;
@@ -21,13 +22,21 @@ public partial class SettingsWindow : Window
     private ShortcutEditor? recording;
     private readonly HashSet<PasswordBox> passwordBoxes = [];
     private readonly Dictionary<CredentialEditor, Action> resetHandlers = [];
-    private bool closeRequested, closeComplete, clearingPasswords;
+    private readonly WindowShutdownCoordinator shutdown;
+    private bool closeRequested => shutdown.IsRequested;
+    private bool clearingPasswords;
 
     public SettingsWindow(SettingsViewModel viewModel, KnowledgeIndex knowledge,
         Func<AppSettings, IEmbeddingProvider> createEmbedding, HotkeyManager hotkeys)
     {
         this.viewModel = viewModel; this.knowledge = knowledge; this.createEmbedding = createEmbedding; this.hotkeys = hotkeys;
         InitializeComponent();
+        shutdown = new([
+            () => { IsEnabled = false; StopRecording(); ClearPasswords(); return Task.CompletedTask; },
+            () => knowledgeCancellation.CancelAsync(),
+            async () => { if (knowledgeTask is not null) await knowledgeTask; },
+            () => { viewModel.IsBusy = false; viewModel.Cancel(); return Task.CompletedTask; }
+        ], action => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, action), CompleteClose);
         SmokeDiagnostics.Event("settings InitializeComponent completed");
         DataContext = viewModel;
         viewModel.Saved += Saved;
@@ -47,10 +56,14 @@ public partial class SettingsWindow : Window
         Closing += CloseSettings;
         Closed += (_, _) =>
         {
+            var cleanup = PrepareForShutdownAsync();
+            shutdown.NotifyClosed();
             viewModel.Saved -= Saved; viewModel.Cancelled -= Cancelled;
             foreach (var (credential, handler) in resetHandlers) credential.InputResetRequested -= handler;
             resetHandlers.Clear(); passwordBoxes.Clear();
-            knowledgeCancellation.Dispose();
+            // Owned windows can be forcibly closed without Closing. Still drain their
+            // document operation before releasing its cancellation source/shared services.
+            _ = DisposeKnowledgeCancellationAsync(cleanup);
         };
     }
 
@@ -188,7 +201,8 @@ public partial class SettingsWindow : Window
         KnowledgeMessageText.Text = "正在处理文档…";
         try
         {
-            knowledgeTask = Task.Run(() => operation(knowledgeCancellation.Token));
+            var token = knowledgeCancellation.Token;
+            knowledgeTask = Task.Run(() => operation(token));
             await knowledgeTask;
             KnowledgeProgress.Value = 100;
             KnowledgeMessageText.Text = completed;
@@ -216,20 +230,25 @@ public partial class SettingsWindow : Window
         public string StatusLabel => Document.Status switch { "Ready" => "已就绪", "Indexing" => "正在索引", "Ready (re-index failed)" => "重建失败（保留旧索引）", _ => "失败，请重新索引" };
     }
 
-    private async void CloseSettings(object? sender, CancelEventArgs e)
+    internal Task PrepareForShutdownAsync() => shutdown.RequestCloseAsync();
+
+    private async Task DisposeKnowledgeCancellationAsync(Task cleanup)
     {
-        if (closeComplete) return;
+        await cleanup;
+        knowledgeCancellation.Dispose();
+    }
+
+    private void CompleteClose()
+    {
+        foreach (var error in shutdown.Errors)
+            if (error is not OperationCanceledException) SmokeDiagnostics.Exception("settings shutdown cleanup", error);
+        Close();
+    }
+
+    private void CloseSettings(object? sender, CancelEventArgs e)
+    {
+        if (shutdown.IsClosing || shutdown.IsClosed) return;
         e.Cancel = true;
-        if (closeRequested) return;
-        closeRequested = true; StopRecording(); ClearPasswords();
-        await knowledgeCancellation.CancelAsync();
-        if (knowledgeTask is not null)
-        {
-            try { await knowledgeTask; }
-            catch (Exception) { /* The operation reports its own sanitized status. */ }
-        }
-        viewModel.IsBusy = false;
-        viewModel.Cancel();
-        closeComplete = true; _ = Dispatcher.BeginInvoke(Close);
+        _ = PrepareForShutdownAsync();
     }
 }

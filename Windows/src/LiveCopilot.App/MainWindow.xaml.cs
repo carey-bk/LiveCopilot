@@ -6,6 +6,7 @@ using LiveCopilot.Core;
 using LiveCopilot.LocalInference;
 using LiveCopilot.Platform.Hotkeys;
 using LiveCopilot.Platform.Knowledge;
+using LiveCopilot.Platform.Lifecycle;
 using LiveCopilot.Platform.Sessions;
 using LiveCopilot.Platform.Settings;
 using LiveCopilot.Platform.Windows.Audio;
@@ -27,14 +28,27 @@ public partial class MainWindow : Window
     private readonly LocalEmbeddingProvider localEmbedding = new();
     private readonly KnowledgeIndex knowledge = new(System.IO.Path.Combine(AppPaths.DataDirectory, "Knowledge"), new DocumentParser());
     private HotkeyStore? hotkeyStore;
-    private bool closeRequested, closeComplete;
+    private SettingsWindow? settingsWindow;
+    private readonly WindowShutdownCoordinator shutdown;
+    private bool closeRequested => shutdown.IsRequested;
+    private bool closeComplete => shutdown.IsClosing || shutdown.IsClosed;
     private int refreshQueued;
 
     public MainWindow()
     {
         InitializeComponent();
+        shutdown = new([
+            StopSettingsAsync,
+            () => { hotkeys?.Dispose(); return Task.CompletedTask; },
+            StopSessionAsync,
+            () => localEmbedding.DisposeAsync().AsTask(),
+            () => { knowledge.Dispose(); return Task.CompletedTask; },
+            () => { transport.Dispose(); return Task.CompletedTask; },
+            () => { overlay?.CloseForShutdown(); return Task.CompletedTask; }
+        ], action => Dispatcher.BeginInvoke(DispatcherPriority.Background, action), CompleteClose);
         Loaded += InitializeSession;
         Closing += CloseSession;
+        Closed += (_, _) => { shutdown.NotifyClosed(); SmokeDiagnostics.Event("main closed"); };
     }
 
     private void InitializeSession(object sender, RoutedEventArgs e)
@@ -52,7 +66,9 @@ public partial class MainWindow : Window
             if (!AppRuntime.IsSmoke) overlay.Show();
             hotkeyStore = new HotkeyStore(preferences);
             hotkeys = new HotkeyManager(hotkeyStore, AppRuntime.IsSmoke ? new SmokeHotkeyRegistrar() : new Win32HotkeyRegistrar(),
-                session.Request, overlay.ToggleVisibility, error => HostErrorText.Text = "快捷键注册失败，请在设置中更换被占用的组合。\n" + error);
+                mode => { if (!closeRequested) session.Request(mode); },
+                () => { if (!closeRequested) overlay.ToggleVisibility(); },
+                error => HostErrorText.Text = "快捷键注册失败，请在设置中更换被占用的组合。\n" + error);
             hotkeys.SetEnabledModes(settings.EnabledSuggestionModes);
             RefreshSession(); // Construction and Loaded never start audio or inference.
             SettingsButton.IsEnabled = true;
@@ -80,9 +96,14 @@ public partial class MainWindow : Window
             () => LocalModels.Get(LocalModelKind.Embedding).IsInstalled(LocalModels.DefaultRoot), typeof(MainWindow).Assembly,
             () => NativeRuntimeSupport.SpeechUnavailable, () => NativeRuntimeSupport.EmbeddingUnavailable, NativeRuntimeSupport.Notice);
         viewModel.Saved += ApplySettings;
-        try { new SettingsWindow(viewModel, knowledge, CreateEmbedding, hotkeys) { Owner = this }.ShowDialog(); }
+        try
+        {
+            settingsWindow = new SettingsWindow(viewModel, knowledge, CreateEmbedding, hotkeys) { Owner = this };
+            settingsWindow.ShowDialog();
+        }
         finally
         {
+            settingsWindow = null;
             viewModel.Saved -= ApplySettings;
             SmokeDiagnostics.Event("settings dialog returned");
         }
@@ -90,6 +111,7 @@ public partial class MainWindow : Window
 
     private void ApplySettings(AppSettings value)
     {
+        if (closeRequested) return;
         settings = value with { };
         session?.Configure(settings);
         overlay?.Configure(settings);
@@ -141,13 +163,13 @@ public partial class MainWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
             Interlocked.Exchange(ref refreshQueued, 0);
-            if (!closeComplete) RefreshSession();
+            if (!closeRequested) RefreshSession();
         });
     }
 
     private void RefreshSession()
     {
-        if (session is null || closeComplete) return;
+        if (session is null || closeRequested) return;
         var view = session.Snapshot;
         Title = "LiveCopilot — " + view.Status;
         StateText.Text = view.Status;
@@ -165,35 +187,31 @@ public partial class MainWindow : Window
     private static string Describe(string label, ListeningPathSnapshot path) =>
         $"{label} · {(path.Capturing ? "采集中" : "未采集")}\n{path.SourceDescription ?? "尚未启动音频源"}\n语音后端：{path.Backend ?? "尚未就绪"}";
 
-    private async void CloseSession(object? sender, CancelEventArgs e)
+    private void CloseSession(object? sender, CancelEventArgs e)
     {
         if (closeComplete) return;
         e.Cancel = true;
-        if (closeRequested) return;
-        closeRequested = true;
         StartButton.IsEnabled = StopButton.IsEnabled = false;
         SettingsButton.IsEnabled = false;
-        try
-        {
-            if (session is not null)
-            {
-                await session.DisposeAsync();
-                RefreshSession();
-                if (session.Snapshot.Error is { } error)
-                    MessageBox.Show(this, error, "会话结束提示", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-        catch (Exception error) { MessageBox.Show(this, error.Message, "停止会话失败", MessageBoxButton.OK, MessageBoxImage.Error); }
-        finally
-        {
-            await localEmbedding.DisposeAsync();
-            knowledge.Dispose();
-            if (session is not null) session.Changed -= QueueRefresh;
-            hotkeys?.Dispose();
-            transport.Dispose();
-            overlay?.Close();
-            closeComplete = true;
-            Close();
-        }
+        if (!closeRequested) SmokeDiagnostics.Event("main shutdown requested");
+        _ = shutdown.RequestCloseAsync();
+    }
+
+    private Task StopSettingsAsync() => settingsWindow?.PrepareForShutdownAsync() ?? Task.CompletedTask;
+
+    private async Task StopSessionAsync()
+    {
+        if (session is null) return;
+        session.Changed -= QueueRefresh;
+        await session.DisposeAsync();
+        if (session.Snapshot.Error is not null)
+            SmokeDiagnostics.Event("session shutdown reported an error");
+    }
+
+    private void CompleteClose()
+    {
+        foreach (var error in shutdown.Errors) SmokeDiagnostics.Exception("main shutdown cleanup", error);
+        SmokeDiagnostics.Event("main shutdown cleanup complete; closing");
+        Close();
     }
 }

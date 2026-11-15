@@ -77,12 +77,22 @@ internal static class Program
                 app, TimeSpan.FromSeconds(10), "settings closed");
             if (!PostMessage(new IntPtr(main.Current.NativeWindowHandle), 0x0010, IntPtr.Zero, IntPtr.Zero))
                 throw new InvalidOperationException("Could not request normal window close.");
+            // Exercise repeated exit requests while the application drains its session.
+            // The HWND may already be gone; the first request above must always succeed.
+            var closeRequestsSent = 1;
+            for (var i = 0; i < 2; i++)
+                if (PostMessage(mainHwnd, 0x0010, IntPtr.Zero, IntPtr.Zero)) closeRequestsSent++;
+            Console.WriteLine($"Posted {closeRequestsSent} normal close requests.");
             if (!app.WaitForExit(15000)) throw new TimeoutException("App did not exit normally within 15 seconds.");
             app.WaitForExit(); // Drain redirected output callbacks before disposing the writers.
             if (app.ExitCode != 0) throw new InvalidOperationException($"App exited with code {app.ExitCode}.");
             if (Directory.GetFiles(output, "*.png").Length != 7) throw new InvalidOperationException("Expected seven screenshots.");
+            var events = File.ReadAllLines(Path.Combine(output, "app-events.log"));
+            foreach (var stage in new[] { "main shutdown requested", "main shutdown cleanup complete; closing", "main closed", "app exited: 0" })
+                if (events.Count(line => line.EndsWith(" " + stage, StringComparison.Ordinal)) != 1)
+                    throw new InvalidOperationException($"Expected exactly one shutdown event: {stage}.");
             File.WriteAllText(Path.Combine(output, "result.json"), JsonSerializer.Serialize(new
-            { success = true, startupMs, appExitCode = app.ExitCode, pages, screenshots = 7 }, new JsonSerializerOptions { WriteIndented = true }));
+            { success = true, startupMs, appExitCode = app.ExitCode, pages, screenshots = 7, closeRequestsSent }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"PASS: main ready in {startupMs} ms; all six settings pages captured; app exit code 0.");
             return 0;
         }

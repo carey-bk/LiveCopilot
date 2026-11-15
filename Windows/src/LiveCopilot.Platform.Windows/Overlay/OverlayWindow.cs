@@ -23,7 +23,7 @@ public sealed class OverlayWindow : Window
     private AppSettings settings;
     private HwndSource? source;
     private nint hwnd;
-    private bool applying, refreshQueued, closed;
+    private bool applying, refreshQueued, closing, closed;
     private double scale = 1;
     private WindowNative.Point? dragStart;
     private LayoutRect dragFrame;
@@ -79,7 +79,16 @@ public sealed class OverlayWindow : Window
         PreviewMouseMove += ContinueDrag;
         PreviewMouseLeftButtonUp += (_, _) => { dragStart = null; ReleaseMouseCapture(); controller.Interaction(); };
         LostMouseCapture += (_, _) => dragStart = null;
+        Closing += (_, _) => { closing = true; edgeTimer.Stop(); };
         Closed += (_, _) => { closed = true; edgeTimer.Stop(); source?.RemoveHook(Message); source = null; hwnd = 0; };
+    }
+
+    public void CloseForShutdown()
+    {
+        Dispatcher.VerifyAccess();
+        if (closing || closed) return;
+        closing = true;
+        Close();
     }
 
     private void InitializeHandle()
@@ -102,6 +111,7 @@ public sealed class OverlayWindow : Window
     public void Configure(AppSettings value)
     {
         Dispatcher.VerifyAccess();
+        if (closing || closed) return;
         settings = value;
         controller.Configure(settings);
         RefreshProtection();
@@ -112,7 +122,7 @@ public sealed class OverlayWindow : Window
     public void SetContent(OverlayContent value)
     {
         Dispatcher.VerifyAccess();
-        if (closed) return;
+        if (closing || closed) return;
         statusText.Text = value.Status;
         transcriptLines.Children.Clear();
         foreach (var line in value.Lines.TakeLast(8))
@@ -134,7 +144,7 @@ public sealed class OverlayWindow : Window
     }
     private void MeasureContent()
     {
-        if (closed) return;
+        if (closing || closed) return;
         // Allow a scrollbar at the geometry cap; measure full content for auto-height.
         card.Measure(new Size(Math.Max(1, controller.Frame.Width - 68), double.PositiveInfinity));
         ContentHeightChanged(card.DesiredSize.Height + 50);
@@ -145,7 +155,7 @@ public sealed class OverlayWindow : Window
     private LayoutRect ToCore(LayoutRect pixels) => OverlayCoordinates.ToCore(OverlayCoordinates.ToDips(pixels, scale));
     private void ApplyFrame()
     {
-        if (hwnd == 0 || applying || closed) return;
+        if (hwnd == 0 || applying || closing || closed) return;
         var frame = OverlayCoordinates.ToPixels(OverlayCoordinates.FromCore(controller.Frame), scale);
         applying = true;
         try
@@ -158,7 +168,7 @@ public sealed class OverlayWindow : Window
     }
     private void ApplyVisibility()
     {
-        if (closed) return;
+        if (closing || closed) return;
         if (controller.Hidden) Hide();
         else { Show(); ApplyFrame(); RefreshProtection(); }
         if (settings.OverlayEdgeHide) edgeTimer.Start(); else edgeTimer.Stop();
@@ -176,12 +186,12 @@ public sealed class OverlayWindow : Window
     }
     private void QueueMonitorRefresh()
     {
-        if (refreshQueued || closed) return;
+        if (refreshQueued || closing || closed) return;
         refreshQueued = true;
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
         {
             refreshQueued = false;
-            if (closed || hwnd == 0) return;
+            if (closing || closed || hwnd == 0) return;
             scale = Math.Max(96, WindowNative.GetDpiForWindow(hwnd)) / 96d;
             var monitor = WindowNative.Monitor(WindowNative.MonitorFromWindow(hwnd, 2));
             controller.SetWorkArea(ToCore(monitor.Work.Layout));
@@ -191,7 +201,7 @@ public sealed class OverlayWindow : Window
     }
     private void PollEdge()
     {
-        if (closed || !WindowNative.GetCursorPos(out var point)) return;
+        if (closing || closed || !WindowNative.GetCursorPos(out var point)) return;
         var monitor = WindowNative.Monitor(WindowNative.MonitorFromPoint(point, 2));
         var before = controller.Hidden;
         controller.UpdatePointer(OverlayCoordinates.ToCore(new LayoutPoint(point.X / scale, point.Y / scale)),
