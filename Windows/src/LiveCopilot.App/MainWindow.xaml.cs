@@ -45,7 +45,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        viewModel = new OverlayViewModel(SaveOverlaySettings, question => session?.Ask(question));
+        viewModel = new OverlayViewModel(SaveOverlaySettings, question => session?.Ask(question), ResetSessionAsync, preferences);
+        InitializeOperationGuide();
         trayModel = new TrayViewModel(SetOverlayVisible, () => OpenSettings(this, new RoutedEventArgs()), Close);
         var cleanupSteps = new List<Func<Task>>
         {
@@ -165,9 +166,9 @@ public partial class MainWindow : Window
 
     private async void StartListening(object sender, RoutedEventArgs e)
     {
-        if (session is null || closeRequested) return;
+        if (session is null || closeRequested || viewModel.IsResetting) return;
         StartButton.IsEnabled = false;
-        try { AppRuntime.RequireInteractive("音频采集"); await session.StartAsync(); }
+        try { AppRuntime.RequireInteractive("音频采集"); await session.StartAsync(microphoneEnabled: viewModel.MicrophoneEnabled); }
         catch (Exception error) { HostErrorText.Text = "无法开始聆听：" + error.Message; }
         finally { RefreshSession(); }
     }
@@ -179,6 +180,15 @@ public partial class MainWindow : Window
         try { await session.StopAsync(); }
         catch (Exception error) { HostErrorText.Text = "停止失败：" + error.Message; }
         finally { RefreshSession(); }
+    }
+
+    private async Task<bool> ResetSessionAsync()
+    {
+        if (session is null || closeRequested) return false;
+        var reset = await session.ResetAsync();
+        if (reset) { HostErrorText.Text = ""; smokeAnswer = null; }
+        RefreshSession();
+        return reset;
     }
 
     private void QueueRefresh()
@@ -197,23 +207,24 @@ public partial class MainWindow : Window
     {
         if (session is null || closeRequested) return;
         var view = session.Snapshot;
+        viewModel.UpdateSession(view, !closeRequested);
         Title = "LiveCopilot — " + view.Status;
         ErrorText.Text = view.Error ?? "";
         StateText.Text = view.State == ListeningState.Idle ? "就绪，可以输入问题或开始监听" : view.Status;
         SuggestionText.Text = view.SuggestionStatus ?? "";
-        StartButton.IsEnabled = !AppRuntime.IsSmoke && !closeRequested && !view.IsStopping && view.State is not (ListeningState.Starting or ListeningState.Listening);
-        StopButton.IsEnabled = !closeRequested && !view.IsStopping && (view.SuggestionIsLoading || view.State is (ListeningState.Starting or ListeningState.Listening));
+        StartButton.IsEnabled = !viewModel.IsResetting && !AppRuntime.IsSmoke && !closeRequested && !view.IsStopping && view.State is not (ListeningState.Starting or ListeningState.Listening);
+        StopButton.IsEnabled = !viewModel.IsResetting && !closeRequested && !view.IsStopping && (view.SuggestionIsLoading || view.State is (ListeningState.Starting or ListeningState.Listening));
         TranscriptLines.Children.Clear();
         foreach (var line in view.Lines)
-            TranscriptLines.Children.Add(new TextBlock { Text = $"{(line.Speaker == Speaker.You ? "我" : "对方")}  {line.Content}",
+            TranscriptLines.Children.Add(new TextBlock { Text = $"{(line.Speaker == Speaker.You ? "我" : line.Speaker == Speaker.Room ? "现场" : "对方")}  {line.Content}",
                 FontSize = settings.TranscriptFontSize, Margin = new Thickness(0, 0, 0, 6) });
         TranscriptPlaceholder.Visibility = view.Lines.Count == 0 && view.PartialThem.Length == 0 && view.PartialYou.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         PartialThem.Text = view.PartialThem;
         PartialYou.Text = view.PartialYou;
         PartialThem.FontSize = PartialYou.FontSize = settings.TranscriptFontSize;
-        AnswerText.Text = view.SuggestionText.Length == 0 ? "在上方输入问题，或开始监听以获取回答。" : view.SuggestionText;
+        AnswerText.Text = smokeAnswer ?? (view.SuggestionText.Length == 0 ? "在上方输入问题，或开始监听以获取回答。" : view.SuggestionText);
         AnswerText.FontSize = settings.AnswerFontSize;
-        AnswerText.Foreground = (System.Windows.Media.Brush)FindResource(view.SuggestionText.Length == 0 ? "SecondaryInk" : "Ink");
+        AnswerText.Foreground = (System.Windows.Media.Brush)FindResource(view.SuggestionText.Length == 0 && smokeAnswer is null ? "SecondaryInk" : "Ink");
         SourcesText.Text = new OverlayContent(view.Status, view.Lines) { Sources = view.Sources }.SourceText(settings.RetrievalCount);
         WarningText.Text = view.Warning ?? "";
         if (viewModel.FollowTranscript) TranscriptScroll.ScrollToEnd();
@@ -222,11 +233,7 @@ public partial class MainWindow : Window
         FollowUpButton.Visibility = settings.FollowUpEnabled ? Visibility.Visible : Visibility.Collapsed;
         ScenarioText.Text = settings.Scenario switch { ScenarioProfile.Meeting => "会议", ScenarioProfile.Defense => "学术答辩", _ => "面试" };
         ShortcutText.Text = hotkeyStore?.ToggleOverlay.ToString() ?? "";
-        if (settings.OverlayAutoHeight)
-        {
-            OverlayBorder.Measure(new Size(Math.Max(MinWidth, ActualWidth), double.PositiveInfinity));
-            Height = Math.Clamp(OverlayBorder.DesiredSize.Height, MinHeight, Math.Max(MinHeight, Math.Min(900, SystemParameters.WorkArea.Height - 24)));
-        }
+        QueueAutoHeight();
     }
 
     partial void OpenFirstRun();
@@ -248,6 +255,7 @@ public partial class MainWindow : Window
     {
         OverlayBorder.Background = (System.Windows.Media.Brush)FindResource(settings.Background == AppBackground.White ? "Surface" : settings.Background == AppBackground.Frosted ? "CardSurface" : "OverlaySurface");
         RefreshProtection();
+        viewModel.Guide.Configure(hotkeyStore?.Combo(SuggestionMode.Reply).ToString() ?? "Ctrl+Alt+Space", hotkeyStore?.ToggleOverlay.ToString() ?? "Alt+H", settings.ExcludeOverlayFromCapture);
     }
     private void SetOverlayVisible(bool visible)
     {
@@ -271,7 +279,9 @@ public partial class MainWindow : Window
     {
         transcriptCollapsed = !transcriptCollapsed;
         TranscriptScroll.Visibility = transcriptCollapsed ? Visibility.Collapsed : Visibility.Visible;
-        CollapseButton.Content = transcriptCollapsed ? "⌄  展开转写" : "⌃  折叠转写";
+        CollapseGlyph.Text = transcriptCollapsed ? "\uE70D" : "\uE70E";
+        CollapseLabel.Text = transcriptCollapsed ? "展开转写" : "折叠转写";
+        AutomationProperties.SetName(CollapseButton, CollapseLabel.Text);
         RefreshSession();
     }
     private void RequestReply(object sender, RoutedEventArgs e) { if (!AppRuntime.IsSmoke && !closeRequested) session?.Request(SuggestionMode.Reply); }
@@ -284,6 +294,7 @@ public partial class MainWindow : Window
         e.Cancel = true;
         trayModel.BeginShutdown();
         viewModel.SetEnabled(false);
+        viewModel.UpdateSession(session?.Snapshot ?? new(), false);
         StartButton.IsEnabled = StopButton.IsEnabled = false;
         SettingsButton.IsEnabled = false;
         if (!closeRequested) SmokeDiagnostics.Event("main shutdown requested");

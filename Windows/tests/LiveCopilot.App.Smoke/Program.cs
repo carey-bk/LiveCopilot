@@ -35,6 +35,7 @@ internal static class Program
             start.WorkingDirectory = Path.GetDirectoryName(start.FileName)!;
             start.Environment["LIVECOPILOT_SMOKE"] = "1";
             start.Environment["LIVECOPILOT_SMOKE_ONBOARDING"] = "1";
+            start.Environment["LIVECOPILOT_SMOKE_GUIDE"] = "1";
             start.Environment["LIVECOPILOT_INFERENCE_CPU"] = "1";
             start.Environment["LIVECOPILOT_SMOKE_LOG_DIRECTORY"] = output;
             var watch = Stopwatch.StartNew();
@@ -55,12 +56,33 @@ internal static class Program
                 Wait(() => guide.Current.ItemStatus == step.ToString() ? guide : null, app, TimeSpan.FromSeconds(5), $"onboarding step {step + 1}");
                 Thread.Sleep(350);
                 Capture(guide, Path.Combine(output, $"onboarding-{step + 1:00}.png"));
+                if (step == 5)
+                {
+                    ScrollTo(guide, "OnboardingDetailScroll", 100);
+                    RequireFullyVisible(guide, "ReadyJev");
+                    Capture(guide, Path.Combine(output, "onboarding-06-lower.png"));
+                }
                 Invoke(guide, "OnboardingNext");
             }
             Wait(() => FindWindow(app.Id, "OnboardingWindow") is null ? main : null, app, TimeSpan.FromSeconds(10), "onboarding completed");
             Wait(() => ReadySettingsButton(main), app, TimeSpan.FromSeconds(10), "settings button enabled and visible");
+            var operationGuide = Wait(() => VisibleGuide(main), app, TimeSpan.FromSeconds(10), "operation guide");
+            for (var step = 0; step < 4; step++)
+            {
+                Wait(() => operationGuide.Current.ItemStatus == step.ToString() ? operationGuide : null, app, TimeSpan.FromSeconds(5), $"operation tip {step + 1}");
+                Thread.Sleep(350);
+                RequireFullyVisible(main, "OperationGuideNext");
+                Capture(main, Path.Combine(output, $"overlay-guide-{step + 1:00}.png"));
+                Invoke(main, "OperationGuideNext");
+            }
+            Wait(() => VisibleGuide(main) is null ? main : null, app, TimeSpan.FromSeconds(5), "operation guide dismissed");
             Thread.Sleep(350);
             Capture(main, Path.Combine(output, "00-overlay-idle.png"));
+            // Toggle only the next-run preference. Smoke never opens an audio device.
+            Invoke(main, "ToggleMicrophone");
+            if (!Find(main, "ToggleMicrophone").Current.Name.Contains("关闭", StringComparison.Ordinal)) throw new InvalidOperationException("Microphone preference did not change.");
+            Invoke(main, "ToggleMicrophone");
+            CaptureAutoHeight(main, app, output);
             CaptureMenu(main, "KnowledgeModeMenu", Path.Combine(output, "overlay-knowledge-menu.png"));
             CaptureMenu(main, "AnswerLanguageMenu", Path.Combine(output, "overlay-answer-language.png"));
             // Invoke can stay blocked while WPF ShowDialog runs its nested dispatcher.
@@ -94,21 +116,43 @@ internal static class Program
                     foreach (var service in services)
                     {
                         Select(settings, service); Thread.Sleep(350);
-                        if (service == "SpeechServiceTab") RequireModelCards(settings, ["ModelCardZipformer", "ModelCardParaformer"]);
+                        if (service == "SpeechServiceTab") RequireModelCards(settings, ["ModelCardZipformer"]);
                         if (service == "KnowledgeServiceTab") RequireModelCards(settings, ["ModelCardEmbedding"]);
                         Capture(settings, Path.Combine(output, $"services-{service}.png"));
+                        if (service == "SpeechServiceTab")
+                        {
+                            ScrollTo(settings, "SpeechServiceScroll", 100);
+                            RequireModelCards(settings, ["ModelCardParaformer"]);
+                            RequireFullyVisible(settings, "ModelCardParaformerDownload");
+                            Capture(settings, Path.Combine(output, "services-speech-lower.png"));
+                            ScrollTo(settings, "SpeechServiceScroll", 0);
+                        }
+                        if (service == "AnalysisServiceTab")
+                        {
+                            ScrollTo(settings, "AnalysisServiceScroll", 100);
+                            RequireFullyVisible(settings, "独立 OpenAI 推理");
+                            Capture(settings, Path.Combine(output, "services-analysis-keys.png"));
+                        }
                     }
                 }
             }
-            // Reopen from settings and exercise the persisted skip path as well as completion.
+            // Reopen tips through settings, skip them, then verify they stay dismissed after setup.
             Select(settings, "GeneralPage");
-            var generalScroll = (ScrollPattern)Find(settings, "GeneralScroll").GetCurrentPattern(ScrollPattern.Pattern);
-            generalScroll.SetScrollPercent(ScrollPattern.NoScroll, 0);
+            ScrollTo(settings, "GeneralScroll", 0);
+            Invoke(settings, "OpenOperationGuide");
+            Wait(() => VisibleGuide(main) is not null && main.Current.IsEnabled ? main : null, app, TimeSpan.FromSeconds(10), "reopened operation guide");
+            Invoke(main, "OperationGuideSkip");
+            if (!openSettings.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("Settings did not close normally.");
+            openSettings = Task.Run(() => InvokeSettings(mainHwnd));
+            settings = WaitForSettings(main, app, openSettings);
+            Select(settings, "GeneralPage");
+            ScrollTo(settings, "GeneralScroll", 0);
             Invoke(settings, "OpenOnboarding");
             var reopened = Wait(() => FindWindow(app.Id, "OnboardingWindow"), app, TimeSpan.FromSeconds(10), "reopened onboarding");
             Wait(() => reopened.Current.ItemStatus == "0" ? reopened : null, app, TimeSpan.FromSeconds(5), "reopened first step");
             Invoke(reopened, "OnboardingSkip");
             Wait(() => FindWindow(app.Id, "OnboardingWindow") is null ? main : null, app, TimeSpan.FromSeconds(10), "skipped onboarding");
+            if (VisibleGuide(main) is not null) throw new InvalidOperationException("Completed operation guide opened again.");
             if (!openSettings.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("Settings did not close normally.");
             Wait(() => FindWindow(app.Id, "SettingsWindow") is null && main.Current.IsEnabled ? main : null,
                 app, TimeSpan.FromSeconds(10), "settings closed");
@@ -123,13 +167,13 @@ internal static class Program
             if (!app.WaitForExit(15000)) throw new TimeoutException("App did not exit normally within 15 seconds.");
             app.WaitForExit(); // Drain redirected output callbacks before disposing the writers.
             if (app.ExitCode != 0) throw new InvalidOperationException($"App exited with code {app.ExitCode}.");
-            if (Directory.GetFiles(output, "*.png").Length != 20) throw new InvalidOperationException("Expected twenty screenshots.");
+            if (Directory.GetFiles(output, "*.png").Length != 29) throw new InvalidOperationException("Expected twenty-nine screenshots.");
             var events = File.ReadAllLines(Path.Combine(output, "app-events.log"));
             foreach (var stage in new[] { "main shutdown requested", "main shutdown cleanup complete; closing", "main closed", "app exited: 0" })
                 if (events.Count(line => line.EndsWith(" " + stage, StringComparison.Ordinal)) != 1)
                     throw new InvalidOperationException($"Expected exactly one shutdown event: {stage}.");
             File.WriteAllText(Path.Combine(output, "result.json"), JsonSerializer.Serialize(new
-            { success = true, startupMs, appExitCode = app.ExitCode, pages, screenshots = 20, closeRequestsSent }, new JsonSerializerOptions { WriteIndented = true }));
+            { success = true, startupMs, appExitCode = app.ExitCode, pages, screenshots = 29, closeRequestsSent }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"PASS: main ready in {startupMs} ms; overlay, six settings pages, four service tabs and six onboarding steps captured; app exit code 0.");
             return 0;
         }
@@ -168,8 +212,60 @@ internal static class Program
         menu.Expand(); Thread.Sleep(350);
         if (menu.Current.ExpandCollapseState != ExpandCollapseState.Expanded) throw new InvalidOperationException($"Menu did not open: {id}");
         // WPF Popup has its own HWND and is omitted by PrintWindow(main).
-        ScreenCapture.Desktop(file);
+        var bounds = main.Current.BoundingRectangle;
+        // Include popup items in screen coordinates, then crop to the app and its menu.
+        var items = Find(main, id).FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem));
+        var visibleItems = 0;
+        foreach (AutomationElement item in items)
+            if (!item.Current.IsOffscreen && !item.Current.BoundingRectangle.IsEmpty) { bounds.Union(item.Current.BoundingRectangle); visibleItems++; }
+        if (visibleItems == 0) throw new InvalidOperationException($"No visible popup items: {id}");
+        bounds.Inflate(8, 8);
+        ScreenCapture.Region(bounds, file);
         menu.Collapse(); Thread.Sleep(150);
+    }
+
+    private static AutomationElement? VisibleGuide(AutomationElement main)
+    {
+        var guide = main.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "OperationGuide"));
+        return guide is not null && !guide.Current.IsOffscreen ? guide : null;
+    }
+    private static void ScrollTo(AutomationElement root, string id, double percent)
+    {
+        var scroll = (ScrollPattern)Find(root, id).GetCurrentPattern(ScrollPattern.Pattern);
+        if (scroll.Current.VerticallyScrollable) scroll.SetScrollPercent(ScrollPattern.NoScroll, percent);
+        Thread.Sleep(350);
+    }
+    private static void RequireFullyVisible(AutomationElement root, string id)
+    {
+        var item = Find(root, id);
+        var rect = item.Current.BoundingRectangle;
+        if (item.Current.IsOffscreen || rect.IsEmpty || !root.Current.BoundingRectangle.Contains(rect))
+            throw new InvalidOperationException($"Control is clipped by its window: {id}");
+        for (var parent = TreeWalker.ControlViewWalker.GetParent(item); parent is not null && !parent.Equals(root); parent = TreeWalker.ControlViewWalker.GetParent(parent))
+            if (parent.TryGetCurrentPattern(ScrollPattern.Pattern, out _) && !parent.Current.BoundingRectangle.Contains(rect))
+                throw new InvalidOperationException($"Control is clipped by its scroll viewport: {id}");
+    }
+    private static void CaptureAutoHeight(AutomationElement main, Process app, string output)
+    {
+        var hwnd = new IntPtr(main.Current.NativeWindowHandle);
+        var initial = main.Current.BoundingRectangle.Height;
+        var questionHeight = Find(main, "ManualQuestion").Current.BoundingRectangle.Height;
+        var transcriptHeight = Find(main, "TranscriptScroll").Current.BoundingRectangle.Height;
+        if (!PostMessage(hwnd, 0x8000 + 71, new IntPtr(1), IntPtr.Zero)) throw new InvalidOperationException("Cannot inject smoke answer.");
+        Wait(() => main.Current.BoundingRectangle.Height > initial + 40 ? main : null, app, TimeSpan.FromSeconds(5), "answer auto height expanded");
+        Thread.Sleep(350);
+        var expanded = main.Current.BoundingRectangle.Height;
+        var scroll = (ScrollPattern)Find(main, "AnswerScroll").GetCurrentPattern(ScrollPattern.Pattern);
+        if (!scroll.Current.VerticallyScrollable) throw new InvalidOperationException("Long answer must scroll independently.");
+        RequireFullyVisible(main, "ManualQuestion");
+        if (Math.Abs(Find(main, "ManualQuestion").Current.BoundingRectangle.Height - questionHeight) > 1) throw new InvalidOperationException("Answer growth resized the question input.");
+        if (Math.Abs(Find(main, "TranscriptScroll").Current.BoundingRectangle.Height - transcriptHeight) > 1) throw new InvalidOperationException("Answer growth resized the transcript viewport.");
+        Capture(main, Path.Combine(output, "overlay-autoheight-expanded.png"));
+        Invoke(main, "ResetSession");
+        Wait(() => main.Current.BoundingRectangle.Height < expanded - 40 ? main : null, app, TimeSpan.FromSeconds(5), "answer auto height contracted");
+        Thread.Sleep(350);
+        Capture(main, Path.Combine(output, "overlay-autoheight-reset.png"));
+        Console.WriteLine($"Auto height: {initial} -> {expanded} -> {main.Current.BoundingRectangle.Height}; long answer scrollable.");
     }
 
     private static void RequireModelCards(AutomationElement settings, string[] ids)

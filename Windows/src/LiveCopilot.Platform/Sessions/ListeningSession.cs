@@ -26,7 +26,7 @@ public sealed class ListeningSession : IAsyncDisposable
     private SuggestionRun? suggestion;
     private ListeningSnapshot snapshot = new();
     private Run? current;
-    private bool disposed;
+    private bool disposed, resetting, archiveFailed;
 
     public event Action? Changed;
     public ListeningSnapshot Snapshot { get { lock (sync) return snapshot; } }
@@ -77,7 +77,7 @@ public sealed class ListeningSession : IAsyncDisposable
 
     /// Idempotent while active. Cancellation cancels this start; StopAsync also interrupts
     /// model readiness/capture startup. Operational failures are exposed through Snapshot.
-    public async Task StartAsync(CancellationToken cancellationToken = default)
+    public async Task StartAsync(CancellationToken cancellationToken = default, bool microphoneEnabled = true)
     {
         await lifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -87,9 +87,14 @@ public sealed class ListeningSession : IAsyncDisposable
             lock (sync)
             {
                 ObjectDisposedException.ThrowIf(disposed, this);
-                if (current is not null) return;
+                if (current is not null || resetting) return;
                 previous = InterruptSuggestion();
-                if (settings.ListeningService is not (ListeningService.Zipformer or ListeningService.Paraformer))
+                if (!microphoneEnabled && settings.Mode == OperatingMode.InPerson)
+                {
+                    snapshot = snapshot with { State = ListeningState.Failed, Error = "现场交流需要麦克风，请开启麦克风后重试。" };
+                    run = null!;
+                }
+                else if (settings.ListeningService is not (ListeningService.Zipformer or ListeningService.Paraformer))
                 {
                     snapshot = snapshot with { State = ListeningState.Failed,
                         Error = "云端听写尚未接入；Windows 仅支持 Zipformer / Paraformer，Apple 听写不可用。" };
@@ -97,8 +102,9 @@ public sealed class ListeningSession : IAsyncDisposable
                 }
                 else
                 {
+                    archiveFailed = false;
                     transcript.Clear();
-                    run = new(audioFactory, clock, settings with { });
+                    run = new(audioFactory, clock, settings with { }, microphoneEnabled);
                     current = run;
                     snapshot = new() { State = ListeningState.Starting, SampleRate = settings.ListeningService.SampleRate() };
                 }
@@ -109,17 +115,16 @@ public sealed class ListeningSession : IAsyncDisposable
             using var registration = cancellationToken.Register(() => ScheduleStop(run));
             try
             {
-                run.System.Capture.Configure(run.Settings.ListeningService.SampleRate());
-                run.Microphone.Capture.Configure(run.Settings.ListeningService.SampleRate());
-                Prepare(run, run.System);
-                Prepare(run, run.Microphone);
-                Connect(run, run.System);
-                Connect(run, run.Microphone);
-                await Task.WhenAll(run.System.Ready.Task, run.Microphone.Ready.Task)
+                foreach (var path in run.ActivePaths)
+                {
+                    path.Capture.Configure(run.Settings.ListeningService.SampleRate());
+                    Prepare(run, path);
+                }
+                foreach (var path in run.ActivePaths) Connect(run, path);
+                await Task.WhenAll(run.ActivePaths.Select(path => path.Ready.Task))
                     .WaitAsync(run.StartCancellation.Token).ConfigureAwait(false);
                 CheckStarting(run);
-                await StartCaptureAsync(run, run.System).ConfigureAwait(false);
-                await StartCaptureAsync(run, run.Microphone).ConfigureAwait(false);
+                foreach (var path in run.ActivePaths) await StartCaptureAsync(run, path).ConfigureAwait(false);
                 lock (sync)
                 {
                     if (run.StopRequested) throw new OperationCanceledException();
@@ -271,7 +276,7 @@ public sealed class ListeningSession : IAsyncDisposable
         AnswerRequest? answer = null;
         lock (sync)
         {
-            if (disposed || snapshot.IsStopping || !settings.IsEnabled(mode)) return;
+            if (disposed || resetting || snapshot.IsStopping || !settings.IsEnabled(mode)) return;
             previous = InterruptSuggestion();
             var label = mode switch { SuggestionMode.Reply => "回答", SuggestionMode.Recap => "总结", _ => "追问" };
             snapshot = snapshot with { LastRequestedMode = mode, SuggestionText = "", SuggestionError = null,
@@ -510,6 +515,36 @@ public sealed class ListeningSession : IAsyncDisposable
         }
     }
 
+    /// Save/flush through the existing stop path before clearing the visible conversation.
+    /// A failed save keeps the transcript available; stale provider callbacks remain fenced.
+    public async Task<bool> ResetAsync()
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            if (resetting) return false;
+            resetting = true;
+        }
+        try
+        {
+            await StopAsync().ConfigureAwait(false);
+            await lifecycle.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                lock (sync)
+                {
+                    if (archiveFailed) return false;
+                    transcript.Clear();
+                    snapshot = new();
+                }
+            }
+            finally { lifecycle.Release(); }
+            Changed?.Invoke();
+            return true;
+        }
+        finally { lock (sync) resetting = false; }
+    }
+
     public async Task StopAsync()
     {
         Run? run;
@@ -598,7 +633,11 @@ public sealed class ListeningSession : IAsyncDisposable
 
     private void PersistenceError(string message)
     {
-        lock (sync) snapshot = snapshot with { Error = (snapshot.Error is null ? "" : snapshot.Error + "\n") + "会话保存失败：" + message };
+        lock (sync)
+        {
+            archiveFailed = true;
+            snapshot = snapshot with { Error = (snapshot.Error is null ? "" : snapshot.Error + "\n") + "会话保存失败：" + message };
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -624,11 +663,19 @@ public sealed class ListeningSession : IAsyncDisposable
         public SuggestionRun(AppSettings settings) { Settings = settings; Token = Cancellation.Token; }
     }
 
-    private sealed class Run(IAudioSourceFactory factory, ICaptureClock? clock, AppSettings settings)
+    private sealed class Run(IAudioSourceFactory factory, ICaptureClock? clock, AppSettings settings, bool microphoneEnabled)
     {
         public AppSettings Settings { get; } = settings;
         public Path System { get; } = new(factory, AudioInput.System, Speaker.Them, clock);
-        public Path Microphone { get; } = new(factory, AudioInput.Microphone, Speaker.You, clock);
+        public Path Microphone { get; } = new(factory, AudioInput.Microphone, settings.Mode == OperatingMode.InPerson ? Speaker.Room : Speaker.You, clock);
+        public IEnumerable<Path> ActivePaths
+        {
+            get
+            {
+                if (Settings.Mode == OperatingMode.Remote) yield return System;
+                if (microphoneEnabled) yield return Microphone;
+            }
+        }
         public CancellationTokenSource StartCancellation { get; } = new();
         public DateTimeOffset StartedAt { get; } = DateTimeOffset.UtcNow;
         public bool StopRequested { get; set; }

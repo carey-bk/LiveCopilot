@@ -20,6 +20,7 @@ public partial class MainWindow
         if (AppRuntime.IsSmoke && Environment.GetEnvironmentVariable("LIVECOPILOT_SMOKE_ONBOARDING") != "1") return;
         if (!new OnboardingStateStore(preferences).Load().Completed)
             Dispatcher.BeginInvoke(() => ShowOnboarding(false));
+        else ShowOperationGuide(false);
     }
     internal void ShowOnboarding(bool reopen)
     {
@@ -38,7 +39,7 @@ public partial class MainWindow
         {
             draft.Saved -= ApplySettings;
             onboardingWindow = null;
-            if (!closeRequested) { Activate(); QuestionInput.Focus(); }
+            if (!closeRequested) { Activate(); QuestionInput.Focus(); ShowOperationGuide(false); }
         }
     }
 }

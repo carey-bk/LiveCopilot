@@ -23,6 +23,15 @@ internal static class ScreenCapture
             BitBlt(target, 0, 0, width, height, screen, left, top, 0x00CC0020), checkContent: false);
     }
 
+    internal static void Region(System.Windows.Rect bounds, string file)
+    {
+        var desktop = new System.Windows.Rect(GetSystemMetrics(76), GetSystemMetrics(77), GetSystemMetrics(78), GetSystemMetrics(79));
+        bounds.Intersect(desktop);
+        var left = (int)Math.Floor(bounds.Left); var top = (int)Math.Floor(bounds.Top);
+        var width = (int)Math.Ceiling(bounds.Right) - left; var height = (int)Math.Ceiling(bounds.Bottom) - top;
+        Save(file, width, height, (target, screen) => BitBlt(target, 0, 0, width, height, screen, left, top, 0x00CC0020), checkContent: true);
+    }
+
     internal static void Window(IntPtr hwnd, string file)
     {
         if (!IsWindowVisible(hwnd) || !GetWindowRect(hwnd, out var rect))
