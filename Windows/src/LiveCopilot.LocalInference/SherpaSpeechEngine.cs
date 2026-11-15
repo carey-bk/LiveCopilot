@@ -19,6 +19,7 @@ public sealed class SherpaSpeechEngine : ISpeechEngine
     public static async Task<ISpeechEngine> CreateAsync(string? root = null, bool contextual = false,
         InferenceOptions? options = null, CancellationToken cancellationToken = default)
     {
+        NativeRuntimeSupport.RequireSpeech();
         var model = LocalModels.Get(contextual ? LocalModelKind.TerminologySpeech : LocalModelKind.StreamingSpeech);
         root ??= LocalModels.DefaultRoot;
         await model.RequireVerifiedAsync(root, cancellationToken).ConfigureAwait(false);

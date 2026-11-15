@@ -92,6 +92,8 @@ public sealed class LocalEmbeddingProvider : ILocalEmbeddingPreparing, IAsyncDis
                 cancellationToken.ThrowIfCancellationRequested();
                 vectors.Add(EmbeddingContract.Normalize(vector)); prepared = true;
             }
+            catch (Exception error) when (NativeRuntimeSupport.RequiresCpu && error is DllNotFoundException or BadImageFormatException or TypeInitializationException)
+            { prepared = false; throw new CopilotException(NativeRuntimeSupport.EmbeddingMessage); }
             catch { prepared = false; throw; }
             finally { serial.Release(); }
             // Release the native queue between items; progress may issue an interactive query.

@@ -20,6 +20,7 @@ public sealed class LlamaEmbeddingEngine : ILocalEmbeddingEngine
     public static async Task<ILocalEmbeddingEngine> CreateAsync(string? root = null, InferenceOptions? options = null, CancellationToken cancellationToken = default)
     {
         root ??= LocalModels.DefaultRoot;
+        NativeRuntimeSupport.RequireEmbedding();
         var model = LocalModels.Get(LocalModelKind.Embedding);
         await model.RequireVerifiedAsync(root, cancellationToken).ConfigureAwait(false);
         var engine = new LlamaEmbeddingEngine(Path.Combine(model.Location(root), model.Files[0]), options ?? new());

@@ -21,6 +21,7 @@ public sealed class HttpClientTransport : IHttpTransport, IDisposable
 
     public async Task<(byte[] Data, int Status)> DataAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        AppRuntime.RequireInteractive("网络请求");
         using var deadline = Deadline(cancellationToken);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false);
         return (await response.Content.ReadAsByteArrayAsync(deadline.Token).ConfigureAwait(false), (int)response.StatusCode);
@@ -29,6 +30,7 @@ public sealed class HttpClientTransport : IHttpTransport, IDisposable
     public async IAsyncEnumerable<string> LinesAsync(HttpRequestMessage request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        AppRuntime.RequireInteractive("网络请求");
         using var deadline = Deadline(cancellationToken);
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false);
         await using var stream = await response.Content.ReadAsStreamAsync(deadline.Token).ConfigureAwait(false);

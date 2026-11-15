@@ -20,6 +20,7 @@ public sealed partial record AppSettings
     public OperatingMode Mode { get; set; } = OperatingMode.Remote;
     public ScenarioProfile Scenario { get; set; } = ScenarioProfile.Interview;
     public bool AutomaticSuggestions { get; set; } = true;
+    public bool CheckForUpdates { get; set; } = false;
     public double LayaThreshold { get; set; } = 0.8;
     public ContinuousQuestionPolicy ContinuousQuestionPolicy { get; set; } = ContinuousQuestionPolicy.Smart;
     public bool BilingualAnswers { get; set; } = false;

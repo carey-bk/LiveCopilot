@@ -1,0 +1,62 @@
+name: Windows unsigned packages and smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [windows]
+    paths: ['Windows/**', '.github/workflows/windows-package.yml']
+  pull_request:
+    paths: ['Windows/**', '.github/workflows/windows-package.yml']
+permissions:
+  contents: read
+env:
+  DOTNET_EnableWindowsTargeting: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  LIVECOPILOT_INFERENCE_CPU: '1'
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  package-and-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish both RIDs and create unsigned installers and portable archives
+        run: ./Windows/tools/Package-Windows.ps1
+      - name: Upload x64 package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: LiveCopilot-win-x64-${{ github.run_number }}
+          path: Windows/artifacts/package/releases/win-x64/
+          retention-days: 14
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload ARM64 package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: LiveCopilot-win-arm64-${{ github.run_number }}
+          path: Windows/artifacts/package/releases/win-arm64/
+          retention-days: 14
+          if-no-files-found: error
+          compression-level: 0
+      - name: Build standalone UI smoke driver
+        run: |
+          dotnet build Windows/tests/LiveCopilot.App.Smoke/LiveCopilot.App.Smoke.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Launch x64 publish, visit settings and capture PNG screenshots
+        timeout-minutes: 4
+        run: ./Windows/tools/Smoke-Windows.ps1
+      - name: Upload smoke screenshots and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: LiveCopilot-smoke-${{ github.run_number }}
+          path: Windows/artifacts/smoke/
+          retention-days: 14
+          if-no-files-found: error

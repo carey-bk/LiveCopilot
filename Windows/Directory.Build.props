@@ -1,5 +1,7 @@
 <Project>
   <PropertyGroup>
+    <Version>0.1.0</Version>
+    <VelopackVersion>1.2.161</VelopackVersion>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

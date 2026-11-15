@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using LiveCopilot.Core;
 using LiveCopilot.Platform.Hotkeys;
+using LiveCopilot.Platform.Updates;
 
 namespace LiveCopilot.Platform.Settings;
 
@@ -15,6 +16,8 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
     private readonly HotkeyStore hotkeys;
     private readonly Func<ListeningService, bool> speechInstalled;
     private readonly Func<bool> embeddingInstalled;
+    private readonly Func<string?> speechUnavailable, embeddingUnavailable;
+    private readonly IUpdateChecker updateChecker = new UnconfiguredUpdateChecker();
     private readonly Dictionary<string, string> errors = [];
     private AppSettings baseline, draft;
     private string status = "", shortcutError = "";
@@ -41,20 +44,26 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
     public bool CanEdit => !IsBusy;
     public bool HasChanges => HasErrors || draft != baseline || Credentials.Any(c => c.HasPendingChange) || ShortcutsChanged;
     public string Version { get; }
+    public string DisplayVersion { get; }
+    public string RuntimeNotice { get; }
+    public string UpdateNotice => "更新源尚未配置；此开关仅保存偏好，不会联网、下载或安装更新。";
+    public async Task<UpdateCheckStatus> CheckUpdatesAsync(CancellationToken cancellationToken = default) =>
+        await updateChecker.CheckAsync(CheckForUpdates, cancellationToken);
     public string ProjectUrl => "https://github.com/carey-bk/LiveCopilot";
     public string UnsignedNotice => "此 Windows 版本尚未签名。如果 SmartScreen 拦截，请先确认来自可信来源，再点击“更多信息”→“仍要运行”。";
     public string HistoryNotice => "即将推出";
     public string ListeningHint => ListeningService switch
     {
-        ListeningService.Zipformer or ListeningService.Paraformer => speechInstalled(ListeningService)
+        ListeningService.Zipformer or ListeningService.Paraformer => speechUnavailable() ?? (speechInstalled(ListeningService)
             ? "本地听写模型已安装。更换引擎在下次开始聆听时生效。"
-            : "本地听写模型尚未安装，请先安装相应模型；设置页不提供模型下载。更换引擎在下次开始聆听时生效。",
+            : "本地听写模型尚未安装，请先安装相应模型；设置页不提供模型下载。更换引擎在下次开始聆听时生效。"),
         ListeningService.Apple => "Windows 不支持 Apple 听写，请选择 Zipformer 或 Paraformer。",
         _ => "Windows 云端听写尚未接入，请选择 Zipformer 或 Paraformer。"
     };
-    public string EmbeddingHint => EmbeddingService == EmbeddingService.Local && !embeddingInstalled()
-        ? "本地 BGE-M3 尚未安装，请先安装模型；设置页不提供下载。已有文档仍保留。"
-        : "OpenAI 会发送文档分块与检索问题；本地 BGE-M3 在本机生成向量。命中的来源会随回答请求发送给分析服务。";
+    public string EmbeddingHint => (EmbeddingService == EmbeddingService.Local ? embeddingUnavailable() : null)
+        ?? (EmbeddingService == EmbeddingService.Local && !embeddingInstalled()
+            ? "本地 BGE-M3 尚未安装，请先安装模型；设置页不提供下载。已有文档仍保留。"
+            : "OpenAI 会发送文档分块与检索问题；本地 BGE-M3 在本机生成向量。命中的来源会随回答请求发送给分析服务。");
     public string SelectedEmbeddingIdentity => draft.SelectedEmbeddingIdentity;
     public bool KnowledgeRebuildRequired => draft.EmbeddingService != baseline.EmbeddingService || draft.SelectedEmbeddingIdentity != baseline.SelectedEmbeddingIdentity;
     public string KnowledgeRebuildHint => KnowledgeRebuildRequired
@@ -67,12 +76,17 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
         .Select(v => new SettingChoice<AnalysisThinking>(v, ThinkingLabel(v))).ToArray();
 
     public SettingsViewModel(IPreferenceStore preferences, ICredentialStore credentials, HotkeyStore hotkeys,
-        Func<ListeningService, bool>? speechInstalled = null, Func<bool>? embeddingInstalled = null, Assembly? assembly = null)
+        Func<ListeningService, bool>? speechInstalled = null, Func<bool>? embeddingInstalled = null, Assembly? assembly = null,
+        Func<string?>? speechUnavailable = null, Func<string?>? embeddingUnavailable = null, string runtimeNotice = "")
     {
         this.preferences = preferences; this.hotkeys = hotkeys;
         this.speechInstalled = speechInstalled ?? (_ => false); this.embeddingInstalled = embeddingInstalled ?? (() => false);
+        this.speechUnavailable = speechUnavailable ?? (() => null); this.embeddingUnavailable = embeddingUnavailable ?? (() => null);
+        RuntimeNotice = runtimeNotice;
         baseline = AppSettings.Load(preferences); draft = baseline with { };
-        Version = (assembly ?? Assembly.GetEntryAssembly() ?? typeof(SettingsViewModel).Assembly).GetName().Version?.ToString() ?? "未知";
+        var versionAssembly = assembly ?? Assembly.GetEntryAssembly() ?? typeof(SettingsViewModel).Assembly;
+        Version = versionAssembly.GetName().Version?.ToString() ?? "未知";
+        DisplayVersion = versionAssembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? Version;
         SaveCommand = new(() => Save(), () => !HasErrors && !IsBusy);
         CancelCommand = new(Cancel, () => !IsBusy);
         OpenAICredential = new("共享 OpenAI（听写 / 知识库 / 共享推理）", credentials, CredentialReference.Live);
@@ -233,6 +247,7 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
     public AnswerLanguage AnswerLanguage { get => draft.AnswerLanguage; set => Edit(() => draft.AnswerLanguage = value); }
     public ScenarioProfile Scenario { get => draft.Scenario; set => Edit(() => draft.Scenario = value); }
     public bool AutomaticSuggestions { get => draft.AutomaticSuggestions; set => Edit(() => draft.AutomaticSuggestions = value); }
+    public bool CheckForUpdates { get => draft.CheckForUpdates; set => Edit(() => draft.CheckForUpdates = value); }
     public ContinuousQuestionPolicy ContinuousQuestionPolicy { get => draft.ContinuousQuestionPolicy; set => Edit(() => draft.ContinuousQuestionPolicy = value); }
     public bool BilingualAnswers { get => draft.BilingualAnswers; set => Edit(() => draft.BilingualAnswers = value); }
     public string AdditionalAnswerInstructions { get => draft.AdditionalAnswerInstructions; set => Edit(() => draft.AdditionalAnswerInstructions = value ?? ""); }

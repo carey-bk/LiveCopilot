@@ -1,6 +1,36 @@
-# LiveCopilot Windows：本地聆听、云端建议、知识库与设置页（第 8 线）
+# LiveCopilot Windows：未签名安装包与 CI 冒烟截图（第 9 线）
 
 本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。第 4 线增加 WASAPI 音频、WPF 浮窗壳和全局快捷键；第 5 线通过可测试的 `ListeningSession` 连接双路采集与本地语音识别。第 6 线接入手动云端回答 / 总结 / 追问、流式浮窗正文及 Windows 凭据存储；第 7 线增加文档导入、知识库检索和浮窗来源；第 8 线增加中文分页设置窗口，集中管理通用、服务、知识库与快捷键配置。云端听写、自动建议执行和历史浏览尚未接入。原有 `StealthApp/` 源码与资源保持不变。
+
+## 安装与首次运行
+
+1. 打开仓库 **Actions → Windows unsigned packages and smoke**，选择成功的运行。在页面底部 Artifacts 下载 `LiveCopilot-win-arm64-<run number>` 或 `LiveCopilot-win-x64-<run number>`。产物保留 **14 天**，过期后重新运行 workflow；这里不创建 GitHub Release 或 tag。
+2. Windows 11 ARM（包括 Mac M4 Max 上的 Windows ARM 虚拟机）优先选 **win-arm64**；普通 Intel/AMD Windows 选 **win-x64**。ARM 虚拟机遇到本地依赖或驱动问题时，可使用 Windows 的 x64 仿真运行 x64 包。两个架构使用相同安装标识，切换前退出应用并卸载旧架构；临时对比可分别解压便携包，避免同时运行。
+3. 解压 Actions artifact，运行其中的 `*Setup.exe`，按当前用户安装，无需预装 .NET。安装包和程序**未签名**；SmartScreen 拦截时，确认下载自该仓库 Actions，再点击 **“更多信息”→“仍要运行”**。无需申请或安装证书。也可解压其中的 `*Portable.zip`，在解压目录运行 `LiveCopilot.App.exe`；不要直接从 zip 内运行。
+4. 首次启动不会自动开始聆听、下载模型或检查更新。打开“设置”查看六个页面；模型不随包分发，没安装模型时会显示提示。“关于”页的更新开关默认关闭；本版本没有更新源，开启或点击“检查更新”也不联网。云端服务只有在配置凭据并主动使用功能时才会请求；云端听写目前尚未接入。
+
+安装目录为 `%LOCALAPPDATA%\LiveCopilot.Windows`，与数据目录 **`%LOCALAPPDATA%\LiveCopilot`** 分开。安装版与便携版均使用此数据目录，内含 `preferences`、`Models`、知识库和会话记录；便携包不会把用户数据写在程序旁边。服务密钥独立保存于 Windows 凭据管理器，未写入偏好文件。
+
+卸载：先退出 LiveCopilot，在 Windows **设置 → 应用 → 已安装的应用 → LiveCopilot Windows → 卸载**；便携版删除解压目录即可。卸载保留用户数据。需要彻底清理时，先备份所需会话和文档，再手动删除 `%LOCALAPPDATA%\LiveCopilot`，并在 Windows 凭据管理器中删除 LiveCopilot 对应条目。
+
+ARM64 依赖：固定版本 sherpa-onnx 1.13.8 和 LLamaSharp CPU 0.27.0 均提供 Windows ARM64 DLL；NAudio.Wasapi 2.3.0 通过系统 WASAPI/COM 工作，无需额外的架构原生包。LLamaSharp CUDA/Vulkan 0.27.0 没有 Windows ARM64 资产，ARM64 包只使用 CPU。“关于”页说明 GPU 限制；若 ARM64 听写/嵌入原生文件缺失，对应设置页与操作错误显示“此架构暂不支持本地听写/嵌入，请用 x64 版或云端服务”。包内有 DLL 不代表 ARM 虚拟机的音频、GPU、模型推理已经通过验收，需在目标机器手动验证。
+
+### 本地打包和 CI 截图
+
+在 Windows PowerShell 7、.NET 8 SDK 环境运行：
+
+```powershell
+./Windows/tools/Package-Windows.ps1
+# 可指定预发布编号：-RunNumber 123；输出目录必须是新目录。
+dotnet build Windows/tests/LiveCopilot.App.Smoke/LiveCopilot.App.Smoke.csproj -c Release
+./Windows/tools/Smoke-Windows.ps1
+```
+
+版本唯一来源为 `Directory.Build.props` 的 `Version`，CI 附加 `-ci.<GITHUB_RUN_NUMBER>`，例如 `0.1.0-ci.123`；vpk CLI 与应用 Velopack 包共用 `VelopackVersion`。每个 RID 独立 self-contained 发布，产物在 `Windows/artifacts/package/releases/<RID>`（Setup、Portable zip、Velopack 元数据和 SHA256SUMS）；不签名、不指定需要联网安装的运行时。
+
+新 workflow 只由手动、push 到 `windows` 分支或相关文件的 PR 触发，权限仅 `contents: read`，无 secrets。它发布两个架构并上传包，在同一 Windows job 启动 x64 发布目录的实际 exe。`LIVECOPILOT_SMOKE=1` 使用唯一的 `%TEMP%\LiveCopilot-smoke-<GUID>` 数据目录和内存凭据，拒绝 HTTP、音频与模型调用，不注册全局快捷键、不打开浏览器；正常退出后清理临时数据。
+
+独立 UI Automation / Win32 驱动要求主窗口在 **30 秒**内就绪，切换通用、服务、知识库、历史记录、快捷键、关于六页，每页实际选中后调用 `PrintWindow` 保存 PNG，再通过取消设置和关闭主窗口正常退出。截图 artifact `LiveCopilot-smoke-<run number>` 含七张 PNG、`result.json` 和日志，保留 14 天。窗口不出现、页面遗漏、空白截图、非零退出码或超时均失败；外层 150 秒 watchdog 处理原生调用挂起。Linux 运行该独立项目只报告 Skip，不影响三个既有测试套件；可用 `-p:BuildWindowsSmoke=true` 在 Linux 编译 Windows 驱动，但不能执行 WPF 截图。
 
 ## 解决方案结构
 
@@ -64,7 +94,7 @@ dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -
 
 ## 本地推理与模型目录
 
-`LiveCopilot.LocalInference` 引用 Core，Core 不反向依赖原生包。固定依赖为 `org.k2fsa.sherpa.onnx 1.13.8`、`LLamaSharp 0.27.0` 及同版本的 `LLamaSharp.Backend.Cpu`、`LLamaSharp.Backend.Cuda12`、`LLamaSharp.Backend.Vulkan`；GPU 包始终保留，不以 Linux 测试条件裁掉。
+`LiveCopilot.LocalInference` 引用 Core，Core 不反向依赖原生包。固定依赖为 `org.k2fsa.sherpa.onnx 1.13.8`、`LLamaSharp 0.27.0` 及同版本的 `LLamaSharp.Backend.Cpu`、`LLamaSharp.Backend.Cuda12`、`LLamaSharp.Backend.Vulkan`；仅发布 `win-arm64` 时排除无对应资产的 GPU 包，Linux 测试和 x64 仍保留。发布阶段过滤其它 RID 的原生文件。
 
 - `LocalLiveProvider` 实现 `ILiveProvider` 与统计接口。默认 streaming Paraformer-zh-en INT8 + Silero VAD；`contextual: true` 使用 Zipformer、`decoder.onnx`、`joiner.int8.onnx`、`bpe.vocab`，`UpdateTerms` 支持最多 100 条、每条最多 100 个 UTF-16 单元，与 Mac 一致。热词只作用于下一段新建的识别流。
 - 输入为单声道 16 kHz、16-bit little-endian PCM，32 bytes = 1 ms；采集层负责重采样。500 ms 分块送入引擎，未处理及正在推理的音频合计上限 12 秒；溢出显式 failed，不丢音频后假报 finalized。引擎直接调用单次最大 15 秒。空输入用于 flush，停止会处理短尾块并给 recognizer 添加 1 秒零填充。

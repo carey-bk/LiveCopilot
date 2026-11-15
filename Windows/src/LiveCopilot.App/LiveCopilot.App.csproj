@@ -1,4 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF><ApplicationManifest>app.manifest</ApplicationManifest></PropertyGroup>
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF><ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>LiveCopilot.App.App</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+    <PackageReference Include="Velopack" Version="$(VelopackVersion)" />
+  </ItemGroup>
   <ItemGroup><ProjectReference Include="../LiveCopilot.Core/LiveCopilot.Core.csproj" /><ProjectReference Include="../LiveCopilot.Platform.Windows/LiveCopilot.Platform.Windows.csproj" /><ProjectReference Include="../LiveCopilot.LocalInference/LiveCopilot.LocalInference.csproj" /></ItemGroup>
+  <!-- LLamaSharp's backend props otherwise copy fallback assets for unrelated platforms. -->
+  <Target Name="KeepOnlyPublishedRuntime" AfterTargets="ComputeFilesToPublish" Condition="'$(RuntimeIdentifier)' != ''">
+    <ItemGroup>
+      <_ForeignRuntimeAsset Include="@(ResolvedFileToPublish)"
+        Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(ResolvedFileToPublish.RelativePath)', '^runtimes[\\/]'))" />
+      <!-- NuGet Content links can contain repeated separators (runtimes//win-arm64/...). -->
+      <_PublishedRuntimeAsset Include="@(ResolvedFileToPublish)"
+        Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('%(ResolvedFileToPublish.RelativePath)', '^runtimes[\\/]+$(RuntimeIdentifier)[\\/]'))" />
+      <_ForeignRuntimeAsset Remove="@(_PublishedRuntimeAsset)" />
+      <ResolvedFileToPublish Remove="@(_ForeignRuntimeAsset)" />
+    </ItemGroup>
+  </Target>
 </Project>

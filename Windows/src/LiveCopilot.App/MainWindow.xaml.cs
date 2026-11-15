@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Threading;
 using LiveCopilot.Core;
 using LiveCopilot.LocalInference;
@@ -20,7 +21,7 @@ public partial class MainWindow : Window
     private HotkeyManager? hotkeys;
     private ListeningSession? session;
     private AppSettings settings = new();
-    private readonly ICredentialStore credentials = new WindowsCredentialStore();
+    private readonly ICredentialStore credentials = AppRuntime.IsSmoke ? new MemoryCredentialStore() : new WindowsCredentialStore();
     private readonly HttpClientTransport transport = new();
     private readonly FilePreferenceStore preferences = new();
     private readonly LocalEmbeddingProvider localEmbedding = new();
@@ -42,19 +43,20 @@ public partial class MainWindow : Window
         try
         {
             settings = AppSettings.Load(preferences);
-            session = new(new WasapiAudioSourceFactory(), CreateProvider, settings,
+            session = new(AppRuntime.IsSmoke ? new SmokeAudioSourceFactory() : new WasapiAudioSourceFactory(), CreateProvider, settings,
                 new TranscriptStore(), new SessionStore(),
                 configuredReasoningFactory: selection => ReasoningProviderFactory.Make(selection, credentials, transport),
                 knowledgeRetriever: knowledge, embeddingFactory: CreateEmbedding);
             session.Changed += QueueRefresh;
             overlay = new OverlayWindow(settings);
-            overlay.Show();
+            if (!AppRuntime.IsSmoke) overlay.Show();
             hotkeyStore = new HotkeyStore(preferences);
-            hotkeys = new HotkeyManager(hotkeyStore, new Win32HotkeyRegistrar(),
+            hotkeys = new HotkeyManager(hotkeyStore, AppRuntime.IsSmoke ? new SmokeHotkeyRegistrar() : new Win32HotkeyRegistrar(),
                 session.Request, overlay.ToggleVisibility, error => HostErrorText.Text = "快捷键注册失败，请在设置中更换被占用的组合。\n" + error);
             hotkeys.SetEnabledModes(settings.EnabledSuggestionModes);
             RefreshSession(); // Construction and Loaded never start audio or inference.
             SettingsButton.IsEnabled = true;
+            AutomationProperties.SetItemStatus(this, "ready");
         }
         catch (Exception error) { HostErrorText.Text = "初始化失败：" + error.Message; }
     }
@@ -65,7 +67,8 @@ public partial class MainWindow : Window
         var viewModel = new SettingsViewModel(preferences, credentials, hotkeyStore,
             service => service is ListeningService.Zipformer or ListeningService.Paraformer &&
                 LocalModels.Get(service == ListeningService.Zipformer ? LocalModelKind.TerminologySpeech : LocalModelKind.StreamingSpeech).IsInstalled(LocalModels.DefaultRoot),
-            () => LocalModels.Get(LocalModelKind.Embedding).IsInstalled(LocalModels.DefaultRoot), typeof(MainWindow).Assembly);
+            () => LocalModels.Get(LocalModelKind.Embedding).IsInstalled(LocalModels.DefaultRoot), typeof(MainWindow).Assembly,
+            () => NativeRuntimeSupport.SpeechUnavailable, () => NativeRuntimeSupport.EmbeddingUnavailable, NativeRuntimeSupport.Notice);
         viewModel.Saved += ApplySettings;
         try { new SettingsWindow(viewModel, knowledge, CreateEmbedding, hotkeys) { Owner = this }.ShowDialog(); }
         finally { viewModel.Saved -= ApplySettings; }
@@ -82,8 +85,10 @@ public partial class MainWindow : Window
 
     private IEmbeddingProvider CreateEmbedding(AppSettings selection)
     {
+        AppRuntime.RequireInteractive("嵌入服务");
         if (selection.EmbeddingService == EmbeddingService.OpenAI)
             return OpenAIEmbeddingProvider.FromCredentials(selection, credentials, transport);
+        NativeRuntimeSupport.RequireEmbedding();
         if (!LocalModels.Get(LocalModelKind.Embedding).IsInstalled(LocalModels.DefaultRoot))
             throw new CopilotException("本地 BGE-M3 尚未安装，请先下载并安装模型；此界面不提供下载。");
         return localEmbedding;
@@ -91,6 +96,7 @@ public partial class MainWindow : Window
 
     private static ListeningProvider CreateProvider(Speaker speaker, ListeningService service)
     {
+        NativeRuntimeSupport.RequireSpeech();
         var provider = new LocalLiveProvider(speaker: speaker, contextual: service == ListeningService.Zipformer);
         return new(provider, terms => provider.UpdateTerms(terms), () => provider.Backend?.ToString());
     }
@@ -99,7 +105,7 @@ public partial class MainWindow : Window
     {
         if (session is null || closeRequested) return;
         StartButton.IsEnabled = false;
-        try { await session.StartAsync(); }
+        try { AppRuntime.RequireInteractive("音频采集"); await session.StartAsync(); }
         catch (Exception error) { HostErrorText.Text = "无法开始聆听：" + error.Message; }
         finally { RefreshSession(); }
     }
@@ -135,7 +141,7 @@ public partial class MainWindow : Window
         SystemText.Text = Describe("系统 / Them", view.System);
         MicrophoneText.Text = Describe("麦克风 / You", view.Microphone);
         SuggestionText.Text = view.SuggestionStatus ?? "";
-        StartButton.IsEnabled = !closeRequested && !view.IsStopping && view.State is not (ListeningState.Starting or ListeningState.Listening);
+        StartButton.IsEnabled = !AppRuntime.IsSmoke && !closeRequested && !view.IsStopping && view.State is not (ListeningState.Starting or ListeningState.Listening);
         StopButton.IsEnabled = !closeRequested && !view.IsStopping && (view.SuggestionIsLoading || view.State is (ListeningState.Starting or ListeningState.Listening));
         overlay?.SetContent(new(view.Status + (view.Error is null ? "" : "\n" + view.Error),
             view.Lines, view.PartialThem, view.PartialYou, view.SuggestionStatus, view.SuggestionText)

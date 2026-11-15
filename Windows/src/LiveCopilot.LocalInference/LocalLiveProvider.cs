@@ -115,6 +115,14 @@ public sealed class LocalLiveProvider : ILiveProvider, IRecognitionStatsReportin
             }
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        catch (CopilotException error)
+        {
+            lock (gate) Fail(error.Message);
+        }
+        catch (Exception error) when (NativeRuntimeSupport.RequiresCpu && error is DllNotFoundException or BadImageFormatException or TypeInitializationException)
+        {
+            lock (gate) Fail(NativeRuntimeSupport.SpeechMessage);
+        }
         catch (Exception)
         {
             lock (gate) Fail("Local model is missing, corrupt, or could not run. Check model files and the native runtime.");

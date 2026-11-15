@@ -9,7 +9,7 @@ public sealed record BackendAttempt(InferenceBackend Backend, string Outcome);
 
 public sealed record InferenceOptions
 {
-    public bool ForceCpu { get; init; } = Environment.GetEnvironmentVariable("LIVECOPILOT_INFERENCE_CPU") == "1";
+    public bool ForceCpu { get; init; } = NativeRuntimeSupport.RequiresCpu || Environment.GetEnvironmentVariable("LIVECOPILOT_INFERENCE_CPU") == "1";
     public string SherpaRuntimeRoot { get; init; } = Path.Combine(AppContext.BaseDirectory, "native", "sherpa");
     public IHardwareProbe HardwareProbe { get; init; } = new SystemHardwareProbe();
 }

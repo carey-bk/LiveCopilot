@@ -103,8 +103,15 @@ public partial class SettingsWindow : Window
     }
     private void OpenProject(object sender, RoutedEventArgs e)
     {
+        if (AppRuntime.IsSmoke) return;
         try { Process.Start(new ProcessStartInfo(viewModel.ProjectUrl) { UseShellExecute = true }); }
         catch (Exception) { MessageBox.Show(this, "无法打开浏览器，请复制项目地址。", "LiveCopilot"); }
+    }
+    private async void CheckUpdates(object sender, RoutedEventArgs e)
+    {
+        var status = await viewModel.CheckUpdatesAsync();
+        UpdateStatusText.Text = status == LiveCopilot.Platform.Updates.UpdateCheckStatus.Disabled
+            ? "更新检查已关闭。" : "更新源尚未配置，未发送网络请求。";
     }
     private bool CanOperateDocuments()
     {
