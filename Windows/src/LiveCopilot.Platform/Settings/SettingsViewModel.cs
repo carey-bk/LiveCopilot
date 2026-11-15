@@ -229,7 +229,7 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
             Require(ValidCompatiblePath(), nameof(CompatiblePath), "请输入有效的相对接口路径（如 chat/completions），不能含查询参数或路径跳转。" );
             Require(!string.IsNullOrWhiteSpace(CompatibleModel), nameof(CompatibleModel), "请输入兼容接口模型名称。" );
         }
-        foreach (var property in new[] { nameof(Language), nameof(AnswerLanguage), nameof(Scenario), nameof(ContinuousQuestionPolicy), nameof(ListeningService), nameof(LiveSpeechLanguage), nameof(ReasoningService), nameof(KnowledgeMode), nameof(EmbeddingService) })
+        foreach (var property in new[] { nameof(Background), nameof(Language), nameof(AnswerLanguage), nameof(Scenario), nameof(ContinuousQuestionPolicy), nameof(ListeningService), nameof(LiveSpeechLanguage), nameof(ReasoningService), nameof(KnowledgeMode), nameof(EmbeddingService) })
         {
             var value = typeof(SettingsViewModel).GetProperty(property)!.GetValue(this)!;
             Require(Enum.IsDefined(value.GetType(), value), property, "请选择有效的设置选项。" );
@@ -244,6 +244,10 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
         foreach (var property in changed) ErrorsChanged?.Invoke(this, new(property));
         Notify(nameof(HasErrors)); Notify(nameof(ValidationSummary)); SaveCommand.Refresh();
     }
+    public AppBackground Background { get => draft.Background; set => Edit(() => draft.Background = value); }
+    public double LayaThreshold { get => draft.LayaThreshold; set => Edit(() => draft.LayaThreshold = value); }
+    public bool RecapEnabled { get => draft.RecapEnabled; set => Edit(() => draft.RecapEnabled = value); }
+    public bool FollowUpEnabled { get => draft.FollowUpEnabled; set => Edit(() => draft.FollowUpEnabled = value); }
     public AppLanguage Language { get => draft.Language; set => Edit(() => draft.Language = value); }
     public AnswerLanguage AnswerLanguage { get => draft.AnswerLanguage; set => Edit(() => draft.AnswerLanguage = value); }
     public ScenarioProfile Scenario { get => draft.Scenario; set => Edit(() => draft.Scenario = value); }

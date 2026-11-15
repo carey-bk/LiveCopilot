@@ -49,6 +49,7 @@ public partial class SettingsWindow : Window
         ], action => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, action), CompleteClose);
         SmokeDiagnostics.Event("settings InitializeComponent completed");
         DataContext = viewModel;
+        InitializeOnboarding();
         viewModel.Saved += Saved;
         viewModel.Cancelled += Cancelled;
         models.Changed += ModelChanged;
@@ -78,6 +79,10 @@ public partial class SettingsWindow : Window
             _ = DisposeKnowledgeCancellationAsync(cleanup);
         };
     }
+
+    partial void InitializeOnboarding();
+    partial void ShowOnboarding();
+    private void OpenOnboarding(object sender, RoutedEventArgs e) => ShowOnboarding();
 
     private void ModelChanged(LocalModelKind _)
     {
