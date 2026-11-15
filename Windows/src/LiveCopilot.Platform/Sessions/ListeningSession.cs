@@ -16,9 +16,10 @@ public sealed class ListeningSession : IAsyncDisposable
     private readonly Func<Speaker, ListeningService, ListeningProvider> providerFactory;
     private readonly TranscriptStore transcript;
     private readonly SessionStore? sessions;
-    private readonly AppSettings settings;
+    private AppSettings settings;
     private readonly ICaptureClock? clock;
     private readonly Func<IReasoningProvider>? reasoningFactory;
+    private readonly Func<AppSettings, IReasoningProvider>? configuredReasoningFactory;
     private readonly IKnowledgeRetriever? knowledge;
     private readonly Func<AppSettings, IEmbeddingProvider>? embeddingFactory;
     private readonly TimeSpan answerTimeout;
@@ -34,7 +35,8 @@ public sealed class ListeningSession : IAsyncDisposable
         Func<Speaker, ListeningService, ListeningProvider> providerFactory, AppSettings settings,
         TranscriptStore? transcript = null, SessionStore? sessions = null, ICaptureClock? clock = null,
         Func<IReasoningProvider>? reasoningFactory = null, TimeSpan? answerTimeout = null,
-        IKnowledgeRetriever? knowledgeRetriever = null, Func<AppSettings, IEmbeddingProvider>? embeddingFactory = null)
+        IKnowledgeRetriever? knowledgeRetriever = null, Func<AppSettings, IEmbeddingProvider>? embeddingFactory = null,
+        Func<AppSettings, IReasoningProvider>? configuredReasoningFactory = null)
     {
         this.audioFactory = audioFactory;
         this.providerFactory = providerFactory;
@@ -43,10 +45,22 @@ public sealed class ListeningSession : IAsyncDisposable
         this.sessions = sessions;
         this.clock = clock;
         this.reasoningFactory = reasoningFactory;
+        this.configuredReasoningFactory = configuredReasoningFactory;
         knowledge = knowledgeRetriever;
         this.embeddingFactory = embeddingFactory;
         this.answerTimeout = answerTimeout ?? TimeSpan.FromSeconds(90);
         if (this.answerTimeout <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(answerTimeout));
+    }
+
+    /// Future answers and listening runs take a copy. In-flight audio and answers retain theirs.
+    public void Configure(AppSettings value)
+    {
+        lock (sync)
+        {
+            ObjectDisposedException.ThrowIf(disposed, this);
+            settings = value with { };
+        }
+        Changed?.Invoke();
     }
 
     /// Applies to the next request; each active request retains its own selection.
@@ -84,7 +98,7 @@ public sealed class ListeningSession : IAsyncDisposable
                 else
                 {
                     transcript.Clear();
-                    run = new(audioFactory, clock);
+                    run = new(audioFactory, clock, settings with { });
                     current = run;
                     snapshot = new() { State = ListeningState.Starting, SampleRate = settings.ListeningService.SampleRate() };
                 }
@@ -95,8 +109,8 @@ public sealed class ListeningSession : IAsyncDisposable
             using var registration = cancellationToken.Register(() => ScheduleStop(run));
             try
             {
-                run.System.Capture.Configure(settings.ListeningService.SampleRate());
-                run.Microphone.Capture.Configure(settings.ListeningService.SampleRate());
+                run.System.Capture.Configure(run.Settings.ListeningService.SampleRate());
+                run.Microphone.Capture.Configure(run.Settings.ListeningService.SampleRate());
                 Prepare(run, run.System);
                 Prepare(run, run.Microphone);
                 Connect(run, run.System);
@@ -128,16 +142,16 @@ public sealed class ListeningSession : IAsyncDisposable
     private void Prepare(Run run, Path path)
     {
         CheckStarting(run);
-        path.Live = providerFactory(path.Speaker, settings.ListeningService);
+        path.Live = providerFactory(path.Speaker, run.Settings.ListeningService);
         path.Live.Provider.OnEvent = value => Receive(run, path, value);
         path.Capture.Error += message => Fail(run, message);
         // AudioCaptureManager owns the callback lifetime. SendAudio must promptly copy/queue
         // the borrowed PCM, as LocalLiveProvider does. No task/extra audio queue per buffer.
         path.Capture.Pcm16Available += pcm => path.Live.Provider.SendAudio(pcm);
-        if (settings.ListeningService == ListeningService.Zipformer)
+        if (run.Settings.ListeningService == ListeningService.Zipformer)
         {
             if (path.Live.UpdateTerms is null) throw new InvalidOperationException("Zipformer 提供器未提供热词配置。");
-            path.Live.UpdateTerms(settings.ProfessionalTerms);
+            path.Live.UpdateTerms(run.Settings.ProfessionalTerms);
         }
     }
 
@@ -254,7 +268,7 @@ public sealed class ListeningSession : IAsyncDisposable
             var label = mode switch { SuggestionMode.Reply => "回答", SuggestionMode.Recap => "总结", _ => "追问" };
             snapshot = snapshot with { LastRequestedMode = mode, SuggestionText = "", SuggestionError = null,
                 SuggestionIsLoading = false, Sources = [], Warning = null };
-            if (reasoningFactory is null)
+            if (reasoningFactory is null && configuredReasoningFactory is null)
                 snapshot = snapshot with { SuggestionStatus = $"已请求{label}，推理服务尚未接入" };
             else
             {
@@ -380,7 +394,7 @@ public sealed class ListeningSession : IAsyncDisposable
                     Changed?.Invoke();
                     return Task.CompletedTask;
                 };
-                var provider = reasoningFactory!();
+                var provider = configuredReasoningFactory is null ? reasoningFactory!() : configuredReasoningFactory(run.Settings with { });
                 run.Token.ThrowIfCancellationRequested();
                 lock (sync) { if (suggestion != run) return; run.Store.Mark(PipelineStage.ModelRequest); }
                 await foreach (var delta in provider.Stream(answer, run.Token).WithCancellation(run.Token).ConfigureAwait(false))
@@ -602,8 +616,9 @@ public sealed class ListeningSession : IAsyncDisposable
         public SuggestionRun(AppSettings settings) { Settings = settings; Token = Cancellation.Token; }
     }
 
-    private sealed class Run(IAudioSourceFactory factory, ICaptureClock? clock)
+    private sealed class Run(IAudioSourceFactory factory, ICaptureClock? clock, AppSettings settings)
     {
+        public AppSettings Settings { get; } = settings;
         public Path System { get; } = new(factory, AudioInput.System, Speaker.Them, clock);
         public Path Microphone { get; } = new(factory, AudioInput.Microphone, Speaker.You, clock);
         public CancellationTokenSource StartCancellation { get; } = new();

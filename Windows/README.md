@@ -1,6 +1,6 @@
-# LiveCopilot Windows：本地聆听、云端建议与文档知识库（第 7 线）
+# LiveCopilot Windows：本地聆听、云端建议、知识库与设置页（第 8 线）
 
-本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。第 4 线增加 WASAPI 音频、WPF 浮窗壳和全局快捷键；第 5 线通过可测试的 `ListeningSession` 连接双路采集与本地语音识别。第 6 线接入手动云端回答 / 总结 / 追问、流式浮窗正文及 Windows 凭据存储；第 7 线增加文档导入、知识库检索和浮窗来源。云端听写和完整客户端 UI 尚未接入。原有 `StealthApp/` 源码与资源保持不变。
+本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。第 4 线增加 WASAPI 音频、WPF 浮窗壳和全局快捷键；第 5 线通过可测试的 `ListeningSession` 连接双路采集与本地语音识别。第 6 线接入手动云端回答 / 总结 / 追问、流式浮窗正文及 Windows 凭据存储；第 7 线增加文档导入、知识库检索和浮窗来源；第 8 线增加中文分页设置窗口，集中管理通用、服务、知识库与快捷键配置。云端听写、自动建议执行和历史浏览尚未接入。原有 `StealthApp/` 源码与资源保持不变。
 
 ## 解决方案结构
 
@@ -20,9 +20,9 @@ Windows/
 │   │   ├── Support/                      # JSON、值语义集合、原子文件写入等
 │   │   └── Resources/                    # 嵌入式 JSON 字典、提示词和分析数据
 │   ├── LiveCopilot.LocalInference/        # net8.0，sherpa-onnx / LLamaSharp，独立于 Core
-│   ├── LiveCopilot.Platform/              # net8.0，可注入音频/快捷键/浮窗逻辑及聆听会话
+│   ├── LiveCopilot.Platform/              # net8.0，音频/快捷键/浮窗逻辑、聆听会话及设置 ViewModel
 │   ├── LiveCopilot.Platform.Windows/      # net8.0-windows，WASAPI、Win32、WPF、Credential Manager
-│   └── LiveCopilot.App/                   # net8.0-windows，手动开始/停止的薄宿主
+│   └── LiveCopilot.App/                   # net8.0-windows，聆听宿主与纯 WPF 分页设置窗口
 ├── tests/
 │   ├── LiveCopilot.Core.Tests/            # xUnit，临时目录及合成提供器
 │   ├── LiveCopilot.LocalInference.Tests/  # 无权重契约测试 + 可跳过的真实模型测试
@@ -34,7 +34,7 @@ Core 使用 `Microsoft.Data.Sqlite 8.0.22`。界面 JSON 资源显式设置 `Wit
 
 ## Linux 上构建与测试
 
-本工作区的 SDK 为 `/home/box/.dotnet` 下的 .NET SDK 8.0.428。首次恢复需要访问 nuget.org：
+本工作区的 SDK 为 `/home/box/.dotnet` 下的 .NET SDK 8.0.428。以下命令使用已有恢复结果与依赖缓存，不发起包恢复；新环境需先另行准备依赖：
 
 ```bash
 export PATH="/home/box/.dotnet:$PATH"
@@ -43,18 +43,18 @@ export DOTNET_EnableWindowsTargeting=true
 export DOTNET_CLI_HOME="/tmp/dotnet-home"
 export DOTNET_NOLOGO=1
 export LIVECOPILOT_INFERENCE_CPU=1
-cd /workspace/livecopilot-windows-session/Windows
+cd /workspace/livecopilot-windows-settings/Windows
 
 set -o pipefail
-dotnet build LiveCopilot.Windows.sln -c Release 2>&1 | tee /workspace/codex/livecopilot-windows/validation/Build.Release.line5.log
-dotnet test tests/LiveCopilot.Core.Tests/LiveCopilot.Core.Tests.csproj -c Release \
-  --logger 'trx;LogFileName=Core.Release.line5.trx' \
+dotnet build LiveCopilot.Windows.sln -c Release --no-restore 2>&1 | tee /workspace/codex/livecopilot-windows/validation/Build.Release.line8.log
+dotnet test tests/LiveCopilot.Core.Tests/LiveCopilot.Core.Tests.csproj -c Release --no-build --no-restore \
+  --logger 'trx;LogFileName=Core.Release.line8.trx' \
   --results-directory /workspace/codex/livecopilot-windows/validation
-dotnet test tests/LiveCopilot.LocalInference.Tests/LiveCopilot.LocalInference.Tests.csproj -c Release \
-  --logger 'trx;LogFileName=LocalInference.Release.line5.trx' \
+dotnet test tests/LiveCopilot.LocalInference.Tests/LiveCopilot.LocalInference.Tests.csproj -c Release --no-build --no-restore \
+  --logger 'trx;LogFileName=LocalInference.Release.line8.trx' \
   --results-directory /workspace/codex/livecopilot-windows/validation
-dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -c Release -f net8.0 \
-  --logger 'trx;LogFileName=Platform.Release.line5.trx' \
+dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -c Release -f net8.0 --no-build --no-restore \
+  --logger 'trx;LogFileName=Platform.Release.line8.trx' \
   --results-directory /workspace/codex/livecopilot-windows/validation
 ```
 
@@ -158,7 +158,7 @@ Linux 可以交叉编译 WPF，但不能运行窗口；假源测试通过不构�
 
 启动后显示主窗口与浮窗，状态为“未开始聆听”，不创建语音提供器、不加载模型、不采集声音。点击“开始聆听”才加载本地语音并启动系统与麦克风两路；点击“停止”先停止两路采集，再等待识别器 flush，最后把有正式转写的会话保存到 `%LOCALAPPDATA%/LiveCopilot/sessions`。重复开始/停止不会重复连接或重复保存；关闭主窗口也会停止、保存并释放快捷键与浮窗。保存错误会显示在主窗口和浮窗，关闭时也会提示；本批没有历史浏览或保存重试 UI。
 
-宿主使用持久化的 `AppSettings`（默认 Zipformer）；没有设置页。模型应预先放在 `%LOCALAPPDATA%/LiveCopilot/Models`，按上文清单及 receipt 安装；独立宿主/测试可向 `LocalLiveProvider` 注入其它 root。本批 UI 不下载模型、不预热 embedding、不强制 CPU。缺失、损坏、运行库错误都会明确显示失败；只有 provider 发出 Ready 后才读取并展示实际 `Backend`，未就绪时不宣称 GPU/CPU 成功。OpenAI 或 Apple 听写选择会在打开音频源之前被拒绝，提示“云端听写尚未接入”。
+宿主使用持久化的 `AppSettings`（默认 Zipformer）；第 8 线可通过主窗口「设置」修改。模型应预先放在 `%LOCALAPPDATA%/LiveCopilot/Models`，按上文清单及 receipt 安装；独立宿主/测试可向 `LocalLiveProvider` 注入其它 root。本批 UI 不下载模型、不预热 embedding、不强制 CPU。缺失、损坏、运行库错误都会明确显示失败；只有 provider 发出 Ready 后才读取并展示实际 `Backend`，未就绪时不宣称 GPU/CPU 成功。OpenAI 或 Apple 听写选择会在打开音频源之前被拒绝；设置页也会提示当前 Windows 支持范围。
 
 `ListeningSession` 位于纯 `net8.0` Platform，依赖音频工厂、`ILiveProvider` 工厂、设置快照、独占的 `TranscriptStore` 以及可选 `SessionStore` / `ICaptureClock`。Platform 仅引用 Core，不引用 LocalInference、sherpa、LLamaSharp、NAudio 或 WPF。WPF 宿主注入 `WasapiAudioSourceFactory`，每次开始为 Them / You 各创建一个新的 `LocalLiveProvider`；单次使用的 provider 在断开后不复用。`ListeningProvider` 的可选能力委托提供热词配置与已观察到的后端信息，避免向 Platform 泄漏原生实现。
 
@@ -172,7 +172,7 @@ Linux 可以交叉编译 WPF，但不能运行窗口；假源测试通过不构�
 
 ## 第 6 线：手动云端建议与 API 密钥
 
-主窗口的 API 密钥行只针对已加载设置的 `AnalysisCredentialReference()`。默认服务仍为 SharedOpenAI；没有服务选择器、模型目录页或完整设置页。输入 PasswordBox 后点击“保存”，密钥写入当前 Windows 用户的 **Windows Credential Manager generic credential**；输入框随即清空，只显示“已保存”或“未保存”。点击“清除”删除当前账户的凭据，空白输入保存也执行清除。凭据目标为 `LiveCopilot-Credentials-v1/` 加 `reference.Service + "|" + reference.Account`，账户使用同一拼接格式；不写明文文件、偏好 JSON 或日志。Credential Manager 失败会显示安全错误，本批未采用 DPAPI 文件回退。Core 的 `MemoryCredentialStore` 仅保存进程内数据，供 Linux 和测试使用。
+第 8 线已将主窗口密钥行迁移到「设置 → 服务」，默认推理服务仍为 SharedOpenAI。输入 PasswordBox 后点击设置页底部「保存」，密钥经 `ICredentialStore` 写入当前 Windows 用户的 **Windows Credential Manager generic credential**；输入框随即清空，仅显示保存状态和末 4 位，长度不超过 4 的值完全遮罩。「清除」先标记待清除，保存后才删除；留空输入不删除已保存密钥。「取消」丢弃待保存或待清除操作。凭据目标仍为 `LiveCopilot-Credentials-v1/` 加 `reference.Service + "|" + reference.Account`，不写明文文件、偏好 JSON、诊断文本或日志。Credential Manager 失败会显示安全错误，未采用 DPAPI 文件回退。Core 的 `MemoryCredentialStore` 仅保存进程内数据，供 Linux 和测试使用。
 
 仅在当前凭据账户没有密钥时，宿主工厂才读取环境变量：SharedOpenAI / SeparateOpenAI 使用 `OPENAI_API_KEY`，DeepSeek 使用 `DEEPSEEK_API_KEY`。环境值不会自动保存；清除已保存密钥后，已有环境变量仍可作为回退。Qwen / GLM / Kimi / compatible 没有环境变量回退，不读取 Live 的密钥。不要把密钥写进命令记录、设置 JSON 或仓库。缺少密钥时提示“请先配置分析服务 API 密钥”，缺少模型或无效 endpoint 明确失败，不切换服务。
 
@@ -199,8 +199,8 @@ Core.Tests 使用 fake transport / fake `HttpMessageHandler` 和固定字节，�
 
 ## 第 7 线：文档导入与知识库检索
 
-1. 在宿主的「本地知识库」区域选择回答模式：通用、混合或仅知识库。选择 OpenAI 或本地 BGE-M3 embedding；选择通过已有 `AppSettings` / `FilePreferenceStore` 保存，重启后恢复。OpenAI 默认模型为 `text-embedding-3-small`，当前模型身份显示在下方；本批不提供完整模型设置页。
-2. OpenAI embedding 使用共享 OpenAI 密钥 `CredentialReference.Live`，缺失时回退 `OPENAI_API_KEY`。分析服务使用独立密钥时，界面另有「保存共享密钥」输入行；分析服务为共享 OpenAI 时复用原有密钥行。密钥仍存 Windows Credential Manager，不写入偏好文件。清除保存的密钥不会清除进程环境变量。
+1. 第 8 线从主窗口「设置 → 知识库」选择回答模式：通用、混合或仅知识库。选择 OpenAI 或本地 BGE-M3 embedding，并配置 OpenAI 嵌入模型和检索数量；点击「保存」后经已有 `AppSettings` / `FilePreferenceStore` 持久化，重启后恢复。OpenAI 默认模型为 `text-embedding-3-small`，当前模型身份显示在下方。
+2. OpenAI embedding 使用「设置 → 服务」中的共享 OpenAI 密钥 `CredentialReference.Live`，缺失时回退 `OPENAI_API_KEY`。独立推理密钥不用于 embedding。密钥仍存 Windows Credential Manager，不写入偏好文件。清除保存的密钥不会清除进程环境变量。
 3. 点击「导入文档」多选本地 PDF、MD、Markdown、TXT、DOCX。文档列表显示名称、状态、分块数和 embedding 模型；操作期间禁用导入、重建、删除和知识库选项，显示当前文件与进度。选中文档可重新索引或删除；删除仅移除知识库内的副本和索引，不删除外部原文件。多文件批次按顺序处理，某个文件失败时停止后续导入，之前成功的文件保留。
 4. 开始聆听并积累对话后，使用回答 `Ctrl+Alt+Space`、总结 `Ctrl+Alt+S` 或追问 `Ctrl+Alt+X`。浮窗在正文下方显示检索来源（`[S编号] 文档名 · 第 N 页`），以及降级警告；TXT/MD/DOCX 不虚构页码。来源数量受 `RetrievalCount` 限制，默认 5；编号只来自实际命中的分块，继续复用 `CitationPolicy` 去除越界引用。
 
@@ -222,7 +222,7 @@ OpenAI 会接收导入文档分块和检索问题；本地 embedding 不上传�
 
 第 7 线证据写入 `/workspace/codex/livecopilot-windows/validation/` 的 `Build.Release.line7.log`、`Core.Release.line7.trx`、`LocalInference.Release.line7.trx`、`Platform.Release.line7.trx`、`Files.line7.txt`，不覆盖 line5/line6。完整命令、计数与限制见 `/workspace/codex/livecopilot-windows/REPORT_KNOWLEDGE.md`。已有依赖缓存时可离线运行（工作目录 `Windows`）：
 
-本轮 Linux Release 验收：完整 solution（含 WPF App）**0 warnings / 0 errors**；Core **273 通过**（241 + 32），LocalInference **61 通过、2 跳过**，Platform `net8.0` **198 通过、2 跳过**（129 + 69），全部 **0 失败**。未改变原有测试断言或警告策略。
+第 7 线 Linux Release 验收：完整 solution（含 WPF App）**0 warnings / 0 errors**；Core **273 通过**（241 + 32），LocalInference **61 通过、2 跳过**，Platform `net8.0` **198 通过、2 跳过**（129 + 69），全部 **0 失败**。未改变原有测试断言或警告策略。
 
 ```bash
 export PATH=/home/box/.dotnet:$PATH DOTNET_EnableWindowsTargeting=true
@@ -234,6 +234,31 @@ dotnet test tests/LiveCopilot.Core.Tests/LiveCopilot.Core.Tests.csproj -c Releas
 dotnet test tests/LiveCopilot.LocalInference.Tests/LiveCopilot.LocalInference.Tests.csproj -c Release --no-build --no-restore
 dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -c Release -f net8.0 --no-build --no-restore
 ```
+
+## 第 8 线：完整设置页
+
+主窗口点击「设置」打开独立窗口，左侧依次为通用、服务、知识库、历史记录、快捷键、关于。原主窗口中的密钥和知识库控件已迁入设置页；开始/停止聆听、状态和浮窗主流程保持不变。设置逻辑位于纯 `net8.0` 的 `LiveCopilot.Platform/Settings`，使用简单 MVVM 与 `RelayCommand`，不引用 WPF、NAudio 或 LocalInference；WPF 只负责绑定、密码输入、按键录制和文档操作宿主。
+
+| 页面 | 可配置内容与校验 |
+| --- | --- |
+| 通用 | 界面语言、回答语言、场景、自动建议开关、连续提问策略、双语回答、附加指令（最多 4000 个 UTF-16 单元）；转写/回答字体均为 11–28，支持浮窗自动高度和共享屏幕时隐藏浮窗。 |
+| 服务 | 听写引擎和语言；推理服务、来自 `AnalysisModelCatalog` 的模型及其支持的推理强度；共享/独立 OpenAI、DeepSeek、兼容接口和当前预设服务的密钥。兼容 BaseURL 必须为 HTTPS，Path 与 Model 必填；拒绝 URL 凭据、查询参数和路径跳转。 |
+| 知识库 | 通用/混合/仅知识库模式，OpenAI/本地 BGE-M3 嵌入服务、模型、检索数量（整数 3–8）；导入、删除和重新索引沿用第 7 线逻辑。嵌入身份变化立即提示保存后重建索引，模式或检索数量变化无需重建。 |
+| 历史记录 | 显示「即将推出」，本批不提供历史浏览。 |
+| 快捷键 | 列出回答、总结、追问、显示/隐藏浮窗；支持单项录制/恢复默认和全部恢复默认，重复绑定及 Windows 保留组合给出中文错误。 |
+| 关于 | 从宿主程序集读取版本，显示项目地址 `https://github.com/carey-bk/LiveCopilot` 与未签名说明：确认来源可信后，在 SmartScreen 选择「更多信息 → 仍要运行」。 |
+
+修改时即时校验，错误会禁用「保存」；数字输入为空、非数字、非有限值或超出范围都会保留错误，修正后方可保存。「保存」写入 `AppSettings`、凭据和快捷键，再通知会话及浮窗刷新。转写/回答字号、自动高度与捕获排除立即更新；新回答使用已保存的服务、模型、密钥和回答选项，进行中的回答保留发起时的配置。听写引擎在下次开始聆听时生效，修改不会导致正在启动的两路使用不同引擎。保存通知的订阅者异常会单独隔离并提示，不回滚已经成功持久化的设置。
+
+「取消」或关闭窗口会丢弃未保存的偏好、密钥与快捷键草稿；上一次成功保存的内容继续有效。凭据只经 `ICredentialStore` 读写，不参与 `AppSettings` 序列化或 `ToString`；兼容接口凭据按 endpoint 隔离，更换地址会清空待保存密钥。保存失败时尝试恢复之前的偏好、凭据和快捷键；恢复不完整会明确提示重新打开核对，不承诺跨存储的断电事务。
+
+文档操作前必须先保存设置；导入、删除和重建会立即执行，不随「取消」撤销。操作期间禁用设置编辑、保存、取消及重复文档操作，关闭窗口会取消并等待任务收尾。录制快捷键时暂停全局绑定，按 Esc、点击鼠标、切换页面或失去焦点结束录制；保存后重新注册，外部程序占用组合时仍需在 Windows 中更换绑定。
+
+未安装本地模型时显示中文提示，设置页不下载模型。云端/Apple 听写在 Windows 上仍不可用；本地双语模型自动识别中英文，听写语言不强制过滤识别结果。界面语言偏好会保存，本批设置窗口文案固定为中文；自动建议与连续提问策略可保存，但本批仍由快捷键手动触发建议。共享隐藏请求是否被会议软件实际遵守需要 Windows 真机验证。
+
+2026-11-15 第 8 线 Linux Release 验收：完整 solution（含 WPF App 和 Platform.Tests 两个目标）**0 warnings / 0 errors**；Core **279 通过**（273 + 6），LocalInference **61 通过、2 跳过**，Platform `net8.0` **277 通过、2 跳过**（198 + 79），全部 **0 失败**。新增测试覆盖默认值、即时范围校验、保存/取消、文件持久化、凭据隔离与安全错误、快捷键冲突与回滚、重建提示、保存通知异常隔离和会话配置快照；既有测试断言及 `TreatWarningsAsErrors` 未改变。
+
+最终证据位于 `/workspace/codex/livecopilot-windows/validation/`：`Build.Release.line8.log`、三套 `*.Release.line8.log` / `*.Release.line8.trx`、`Files.line8.txt`；详细报告为 `/workspace/codex/livecopilot-windows/REPORT_SETTINGS.md`。本轮只使用缓存构建与假源测试，没有真实网络调用、模型下载或权重/二进制提交。Linux 未运行 WPF 设置交互、Windows 凭据管理器、真实全局快捷键与会议共享隐藏；两项真实模型测试因缺少模型跳过，两项 Windows 桌面探针在 Linux 跳过。
 
 ## 第 4 线：音频契约与 WASAPI
 
@@ -266,7 +291,7 @@ await system.StopAsync();
 
 `OverlayWindow` 是可复用壳：Topmost、透明无边框卡片、`ShowActivated=false`，HWND 增加 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`，`WM_MOUSEACTIVATE` 返回 `MA_NOACTIVATE`。默认工作区右上方 24 DIP 边距，尺寸属性 min 400×240 / max 700×1000。所有定位/自动高度/贴边经过已有 `OverlayLayout.Fitted`，因此自动拟合保留 Core 的 900 高度上限；没有修改 Core 几何常量。DIP 与 Win32 物理像素按窗口 DPI 转换，Y 轴通过 `yCore = -top - height` 翻转，支持负坐标显示器。宿主 manifest 启用 PerMonitorV2；独立宿主也应声明 DPI awareness。
 
-`Configure(AppSettings)` 应在偏好变化时由 UI 线程调用，`ContentHeightChanged` 接受卡片内容高度，第 5 线增加 `SetContent(OverlayContent)` 用于状态和转写。贴边隐藏复用 `OverlayHoverState`，右边缘停留 0.16 秒显示、离开 0.9 秒隐藏，交互重置计时；隐藏保留 HWND 和轮询以便跨显示器唤回。贴边关闭时允许拖动，打开时禁用自由拖动。卡片没有完整对话区、设置页、分栏 UI 或手动缩放手柄；既有 `OverlayLayout.Panes` 保留供未来完整 UI 使用。
+`Configure(AppSettings)` 应在偏好变化时由 UI 线程调用，第 8 线已由设置保存接入；`ContentHeightChanged` 接受卡片内容高度，第 5 线增加 `SetContent(OverlayContent)` 用于状态和转写。贴边隐藏复用 `OverlayHoverState`，右边缘停留 0.16 秒显示、离开 0.9 秒隐藏，交互重置计时；隐藏保留 HWND 和轮询以便跨显示器唤回。贴边关闭时允许拖动，打开时禁用自由拖动。设置页使用独立窗口；浮窗卡片没有完整对话区、分栏 UI 或手动缩放手柄，既有 `OverlayLayout.Panes` 保留供未来完整 UI 使用。
 
 捕获排除由 `ExcludeOverlayFromCapture` 显式选择，默认 false。HWND 建立后调用 `SetWindowDisplayAffinity(hwnd, 0x00000011)`；关闭则调用 `WDA_NONE (0)`，DPI/显示器变化和句柄初始化时重新应用。`CaptureProtectionStatus` 暴露 HWND、请求标志、真实 BOOL 返回值和错误码；未有 HWND 时返回值为 null。API 成功只说明请求被接受，**没有证明 Teams / Zoom / 腾讯会议的共享画面隐藏成功**。Windows 10 2004 前的兼容行为也不同，见 [SetWindowDisplayAffinity 官方说明](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowdisplayaffinity)。需在真实会议客户端分别验收整屏/窗口共享；Topmost/tool-window 不等价于 Mac `canJoinAllSpaces`，不会自动固定到所有虚拟桌面，也不保证覆盖独占全屏、UAC 安全桌面或更高权限窗口。
 
@@ -312,9 +337,9 @@ dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -
 
 ## 明确不在本批范围
 
-- 不实现完整 OverlayView 对话 UI、设置或入门；第 7 线仅补充最小文档管理、知识模式和 embedding 服务选择。
+- 不实现完整 OverlayView 对话 UI 或入门；第 8 线已提供独立设置页及迁移后的知识库管理，历史记录仅显示占位。
 - Laya / Jev / MLX、决策模型分类器、完整 AppCoordinator、云 Live providers 和自动建议留待后续；文档导入、手动请求 RAG 与 OpenAI embeddings HTTP 已接入。
 - WASAPI 真机设备/权限/进程排除、会议共享隐藏和全局快捷键体验尚未验收；没有签名、安装器或发行打包。
 - 不翻译 `AppleSpeech*`、`AppleLiveProvider`、`Laya*`、`AudioFlowMonitor`、`EchoMonitor`、`AppCoordinator`。
-- 不新增 `OnboardingStore`；后续仍需完整设置、决策模型、Windows 真机与真实云服务验收、签名及发行打包。
+- 不新增 `OnboardingStore`；后续仍需决策模型、Windows 真机与真实云服务验收、签名及发行打包。
 - 不修改 Mac 源码或资源，不进行签名、推送、PR、远程配置修改。

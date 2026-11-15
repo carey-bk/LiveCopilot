@@ -21,6 +21,7 @@ public sealed class HotkeyStore
     private readonly IPreferenceStore preferences;
     private readonly Dictionary<SuggestionMode, HotkeyCombo> combos = [];
     public event Action? Changed;
+    public bool NotificationFailed { get; private set; }
     public HotkeyCombo ToggleOverlay { get; private set; } = DefaultToggleOverlay;
     public static HotkeyCombo DefaultToggleOverlay => new(0x48, HotkeyModifiers.Alt);
     public static HotkeyCombo Default(SuggestionMode mode) => new(mode switch
@@ -51,6 +52,36 @@ public sealed class HotkeyStore
         catch (JsonException) { return default; }
     }
     public HotkeyCombo Combo(SuggestionMode mode) => combos[mode];
+    /// Commit a complete draft, including swaps, without transient duplicate bindings.
+    public bool ApplySnapshot(IReadOnlyDictionary<SuggestionMode, HotkeyCombo> values, HotkeyCombo overlay)
+    {
+        var modes = Enum.GetValues<SuggestionMode>();
+        if (values.Count != modes.Length || modes.Any(mode => !values.ContainsKey(mode)) ||
+            values.Values.Append(overlay).Any(combo => !combo.IsValid) || values.Values.Append(overlay).Distinct().Count() != modes.Length + 1) return false;
+        if (modes.All(mode => combos[mode] == values[mode]) && ToggleOverlay == overlay) return true;
+        var oldCombos = JsonSerializer.SerializeToUtf8Bytes(combos.ToDictionary(p => p.Key.RawValue(), p => p.Value), Json);
+        var oldOverlay = JsonSerializer.SerializeToUtf8Bytes(ToggleOverlay, Json);
+        try
+        {
+            preferences.Set(CombosKey, JsonSerializer.SerializeToUtf8Bytes(values.ToDictionary(p => p.Key.RawValue(), p => p.Value), Json));
+            preferences.Set(OverlayKey, JsonSerializer.SerializeToUtf8Bytes(overlay, Json));
+        }
+        catch (Exception)
+        {
+            var restored = true;
+            try { preferences.Set(CombosKey, oldCombos); } catch (Exception) { restored = false; }
+            try { preferences.Set(OverlayKey, oldOverlay); } catch (Exception) { restored = false; }
+            throw new HotkeyPersistenceException(restored);
+        }
+        foreach (var mode in modes) combos[mode] = values[mode];
+        ToggleOverlay = overlay;
+        // Persistence has completed. Observer failures must not turn a successful commit into a rollback.
+        NotificationFailed = false;
+        if (Changed is { } handlers)
+            foreach (Action handler in handlers.GetInvocationList())
+                try { handler(); } catch (Exception) { NotificationFailed = true; }
+        return true;
+    }
     public bool Set(SuggestionMode mode, HotkeyCombo combo)
     {
         if (!combos.ContainsKey(mode) || !combo.IsValid || combo == ToggleOverlay || combos.Any(p => p.Key != mode && p.Value == combo)) return false;
@@ -73,4 +104,9 @@ public sealed class HotkeyStore
         return true;
     }
     public bool ResetToggleOverlay() => SetToggleOverlay(DefaultToggleOverlay);
+}
+
+public sealed class HotkeyPersistenceException(bool restored) : IOException("快捷键保存失败。")
+{
+    public bool Restored { get; } = restored;
 }
