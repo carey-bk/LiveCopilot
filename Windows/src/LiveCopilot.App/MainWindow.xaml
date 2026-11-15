@@ -7,6 +7,7 @@
         <StackPanel Margin="28">
             <TextBlock Text="LiveCopilot · 本地聆听" FontSize="26" Margin="0,0,0,12" />
             <TextBlock Text="点击开始后采集系统声音和麦克风；停止后保存已定稿转写。" TextWrapping="Wrap" />
+            <!-- Stable UI Automation contract; independent of localized button text. -->
             <Button x:Name="SettingsButton" AutomationProperties.AutomationId="OpenSettings" Content="设置 · 服务、知识库与快捷键" HorizontalAlignment="Left"
                     Padding="16,8" Margin="0,18,0,0" Click="OpenSettings" IsEnabled="False" />
             <StackPanel Orientation="Horizontal" Margin="0,20,0,16">

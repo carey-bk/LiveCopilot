@@ -28,6 +28,7 @@ public partial class SettingsWindow : Window
     {
         this.viewModel = viewModel; this.knowledge = knowledge; this.createEmbedding = createEmbedding; this.hotkeys = hotkeys;
         InitializeComponent();
+        SmokeDiagnostics.Event("settings InitializeComponent completed");
         DataContext = viewModel;
         viewModel.Saved += Saved;
         viewModel.Cancelled += Cancelled;
@@ -38,6 +39,7 @@ public partial class SettingsWindow : Window
             credential.InputResetRequested += reset;
         }
         Loaded += (_, _) => { try { RefreshDocuments(); } catch (Exception) { KnowledgeMessageText.Text = "无法读取知识库，请检查本地目录权限。"; } };
+        Loaded += (_, _) => SmokeDiagnostics.Event("settings loaded");
         PreviewKeyDown += CaptureShortcut;
         PreviewMouseDown += (_, _) => StopRecording();
         Deactivated += (_, _) => StopRecording();

@@ -57,13 +57,23 @@ public partial class MainWindow : Window
             RefreshSession(); // Construction and Loaded never start audio or inference.
             SettingsButton.IsEnabled = true;
             AutomationProperties.SetItemStatus(this, "ready");
+            SmokeDiagnostics.Event("main ready; settings enabled");
         }
-        catch (Exception error) { HostErrorText.Text = "初始化失败：" + error.Message; }
+        catch (Exception error)
+        {
+            SmokeDiagnostics.Exception("main initialization", error);
+            HostErrorText.Text = "初始化失败：" + error.Message;
+        }
     }
 
     private void OpenSettings(object sender, RoutedEventArgs e)
     {
-        if (closeRequested || hotkeyStore is null || hotkeys is null) return;
+        SmokeDiagnostics.Event("settings requested");
+        if (closeRequested || hotkeyStore is null || hotkeys is null)
+        {
+            SmokeDiagnostics.Event("settings request ignored: main closing or uninitialized");
+            return;
+        }
         var viewModel = new SettingsViewModel(preferences, credentials, hotkeyStore,
             service => service is ListeningService.Zipformer or ListeningService.Paraformer &&
                 LocalModels.Get(service == ListeningService.Zipformer ? LocalModelKind.TerminologySpeech : LocalModelKind.StreamingSpeech).IsInstalled(LocalModels.DefaultRoot),
@@ -71,7 +81,11 @@ public partial class MainWindow : Window
             () => NativeRuntimeSupport.SpeechUnavailable, () => NativeRuntimeSupport.EmbeddingUnavailable, NativeRuntimeSupport.Notice);
         viewModel.Saved += ApplySettings;
         try { new SettingsWindow(viewModel, knowledge, CreateEmbedding, hotkeys) { Owner = this }.ShowDialog(); }
-        finally { viewModel.Saved -= ApplySettings; }
+        finally
+        {
+            viewModel.Saved -= ApplySettings;
+            SmokeDiagnostics.Event("settings dialog returned");
+        }
     }
 
     private void ApplySettings(AppSettings value)

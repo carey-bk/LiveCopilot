@@ -24,27 +24,39 @@ internal static class Program
         _ = SetProcessDpiAwarenessContext(new IntPtr(-4)); // Match physical pixel coordinates on scaled desktops.
         var output = Path.GetFullPath(args[1]);
         Directory.CreateDirectory(output);
+        using var appStdout = new StreamWriter(Path.Combine(output, "app-stdout.log")) { AutoFlush = true };
+        using var appStderr = new StreamWriter(Path.Combine(output, "app-stderr.log")) { AutoFlush = true };
         Process? app = null;
+        Task<bool>? openSettings = null;
         try
         {
-            var start = new ProcessStartInfo(Path.GetFullPath(args[0])) { UseShellExecute = false };
+            var start = new ProcessStartInfo(Path.GetFullPath(args[0]))
+            {
+                UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true
+            };
             start.WorkingDirectory = Path.GetDirectoryName(start.FileName)!;
             start.Environment["LIVECOPILOT_SMOKE"] = "1";
             start.Environment["LIVECOPILOT_INFERENCE_CPU"] = "1";
+            start.Environment["LIVECOPILOT_SMOKE_LOG_DIRECTORY"] = output;
             var watch = Stopwatch.StartNew();
             app = Process.Start(start) ?? throw new InvalidOperationException("App did not start.");
+            app.OutputDataReceived += (_, data) => { if (data.Data is not null) appStdout.WriteLine(data.Data); };
+            app.ErrorDataReceived += (_, data) => { if (data.Data is not null) appStderr.WriteLine(data.Data); };
+            app.BeginOutputReadLine();
+            app.BeginErrorReadLine();
             Console.WriteLine($"Started PID {app.Id}; waiting at most 30 seconds for the real main window.");
             var main = Wait(() => FindWindow(app.Id, "MainWindow"), app, TimeSpan.FromSeconds(30), "main window");
             Wait(() => main.Current.ItemStatus == "ready" ? main : null, app,
                 TimeSpan.FromSeconds(30) - watch.Elapsed, "main window initialization");
             var startupMs = watch.ElapsedMilliseconds;
             if (startupMs > 30000) throw new TimeoutException("Main window was not ready within 30 seconds.");
-            if (!Find(main, "OpenSettings").Current.IsEnabled) throw new InvalidOperationException("Settings are unavailable.");
+            Wait(() => ReadySettingsButton(main), app, TimeSpan.FromSeconds(10), "settings button enabled and visible");
             Thread.Sleep(350);
             Capture(main, Path.Combine(output, "00-main.png"));
             // Invoke can stay blocked while WPF ShowDialog runs its nested dispatcher.
-            var openSettings = Task.Run(() => ((InvokePattern)Find(main, "OpenSettings").GetCurrentPattern(InvokePattern.Pattern)).Invoke());
-            var settings = Wait(() => FindWindow(app.Id, "SettingsWindow"), app, TimeSpan.FromSeconds(15), "settings window");
+            var mainHwnd = new IntPtr(main.Current.NativeWindowHandle);
+            openSettings = Task.Run(() => InvokeSettings(mainHwnd));
+            var settings = WaitForSettings(main, app, openSettings);
             string[] pages = ["GeneralPage", "ServicesPage", "KnowledgePage", "HistoryPage", "ShortcutsPage", "AboutPage"];
             var actual = settings.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem))
                 .Cast<AutomationElement>().Select(element => element.Current.AutomationId).ToArray();
@@ -66,6 +78,7 @@ internal static class Program
             if (!PostMessage(new IntPtr(main.Current.NativeWindowHandle), 0x0010, IntPtr.Zero, IntPtr.Zero))
                 throw new InvalidOperationException("Could not request normal window close.");
             if (!app.WaitForExit(15000)) throw new TimeoutException("App did not exit normally within 15 seconds.");
+            app.WaitForExit(); // Drain redirected output callbacks before disposing the writers.
             if (app.ExitCode != 0) throw new InvalidOperationException($"App exited with code {app.ExitCode}.");
             if (Directory.GetFiles(output, "*.png").Length != 7) throw new InvalidOperationException("Expected seven screenshots.");
             File.WriteAllText(Path.Combine(output, "result.json"), JsonSerializer.Serialize(new
@@ -77,6 +90,8 @@ internal static class Program
         {
             File.WriteAllText(Path.Combine(output, "failure.txt"), error.ToString());
             Console.Error.WriteLine(error);
+            Console.Error.WriteLine($"Settings Invoke task: {openSettings?.Status.ToString() ?? "not started"}.");
+            SmokeDesktop.Diagnose(app?.Id, output);
             return 1;
         }
         finally
@@ -84,7 +99,8 @@ internal static class Program
             if (app is not null)
             {
                 // Failure cleanup only; success requires the normal close path above.
-                if (!app.HasExited) { app.Kill(entireProcessTree: true); app.WaitForExit(5000); }
+                if (!app.HasExited) app.Kill(entireProcessTree: true);
+                if (app.WaitForExit(5000)) app.WaitForExit();
                 app.Dispose();
             }
         }
@@ -95,8 +111,61 @@ internal static class Program
     }
 
 #if WINDOWS
-    private static AutomationElement? FindWindow(int pid, string id) => AutomationElement.RootElement.FindFirst(TreeScope.Children,
-        new AndCondition(new PropertyCondition(AutomationElement.ProcessIdProperty, pid), new PropertyCondition(AutomationElement.AutomationIdProperty, id)));
+    private static AutomationElement? FindWindow(int pid, string id) => SmokeDesktop.FindWindow(pid, id);
+    private static AutomationElement? ReadySettingsButton(AutomationElement main)
+    {
+        var button = Find(main, "OpenSettings");
+        return main.Current.IsEnabled && button.Current.IsEnabled && !button.Current.IsOffscreen ? button : null;
+    }
+    private static bool InvokeSettings(IntPtr mainHwnd)
+    {
+        try
+        {
+            // Acquire UIA objects on the MTA worker that invokes the modal dialog.
+            var button = Find(AutomationElement.FromHandle(mainHwnd), "OpenSettings");
+            if (!button.Current.IsEnabled || button.Current.IsOffscreen)
+            {
+                Console.WriteLine("Settings: button became unavailable before Invoke; will wait before clicking.");
+                return false;
+            }
+            if (!button.TryGetCurrentPattern(InvokePattern.Pattern, out var pattern))
+            {
+                Console.WriteLine("Settings: InvokePattern unavailable; will try a click.");
+                return false;
+            }
+            Console.WriteLine("Settings: invoking enabled button.");
+            ((InvokePattern)pattern).Invoke();
+            Console.WriteLine("Settings: Invoke returned.");
+            return true;
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine($"Settings Invoke failed: {error}");
+            return false; // Observed here; the main MTA thread can try a click while polling windows.
+        }
+    }
+    private static AutomationElement WaitForSettings(AutomationElement main, Process app, Task<bool> invoke)
+    {
+        var watch = Stopwatch.StartNew();
+        var clicked = false;
+        var clickRequested = false;
+        return Wait(() =>
+        {
+            if (FindWindow(app.Id, "SettingsWindow") is { } settings) return settings;
+            // Invoke may return before dispatch, throw, or remain inside ShowDialog.
+            // Allow dispatch time, then fall back once, only if the owner is still enabled.
+            if (!clicked && ((invoke.IsCompletedSuccessfully && !invoke.Result) || watch.Elapsed >= TimeSpan.FromSeconds(3))
+                && ReadySettingsButton(main) is { } button)
+            {
+                // Recheck after reading button state so a just-created modal is not clicked over.
+                if (FindWindow(app.Id, "SettingsWindow") is { } opened) return opened;
+                if (!clickRequested) Console.WriteLine("Settings: waiting for foreground/button readiness for click fallback.");
+                clickRequested = true;
+                clicked = SmokeDesktop.TryClick(main, button);
+            }
+            return null;
+        }, app, TimeSpan.FromSeconds(15), "settings window (desktop UIA and process HWNDs)");
+    }
     private static AutomationElement Find(AutomationElement root, string id) => root.FindFirst(TreeScope.Descendants,
         new PropertyCondition(AutomationElement.AutomationIdProperty, id)) ?? throw new InvalidOperationException($"Missing control: {id}");
     private static AutomationElement Wait(Func<AutomationElement?> find, Process app, TimeSpan timeout, string description)

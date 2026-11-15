@@ -21,6 +21,22 @@ $stderr = $process.StandardError.ReadToEndAsync()
 try {
     # Independent watchdog also catches a hung UIAutomation/PrintWindow native call.
     if (-not $process.WaitForExit(150000)) {
+        'Smoke exceeded the 150-second watchdog.' | Set-Content (Join-Path $OutputDirectory 'watchdog.txt') -Encoding utf8
+        # Capture before killing the app, even when the driver's UIA thread is stuck.
+        try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $bounds = [Windows.Forms.SystemInformation]::VirtualScreen
+            $bitmap = [Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+            try {
+                $graphics = [Drawing.Graphics]::FromImage($bitmap)
+                try { $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bounds.Size) }
+                finally { $graphics.Dispose() }
+                $bitmap.Save((Join-Path $OutputDirectory 'watchdog-desktop.png'), [Drawing.Imaging.ImageFormat]::Png)
+            } finally { $bitmap.Dispose() }
+        } catch {
+            "Watchdog screenshot failed: $($_.Exception.GetType().FullName)" |
+                Add-Content (Join-Path $OutputDirectory 'watchdog.txt') -Encoding utf8
+        }
         $process.Kill($true)
         $process.WaitForExit(5000) | Out-Null
         throw 'Smoke exceeded the 150-second watchdog.'

@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="LiveCopilot — 设置" Width="940" Height="760" MinWidth="780" MinHeight="580"
         WindowStartupLocation="CenterOwner" AutomationProperties.AutomationId="SettingsWindow">
+    <!-- Keep SettingsWindow stable: the smoke driver also resolves owned HWNDs by this ID. -->
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="Visible" />
         <Style TargetType="TextBox"><Setter Property="Padding" Value="7" /><Setter Property="Margin" Value="0,3,0,10" /></Style>
