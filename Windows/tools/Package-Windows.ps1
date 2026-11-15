@@ -33,6 +33,9 @@ foreach ($rid in @('win-x64', 'win-arm64')) {
     }
     $foreignRuntimes = @(Get-ChildItem (Join-Path $publish 'runtimes') -Directory | Where-Object Name -ne $rid)
     if ($foreignRuntimes.Count -ne 0) { throw "Unexpected foreign runtime directories in $rid package." }
+    # Fail before packing if a dependency accidentally brings GPU backends back.
+    $gpuAssets = @(Get-ChildItem $publish -Recurse -File | Where-Object { $_.FullName.Substring($publish.Length) -match '(?i)cuda|vulkan|cublas|cudart' })
+    if ($gpuAssets.Count -ne 0) { throw "Unexpected GPU assets in CPU-only $rid package: $($gpuAssets.Name -join ', ')" }
     # pack emits Setup.exe and Portable.zip by default. No signing, update feed or runtime download.
     # Keep Velopack's installation root separate from %LOCALAPPDATA%/LiveCopilot user data.
     & (Join-Path $toolDirectory 'vpk.exe') pack --packId LiveCopilot.Windows --packTitle 'LiveCopilot Windows' --packAuthors LiveCopilot --packVersion $version --packDir $publish --mainExe LiveCopilot.App.exe --runtime $rid --channel $rid --outputDir $release --delta None

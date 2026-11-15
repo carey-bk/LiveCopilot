@@ -13,7 +13,20 @@
 
 卸载：先退出 LiveCopilot，在 Windows **设置 → 应用 → 已安装的应用 → LiveCopilot Windows → 卸载**；便携版删除解压目录即可。卸载保留用户数据。需要彻底清理时，先备份所需会话和文档，再手动删除 `%LOCALAPPDATA%\LiveCopilot`，并在 Windows 凭据管理器中删除 LiveCopilot 对应条目。
 
-ARM64 依赖：固定版本 sherpa-onnx 1.13.8 和 LLamaSharp CPU 0.27.0 均提供 Windows ARM64 DLL；NAudio.Wasapi 2.3.0 通过系统 WASAPI/COM 工作，无需额外的架构原生包。LLamaSharp CUDA/Vulkan 0.27.0 没有 Windows ARM64 资产，ARM64 包只使用 CPU。“关于”页说明 GPU 限制；若 ARM64 听写/嵌入原生文件缺失，对应设置页与操作错误显示“此架构暂不支持本地听写/嵌入，请用 x64 版或云端服务”。包内有 DLL 不代表 ARM 虚拟机的音频、GPU、模型推理已经通过验收，需在目标机器手动验证。
+两个架构的安装包均只包含 CPU 本地推理后端，无需安装 CUDA / Vulkan。固定版本 sherpa-onnx 1.13.8 和 LLamaSharp CPU 0.27.0 均提供 Windows ARM64 DLL；NAudio.Wasapi 2.3.0 通过系统 WASAPI/COM 工作，无需额外的架构原生包。“关于”页说明本地听写与嵌入默认使用 CPU；若 ARM64 原生运行库缺失或不兼容，对应设置页与操作错误提示重新安装对应架构的完整 Windows 包。包内有 DLL 不代表 ARM 虚拟机的音频、模型推理已经通过验收，需在目标机器手动验证。
+
+### 安装包体积（第 10b 线）
+
+Release 发布继续包含 .NET 8 / Windows Desktop Runtime（self-contained），无需用户预装 .NET。已移除 `LLamaSharp.Backend.Cuda12` 与 `LLamaSharp.Backend.Vulkan`；打包前检查禁止这些 GPU 资产进入 Setup / Portable 包。2026-11-15 Linux 本地发布测得：
+
+| 架构 | 之前目录占用（约） | 当前目录占用（`du -sh`） | 当前文件字节总和 |
+| --- | ---: | ---: | ---: |
+| win-x64 | 779M | 211M | 209.80 MiB（219,987,749 字节） |
+| win-arm64 | 212M | 212M | 210.36 MiB（220,575,688 字节） |
+
+x64 目录占用减少约 568 MiB / 73%；ARM64 原先已排除 GPU 后端，因此基本不变。以上是**未压缩发布目录**，不代表 Setup.exe 或 Portable.zip 的下载体积；本轮没有在 Linux 生成 Windows 安装器，也没有随包加入模型。
+
+产品项目原本已只启用 WPF；独立冒烟工具的 `UseWindowsForms` 已移除，窗口/桌面截图改用 Win32 GDI 与 WPF PNG 编码，保留空白截图检查。PowerShell watchdog 使用 Win32 读取屏幕范围，独立截图仍使用 PowerShell 自带的 System.Drawing。self-contained 的 .NET 8 Windows Desktop Runtime 仍随包带有 `System.Windows.Forms*.dll`，删除项目开关不会裁掉这些框架资产；本批保留完整框架并继续禁用 trimming，避免破坏 WPF 的动态加载。参见 [Microsoft 的 WPF trimming 限制](https://learn.microsoft.com/en-us/dotnet/core/deploying/trimming/incompatibilities#wpf)。
 
 ### 本地打包和 CI 截图
 
@@ -94,7 +107,7 @@ dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -
 
 ## 本地推理与模型目录
 
-`LiveCopilot.LocalInference` 引用 Core，Core 不反向依赖原生包。固定依赖为 `org.k2fsa.sherpa.onnx 1.13.8`、`LLamaSharp 0.27.0` 及同版本的 `LLamaSharp.Backend.Cpu`、`LLamaSharp.Backend.Cuda12`、`LLamaSharp.Backend.Vulkan`；仅发布 `win-arm64` 时排除无对应资产的 GPU 包，Linux 测试和 x64 仍保留。发布阶段过滤其它 RID 的原生文件。
+`LiveCopilot.LocalInference` 引用 Core，Core 不反向依赖原生包。固定依赖为 `org.k2fsa.sherpa.onnx 1.13.8`、`LLamaSharp 0.27.0` 及同版本的 `LLamaSharp.Backend.Cpu`。所有构建和测试均不再引用 LLamaSharp CUDA / Vulkan 包；发布阶段过滤其它 RID 的原生文件，x64 保留 noavx / AVX / AVX2 / AVX512 CPU 变体，ARM64 保留其 CPU DLL。
 
 - `LocalLiveProvider` 实现 `ILiveProvider` 与统计接口。默认 streaming Paraformer-zh-en INT8 + Silero VAD；`contextual: true` 使用 Zipformer、`decoder.onnx`、`joiner.int8.onnx`、`bpe.vocab`，`UpdateTerms` 支持最多 100 条、每条最多 100 个 UTF-16 单元，与 Mac 一致。热词只作用于下一段新建的识别流。
 - 输入为单声道 16 kHz、16-bit little-endian PCM，32 bytes = 1 ms；采集层负责重采样。500 ms 分块送入引擎，未处理及正在推理的音频合计上限 12 秒；溢出显式 failed，不丢音频后假报 finalized。引擎直接调用单次最大 15 秒。空输入用于 flush，停止会处理短尾块并给 recognizer 添加 1 秒零填充。
@@ -141,16 +154,16 @@ helper 依次尝试发行地址、镜像和原站，校验成功后才发布下�
 
 ## 硬件后端与部署
 
-| 引擎 | 自动选择顺序 | CPU 强制方式 |
+| 引擎 | 安装包默认后端 | CPU 强制方式 |
 | --- | --- | --- |
-| sherpa / ONNX Runtime | NVIDIA CUDA → Windows DirectML → CPU | `new InferenceOptions { ForceCpu = true }` |
-| LLamaSharp | CUDA → Vulkan → CPU | 同左；CPU 时 `GpuLayerCount=0`，GPU 时 99 |
+| sherpa / ONNX Runtime | CPU（另行部署兼容运行库时才尝试 CUDA / DirectML） | `new InferenceOptions { ForceCpu = true }` |
+| LLamaSharp | CPU | 同左；CPU 时 `GpuLayerCount=0` |
 
-`LIVECOPILOT_INFERENCE_CPU=1` 也可强制 CPU；正常产品环境应移除此变量。`IHardwareProbe` 可注入能力集合，必跑测试覆盖 CUDA、仅 DirectML、仅 CPU。系统探测使用 CUDA driver/device count、D3D12 设备及 Vulkan loader；加载器进一步判断运行库是否可用。提供器和实际引擎公开 `Backend` / `BackendAttempts`，可观察选择与回退。VAD 固定 CPU；选中 GPU provider 不保证 INT8 图的所有算子都在 GPU 执行，需在目标 Windows 硬件上测量。
+`LIVECOPILOT_INFERENCE_CPU=1` 也可强制 CPU；安装包不依赖此变量即可使用 CPU。`IHardwareProbe` 可注入能力集合，必跑测试覆盖 CUDA、仅 DirectML、仅 CPU。系统探测使用 CUDA driver/device count、D3D12 设备及 Vulkan loader；检测到硬件不代表后端运行库存在。提供器和实际引擎公开 `Backend` / `BackendAttempts`，可观察选择与回退。VAD 固定 CPU。
 
-LLamaSharp 已通过 NuGet 引入 CPU、CUDA 12、Vulkan 原生后端；按其加载策略优先 CUDA，再 Vulkan，再 CPU。GPU 模型分配或推理失败时重新以 0 GPU layers 加载；取消不会触发重试。运行库选择是进程级的，首次加载后切换运行库需重启；后续会话仍可要求 CPU 计算。
+LLamaSharp 仅随包带有 CPU 原生后端。保留加载器的 `WithAutoFallback(true)`：即使检测到 GPU，缺少 CUDA / Vulkan 后端也会正常加载 CPU，不会要求用户补装 GPU 依赖。无模型回归测试显式设 `ForceCpu=false`、模拟所有 GPU 能力并实际加载原生库，确认所选后端为 CPU、未启用 GPU offload。已有的 GPU 分配/推理失败后以 0 GPU layers 重载逻辑和取消行为保留；运行库选择仍是进程级的。
 
-sherpa 官方 C# 包带来的 Windows runtime 是 CPU 发行物，**仅安装该 NuGet 包不会自动获得 CUDA / DirectML**。C# 配置的 `Provider` 交给 sherpa 链接的 ONNX Runtime；不能只多加一个 ORT NuGet 包就让 CPU sherpa 启用编译期开关。GPU 部署应放置完整且版本一致的 sherpa 1.13.8 native 发行物：
+sherpa 官方 C# 包带来的 Windows runtime 是 CPU 发行物。以下仅为开发者自定义 GPU 运行库的说明，标准安装包无需执行，也不随包分发这些文件。C# 配置的 `Provider` 交给 sherpa 链接的 ONNX Runtime；不能只多加一个 ORT NuGet 包就让 CPU sherpa 启用编译期开关。自定义 GPU 部署需要完整且版本一致的 sherpa 1.13.8 native 发行物：
 
 ```text
 <host output>/native/sherpa/

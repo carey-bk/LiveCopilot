@@ -53,6 +53,23 @@ public sealed class BackendAndConfigurationTests
     private sealed record Probe(HardwareCapabilities Hardware) : IHardwareProbe
     { public HardwareCapabilities Detect() => Hardware; }
 
+    [Fact]
+    public void LlamaLoadsPackagedCpuWhenGpuBackendsAreAbsentWithoutForceCpuOrWeights()
+    {
+        // Even a GPU-capable machine must work with the CPU-only distribution.
+        Assert.DoesNotContain(Directory.EnumerateFiles(Path.Combine(AppContext.BaseDirectory, "runtimes"), "*", SearchOption.AllDirectories),
+            path => path.Contains("cuda", StringComparison.OrdinalIgnoreCase) || path.Contains("vulkan", StringComparison.OrdinalIgnoreCase));
+        var options = new InferenceOptions { ForceCpu = false, HardwareProbe = new Probe(new(true, true, true, true)) };
+        Assert.Equal(InferenceBackend.Cpu, LlamaEmbeddingEngine.InitializeRuntime(options));
+        Assert.True(NativeLibraryConfig.LLama.LibraryHasLoaded);
+        var metadata = NativeApi.GetLoadedNativeLibrary(NativeLibraryName.LLama)?.Metadata;
+        Assert.NotNull(metadata);
+        Assert.False(metadata.UseCuda);
+        Assert.False(metadata.UseVulkan);
+        Assert.False(NativeApi.llama_supports_gpu_offload());
+        Assert.Equal(0, EmbeddingContract.Parameters("unused.gguf", 512, cpu: true).GpuLayerCount);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

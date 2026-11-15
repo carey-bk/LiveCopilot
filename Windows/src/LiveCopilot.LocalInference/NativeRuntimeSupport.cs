@@ -6,10 +6,10 @@ namespace LiveCopilot.LocalInference;
 public static class NativeRuntimeSupport
 {
     public static bool RequiresCpu => OperatingSystem.IsWindows() && RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
-    public const string SpeechMessage = "此架构暂不支持本地听写，请用 x64 版或云端服务";
-    public const string EmbeddingMessage = "此架构暂不支持本地嵌入，请用 x64 版或云端服务";
-    public static string Notice => RequiresCpu
-        ? "此架构暂不支持本地 GPU 加速，请用 x64 版或云端服务。当前 ARM64 包的本地听写与嵌入使用 CPU。" : "";
+    public const string SpeechMessage = "本地听写 CPU 运行库缺失或不兼容，请重新安装对应架构的完整 Windows 包。";
+    public const string EmbeddingMessage = "本地嵌入 CPU 运行库缺失或不兼容，请重新安装对应架构的完整 Windows 包。";
+    public static string Notice => OperatingSystem.IsWindows()
+        ? "Windows 安装包的本地听写与嵌入默认使用 CPU，无需额外安装 GPU 运行库。" : "";
     public static string? SpeechUnavailable => RequiresCpu && !HasArm64Speech(AppContext.BaseDirectory) ? SpeechMessage : null;
     public static string? EmbeddingUnavailable => RequiresCpu && !HasArm64Embedding(AppContext.BaseDirectory) ? EmbeddingMessage : null;
 

@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: '8.0.x'
-      - name: Publish both RIDs and create unsigned installers and portable archives
+      - name: Publish both CPU-only RIDs and create unsigned installers and portable archives
         run: ./Windows/tools/Package-Windows.ps1
       - name: Upload x64 package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -2,8 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -85,14 +83,7 @@ internal static class SmokeDesktop
         return true;
     }
 
-    internal static void CaptureDesktop(string file)
-    {
-        var bounds = System.Windows.Forms.SystemInformation.VirtualScreen;
-        using var bitmap = new Bitmap(bounds.Width, bounds.Height);
-        using (var graphics = Graphics.FromImage(bitmap))
-            graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size);
-        bitmap.Save(file, ImageFormat.Png);
-    }
+    internal static void CaptureDesktop(string file) => ScreenCapture.Desktop(file);
 
     internal static void Diagnose(int? pid, string output)
     {

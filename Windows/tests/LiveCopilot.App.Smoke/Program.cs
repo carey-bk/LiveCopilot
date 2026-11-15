@@ -1,8 +1,6 @@
 using System;
 #if WINDOWS
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -209,30 +207,9 @@ internal static class Program
         }
         throw new TimeoutException($"Timed out waiting for {description}.");
     }
-    private static void Capture(AutomationElement window, string file)
-    {
-        var hwnd = new IntPtr(window.Current.NativeWindowHandle);
-        if (!IsWindowVisible(hwnd) || !GetWindowRect(hwnd, out var rect)) throw new InvalidOperationException("Window is not visible.");
-        if (rect.Right - rect.Left < 100 || rect.Bottom - rect.Top < 100) throw new InvalidOperationException("Window is too small.");
-        using var bitmap = new Bitmap(rect.Right - rect.Left, rect.Bottom - rect.Top);
-        using (var graphics = Graphics.FromImage(bitmap))
-        {
-            var hdc = graphics.GetHdc();
-            try { if (!PrintWindow(hwnd, hdc, 2)) throw new InvalidOperationException("PrintWindow failed; interactive desktop required."); }
-            finally { graphics.ReleaseHdc(hdc); }
-        }
-        // Refuse uniform/blank captures instead of uploading misleading evidence.
-        var colors = new System.Collections.Generic.HashSet<int>();
-        for (var y = 20; y < bitmap.Height - 20; y += 7)
-            for (var x = 20; x < bitmap.Width - 20; x += 7) colors.Add(bitmap.GetPixel(x, y).ToArgb());
-        if (colors.Count < 8) throw new InvalidOperationException("Screenshot is blank or not rendered.");
-        bitmap.Save(file, ImageFormat.Png);
-    }
-    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
+    private static void Capture(AutomationElement window, string file) =>
+        ScreenCapture.Window(new IntPtr(window.Current.NativeWindowHandle), file);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetProcessDpiAwarenessContext(IntPtr context);
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowRect(IntPtr hwnd, out Rect rect);
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsWindowVisible(IntPtr hwnd);
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
     [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
 #endif
 }

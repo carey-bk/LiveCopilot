@@ -24,15 +24,27 @@ try {
         'Smoke exceeded the 150-second watchdog.' | Set-Content (Join-Path $OutputDirectory 'watchdog.txt') -Encoding utf8
         # Capture before killing the app, even when the driver's UIA thread is stuck.
         try {
-            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-            $bounds = [Windows.Forms.SystemInformation]::VirtualScreen
-            $bitmap = [Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+            # This independent PowerShell watchdog uses its own drawing runtime, not the app's.
+            Add-Type -AssemblyName System.Drawing
+            Add-Type @'
+using System.Runtime.InteropServices;
+public static class SmokeScreenMetrics {
+    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll")] public static extern System.IntPtr SetThreadDpiAwarenessContext(System.IntPtr context);
+}
+'@
+            $previousDpi = [SmokeScreenMetrics]::SetThreadDpiAwarenessContext([IntPtr]::new(-4))
             try {
-                $graphics = [Drawing.Graphics]::FromImage($bitmap)
-                try { $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bounds.Size) }
-                finally { $graphics.Dispose() }
-                $bitmap.Save((Join-Path $OutputDirectory 'watchdog-desktop.png'), [Drawing.Imaging.ImageFormat]::Png)
-            } finally { $bitmap.Dispose() }
+                $bitmap = [Drawing.Bitmap]::new([SmokeScreenMetrics]::GetSystemMetrics(78), [SmokeScreenMetrics]::GetSystemMetrics(79))
+                try {
+                    $graphics = [Drawing.Graphics]::FromImage($bitmap)
+                    try { $graphics.CopyFromScreen([SmokeScreenMetrics]::GetSystemMetrics(76), [SmokeScreenMetrics]::GetSystemMetrics(77), 0, 0, $bitmap.Size) }
+                    finally { $graphics.Dispose() }
+                    $bitmap.Save((Join-Path $OutputDirectory 'watchdog-desktop.png'), [Drawing.Imaging.ImageFormat]::Png)
+                } finally { $bitmap.Dispose() }
+            } finally {
+                if ($previousDpi -ne [IntPtr]::Zero) { [SmokeScreenMetrics]::SetThreadDpiAwarenessContext($previousDpi) | Out-Null }
+            }
         } catch {
             "Watchdog screenshot failed: $($_.Exception.GetType().FullName)" |
                 Add-Content (Join-Path $OutputDirectory 'watchdog.txt') -Encoding utf8

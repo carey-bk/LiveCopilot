@@ -37,21 +37,27 @@ public sealed class LlamaEmbeddingEngine : ILocalEmbeddingEngine
     private LlamaEmbeddingEngine(string path, InferenceOptions options)
     {
         modelPath = path;
+        Backend = InitializeRuntime(options);
+        attempts.Add(new(Backend, "runtime_selected"));
+    }
+    // Kept separate from model loading so CPU fallback can be verified without weights.
+    internal static InferenceBackend InitializeRuntime(InferenceOptions options)
+    {
         lock (RuntimeGate)
         {
             if (!NativeLibraryConfig.LLama.LibraryHasLoaded)
             {
                 var choices = BackendSelection.Embedding(options.HardwareProbe.Detect(), options.ForceCpu);
+                // Packages ship only CPU assets. Missing optional GPU libraries must fall back.
                 NativeLibraryConfig.All.WithCuda(choices.Contains(InferenceBackend.Cuda))
                     .WithVulkan(choices.Contains(InferenceBackend.Vulkan)).WithAutoFallback(true);
             }
             var offload = NativeApi.llama_supports_gpu_offload();
             var metadata = NativeApi.GetLoadedNativeLibrary(NativeLibraryName.LLama)?.Metadata;
-            Backend = options.ForceCpu || !offload ? InferenceBackend.Cpu
+            return options.ForceCpu || !offload ? InferenceBackend.Cpu
                 : metadata?.UseCuda == true ? InferenceBackend.Cuda
                 : metadata?.UseVulkan == true ? InferenceBackend.Vulkan : InferenceBackend.Cpu;
         }
-        attempts.Add(new(Backend, "runtime_selected"));
     }
     private async Task LoadWeightsAsync(CancellationToken cancellationToken)
     {
