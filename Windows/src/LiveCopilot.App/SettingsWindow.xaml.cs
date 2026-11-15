@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using LiveCopilot.Core;
+using LiveCopilot.LocalInference;
 using LiveCopilot.Platform.Hotkeys;
 using LiveCopilot.Platform.Knowledge;
 using LiveCopilot.Platform.Lifecycle;
@@ -17,6 +18,11 @@ public partial class SettingsWindow : Window
     private readonly KnowledgeIndex knowledge;
     private readonly Func<AppSettings, IEmbeddingProvider> createEmbedding;
     private readonly HotkeyManager hotkeys;
+    private readonly LocalModelManager models = new();
+    public ModelCardViewModel ZipformerModel { get; }
+    public ModelCardViewModel ParaformerModel { get; }
+    public ModelCardViewModel EmbeddingModelCard { get; }
+    private int modelRefreshQueued;
     private readonly CancellationTokenSource knowledgeCancellation = new();
     private Task? knowledgeTask;
     private ShortcutEditor? recording;
@@ -30,10 +36,14 @@ public partial class SettingsWindow : Window
         Func<AppSettings, IEmbeddingProvider> createEmbedding, HotkeyManager hotkeys)
     {
         this.viewModel = viewModel; this.knowledge = knowledge; this.createEmbedding = createEmbedding; this.hotkeys = hotkeys;
+        ZipformerModel = new(LocalModelKind.TerminologySpeech, models);
+        ParaformerModel = new(LocalModelKind.StreamingSpeech, models);
+        EmbeddingModelCard = new(LocalModelKind.Embedding, models);
         InitializeComponent();
         shutdown = new([
             () => { IsEnabled = false; StopRecording(); ClearPasswords(); return Task.CompletedTask; },
             () => knowledgeCancellation.CancelAsync(),
+            () => models.DisposeAsync().AsTask(),
             async () => { if (knowledgeTask is not null) await knowledgeTask; },
             () => { viewModel.IsBusy = false; viewModel.Cancel(); return Task.CompletedTask; }
         ], action => Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, action), CompleteClose);
@@ -41,6 +51,7 @@ public partial class SettingsWindow : Window
         DataContext = viewModel;
         viewModel.Saved += Saved;
         viewModel.Cancelled += Cancelled;
+        models.Changed += ModelChanged;
         foreach (var credential in viewModel.Credentials)
         {
             Action reset = () => ClearPasswords(credential);
@@ -59,12 +70,45 @@ public partial class SettingsWindow : Window
             var cleanup = PrepareForShutdownAsync();
             shutdown.NotifyClosed();
             viewModel.Saved -= Saved; viewModel.Cancelled -= Cancelled;
+            models.Changed -= ModelChanged;
             foreach (var (credential, handler) in resetHandlers) credential.InputResetRequested -= handler;
             resetHandlers.Clear(); passwordBoxes.Clear();
             // Owned windows can be forcibly closed without Closing. Still drain their
             // document operation before releasing its cancellation source/shared services.
             _ = DisposeKnowledgeCancellationAsync(cleanup);
         };
+    }
+
+    private void ModelChanged(LocalModelKind _)
+    {
+        if (Interlocked.Exchange(ref modelRefreshQueued, 1) != 0) return;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
+        {
+            Interlocked.Exchange(ref modelRefreshQueued, 0);
+            if (closeRequested) return;
+            ZipformerModel.Refresh(); ParaformerModel.Refresh(); EmbeddingModelCard.Refresh();
+            viewModel.RefreshModelAvailability();
+        });
+    }
+
+    private async void DownloadModel(object sender, RoutedEventArgs e)
+    {
+        if (closeRequested || sender is not Button { DataContext: ModelCardViewModel card } || !card.CanDownload) return;
+        await models.RetryAsync(card.Kind);
+    }
+    private void CancelModel(object sender, RoutedEventArgs e)
+    {
+        if (!closeRequested && sender is Button { DataContext: ModelCardViewModel card }) models.Cancel(card.Kind);
+    }
+    private async void VerifyModel(object sender, RoutedEventArgs e)
+    {
+        if (closeRequested || sender is not Button { DataContext: ModelCardViewModel card } || !card.CanVerify) return;
+        await models.VerifyAsync(card.Kind);
+    }
+    private async void DeleteModel(object sender, RoutedEventArgs e)
+    {
+        if (closeRequested || sender is not Button { DataContext: ModelCardViewModel card } || !card.CanDelete) return;
+        await models.DeleteAsync(card.Kind);
     }
 
     private void CredentialChanged(object sender, RoutedEventArgs e)

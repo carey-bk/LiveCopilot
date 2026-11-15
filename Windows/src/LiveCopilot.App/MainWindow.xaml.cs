@@ -126,7 +126,7 @@ public partial class MainWindow : Window
             return OpenAIEmbeddingProvider.FromCredentials(selection, credentials, transport);
         NativeRuntimeSupport.RequireEmbedding();
         if (!LocalModels.Get(LocalModelKind.Embedding).IsInstalled(LocalModels.DefaultRoot))
-            throw new CopilotException("本地 BGE-M3 尚未安装，请先下载并安装模型；此界面不提供下载。");
+            throw new CopilotException("本地 BGE-M3 尚未安装，请在设置 → 知识库的模型卡片中下载。");
         return localEmbedding;
     }
 

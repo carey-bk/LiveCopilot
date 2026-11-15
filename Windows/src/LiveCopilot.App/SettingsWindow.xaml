@@ -1,4 +1,4 @@
-<Window x:Class="LiveCopilot.App.SettingsWindow"
+<Window x:Class="LiveCopilot.App.SettingsWindow" x:Name="SettingsRoot"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="LiveCopilot — 设置" Width="940" Height="760" MinWidth="780" MinHeight="580"
@@ -11,6 +11,29 @@
         <Style TargetType="CheckBox"><Setter Property="Margin" Value="0,6,0,10" /></Style>
         <Style TargetType="Button"><Setter Property="Padding" Value="14,7" /><Setter Property="Margin" Value="0,0,8,0" /></Style>
         <Style x:Key="Hint" TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="Foreground" Value="DimGray" /><Setter Property="Margin" Value="0,3,0,12" /></Style>
+        <DataTemplate x:Key="ModelCardTemplate">
+            <Border BorderBrush="#D5DCE5" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,10" Background="#F7F9FC">
+                <StackPanel>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding Size}" Margin="12,0,0,0" Foreground="DimGray" />
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="{Binding AutomationId}" AutomationProperties.ItemStatus="{Binding Status}" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,4,0,2" />
+                    <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsVerifying}" Minimum="0" Maximum="100" Height="5" />
+                    <DockPanel Margin="0,6,0,0">
+                        <WrapPanel DockPanel.Dock="Right">
+                            <WrapPanel.Resources><Style TargetType="Button"><Setter Property="Padding" Value="9,3" /><Setter Property="Margin" Value="4,0,0,0" /></Style></WrapPanel.Resources>
+                            <Button Content="{Binding DownloadLabel}" IsEnabled="{Binding CanDownload}" Click="DownloadModel" AutomationProperties.AutomationId="{Binding DownloadId}" />
+                            <Button Content="取消" IsEnabled="{Binding CanCancel}" Click="CancelModel" />
+                            <Button Content="校验" IsEnabled="{Binding CanVerify}" Click="VerifyModel" />
+                            <Button Content="删除" IsEnabled="{Binding CanDelete}" Click="DeleteModel" />
+                        </WrapPanel>
+                        <TextBlock Text="{Binding Transfer}" VerticalAlignment="Center" Foreground="DimGray" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding Hint}" Foreground="DimGray" TextWrapping="Wrap" Margin="0,6,0,0" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
         <DataTemplate x:Key="CredentialTemplate">
             <StackPanel Margin="0,12,0,4" IsEnabled="{Binding CanEdit}">
                 <TextBlock Text="{Binding Label}" FontWeight="SemiBold" />
@@ -55,6 +78,9 @@
             <TabItem Header="服务" AutomationProperties.AutomationId="ServicesPage"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,16" IsEnabled="{Binding CanEdit}">
                 <TextBlock Text="服务" FontSize="24" Margin="0,0,0,18" />
                 <TextBlock Text="听写引擎" /><ComboBox ItemsSource="{Binding ListeningServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ListeningService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <ContentControl Content="{Binding ZipformerModel, ElementName=SettingsRoot}" ContentTemplate="{StaticResource ModelCardTemplate}" />
+                <ContentControl Content="{Binding ParaformerModel, ElementName=SettingsRoot}" ContentTemplate="{StaticResource ModelCardTemplate}" />
+                <TextBlock Text="模型操作立即执行。关闭设置会取消未完成的操作并保留下载数据，可稍后继续。删除也会清理下载缓存。" Style="{StaticResource Hint}" />
                 <TextBlock Text="{Binding ListeningHint}" Style="{StaticResource Hint}" />
                 <TextBlock Text="听写语言" /><ComboBox ItemsSource="{Binding SpeechLanguages}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding LiveSpeechLanguage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 <TextBlock Text="听写语言与回答语言独立保存。本地双语模型自动识别中英文，不按语言偏好强制过滤。" Style="{StaticResource Hint}" />
@@ -80,6 +106,8 @@
                 <TextBlock Text="知识库" FontSize="24" Margin="0,0,0,18" />
                 <TextBlock Text="回答模式" /><ComboBox ItemsSource="{Binding KnowledgeModes}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding KnowledgeMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 <TextBlock Text="嵌入服务" /><ComboBox ItemsSource="{Binding EmbeddingServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding EmbeddingService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <ContentControl Content="{Binding EmbeddingModelCard, ElementName=SettingsRoot}" ContentTemplate="{StaticResource ModelCardTemplate}" />
+                <TextBlock Text="模型操作立即执行。关闭设置会取消未完成的操作并保留下载数据；删除也会清理下载缓存。" Style="{StaticResource Hint}" />
                 <TextBlock Text="OpenAI 嵌入模型（本地使用固定 BGE-M3）" /><TextBox Text="{Binding EmbeddingModel, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"  />
                 <TextBlock Text="检索数量（3–8）" /><TextBox Text="{Binding RetrievalCountText, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"  />
                 <TextBlock Text="{Binding SelectedEmbeddingIdentity}" Style="{StaticResource Hint}" />

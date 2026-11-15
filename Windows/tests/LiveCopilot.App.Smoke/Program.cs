@@ -68,6 +68,9 @@ internal static class Program
                 selection.Select();
                 Wait(() => selection.Current.IsSelected ? tab : null, app, TimeSpan.FromSeconds(5), pages[i]);
                 Thread.Sleep(350); // Let WPF layout and the compositor finish after UIA selection.
+                if (pages[i] == "ServicesPage")
+                    RequireModelCards(settings, ["ModelCardZipformer", "ModelCardParaformer"]);
+                if (pages[i] == "KnowledgePage") RequireModelCards(settings, ["ModelCardEmbedding"]);
                 Capture(settings, Path.Combine(output, $"{i + 1:00}-{pages[i]}.png"));
                 Console.WriteLine($"Selected and captured {pages[i]} ({tab.Current.Name}).");
             }
@@ -119,6 +122,22 @@ internal static class Program
         return 0;
 #endif
     }
+
+#if WINDOWS
+    private static void RequireModelCards(AutomationElement settings, string[] ids)
+    {
+        foreach (var id in ids)
+        {
+            var card = Find(settings, id);
+            if (card.Current.IsOffscreen || card.Current.BoundingRectangle.IsEmpty || string.IsNullOrWhiteSpace(card.Current.Name))
+                throw new InvalidOperationException($"Model card is not visible: {id}.");
+            if (card.Current.ItemStatus != "未安装") throw new InvalidOperationException($"Unexpected smoke model state: {id}.");
+            if (Find(settings, id + "Download").Current.IsEnabled)
+                throw new InvalidOperationException($"Smoke must disable model downloads: {id}.");
+            Console.WriteLine($"Visible model card: {id}; {card.Current.Name}; downloads disabled.");
+        }
+    }
+#endif
 
 #if WINDOWS
     private static AutomationElement? FindWindow(int pid, string id) => SmokeDesktop.FindWindow(pid, id);

@@ -46,12 +46,7 @@ public static class LocalModelInstaller
     public static async Task InstallAsync(LocalModelDefinition model, string root, Downloader downloader, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        static bool IsLeaf(string name) => !string.IsNullOrWhiteSpace(name) && name is not "." and not ".." &&
-            name.IndexOfAny(['/', '\\', ':']) < 0 && !Path.IsPathRooted(name);
-        if (!IsLeaf(model.DirectoryName) || model.Downloads.Count == 0 ||
-            model.Downloads.Any(x => !IsLeaf(x.InstalledName) || x.InstalledName.Equals("installed.json", StringComparison.OrdinalIgnoreCase)) ||
-            model.Files.Distinct(StringComparer.OrdinalIgnoreCase).Count() != model.Files.Count)
-            throw new ArgumentException("Model directories and filenames must be unique leaf names.", nameof(model));
+        ValidateDefinition(model);
         Directory.CreateDirectory(root);
         var stage = Path.Combine(root, ".install-" + Guid.NewGuid());
         var previous = Path.Combine(root, ".previous-" + Guid.NewGuid());
@@ -76,6 +71,16 @@ public static class LocalModelInstaller
             if (existed) TryDelete(previous);
         }
         finally { TryDelete(stage); }
+    }
+
+    internal static void ValidateDefinition(LocalModelDefinition model)
+    {
+        static bool IsLeaf(string name) => !string.IsNullOrWhiteSpace(name) && name is not "." and not ".." &&
+            name.IndexOfAny(['/', '\\', ':']) < 0 && !Path.IsPathRooted(name);
+        if (!IsLeaf(model.DirectoryName) || model.Downloads.Count == 0 ||
+            model.Downloads.Any(x => !IsLeaf(x.InstalledName) || x.InstalledName.Equals("installed.json", StringComparison.OrdinalIgnoreCase)) ||
+            model.Files.Distinct(StringComparer.OrdinalIgnoreCase).Count() != model.Files.Count)
+            throw new ArgumentException("Model directories and filenames must be unique leaf names.", nameof(model));
     }
 
     private static void TryDelete(string directory)

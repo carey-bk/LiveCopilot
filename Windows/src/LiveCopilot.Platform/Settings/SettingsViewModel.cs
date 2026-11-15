@@ -56,13 +56,13 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
     {
         ListeningService.Zipformer or ListeningService.Paraformer => speechUnavailable() ?? (speechInstalled(ListeningService)
             ? "本地听写模型已安装。更换引擎在下次开始聆听时生效。"
-            : "本地听写模型尚未安装，请先安装相应模型；设置页不提供模型下载。更换引擎在下次开始聆听时生效。"),
+            : "本地听写模型尚未安装，请在上方模型卡片下载。安装或切换引擎后，重新开始聆听生效。"),
         ListeningService.Apple => "Windows 不支持 Apple 听写，请选择 Zipformer 或 Paraformer。",
         _ => "Windows 云端听写尚未接入，请选择 Zipformer 或 Paraformer。"
     };
     public string EmbeddingHint => (EmbeddingService == EmbeddingService.Local ? embeddingUnavailable() : null)
         ?? (EmbeddingService == EmbeddingService.Local && !embeddingInstalled()
-            ? "本地 BGE-M3 尚未安装，请先安装模型；设置页不提供下载。已有文档仍保留。"
+            ? "本地 BGE-M3 尚未安装，请在上方模型卡片下载。安装后无需重启即可导入或重新索引；已有文档仍保留。"
             : "OpenAI 会发送文档分块与检索问题；本地 BGE-M3 在本机生成向量。命中的来源会随回答请求发送给分析服务。");
     public string SelectedEmbeddingIdentity => draft.SelectedEmbeddingIdentity;
     public bool KnowledgeRebuildRequired => draft.EmbeddingService != baseline.EmbeddingService || draft.SelectedEmbeddingIdentity != baseline.SelectedEmbeddingIdentity;
@@ -105,6 +105,7 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
     public IEnumerable GetErrors(string? propertyName) => string.IsNullOrEmpty(propertyName) ? errors.Values.ToArray()
         : errors.TryGetValue(propertyName, out var error) ? new[] { error } : Array.Empty<string>();
     public AppSettings Snapshot() => draft with { };
+    public void RefreshModelAvailability() { Notify(nameof(ListeningHint)); Notify(nameof(EmbeddingHint)); }
     public override string ToString() => "LiveCopilot 设置草稿（不包含凭据）";
     private bool ShortcutsChanged => Shortcuts.Any(s => s.Combo != (s.Mode is { } mode ? hotkeys.Combo(mode) : hotkeys.ToggleOverlay));
 
