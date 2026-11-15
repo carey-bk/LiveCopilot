@@ -15,6 +15,8 @@ namespace LiveCopilot.App;
 public partial class SettingsWindow : Window
 {
     private readonly SettingsViewModel viewModel;
+    private void OpenOperationGuide(object sender, RoutedEventArgs e) => ShowOperationGuide();
+    partial void ShowOperationGuide();
     private readonly KnowledgeIndex knowledge;
     private readonly Func<AppSettings, IEmbeddingProvider> createEmbedding;
     private readonly HotkeyManager hotkeys;
@@ -40,6 +42,7 @@ public partial class SettingsWindow : Window
         ParaformerModel = new(LocalModelKind.StreamingSpeech, models);
         EmbeddingModelCard = new(LocalModelKind.Embedding, models);
         InitializeComponent();
+        WindowLayout.FitWorkArea(this);
         shutdown = new([
             () => { IsEnabled = false; StopRecording(); ClearPasswords(); return Task.CompletedTask; },
             () => knowledgeCancellation.CancelAsync(),

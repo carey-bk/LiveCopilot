@@ -28,6 +28,7 @@ public partial class OnboardingWindow : Window
         ParaformerModel = new(LocalModelKind.StreamingSpeech, models);
         EmbeddingModelCard = new(LocalModelKind.Embedding, models);
         InitializeComponent();
+        WindowLayout.FitWorkArea(this);
         DataContext = viewModel;
         shutdown = new([
             () => { IsEnabled = false; viewModel.Stop(); ClearPasswords(); return Task.CompletedTask; },
@@ -64,7 +65,7 @@ public partial class OnboardingWindow : Window
     }
     public Task PrepareForShutdownAsync() => shutdown.RequestCloseAsync();
     private void SettingsChanged(object? sender, PropertyChangedEventArgs e) { RefreshCredential(); RefreshStatus(); }
-    private void GuideChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName is "" or nameof(OnboardingViewModel.Step)) RefreshStatus(); }
+    private void GuideChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName is "" or nameof(OnboardingViewModel.Step)) { IntroScroll.ScrollToTop(); DetailScroll.ScrollToTop(); RefreshStatus(); } }
     private void RefreshCredential()
     {
         var settings = viewModel.Settings;

@@ -45,6 +45,8 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
     public bool HasChanges => HasErrors || draft != baseline || Credentials.Any(c => c.HasPendingChange) || ShortcutsChanged;
     public string Version { get; }
     public string DisplayVersion { get; }
+    public string ShortVersion => CompactVersion(DisplayVersion);
+    public static string CompactVersion(string version) => version.Split('+', 2)[0];
     public string RuntimeNotice { get; }
     public string UpdateNotice => "更新源尚未配置；此开关仅保存偏好，不会联网、下载或安装更新。";
     public async Task<UpdateCheckStatus> CheckUpdatesAsync(CancellationToken cancellationToken = default) =>
@@ -56,9 +58,15 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
     {
         ListeningService.Zipformer or ListeningService.Paraformer => speechUnavailable() ?? (speechInstalled(ListeningService)
             ? "本地听写模型已安装。更换引擎在下次开始聆听时生效。"
-            : "本地听写模型尚未安装，请在上方模型卡片下载。安装或切换引擎后，重新开始聆听生效。"),
+            : "本地听写模型尚未安装，请在下方模型卡片下载。安装或切换引擎后，重新开始聆听生效。"),
         ListeningService.Apple => "Windows 不支持 Apple 听写，请选择 Zipformer 或 Paraformer。",
         _ => "Windows 云端听写尚未接入，请选择 Zipformer 或 Paraformer。"
+    };
+    public IReadOnlyList<string> SpeechChips => ListeningService switch
+    {
+        ListeningService.Zipformer => ["本地", SpeechLanguages.Single(c => c.Value == LiveSpeechLanguage).Label, "术语增强", "无 API 费用"],
+        ListeningService.Paraformer => ["本地", SpeechLanguages.Single(c => c.Value == LiveSpeechLanguage).Label, "无 API 费用"],
+        _ => ["云端", "即将推出"]
     };
     public string EmbeddingHint => (EmbeddingService == EmbeddingService.Local ? embeddingUnavailable() : null)
         ?? (EmbeddingService == EmbeddingService.Local && !embeddingInstalled()
@@ -229,7 +237,7 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
             Require(ValidCompatiblePath(), nameof(CompatiblePath), "请输入有效的相对接口路径（如 chat/completions），不能含查询参数或路径跳转。" );
             Require(!string.IsNullOrWhiteSpace(CompatibleModel), nameof(CompatibleModel), "请输入兼容接口模型名称。" );
         }
-        foreach (var property in new[] { nameof(Background), nameof(Language), nameof(AnswerLanguage), nameof(Scenario), nameof(ContinuousQuestionPolicy), nameof(ListeningService), nameof(LiveSpeechLanguage), nameof(ReasoningService), nameof(KnowledgeMode), nameof(EmbeddingService) })
+        foreach (var property in new[] { nameof(Mode), nameof(Background), nameof(Language), nameof(AnswerLanguage), nameof(Scenario), nameof(ContinuousQuestionPolicy), nameof(ListeningService), nameof(LiveSpeechLanguage), nameof(ReasoningService), nameof(KnowledgeMode), nameof(EmbeddingService) })
         {
             var value = typeof(SettingsViewModel).GetProperty(property)!.GetValue(this)!;
             Require(Enum.IsDefined(value.GetType(), value), property, "请选择有效的设置选项。" );
@@ -244,6 +252,7 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
         foreach (var property in changed) ErrorsChanged?.Invoke(this, new(property));
         Notify(nameof(HasErrors)); Notify(nameof(ValidationSummary)); SaveCommand.Refresh();
     }
+    public OperatingMode Mode { get => draft.Mode; set => Edit(() => draft.Mode = value); }
     public AppBackground Background { get => draft.Background; set => Edit(() => draft.Background = value); }
     public double LayaThreshold { get => draft.LayaThreshold; set => Edit(() => draft.LayaThreshold = value); }
     public bool RecapEnabled { get => draft.RecapEnabled; set => Edit(() => draft.RecapEnabled = value); }
@@ -258,11 +267,11 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
     public string AdditionalAnswerInstructions { get => draft.AdditionalAnswerInstructions; set => Edit(() => draft.AdditionalAnswerInstructions = value ?? ""); }
     public bool OverlayAutoHeight { get => draft.OverlayAutoHeight; set => Edit(() => draft.OverlayAutoHeight = value); }
     public bool ExcludeOverlayFromCapture { get => draft.ExcludeOverlayFromCapture; set => Edit(() => draft.ExcludeOverlayFromCapture = value); }
-    public LiveSpeechLanguage LiveSpeechLanguage { get => draft.LiveSpeechLanguage; set => Edit(() => draft.LiveSpeechLanguage = value); }
+    public LiveSpeechLanguage LiveSpeechLanguage { get => draft.LiveSpeechLanguage; set { Edit(() => draft.LiveSpeechLanguage = value); Notify(nameof(SpeechChips)); } }
     public KnowledgeMode KnowledgeMode { get => draft.KnowledgeMode; set => Edit(() => draft.KnowledgeMode = value); }
     public EmbeddingService EmbeddingService { get => draft.EmbeddingService; set => Edit(() => draft.EmbeddingService = value); }
     public string EmbeddingModel { get => draft.EmbeddingModel; set => Edit(() => draft.EmbeddingModel = value ?? ""); }
-    public ListeningService ListeningService { get => draft.ListeningService; set { Edit(() => draft.ListeningService = value); Notify(nameof(ListeningHint)); } }
+    public ListeningService ListeningService { get => draft.ListeningService; set { Edit(() => draft.ListeningService = value); Notify(nameof(ListeningHint)); Notify(nameof(SpeechChips)); } }
     public ReasoningService ReasoningService { get => draft.ReasoningService; set { Edit(() => { draft.SelectAnalysisService(value); thinkingChoice = null; }); RefreshService(); } }
     public string AnalysisModel { get => draft.AnalysisModel; set { if (value is null) return; Edit(() => { draft.SelectAnalysisModel(value); thinkingChoice = null; }); RefreshService(); } }
     public AnalysisThinking AnalysisThinking { get => thinkingChoice ?? draft.AnalysisThinking; set => Edit(() =>

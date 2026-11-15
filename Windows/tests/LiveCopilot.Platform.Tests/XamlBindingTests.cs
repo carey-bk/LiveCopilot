@@ -198,6 +198,11 @@ public sealed partial class XamlBindingTests
                 if (mode is "OneWay" or "OneTime") return;
                 if (mode == "Default" && !DefaultsToTwoWay(control, property)) return;
                 if (mode is not ("Default" or "TwoWay" or "OneWayToSource")) throw new InvalidOperationException("Unknown binding mode: " + mode);
+                // The ComboBox template writes its own public IsDropDownOpen DP, not a view model.
+                if (control == "ToggleButton" && property == "IsChecked" &&
+                    binding.GetValueOrDefault("RelativeSource") == "{RelativeSource TemplatedParent}" &&
+                    binding.GetValueOrDefault("Path") == "IsDropDownOpen" &&
+                    (string?)element.Ancestors(Presentation + "ControlTemplate").FirstOrDefault()?.Attribute("TargetType") == "ComboBox") return;
                 if (binding.Keys.Any(key => key is "Source" or "RelativeSource" or "ElementName"))
                     throw new InvalidOperationException("Map the explicit binding source before using write-back");
                 var context = ContextFor(element);
@@ -283,6 +288,7 @@ public sealed partial class XamlBindingTests
 
     private static Dictionary<string, string> ParseBinding(string text)
     {
+        if (text == "{Binding}") return new() { ["Path"] = "" };
         if (!text.StartsWith("{Binding ", StringComparison.Ordinal) || !text.EndsWith('}'))
             throw new InvalidOperationException("Unsupported binding syntax: " + text);
         var result = new Dictionary<string, string>();

@@ -1,24 +1,51 @@
 using LiveCopilot.Platform.Settings;
+using LiveCopilot.Core;
 
 namespace LiveCopilot.Platform.Onboarding;
+
+public enum OnboardingUsage { RemoteMeeting, InPerson, Typing }
+public sealed record OnboardingUsageChoice(OnboardingUsage Value, string Label, string Description, string Icon);
+public sealed record OnboardingProgressSegment(bool Reached, bool Current);
 
 public sealed class OnboardingViewModel : ObservableObject
 {
     private readonly OnboardingStateStore store;
     private OnboardingState state;
     private bool closed;
+    private OnboardingUsage usage;
     private string error = "";
     public SettingsViewModel Settings { get; }
     public OnboardingViewModel(OnboardingStateStore store, SettingsViewModel settings, bool reopen = false)
     {
         this.store = store; Settings = settings;
         state = store.Load();
+        usage = state.PrefersTyping ? OnboardingUsage.Typing : Settings.Mode == OperatingMode.InPerson ? OnboardingUsage.InPerson : OnboardingUsage.RemoteMeeting;
+        if (!reopen && state.Step == 0 && !state.Completed && Settings.Language == AppLanguage.System)
+            Settings.Language = AppLanguage.SimplifiedChinese;
         if (reopen) state = state with { Step = 0 };
         NextCommand = new(Next, () => !closed && !Settings.IsBusy);
         BackCommand = new(() => Move(state with { Step = Step - 1 }), () => !closed && Step > 0 && !Settings.IsBusy);
         SkipCommand = new(() => { if (Move(state with { Completed = true, Skipped = true })) Finish(); }, () => !closed && !Settings.IsBusy);
         Settings.PropertyChanged += (_, _) => { NextCommand.Refresh(); BackCommand.Refresh(); SkipCommand.Refresh(); };
     }
+    public IReadOnlyList<OnboardingUsageChoice> UsageChoices { get; } =
+    [
+        new(OnboardingUsage.RemoteMeeting, "远程会议", "系统声音与麦克风", "\uE95B"),
+        new(OnboardingUsage.InPerson, "现场交流", "仅麦克风，不区分具体说话人", "\uE716"),
+        new(OnboardingUsage.Typing, "先输入问题", "无需开启监听", "\uE765")
+    ];
+    public OnboardingUsage Usage
+    {
+        get => usage;
+        set
+        {
+            if (!Enum.IsDefined(value)) return;
+            usage = value;
+            if (value != OnboardingUsage.Typing) Settings.Mode = value == OnboardingUsage.InPerson ? OperatingMode.InPerson : OperatingMode.Remote;
+            Notify();
+        }
+    }
+    public IReadOnlyList<OnboardingProgressSegment> Segments => Enumerable.Range(0, 6).Select(i => new OnboardingProgressSegment(i <= Step, i == Step)).ToArray();
     public event Action? Finished;
     public RelayCommand NextCommand { get; }
     public RelayCommand BackCommand { get; }
@@ -51,8 +78,8 @@ public sealed class OnboardingViewModel : ObservableObject
     private void Next()
     {
         if (!Settings.Save()) { error = Settings.Status; Notify(nameof(Error)); return; }
-        if (IsReady) { if (Move(state with { Completed = true, Skipped = false })) Finish(); }
-        else Move(state with { Step = Step + 1 });
+        if (IsReady) { if (Move(state with { Completed = true, Skipped = false, PrefersTyping = Usage == OnboardingUsage.Typing })) Finish(); }
+        else Move(state with { Step = Step + 1, PrefersTyping = Usage == OnboardingUsage.Typing });
     }
     private bool Move(OnboardingState next)
     {

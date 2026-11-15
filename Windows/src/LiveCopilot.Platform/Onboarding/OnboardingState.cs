@@ -3,7 +3,7 @@ using LiveCopilot.Core;
 
 namespace LiveCopilot.Platform.Onboarding;
 
-public sealed record OnboardingState(int Step = 0, bool Completed = false, bool Skipped = false);
+public sealed record OnboardingState(int Step = 0, bool Completed = false, bool Skipped = false, bool PrefersTyping = false);
 
 /// Windows-only preference key keeps migration independent of Mac's onboarding version.
 public sealed class OnboardingStateStore(IPreferenceStore preferences)

@@ -2,8 +2,9 @@
   <!-- Mac source: OverlayView padding 14 / spacing 10 / radius 16;
          SettingsSection padding 14 / radius 10; Onboarding title 32 / gutter 36. -->
   <FontFamily x:Key="AppFont">Segoe UI, Microsoft YaHei UI</FontFamily>
+  <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
   <SolidColorBrush x:Key="Ink" Color="#252525"/>
-  <SolidColorBrush x:Key="SecondaryInk" Color="#737373"/>
+  <SolidColorBrush x:Key="SecondaryInk" Color="#666666"/>
   <SolidColorBrush x:Key="Accent" Color="#087FFF"/>
   <SolidColorBrush x:Key="Selection" Color="#D3E0F4"/>
   <SolidColorBrush x:Key="Surface" Color="#FFFFFF"/>
@@ -23,7 +24,7 @@
   <BooleanToVisibilityConverter x:Key="Visible"/>
   <Style TargetType="Window">
     <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
-    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="FontSize" Value="14"/>
     <Setter Property="Foreground" Value="{StaticResource Ink}"/>
     <Setter Property="Background" Value="{StaticResource Surface}"/>
   </Style>
@@ -33,7 +34,7 @@
   <Style x:Key="Hint" TargetType="TextBlock">
     <Setter Property="Foreground" Value="{StaticResource SecondaryInk}"/>
     <Setter Property="TextWrapping" Value="Wrap"/>
-    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontSize" Value="13"/>
     <Setter Property="Margin" Value="0,6,0,10"/>
   </Style>
   <Style x:Key="PageTitle" TargetType="TextBlock">
@@ -108,7 +109,7 @@
     <Setter Property="Foreground" Value="White"/>
   </Style>
   <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-    <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+    <Setter Property="FontFamily" Value="{StaticResource IconFont}"/>
     <Setter Property="FontSize" Value="15"/>
     <Setter Property="Background" Value="Transparent"/>
     <Setter Property="Padding" Value="5"/>
@@ -158,11 +159,71 @@
       </Setter.Value>
     </Setter>
   </Style>
+  <!-- Keep native ComboBox selection/keyboard/UIA behavior; only replace its chrome. -->
   <Style TargetType="ComboBox">
-    <Setter Property="Padding" Value="9,5"/>
+    <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+    <Setter Property="Background" Value="{StaticResource ControlSurface}"/>
+    <Setter Property="Padding" Value="10,5"/>
     <Setter Property="Margin" Value="0,4,0,10"/>
     <Setter Property="MinHeight" Value="30"/>
     <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ComboBox">
+          <Grid>
+            <ToggleButton Focusable="False" ClickMode="Press" Background="{TemplateBinding Background}"
+                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+              <ToggleButton.Template>
+                <ControlTemplate TargetType="ToggleButton">
+                  <Border x:Name="Chrome" Background="{TemplateBinding Background}" CornerRadius="7" BorderThickness="1" BorderBrush="Transparent">
+                    <TextBlock Text="&#xE70D;" FontFamily="{StaticResource IconFont}" FontSize="11" Margin="0,0,10,0" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="{StaticResource Ink}"/>
+                  </Border>
+                  <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
+                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
+                  </ControlTemplate.Triggers>
+                </ControlTemplate>
+              </ToggleButton.Template>
+            </ToggleButton>
+            <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}" Margin="10,5,30,5" VerticalAlignment="Center" IsHitTestVisible="False"/>
+            <Popup x:Name="PART_Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False">
+              <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource Stroke}" BorderThickness="1" CornerRadius="8" Padding="4"
+                      MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}, Mode=OneWay}" MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer>
+              </Border>
+            </Popup>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.6"/></Trigger>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter Property="Background" Value="{StaticResource Selection}"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style TargetType="ComboBoxItem">
+    <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+    <Setter Property="Padding" Value="8,6"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ComboBoxItem">
+          <Border x:Name="Chrome" Padding="{TemplateBinding Padding}" CornerRadius="4" Background="Transparent">
+            <DockPanel>
+              <TextBlock x:Name="Check" Text="&#xE73E;" FontFamily="{StaticResource IconFont}" Width="22" Opacity="0"/>
+              <ContentPresenter/>
+            </DockPanel>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Check" Property="Opacity" Value="1"/></Trigger>
+            <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{StaticResource Selection}"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.6"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
   </Style>
   <Style TargetType="CheckBox">
     <Setter Property="Margin" Value="0,8"/>
@@ -205,12 +266,12 @@
       <Setter.Value>
         <ControlTemplate TargetType="TabItem">
           <Border x:Name="Tab" Background="Transparent" Padding="{TemplateBinding Padding}" CornerRadius="8">
-            <ContentPresenter ContentSource="Header"/>
+            <ContentPresenter x:Name="NavigationHeader" ContentSource="Header"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsSelected" Value="True">
               <Setter TargetName="Tab" Property="Background" Value="{StaticResource Selection}"/>
-              <Setter Property="FontWeight" Value="SemiBold"/>
+              <Setter TargetName="NavigationHeader" Property="TextElement.FontWeight" Value="SemiBold"/>
             </Trigger>
             <Trigger Property="IsKeyboardFocused" Value="True">
               <Setter TargetName="Tab" Property="BorderBrush" Value="{StaticResource Accent}"/>
@@ -222,24 +283,102 @@
     </Setter>
   </Style>
   <Style x:Key="SegmentTab" TargetType="TabItem" BasedOn="{StaticResource NavigationTab}">
-    <Setter Property="FontSize" Value="12"/>
-    <Setter Property="Margin" Value="0,0,4,12"/>
+    <Setter Property="FontSize" Value="14"/>
+    <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+    <Setter Property="Margin" Value="0"/>
     <Setter Property="Padding" Value="12,6"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="TabItem">
           <Border x:Name="Tab" Background="{StaticResource ControlSurface}" Padding="{TemplateBinding Padding}" CornerRadius="6">
-            <ContentPresenter ContentSource="Header"/>
+            <ContentPresenter x:Name="HeaderContent" ContentSource="Header" HorizontalAlignment="Center" TextElement.Foreground="{StaticResource Ink}"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsSelected" Value="True">
               <Setter TargetName="Tab" Property="Background" Value="{StaticResource Accent}"/>
-              <Setter Property="Foreground" Value="White"/>
+              <Setter TargetName="HeaderContent" Property="TextElement.Foreground" Value="White"/>
             </Trigger>
             <Trigger Property="IsKeyboardFocused" Value="True">
               <Setter TargetName="Tab" Property="BorderBrush" Value="{StaticResource Ink}"/>
               <Setter TargetName="Tab" Property="BorderThickness" Value="1"/>
             </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="SegmentChoice" TargetType="ListBoxItem">
+    <Setter Property="Padding" Value="14,6"/>
+    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBoxItem">
+          <Border x:Name="Chrome" CornerRadius="6" Background="{StaticResource ControlSurface}" Padding="{TemplateBinding Padding}" BorderThickness="1" BorderBrush="Transparent">
+            <ContentPresenter/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{StaticResource Accent}"/><Setter Property="Foreground" Value="White"/></Trigger>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Ink}"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="ChoiceCard" TargetType="ListBoxItem">
+    <Setter Property="Padding" Value="14,11"/>
+    <Setter Property="Margin" Value="0,0,0,8"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListBoxItem">
+          <Border x:Name="Chrome" CornerRadius="8" Background="{StaticResource ChoiceSurface}" Padding="{TemplateBinding Padding}" BorderThickness="1" BorderBrush="Transparent">
+            <DockPanel>
+              <TextBlock x:Name="Check" DockPanel.Dock="Right" Text="&#xE739;" FontFamily="{StaticResource IconFont}" Foreground="{StaticResource SecondaryInk}" Margin="10,0,0,0" VerticalAlignment="Center"/>
+              <ContentPresenter/>
+            </DockPanel>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Chrome" Property="Background" Value="{StaticResource Selection}"/><Setter TargetName="Check" Property="Text" Value="&#xE73E;"/><Setter TargetName="Check" Property="Foreground" Value="{StaticResource Accent}"/></Trigger>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource Accent}"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style x:Key="Chip" TargetType="Border">
+    <Setter Property="Background" Value="{StaticResource Sidebar}"/>
+    <Setter Property="CornerRadius" Value="12"/>
+    <Setter Property="Padding" Value="10,3"/>
+    <Setter Property="Margin" Value="0,0,8,0"/>
+  </Style>
+  <Style TargetType="Slider">
+    <Setter Property="MinHeight" Value="26"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Slider">
+          <Grid Margin="0,4">
+            <Border Height="5" Background="{StaticResource Stroke}" CornerRadius="2" VerticalAlignment="Center"/>
+            <Track x:Name="PART_Track">
+              <Track.DecreaseRepeatButton>
+                <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
+                  <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Height="5" Background="{StaticResource Accent}" CornerRadius="2" VerticalAlignment="Center"/></ControlTemplate></RepeatButton.Template>
+                </RepeatButton>
+              </Track.DecreaseRepeatButton>
+              <Track.Thumb>
+                <Thumb Width="20" Height="20">
+                  <Thumb.Template><ControlTemplate TargetType="Thumb"><Ellipse Fill="White" Stroke="{StaticResource Stroke}" StrokeThickness="1"/></ControlTemplate></Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+              <Track.IncreaseRepeatButton>
+                <RepeatButton Command="Slider.IncreaseLarge" Focusable="False">
+                  <RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></RepeatButton.Template>
+                </RepeatButton>
+              </Track.IncreaseRepeatButton>
+            </Track>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.6"/></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="PART_Track" Property="Effect"><Setter.Value><DropShadowEffect Color="#087FFF" BlurRadius="4" ShadowDepth="0"/></Setter.Value></Setter></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
       </Setter.Value>
