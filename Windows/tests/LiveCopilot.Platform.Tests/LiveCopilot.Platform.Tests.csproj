@@ -7,10 +7,18 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" PrivateAssets="all" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2"><PrivateAssets>all</PrivateAssets></PackageReference>
     <ProjectReference Include="../../src/LiveCopilot.Platform/LiveCopilot.Platform.csproj" />
     <ProjectReference Include="../../src/LiveCopilot.Platform.Windows/LiveCopilot.Platform.Windows.csproj" Condition="'$(TargetFramework)' == 'net8.0-windows'" />
     <Using Include="Xunit" />
     <Using Include="LiveCopilot.Core" />
+  </ItemGroup>
+  <!-- Inspect the real XAML and App property declarations without loading WPF on Linux. -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../src/**/*.xaml" Exclude="../../src/**/bin/**;../../src/**/obj/**"
+                      LogicalName="XamlSources/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../../src/LiveCopilot.App/ModelCardViewModel.cs;../../src/LiveCopilot.App/SettingsWindow.xaml.cs"
+                      LogicalName="AppSources/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

@@ -19,7 +19,7 @@
                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="{Binding AutomationId}" AutomationProperties.ItemStatus="{Binding Status}" />
                     </DockPanel>
                     <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,4,0,2" />
-                    <ProgressBar Value="{Binding Progress}" IsIndeterminate="{Binding IsVerifying}" Minimum="0" Maximum="100" Height="5" />
+                    <ProgressBar Value="{Binding Progress, Mode=OneWay}" IsIndeterminate="{Binding IsVerifying}" Minimum="0" Maximum="100" Height="5" />
                     <DockPanel Margin="0,6,0,0">
                         <WrapPanel DockPanel.Dock="Right">
                             <WrapPanel.Resources><Style TargetType="Button"><Setter Property="Padding" Value="9,3" /><Setter Property="Margin" Value="4,0,0,0" /></Style></WrapPanel.Resources>
