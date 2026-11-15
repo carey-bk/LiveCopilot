@@ -187,6 +187,47 @@ public sealed class ListeningReasoningTests
         Assert.Empty(session.Snapshot.Lines); Assert.Null(session.Snapshot.SuggestionStatus);
     }
 
+    [Theory] [InlineData(false)] [InlineData(true)]
+    public async Task TypedQuestionWorksWithoutStartingAudio(bool includeConversation)
+    {
+        var provider = new ControlledReasoning();
+        await using var session = Session(() => provider, new(), new() { IncludeConversation = includeConversation });
+        session.Ask("  如何开始？  ");
+        var request = await provider.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("如何开始？", request.Query.Question);
+        Assert.Equal("如何开始？", request.LanguageQuestion);
+        Assert.Empty(request.Conversation);
+        Assert.Equal(ListeningState.Idle, session.Snapshot.State);
+        provider.Send("输入问题即可。"); provider.Complete();
+        await Until(session, s => !s.SuggestionIsLoading);
+        Assert.Equal("输入问题即可。", session.Snapshot.SuggestionText);
+    }
+
+    [Theory] [InlineData(false)] [InlineData(true)]
+    public async Task TypedQuestionRespectsConversationPreference(bool includeConversation)
+    {
+        var provider = new ControlledReasoning();
+        await using var session = Session(() => provider, Conversation(), new() { IncludeConversation = includeConversation });
+        session.Ask("我的独立问题");
+        var request = await provider.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("我的独立问题", request.Query.Question);
+        Assert.Equal(includeConversation, request.Conversation.Contains("已经回答", StringComparison.Ordinal));
+        Assert.Equal(includeConversation, request.Input.Contains("已经回答", StringComparison.Ordinal));
+        if (!includeConversation) Assert.DoesNotContain("已经回答", request.Query.Semantic);
+    }
+
+    [Fact]
+    public async Task EmptyTypedQuestionDoesNotInterruptActiveAnswer()
+    {
+        var provider = new ControlledReasoning();
+        await using var session = Session(() => provider);
+        session.Ask("问题"); await provider.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var before = session.Snapshot;
+        session.Ask("  ");
+        Assert.Equal(before, session.Snapshot);
+        Assert.False(provider.Cancelled.Task.IsCompleted);
+    }
+
     private static TranscriptStore Conversation()
     {
         var transcript = new TranscriptStore(); transcript.Commit("已定稿问题？", Speaker.Them); transcript.Commit("已经回答", Speaker.You); return transcript;

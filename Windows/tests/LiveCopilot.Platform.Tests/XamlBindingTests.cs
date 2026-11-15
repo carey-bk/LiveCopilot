@@ -3,13 +3,14 @@ using System.Reflection;
 using System.Xml;
 using System.Xml.Linq;
 using LiveCopilot.Platform.Settings;
+using LiveCopilot.Platform.Overlay;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace LiveCopilot.Platform.Tests;
 
-public sealed class XamlBindingTests
+public sealed partial class XamlBindingTests
 {
     private static readonly XNamespace Xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
     private static readonly XNamespace Presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
@@ -154,6 +155,18 @@ public sealed class XamlBindingTests
         }
     }
 
+    [Fact]
+    public void OverlayDataContextMappingMatchesRealConstructor()
+    {
+        var source = CSharpSyntaxTree.ParseText(ReadResource("AppSources/MainWindow.xaml.cs")).GetRoot();
+        Assert.Contains(source.DescendantNodes().OfType<ObjectCreationExpressionSyntax>(), creation =>
+            creation.Type.ToString() == nameof(OverlayViewModel));
+        Assert.Contains(source.DescendantNodes().OfType<AssignmentExpressionSyntax>(), assignment =>
+            assignment.Left.ToString() == "DataContext" && assignment.Right.ToString() == "viewModel");
+        Assert.Contains(Load("XamlSources/LiveCopilot.App/MainWindow.xaml").Descendants(), element =>
+            (string?)element.Attribute("Text") == "{Binding Question, UpdateSourceTrigger=PropertyChanged}");
+    }
+
     private static List<string> Inspect(XDocument document, string file)
     {
         var errors = new List<string>();
@@ -229,8 +242,13 @@ public sealed class XamlBindingTests
                     _ => throw new InvalidOperationException("Unmapped DataTemplate DataContext")
                 };
         }
-        return (string?)element.Document?.Root?.Attribute(Xaml + "Class") == "LiveCopilot.App.SettingsWindow"
-            ? nameof(SettingsViewModel) : throw new InvalidOperationException("Unmapped window DataContext");
+        return (string?)element.Document?.Root?.Attribute(Xaml + "Class") switch
+        {
+            "LiveCopilot.App.SettingsWindow" => nameof(SettingsViewModel),
+            "LiveCopilot.App.MainWindow" => nameof(OverlayViewModel),
+            "LiveCopilot.App.OnboardingWindow" => "OnboardingViewModel",
+            _ => throw new InvalidOperationException("Unmapped window DataContext")
+        };
     }
 
     private static bool IsWritable(string context, string path)
@@ -238,6 +256,9 @@ public sealed class XamlBindingTests
         var type = context switch
         {
             nameof(SettingsViewModel) => typeof(SettingsViewModel),
+            nameof(OverlayViewModel) => typeof(OverlayViewModel),
+            "OnboardingViewModel" => typeof(SettingsViewModel).Assembly.GetType("LiveCopilot.Platform.Onboarding.OnboardingViewModel")
+                ?? throw new InvalidOperationException("Missing onboarding view model"),
             nameof(CredentialEditor) => typeof(CredentialEditor),
             nameof(ShortcutEditor) => typeof(ShortcutEditor),
             _ => throw new InvalidOperationException("Unmapped source type: " + context)

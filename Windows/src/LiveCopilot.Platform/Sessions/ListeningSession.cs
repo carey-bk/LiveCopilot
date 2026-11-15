@@ -256,7 +256,15 @@ public sealed class ListeningSession : IAsyncDisposable
         _ = Task.Run(() => StopRunAsync(run));
     }
 
-    public void Request(SuggestionMode mode)
+    public void Request(SuggestionMode mode) => Request(mode, null);
+
+    /// Typed questions use the same retrieval, streaming, cancellation and history pipeline.
+    public void Ask(string question)
+    {
+        if (!string.IsNullOrWhiteSpace(question)) Request(SuggestionMode.Reply, question.Trim());
+    }
+
+    private void Request(SuggestionMode mode, string? question)
     {
         SuggestionRun? previous;
         SuggestionRun? next = null;
@@ -275,24 +283,24 @@ public sealed class ListeningSession : IAsyncDisposable
                 var context = transcript.RecentContext();
                 var partial = transcript.PartialThem.Trim();
                 if (partial.Length > 0) context = (context.Length > 0 ? context + "\n" : "") + "Them: " + partial;
-                if (context.Length == 0)
+                if (context.Length == 0 && question is null)
                     snapshot = snapshot with { SuggestionStatus = "还没有对话。先开始听写，或等有转写后再请求。" };
                 else
                 {
                     var latest = partial.Length > 0 ? partial : transcript.Lines.LastOrDefault(l => l.Speaker == Speaker.Them)?.Content;
-                    var query = mode switch
+                    var query = question ?? (mode switch
                     {
                         SuggestionMode.Reply => string.IsNullOrWhiteSpace(latest) ? "Help me answer the latest substantive question in this conversation." : latest.Trim(),
                         SuggestionMode.Recap => "Summarize the recent conversation, decisions and unresolved questions.",
                         _ => "Suggest one useful follow-up question based on this conversation."
-                    };
+                    });
                     // Exclude context from RetrievalQuery too: its semantic field can enter Input.
                     var conversation = settings.IncludeConversation ? context : "";
                     answer = new(RetrievalQuery.Formulate(query, conversation), conversation, settings.Scenario, [])
                     {
                         Mode = mode, KnowledgeMode = settings.KnowledgeMode, AnswerLanguage = settings.AnswerLanguage,
                         BilingualAnswers = settings.BilingualAnswers, AdditionalAnswerInstructions = settings.AdditionalAnswerInstructions,
-                        LanguageQuestion = latest
+                        LanguageQuestion = question ?? latest
                     };
                     next = new(settings with { });
                     next.Store.Begin(mode, query);

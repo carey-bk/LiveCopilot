@@ -18,7 +18,7 @@
   <ItemGroup>
     <EmbeddedResource Include="../../src/**/*.xaml" Exclude="../../src/**/bin/**;../../src/**/obj/**"
                       LogicalName="XamlSources/%(RecursiveDir)%(Filename)%(Extension)" />
-    <EmbeddedResource Include="../../src/LiveCopilot.App/ModelCardViewModel.cs;../../src/LiveCopilot.App/SettingsWindow.xaml.cs"
+    <EmbeddedResource Include="../../src/LiveCopilot.App/*.cs"
                       LogicalName="AppSources/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

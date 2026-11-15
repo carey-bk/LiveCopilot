@@ -6,6 +6,7 @@
   <ItemGroup>
     <ApplicationDefinition Remove="App.xaml" />
     <Page Include="App.xaml" />
+    <Resource Include="../../../assets/brand/LiveCopilot-preview.png" Link="Resources/AppIcon.png" />
     <PackageReference Include="Velopack" Version="$(VelopackVersion)" />
   </ItemGroup>
   <ItemGroup><ProjectReference Include="../LiveCopilot.Core/LiveCopilot.Core.csproj" /><ProjectReference Include="../LiveCopilot.Platform.Windows/LiveCopilot.Platform.Windows.csproj" /><ProjectReference Include="../LiveCopilot.LocalInference/LiveCopilot.LocalInference.csproj" /></ItemGroup>

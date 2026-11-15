@@ -34,6 +34,7 @@ internal static class Program
             };
             start.WorkingDirectory = Path.GetDirectoryName(start.FileName)!;
             start.Environment["LIVECOPILOT_SMOKE"] = "1";
+            start.Environment["LIVECOPILOT_SMOKE_ONBOARDING"] = "1";
             start.Environment["LIVECOPILOT_INFERENCE_CPU"] = "1";
             start.Environment["LIVECOPILOT_SMOKE_LOG_DIRECTORY"] = output;
             var watch = Stopwatch.StartNew();
@@ -48,16 +49,27 @@ internal static class Program
                 TimeSpan.FromSeconds(30) - watch.Elapsed, "main window initialization");
             var startupMs = watch.ElapsedMilliseconds;
             if (startupMs > 30000) throw new TimeoutException("Main window was not ready within 30 seconds.");
+            var guide = Wait(() => FindWindow(app.Id, "OnboardingWindow"), app, TimeSpan.FromSeconds(10), "first-run onboarding");
+            for (var step = 0; step < 6; step++)
+            {
+                Wait(() => guide.Current.ItemStatus == step.ToString() ? guide : null, app, TimeSpan.FromSeconds(5), $"onboarding step {step + 1}");
+                Thread.Sleep(350);
+                Capture(guide, Path.Combine(output, $"onboarding-{step + 1:00}.png"));
+                Invoke(guide, "OnboardingNext");
+            }
+            Wait(() => FindWindow(app.Id, "OnboardingWindow") is null ? main : null, app, TimeSpan.FromSeconds(10), "onboarding completed");
             Wait(() => ReadySettingsButton(main), app, TimeSpan.FromSeconds(10), "settings button enabled and visible");
             Thread.Sleep(350);
-            Capture(main, Path.Combine(output, "00-main.png"));
+            Capture(main, Path.Combine(output, "00-overlay-idle.png"));
+            CaptureMenu(main, "KnowledgeModeMenu", Path.Combine(output, "overlay-knowledge-menu.png"));
+            CaptureMenu(main, "AnswerLanguageMenu", Path.Combine(output, "overlay-answer-language.png"));
             // Invoke can stay blocked while WPF ShowDialog runs its nested dispatcher.
             var mainHwnd = new IntPtr(main.Current.NativeWindowHandle);
             openSettings = Task.Run(() => InvokeSettings(mainHwnd));
             var settings = WaitForSettings(main, app, openSettings);
             string[] pages = ["GeneralPage", "ServicesPage", "KnowledgePage", "HistoryPage", "ShortcutsPage", "AboutPage"];
             var actual = settings.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TabItem))
-                .Cast<AutomationElement>().Select(element => element.Current.AutomationId).ToArray();
+                .Cast<AutomationElement>().Select(element => element.Current.AutomationId).Where(id => id.EndsWith("Page", StringComparison.Ordinal)).ToArray();
             if (!actual.Order().SequenceEqual(pages.Order())) throw new InvalidOperationException("Settings pages changed; every page must have smoke coverage.");
             for (var i = 0; i < pages.Length; i++)
             {
@@ -66,13 +78,37 @@ internal static class Program
                 selection.Select();
                 Wait(() => selection.Current.IsSelected ? tab : null, app, TimeSpan.FromSeconds(5), pages[i]);
                 Thread.Sleep(350); // Let WPF layout and the compositor finish after UIA selection.
-                if (pages[i] == "ServicesPage")
-                    RequireModelCards(settings, ["ModelCardZipformer", "ModelCardParaformer"]);
-                if (pages[i] == "KnowledgePage") RequireModelCards(settings, ["ModelCardEmbedding"]);
+
                 Capture(settings, Path.Combine(output, $"{i + 1:00}-{pages[i]}.png"));
                 Console.WriteLine($"Selected and captured {pages[i]} ({tab.Current.Name}).");
+                if (pages[i] == "GeneralPage")
+                {
+                    var scroll = (ScrollPattern)Find(settings, "GeneralScroll").GetCurrentPattern(ScrollPattern.Pattern);
+                    scroll.SetScrollPercent(ScrollPattern.NoScroll, 100); Thread.Sleep(350);
+                    Capture(settings, Path.Combine(output, "settings-general-lower.png"));
+                    scroll.SetScrollPercent(ScrollPattern.NoScroll, 0);
+                }
+                if (pages[i] == "ServicesPage")
+                {
+                    string[] services = ["SpeechServiceTab", "TriggerServiceTab", "KnowledgeServiceTab", "AnalysisServiceTab"];
+                    foreach (var service in services)
+                    {
+                        Select(settings, service); Thread.Sleep(350);
+                        if (service == "SpeechServiceTab") RequireModelCards(settings, ["ModelCardZipformer", "ModelCardParaformer"]);
+                        if (service == "KnowledgeServiceTab") RequireModelCards(settings, ["ModelCardEmbedding"]);
+                        Capture(settings, Path.Combine(output, $"services-{service}.png"));
+                    }
+                }
             }
-            ((InvokePattern)Find(settings, "CancelSettings").GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+            // Reopen from settings and exercise the persisted skip path as well as completion.
+            Select(settings, "GeneralPage");
+            var generalScroll = (ScrollPattern)Find(settings, "GeneralScroll").GetCurrentPattern(ScrollPattern.Pattern);
+            generalScroll.SetScrollPercent(ScrollPattern.NoScroll, 0);
+            Invoke(settings, "OpenOnboarding");
+            var reopened = Wait(() => FindWindow(app.Id, "OnboardingWindow"), app, TimeSpan.FromSeconds(10), "reopened onboarding");
+            Wait(() => reopened.Current.ItemStatus == "0" ? reopened : null, app, TimeSpan.FromSeconds(5), "reopened first step");
+            Invoke(reopened, "OnboardingSkip");
+            Wait(() => FindWindow(app.Id, "OnboardingWindow") is null ? main : null, app, TimeSpan.FromSeconds(10), "skipped onboarding");
             if (!openSettings.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("Settings did not close normally.");
             Wait(() => FindWindow(app.Id, "SettingsWindow") is null && main.Current.IsEnabled ? main : null,
                 app, TimeSpan.FromSeconds(10), "settings closed");
@@ -87,14 +123,14 @@ internal static class Program
             if (!app.WaitForExit(15000)) throw new TimeoutException("App did not exit normally within 15 seconds.");
             app.WaitForExit(); // Drain redirected output callbacks before disposing the writers.
             if (app.ExitCode != 0) throw new InvalidOperationException($"App exited with code {app.ExitCode}.");
-            if (Directory.GetFiles(output, "*.png").Length != 7) throw new InvalidOperationException("Expected seven screenshots.");
+            if (Directory.GetFiles(output, "*.png").Length != 20) throw new InvalidOperationException("Expected twenty screenshots.");
             var events = File.ReadAllLines(Path.Combine(output, "app-events.log"));
             foreach (var stage in new[] { "main shutdown requested", "main shutdown cleanup complete; closing", "main closed", "app exited: 0" })
                 if (events.Count(line => line.EndsWith(" " + stage, StringComparison.Ordinal)) != 1)
                     throw new InvalidOperationException($"Expected exactly one shutdown event: {stage}.");
             File.WriteAllText(Path.Combine(output, "result.json"), JsonSerializer.Serialize(new
-            { success = true, startupMs, appExitCode = app.ExitCode, pages, screenshots = 7, closeRequestsSent }, new JsonSerializerOptions { WriteIndented = true }));
-            Console.WriteLine($"PASS: main ready in {startupMs} ms; all six settings pages captured; app exit code 0.");
+            { success = true, startupMs, appExitCode = app.ExitCode, pages, screenshots = 20, closeRequestsSent }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine($"PASS: main ready in {startupMs} ms; overlay, six settings pages, four service tabs and six onboarding steps captured; app exit code 0.");
             return 0;
         }
         catch (Exception error)
@@ -122,11 +158,31 @@ internal static class Program
     }
 
 #if WINDOWS
+    private static void Invoke(AutomationElement root, string id) =>
+        ((InvokePattern)Find(root, id).GetCurrentPattern(InvokePattern.Pattern)).Invoke();
+    private static void Select(AutomationElement root, string id) =>
+        ((SelectionItemPattern)Find(root, id).GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+    private static void CaptureMenu(AutomationElement main, string id, string file)
+    {
+        var menu = (ExpandCollapsePattern)Find(main, id).GetCurrentPattern(ExpandCollapsePattern.Pattern);
+        menu.Expand(); Thread.Sleep(350);
+        if (menu.Current.ExpandCollapseState != ExpandCollapseState.Expanded) throw new InvalidOperationException($"Menu did not open: {id}");
+        // WPF Popup has its own HWND and is omitted by PrintWindow(main).
+        ScreenCapture.Desktop(file);
+        menu.Collapse(); Thread.Sleep(150);
+    }
+
     private static void RequireModelCards(AutomationElement settings, string[] ids)
     {
         foreach (var id in ids)
         {
             var card = Find(settings, id);
+            if (card.Current.IsOffscreen)
+            {
+                for (var parent = TreeWalker.ControlViewWalker.GetParent(card); parent is not null; parent = TreeWalker.ControlViewWalker.GetParent(parent))
+                    if (parent.TryGetCurrentPattern(ScrollPattern.Pattern, out var pattern) && ((ScrollPattern)pattern).Current.VerticallyScrollable)
+                    { ((ScrollPattern)pattern).SetScrollPercent(ScrollPattern.NoScroll, 100); Thread.Sleep(350); break; }
+            }
             if (card.Current.IsOffscreen || card.Current.BoundingRectangle.IsEmpty || string.IsNullOrWhiteSpace(card.Current.Name))
                 throw new InvalidOperationException($"Model card is not visible: {id}.");
             if (card.Current.ItemStatus != "未安装") throw new InvalidOperationException($"Unexpected smoke model state: {id}.");
