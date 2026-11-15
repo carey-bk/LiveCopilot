@@ -1,0 +1,221 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="LiveCopilot.App.OnboardingWindow" x:Name="OnboardingRoot" Style="{StaticResource {x:Type Window}}" Icon="Resources/AppIcon.png" Title="LiveCopilot — 欢迎" Width="1040" Height="700" MinWidth="940" MinHeight="640" WindowStartupLocation="CenterOwner" Background="{StaticResource OnboardingSurface}" AutomationProperties.AutomationId="OnboardingWindow" AutomationProperties.ItemStatus="{Binding Step}">
+  <Window.Resources>
+    <DataTemplate x:Key="ModelCardTemplate">
+      <Border Style="{StaticResource Card}">
+        <StackPanel>
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Size}" Margin="12,0,0,0" Foreground="{StaticResource SecondaryInk}"/>
+            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="{Binding AutomationId}" AutomationProperties.ItemStatus="{Binding Status}"/>
+          </DockPanel>
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,4,0,2"/>
+          <ProgressBar Value="{Binding Progress, Mode=OneWay}" IsIndeterminate="{Binding IsVerifying}" Minimum="0" Maximum="100" Height="5"/>
+          <DockPanel Margin="0,6,0,0">
+            <WrapPanel DockPanel.Dock="Right">
+              <WrapPanel.Resources>
+                <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                  <Setter Property="Padding" Value="9,3"/>
+                  <Setter Property="Margin" Value="4,0,0,0"/>
+                </Style>
+              </WrapPanel.Resources>
+              <Button Content="{Binding DownloadLabel}" IsEnabled="{Binding CanDownload}" Click="DownloadModel" AutomationProperties.AutomationId="{Binding DownloadId}"/>
+              <Button Content="取消" IsEnabled="{Binding CanCancel}" Click="CancelModel"/>
+              <Button Content="校验" IsEnabled="{Binding CanVerify}" Click="VerifyModel"/>
+              <Button Content="删除" IsEnabled="{Binding CanDelete}" Click="DeleteModel"/>
+            </WrapPanel>
+            <TextBlock Text="{Binding Transfer}" VerticalAlignment="Center" Foreground="{StaticResource SecondaryInk}"/>
+          </DockPanel>
+          <TextBlock Text="{Binding Hint}" Foreground="{StaticResource SecondaryInk}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="CredentialTemplate">
+      <StackPanel Margin="0,12,0,4" IsEnabled="{Binding CanEdit}">
+        <TextBlock Text="{Binding Label}" FontWeight="SemiBold"/>
+        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,4"/>
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="清除密钥" Command="{Binding ClearCommand}"/>
+          <PasswordBox Loaded="CredentialLoaded" PasswordChanged="CredentialChanged" Padding="7" Margin="0,0,10,0" ToolTip="输入新密钥；点击“继续”后生效。不会回填已存密钥。"/>
+        </DockPanel>
+      </StackPanel>
+    </DataTemplate>
+  </Window.Resources>
+  <Grid Margin="36,28,36,26">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <StackPanel Orientation="Horizontal">
+      <Image Source="Resources/AppIcon.png" Width="28" Height="28" Margin="0,0,8,0"/>
+      <TextBlock Style="{StaticResource Brand}"/>
+    </StackPanel>
+    <Grid Grid.Row="1" Margin="4,24,4,20">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="310"/>
+        <ColumnDefinition Width="36"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel VerticalAlignment="Center" Margin="0,40,0,0">
+          <TextBlock Text="{Binding Title}" Style="{StaticResource OnboardingTitle}" AutomationProperties.AutomationId="OnboardingTitle"/>
+          <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Hint}" Margin="0,18,0,20" FontSize="14"/>
+          <StackPanel Visibility="{Binding IsLanguage, Converter={StaticResource Visible}}">
+            <ListBox ItemsSource="{Binding Settings.Languages}" SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding Settings.Language, Mode=TwoWay}" BorderThickness="0" Background="Transparent" AutomationProperties.AutomationId="OnboardingLanguage">
+              <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                  <Setter Property="Padding" Value="14"/>
+                  <Setter Property="Margin" Value="0,0,0,8"/>
+                  <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                  <Setter Property="Background" Value="{StaticResource ChoiceSurface}"/>
+                </Style>
+              </ListBox.ItemContainerStyle>
+            </ListBox>
+            <TextBlock Text="语言偏好将保存；当前 Windows 界面使用简体中文。" Style="{StaticResource Hint}"/>
+          </StackPanel>
+          <StackPanel Visibility="{Binding IsScenario, Converter={StaticResource Visible}}">
+            <TextBlock Text="使用场景"/>
+            <ComboBox ItemsSource="{Binding Settings.Scenarios}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.Scenario, Mode=TwoWay}" AutomationProperties.AutomationId="OnboardingScenario"/>
+            <TextBlock Text="先输入问题即可体验；在悬浮窗点击开始后，才会采集系统音频与麦克风。" Style="{StaticResource Hint}"/>
+          </StackPanel>
+          <StackPanel Visibility="{Binding IsReady, Converter={StaticResource Visible}}">
+            <TextBlock Text="随时唤出助手" FontWeight="SemiBold"/>
+            <TextBlock x:Name="ShortcutHint" Style="{StaticResource Hint}"/>
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+      <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="0,8,10,0">
+          <StackPanel Visibility="{Binding IsLanguage, Converter={StaticResource Visible}}">
+            <TextBlock Text="你好" FontSize="72" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,135,0,10"/>
+            <TextBlock Text="欢迎使用 LiveCopilot" HorizontalAlignment="Center" Foreground="{StaticResource SecondaryInk}"/>
+          </StackPanel>
+          <StackPanel Visibility="{Binding IsScenario, Converter={StaticResource Visible}}">
+            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}">
+              <StackPanel>
+                <TextBlock Text="对话示例" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="以下内容仅为演示，不会采集音频或调用服务。" Style="{StaticResource Hint}"/>
+                <Separator/>
+                <TextBlock Text="对方 · 你在这个项目中具体负责什么？"/>
+                <Separator/>
+                <TextBlock Text="我 · 我主要负责产品的设计与实现。"/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}">
+              <StackPanel>
+                <TextBlock Text="回答建议" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="我会先说明目标，再介绍具体的方法，最后用结果说明我的贡献。"/>
+                <TextBlock Text="输入问题 → 生成回答 → 按需总结或追问" Style="{StaticResource Hint}"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+          <StackPanel Visibility="{Binding IsModels, Converter={StaticResource Visible}}">
+            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}">
+              <StackPanel>
+                <TextBlock Text="语音识别"/>
+                <ComboBox ItemsSource="{Binding Settings.ListeningServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.ListeningService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                  <ComboBox.ItemContainerStyle>
+                    <Style TargetType="ComboBoxItem">
+                      <Setter Property="IsEnabled" Value="{Binding IsAvailable}"/>
+                    </Style>
+                  </ComboBox.ItemContainerStyle>
+                </ComboBox>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}"><StackPanel><TextBlock Text="资料检索"/><ComboBox ItemsSource="{Binding Settings.EmbeddingServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.EmbeddingService, Mode=TwoWay}" /></StackPanel></Border>
+            <ContentControl Content="{Binding ZipformerModel, ElementName=OnboardingRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
+            <ContentControl Content="{Binding ParaformerModel, ElementName=OnboardingRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
+            <ContentControl Content="{Binding EmbeddingModelCard, ElementName=OnboardingRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
+            <TextBlock Text="Jev / Laya · 即将推出。无需现在下载模型，也可先通过文字提问。" Style="{StaticResource Hint}"/>
+          </StackPanel>
+          <StackPanel Visibility="{Binding IsAnalysis, Converter={StaticResource Visible}}">
+            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}">
+              <StackPanel>
+                <TextBlock Text="回答服务"/>
+                <ComboBox ItemsSource="{Binding Settings.ReasoningServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.ReasoningService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                <StackPanel Visibility="{Binding Settings.IsCatalogService, Converter={StaticResource Visible}}">
+                  <TextBlock Text="回答模型"/>
+                  <ComboBox ItemsSource="{Binding Settings.Models}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding Settings.AnalysisModel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                </StackPanel>
+                <TextBlock Text="推理强度"/>
+                <ComboBox ItemsSource="{Binding Settings.ThinkingModes}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.AnalysisThinking, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                <StackPanel Visibility="{Binding Settings.IsCompatible, Converter={StaticResource Visible}}">
+                  <TextBlock Text="HTTPS BaseURL"/>
+                  <TextBox Text="{Binding Settings.CompatibleBaseURL, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"/>
+                  <TextBlock Text="接口路径"/>
+                  <TextBox Text="{Binding Settings.CompatiblePath, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"/>
+                  <TextBlock Text="模型名称"/>
+                  <TextBox Text="{Binding Settings.CompatibleModel, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}">
+              <StackPanel>
+                <TextBlock Text="密钥保存到 Windows 凭据管理器。继续会保存设置；不会自动发送请求。" Style="{StaticResource Hint}"/>
+              </StackPanel>
+            </Border>
+            <ContentControl x:Name="SelectedCredential" ContentTemplate="{StaticResource CredentialTemplate}"/>
+            <TextBlock Text="API 调用可能产生所选服务的用量费用。连接尚未测试。" Style="{StaticResource Hint}"/>
+          </StackPanel>
+          <StackPanel Visibility="{Binding IsPermissions, Converter={StaticResource Visible}}">
+            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}">
+              <StackPanel>
+                <TextBlock Text="麦克风" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="在 Windows 设置 → 隐私和安全性 → 麦克风中，开启“麦克风访问权限”和“允许桌面应用访问麦克风”。Windows 10 的入口位于“隐私”。" Style="{StaticResource Hint}"/>
+                <Button Content="打开麦克风隐私设置" HorizontalAlignment="Left" Click="OpenMicrophonePrivacy" AutomationProperties.AutomationId="OpenMicrophonePrivacy"/>
+                <TextBlock x:Name="PermissionMessage" Style="{StaticResource Hint}"/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}">
+              <StackPanel>
+                <TextBlock Text="系统音频" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="通过 Windows WASAPI 回环采集当前输出设备的声音。无需 macOS 屏幕录制权限；请确认会议声音从预期的扬声器或耳机输出。" Style="{StaticResource Hint}"/>
+              </StackPanel>
+            </Border>
+            <TextBlock Text="当前未验证音频权限。引导不会启动录音；首次点击悬浮窗的开始按钮后检查设备是否可用。" Style="{StaticResource Hint}"/>
+          </StackPanel>
+          <StackPanel Visibility="{Binding IsReady, Converter={StaticResource Visible}}">
+            <TextBlock Text="准备情况" Style="{StaticResource SectionTitle}"/>
+            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}">
+              <StackPanel>
+                <TextBlock Text="语音转写" Style="{StaticResource SectionTitle}"/>
+                <TextBlock x:Name="ReadySpeech"/>
+                <Separator/>
+                <TextBlock Text="回答服务" Style="{StaticResource SectionTitle}"/>
+                <TextBlock x:Name="ReadyAnalysis"/>
+                <Separator/>
+                <TextBlock Text="资料检索" Style="{StaticResource SectionTitle}"/>
+                <TextBlock x:Name="ReadyEmbedding"/>
+                <Separator/>
+                <TextBlock Text="音频权限" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="尚未验证 · 开始监听后检查麦克风与系统音频。" Style="{StaticResource Hint}"/>
+                <TextBlock Text="Jev Mode" Style="{StaticResource SectionTitle}"/>
+                <TextBlock Text="即将推出" Style="{StaticResource Hint}"/>
+              </StackPanel>
+            </Border>
+            <TextBlock Text="点击“进入 LiveCopilot”后可直接输入问题。开始监听需另行点击悬浮窗顶部的播放按钮。" Style="{StaticResource Hint}"/>
+          </StackPanel>
+        </Grid>
+      </ScrollViewer>
+    </Grid>
+    <StackPanel Grid.Row="2">
+      <TextBlock Text="{Binding Error}" Foreground="{StaticResource ErrorInk}"/>
+      <TextBlock Text="{Binding Settings.ValidationSummary}" Foreground="{StaticResource ErrorInk}"/>
+      <Grid Margin="0,10,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <Button Content="返回" Command="{Binding BackCommand}" AutomationProperties.AutomationId="OnboardingBack" VerticalAlignment="Center"/>
+        <StackPanel Grid.Column="1" Margin="16,0" VerticalAlignment="Center" HorizontalAlignment="Left">
+          <ProgressBar Value="{Binding Progress, Mode=OneWay}" Minimum="0" Maximum="6" Width="200" Height="5" Foreground="{StaticResource Accent}"/>
+          <TextBlock Text="{Binding StepLabel}" FontSize="12" Foreground="{StaticResource SecondaryInk}" Margin="0,8,0,0"/>
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal">
+          <Button Content="稍后设置" Command="{Binding SkipCommand}" AutomationProperties.AutomationId="OnboardingSkip" Background="Transparent"/>
+          <Button Content="{Binding NextLabel}" Command="{Binding NextCommand}" Style="{StaticResource PrimaryButton}" AutomationProperties.AutomationId="OnboardingNext"/>
+        </StackPanel>
+      </Grid>
+    </StackPanel>
+  </Grid>
+</Window>
