@@ -164,15 +164,8 @@ internal static class Program
                             RequireFullyVisible(settings, "ModelCardParaformerDownload");
                             Capture(settings, Path.Combine(output, "services-speech-lower.png"));
                             ScrollTo(settings, "SpeechServiceScroll", 0);
-                            var choice = Find(settings, "ListeningServiceChoice");
-                            ((ExpandCollapsePattern)choice.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
-                            Thread.Sleep(200);
-                            var cloud = choice.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "OpenAI 云端 · GPT-Live-1"))
-                                ?? throw new InvalidOperationException("OpenAI cloud choice missing");
-                            if (!cloud.Current.IsEnabled) throw new InvalidOperationException("OpenAI cloud choice disabled");
-                            ((SelectionItemPattern)cloud.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
-                            ((ExpandCollapsePattern)choice.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Collapse();
-                            Thread.Sleep(350);
+                            SelectComboBoxItem(settings, "ListeningServiceChoice", "OpenAI 云端 · GPT-Live-1", app);
+                            ScrollTo(settings, "SpeechServiceScroll", 0);
                             foreach (var id in new[] { "OpenAILivePrice", "OpenAILiveCloudTag", "OpenAILiveMultilingualTag", "OpenAILiveUsageTag", "OpenAILiveCard", "OpenAILiveAutomatic", "OpenAILiveKeyHint" })
                                 RequireFullyVisible(settings, id);
                             Capture(settings, Path.Combine(output, "services-speech-openai.png"));
@@ -304,15 +297,69 @@ internal static class Program
         ((InvokePattern)Find(root, id).GetCurrentPattern(InvokePattern.Pattern)).Invoke();
     private static void Select(AutomationElement root, string id) =>
         ((SelectionItemPattern)Find(root, id).GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+    private static string DescribeElement(AutomationElement? element) => element is null
+        ? "<no match>; ControlType=<none>; SupportedPatterns=[]"
+        : $"Name='{element.Current.Name}'; ControlType={element.Current.ControlType.ProgrammaticName}; " +
+            $"SupportedPatterns=[{string.Join(", ", element.GetSupportedPatterns().Select(pattern => pattern.ProgrammaticName).Order())}]";
+
+    private static ExpandCollapsePattern ExpandComboBox(AutomationElement choice, string id)
+    {
+        if (!choice.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out var pattern))
+            throw new InvalidOperationException($"ComboBox cannot expand: {id}. {DescribeElement(choice)}");
+        var menu = (ExpandCollapsePattern)pattern;
+        menu.Expand(); Thread.Sleep(350);
+        if (menu.Current.ExpandCollapseState != ExpandCollapseState.Expanded)
+            throw new InvalidOperationException($"Menu did not open: {id}. {DescribeElement(choice)}");
+        return menu;
+    }
+
+    private static void SelectComboBoxItem(AutomationElement root, string id, string name, Process app)
+    {
+        var choice = Find(root, id);
+        var menu = ExpandComboBox(choice, id);
+        var named = new PropertyCondition(AutomationElement.NameProperty, name);
+        var items = choice.FindAll(TreeScope.Descendants,
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem)).Cast<AutomationElement>().ToArray();
+        // DisplayMemberPath may put the accessible label on a child TextBlock.
+        // Match its owning ListItem; only that container supports selection.
+        var item = items.FirstOrDefault(candidate => candidate.Current.Name == name || candidate.FindFirst(TreeScope.Descendants, named) is not null);
+        if (item is null)
+            throw new InvalidOperationException($"ComboBox item missing: {id} / {name}. " +
+                $"Name hit: {DescribeElement(choice.FindFirst(TreeScope.Descendants, named))}. " +
+                $"ListItems: [{string.Join("; ", items.Select(DescribeElement))}]. ComboBox: {DescribeElement(choice)}");
+        if (!item.Current.IsEnabled)
+            throw new InvalidOperationException($"ComboBox item disabled: {id} / {name}. {DescribeElement(item)}");
+        if (!item.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var itemPattern))
+            throw new InvalidOperationException($"ComboBox item cannot select: {id} / {name}. {DescribeElement(item)}");
+        if (!choice.TryGetCurrentPattern(SelectionPattern.Pattern, out var choicePattern))
+            throw new InvalidOperationException($"ComboBox cannot report selection: {id}. {DescribeElement(choice)}");
+        ((SelectionItemPattern)itemPattern).Select();
+        menu.Collapse();
+        var selection = (SelectionPattern)choicePattern;
+        try
+        {
+            // Read back the ComboBox's selection after collapse, not just the request
+            // sent to the item or the text that was visible in the open popup.
+            Wait(() => selection.Current.GetSelection() is [var selected] && selected.Equals(item) ? choice : null,
+                app, TimeSpan.FromSeconds(5), $"{id} selected {name}");
+        }
+        catch (TimeoutException error)
+        {
+            throw new InvalidOperationException($"ComboBox selection did not change: {id} / {name}. " +
+                $"Expected: {DescribeElement(item)}. Actual: [{string.Join("; ", selection.Current.GetSelection().Select(DescribeElement))}]. " +
+                $"ComboBox: {DescribeElement(choice)}", error);
+        }
+        Console.WriteLine($"ComboBox selection confirmed: {id} / {name} (SelectionPattern).");
+    }
+
     private static void CaptureMenu(AutomationElement main, string id, string file)
     {
-        var menu = (ExpandCollapsePattern)Find(main, id).GetCurrentPattern(ExpandCollapsePattern.Pattern);
-        menu.Expand(); Thread.Sleep(350);
-        if (menu.Current.ExpandCollapseState != ExpandCollapseState.Expanded) throw new InvalidOperationException($"Menu did not open: {id}");
+        var choice = Find(main, id);
+        var menu = ExpandComboBox(choice, id);
         // WPF Popup has its own HWND and is omitted by PrintWindow(main).
         var bounds = main.Current.BoundingRectangle;
         // Include popup items in screen coordinates, then crop to the app and its menu.
-        var items = Find(main, id).FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem));
+        var items = choice.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem));
         var visibleItems = 0;
         foreach (AutomationElement item in items)
             if (!item.Current.IsOffscreen && !item.Current.BoundingRectangle.IsEmpty) { bounds.Union(item.Current.BoundingRectangle); visibleItems++; }
