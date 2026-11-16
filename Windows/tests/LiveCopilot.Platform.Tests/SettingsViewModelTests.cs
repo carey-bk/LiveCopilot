@@ -207,7 +207,7 @@ public sealed class SettingsViewModelTests
     {
         var preferences = new MemoryPreferenceStore(); var vm = new SettingsViewModel(preferences, new MemoryCredentialStore(), new(preferences), _ => true);
         vm.ListeningService = service; Assert.True(vm.Save());
-        Assert.Contains(service is ListeningService.Zipformer or ListeningService.Paraformer ? "已安装" : service == ListeningService.Apple ? "不支持" : "尚未接入", vm.ListeningHint);
+        Assert.Contains(service is ListeningService.Zipformer or ListeningService.Paraformer ? "已安装" : service == ListeningService.Apple ? "不支持" : "智能判断", vm.ListeningHint);
     }
 
     [Fact] public void AboutUsesProvidedAssemblyAndRequiredNotices()

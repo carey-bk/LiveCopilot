@@ -78,7 +78,7 @@ public partial class MainWindow : Window
             session = new(AppRuntime.IsSmoke ? new SmokeAudioSourceFactory() : new WasapiAudioSourceFactory(), CreateProvider, settings,
                 new TranscriptStore(), new SessionStore(),
                 configuredReasoningFactory: selection => ReasoningProviderFactory.Make(selection, credentials, transport),
-                knowledgeRetriever: knowledge, embeddingFactory: CreateEmbedding);
+                knowledgeRetriever: knowledge, embeddingFactory: CreateEmbedding, configuredProviderFactory: CreateConfiguredProvider);
             session.Changed += QueueRefresh;
             viewModel.Configure(settings);
             ConfigureAppearance();
@@ -157,8 +157,14 @@ public partial class MainWindow : Window
         return localEmbedding;
     }
 
-    private static ListeningProvider CreateProvider(Speaker speaker, ListeningService service)
+    private ListeningProvider CreateProvider(Speaker speaker, ListeningService service) => CreateConfiguredProvider(speaker, settings with { ListeningService = service });
+
+    private ListeningProvider CreateConfiguredProvider(Speaker speaker, AppSettings selection)
     {
+        AppRuntime.RequireInteractive("语音识别");
+        if (selection.ListeningService == ListeningService.OpenAI)
+            return new(OpenAILiveProvider.FromCredentials(selection, credentials, speaker));
+        var service = selection.ListeningService;
         NativeRuntimeSupport.RequireSpeech();
         var provider = new LocalLiveProvider(speaker: speaker, contextual: service == ListeningService.Zipformer);
         return new(provider, terms => provider.UpdateTerms(terms), () => provider.Backend?.ToString());

@@ -6,12 +6,12 @@ namespace LiveCopilot.Platform.Tests;
 public sealed class SettingsPresentationTests
 {
     [Fact]
-    public void SpeechChoicesExcludeAppleAndDisableUnimplementedCloudRecognition()
+    public void SpeechChoicesExcludeAppleAndEnableOpenAICloudRecognition()
     {
         var preferences = new MemoryPreferenceStore();
         var model = new SettingsViewModel(preferences, new MemoryCredentialStore(), new HotkeyStore(preferences));
         Assert.DoesNotContain(model.ListeningServices, choice => choice.Value == ListeningService.Apple);
-        Assert.False(model.ListeningServices.Single(choice => choice.Value == ListeningService.OpenAI).IsAvailable);
+        Assert.True(model.ListeningServices.Single(choice => choice.Value == ListeningService.OpenAI).IsAvailable);
         Assert.All(model.ListeningServices.Where(choice => choice.Value is ListeningService.Zipformer or ListeningService.Paraformer), choice => Assert.True(choice.IsAvailable));
     }
     [Fact]

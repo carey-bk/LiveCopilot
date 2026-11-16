@@ -59,14 +59,17 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
             ? "本地听写模型已安装。更换引擎在下次开始聆听时生效。"
             : "本地听写模型尚未安装，请在下方模型卡片下载。安装或切换引擎后，重新开始聆听生效。"),
         ListeningService.Apple => "Windows 不支持 Apple 听写，请选择 Zipformer 或 Paraformer。",
-        _ => "Windows 云端听写尚未接入，请选择 Zipformer 或 Paraformer。"
+        _ => "云端实时转写，并智能判断提问是否完整。"
     };
     public IReadOnlyList<string> SpeechChips => ListeningService switch
     {
         ListeningService.Zipformer => ["本地", SpeechLanguages.Single(c => c.Value == LiveSpeechLanguage).Label, "术语增强", "无 API 费用"],
         ListeningService.Paraformer => ["本地", SpeechLanguages.Single(c => c.Value == LiveSpeechLanguage).Label, "无 API 费用"],
-        _ => ["云端", "即将推出"]
+        _ => ["云端", "多语言", "按量计费"]
     };
+    public bool IsOpenAIListening => ListeningService == ListeningService.OpenAI;
+    public bool IsLocalListening => !IsOpenAIListening;
+    public string LivePrice => ServiceGuide.LivePrice(draft.LiveModel, Language);
     public string EmbeddingHint => (EmbeddingService == EmbeddingService.Local ? embeddingUnavailable() : null)
         ?? (EmbeddingService == EmbeddingService.Local && !embeddingInstalled()
             ? "本地 BGE-M3 尚未安装，请在上方模型卡片下载。安装后无需重启即可导入或重新索引；已有文档仍保留。"
@@ -256,7 +259,7 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
     public double LayaThreshold { get => draft.LayaThreshold; set => Edit(() => draft.LayaThreshold = value); }
     public bool RecapEnabled { get => draft.RecapEnabled; set => Edit(() => draft.RecapEnabled = value); }
     public bool FollowUpEnabled { get => draft.FollowUpEnabled; set => Edit(() => draft.FollowUpEnabled = value); }
-    public AppLanguage Language { get => draft.Language; set => Edit(() => draft.Language = value); }
+    public AppLanguage Language { get => draft.Language; set { Edit(() => draft.Language = value); Notify(nameof(LivePrice)); } }
     public AnswerLanguage AnswerLanguage { get => draft.AnswerLanguage; set => Edit(() => draft.AnswerLanguage = value); }
     public ScenarioProfile Scenario { get => draft.Scenario; set => Edit(() => draft.Scenario = value); }
     public bool AutomaticSuggestions { get => draft.AutomaticSuggestions; set => Edit(() => draft.AutomaticSuggestions = value); }
@@ -270,7 +273,7 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
     public KnowledgeMode KnowledgeMode { get => draft.KnowledgeMode; set => Edit(() => draft.KnowledgeMode = value); }
     public EmbeddingService EmbeddingService { get => draft.EmbeddingService; set => Edit(() => draft.EmbeddingService = value); }
     public string EmbeddingModel { get => draft.EmbeddingModel; set => Edit(() => draft.EmbeddingModel = value ?? ""); }
-    public ListeningService ListeningService { get => draft.ListeningService; set { Edit(() => draft.ListeningService = value); Notify(nameof(ListeningHint)); Notify(nameof(SpeechChips)); } }
+    public ListeningService ListeningService { get => draft.ListeningService; set { Edit(() => draft.ListeningService = value); Notify(nameof(ListeningHint)); Notify(nameof(SpeechChips)); Notify(nameof(IsOpenAIListening)); Notify(nameof(IsLocalListening)); Notify(nameof(LivePrice)); } }
     public ReasoningService ReasoningService { get => draft.ReasoningService; set { Edit(() => { draft.SelectAnalysisService(value); thinkingChoice = null; }); RefreshService(); } }
     public string AnalysisModel { get => draft.AnalysisModel; set { if (value is null) return; Edit(() => { draft.SelectAnalysisModel(value); thinkingChoice = null; }); RefreshService(); } }
     public AnalysisThinking AnalysisThinking { get => thinkingChoice ?? draft.AnalysisThinking; set => Edit(() =>

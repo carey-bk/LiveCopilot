@@ -40,7 +40,7 @@ public sealed class ListeningSessionTests
         Assert.Equal(Speaker.Them, test.Them.Speaker); Assert.Equal(Speaker.You, test.You.Speaker);
     }
 
-    [Theory] [InlineData(ListeningService.OpenAI)] [InlineData(ListeningService.Apple)]
+    [Theory] [InlineData(ListeningService.Apple)]
     public async Task UnsupportedServicesRefuseBeforeAnyProviderOrCapture(ListeningService service)
     {
         await using var test = new SessionFixture(new() { ListeningService = service });

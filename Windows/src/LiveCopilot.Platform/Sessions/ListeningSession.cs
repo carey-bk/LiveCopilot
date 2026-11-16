@@ -8,12 +8,13 @@ namespace LiveCopilot.Platform.Sessions;
 /// the state lock held (except the owned synchronous stores).
 /// Changed may run on any worker thread: observers must return promptly, never synchronously
 /// wait for lifecycle methods, and WPF hosts must use Dispatcher.BeginInvoke and read Snapshot.
-public sealed class ListeningSession : IAsyncDisposable
+public sealed partial class ListeningSession : IAsyncDisposable
 {
     private readonly object sync = new();
     private readonly SemaphoreSlim lifecycle = new(1, 1);
     private readonly IAudioSourceFactory audioFactory;
     private readonly Func<Speaker, ListeningService, ListeningProvider> providerFactory;
+    private readonly Func<Speaker, AppSettings, ListeningProvider>? configuredProviderFactory;
     private readonly TranscriptStore transcript;
     private readonly SessionStore? sessions;
     private AppSettings settings;
@@ -37,10 +38,12 @@ public sealed class ListeningSession : IAsyncDisposable
         TranscriptStore? transcript = null, SessionStore? sessions = null, ICaptureClock? clock = null,
         Func<IReasoningProvider>? reasoningFactory = null, TimeSpan? answerTimeout = null,
         IKnowledgeRetriever? knowledgeRetriever = null, Func<AppSettings, IEmbeddingProvider>? embeddingFactory = null,
-        Func<AppSettings, IReasoningProvider>? configuredReasoningFactory = null)
+        Func<AppSettings, IReasoningProvider>? configuredReasoningFactory = null,
+        Func<Speaker, AppSettings, ListeningProvider>? configuredProviderFactory = null)
     {
         this.audioFactory = audioFactory;
         this.providerFactory = providerFactory;
+        this.configuredProviderFactory = configuredProviderFactory;
         this.settings = settings with { };
         this.transcript = transcript ?? new();
         this.sessions = sessions;
@@ -101,10 +104,10 @@ public sealed class ListeningSession : IAsyncDisposable
                     snapshot = snapshot with { State = ListeningState.Failed, Error = "现场交流需要麦克风，请开启麦克风后重试。" };
                     run = null!;
                 }
-                else if (settings.ListeningService is not (ListeningService.Zipformer or ListeningService.Paraformer))
+                else if (settings.ListeningService is not (ListeningService.Zipformer or ListeningService.Paraformer or ListeningService.OpenAI))
                 {
                     snapshot = snapshot with { State = ListeningState.Failed,
-                        Error = "云端听写尚未接入；Windows 仅支持 Zipformer / Paraformer，Apple 听写不可用。" };
+                        Error = "Windows 尚未接入 Apple 听写，请选择 Zipformer、Paraformer 或 OpenAI 云端。" };
                     run = null!;
                 }
                 else
@@ -138,6 +141,7 @@ public sealed class ListeningSession : IAsyncDisposable
                     run.WasListening = true;
                     snapshot = snapshot with { State = ListeningState.Listening };
                 }
+                if (run.Settings.ListeningService == ListeningService.OpenAI) run.AutomaticWorker = Task.Run(() => AutomaticLoopAsync(run));
                 Changed?.Invoke();
             }
             catch (OperationCanceledException) when (run.StopRequested || cancellationToken.IsCancellationRequested)
@@ -154,7 +158,8 @@ public sealed class ListeningSession : IAsyncDisposable
     private void Prepare(Run run, Path path)
     {
         CheckStarting(run);
-        path.Live = providerFactory(path.Speaker, run.Settings.ListeningService);
+        path.Live = configuredProviderFactory is null ? providerFactory(path.Speaker, run.Settings.ListeningService)
+            : configuredProviderFactory(path.Speaker, run.Settings with { });
         path.Live.Provider.OnEvent = value => Receive(run, path, value);
         path.Capture.Error += message => Fail(run, message);
         // AudioCaptureManager owns the callback lifetime. SendAudio must promptly copy/queue
@@ -197,7 +202,7 @@ public sealed class ListeningSession : IAsyncDisposable
 
     private void Receive(Run run, Path path, LiveEvent value)
     {
-        if (value is LiveEvent.Failed failure) { Fail(run, failure.Message); return; }
+        if (value is LiveEvent.Failed { WillRetry: false } failure) { Fail(run, failure.Message); return; }
         string? backend = null;
         if (value is LiveEvent.Ready)
         {
@@ -205,34 +210,57 @@ public sealed class ListeningSession : IAsyncDisposable
             catch (Exception e) { Fail(run, "无法读取语音后端状态：" + e.Message); return; }
         }
         string? error = null;
+        ILiveProvider? contextProvider = null;
+        string? ownText = null;
         lock (sync)
         {
             if (current != run || !run.AcceptEvents) return;
             switch (value)
             {
                 case LiveEvent.Ready:
-                    SetPath(path, GetPath(path) with { Backend = backend });
+                    SetPath(path, GetPath(path) with { Backend = backend, Status = null });
                     path.Ready.TrySetResult();
                     break;
+                case LiveEvent.Failed retrying:
+                    SetPath(path, GetPath(path) with { Status = retrying.Message });
+                    break;
+                case LiveEvent.Status status:
+                    SetPath(path, GetPath(path) with { Status = status.Text });
+                    break;
                 case LiveEvent.Transcript final:
-                    transcript.Ingest(final.Fragment with { Speaker = path.Speaker });
+                    var fragment = final.Fragment with { Speaker = path.Speaker };
+                    if (!run.Conversation.Append(fragment)) return;
+                    transcript.Ingest(fragment);
+                    if (path.Speaker == Speaker.You && run.Settings.ListeningService == ListeningService.OpenAI)
+                    { contextProvider = run.System.Live?.Provider; ownText = "You said: " + fragment.Text; }
+                    if (run.PendingAutomatic is not null) run.AutomaticAt = DateTimeOffset.UtcNow.AddMilliseconds(500);
                     transcript.ClearPartial(path.Speaker);
                     break;
                 case LiveEvent.PartialTranscript partial:
                     transcript.SetPartial(partial.Text, path.Speaker);
                     break;
+                case LiveEvent.Delegation delegation:
+                    if (run.Settings.ListeningService != ListeningService.OpenAI || run.StopRequested ||
+                        !settings.AutomaticSuggestions || path.Speaker == Speaker.You || !run.Delegations.Add(delegation.Id)) return;
+                    if (run.Delegations.Count > 400) { run.Delegations.Clear(); run.Delegations.Add(delegation.Id); }
+                    run.PendingAutomatic = new(path.Speaker, delegation.Id, DateTimeOffset.UtcNow.AddSeconds(25));
+                    run.AutomaticAt = DateTimeOffset.UtcNow.AddMilliseconds(500);
+                    break;
                 case LiveEvent.SpeechActivity speech:
                     SetPath(path, GetPath(path) with { SpeechActive = speech.Active });
+                    if (!speech.Active && settings.ContinuousQuestionPolicy == ContinuousQuestionPolicy.Complete) run.Questions.PostponeUntilQuiet();
                     break;
                 case LiveEvent.Closed closed:
-                    if (!run.Disconnecting) error = "本地语音连接意外关闭，请重新开始聆听。";
-                    else if (!closed.Finalized && run.WasListening) error = "本地听写未能完成最后一段转写。";
+                    if (!run.Disconnecting) error = "语音连接意外关闭，请重新开始聆听。";
+                    else if (!closed.Finalized && run.WasListening) error = run.Settings.ListeningService == ListeningService.OpenAI
+                        ? "云端会话未确认完成，最后一段转写可能不完整。" : "本地听写未能完成最后一段转写。";
                     SetPath(path, GetPath(path) with { SpeechActive = false });
                     break;
                 default: return;
             }
             RefreshTranscript();
         }
+        if (contextProvider is not null && ownText is not null) contextProvider.AppendContext(ownText, null);
         if (error is not null) Fail(run, error);
         Changed?.Invoke();
     }
@@ -276,7 +304,7 @@ public sealed class ListeningSession : IAsyncDisposable
         if (!string.IsNullOrWhiteSpace(question)) Request(SuggestionMode.Reply, question.Trim());
     }
 
-    private void Request(SuggestionMode mode, string? question)
+    private void Request(SuggestionMode mode, string? question, Run? automaticRun = null, QuestionCoordinator.Candidate? candidate = null)
     {
         SuggestionRun? previous;
         SuggestionRun? next = null;
@@ -284,6 +312,7 @@ public sealed class ListeningSession : IAsyncDisposable
         lock (sync)
         {
             if (disposed || resetting || snapshot.IsStopping || !settings.IsEnabled(mode)) return;
+            if (automaticRun is not null && (current != automaticRun || automaticRun.StopRequested || suggestion is not null || !settings.AutomaticSuggestions)) return;
             previous = InterruptSuggestion();
             var label = mode switch { SuggestionMode.Reply => "回答", SuggestionMode.Recap => "总结", _ => "追问" };
             snapshot = snapshot with { LastRequestedMode = mode, SuggestionText = "", SuggestionError = null,
@@ -292,7 +321,7 @@ public sealed class ListeningSession : IAsyncDisposable
                 snapshot = snapshot with { SuggestionStatus = $"已请求{label}，推理服务尚未接入" };
             else
             {
-                var context = transcript.RecentContext();
+                var context = candidate?.Context ?? transcript.RecentContext();
                 var partial = transcript.PartialThem.Trim();
                 if (partial.Length > 0) context = (context.Length > 0 ? context + "\n" : "") + "Them: " + partial;
                 if (context.Length == 0 && question is null)
@@ -314,7 +343,7 @@ public sealed class ListeningSession : IAsyncDisposable
                         BilingualAnswers = settings.BilingualAnswers, AdditionalAnswerInstructions = settings.AdditionalAnswerInstructions,
                         LanguageQuestion = question ?? latest
                     };
-                    next = new(settings with { });
+                    next = new(settings with { }) { AutomaticRun = automaticRun, Candidate = candidate };
                     if (sessions is not null) pendingAnswers.Add(next);
                     next.Store.Begin(mode, query);
                     next.Store.Trace = new();
@@ -341,6 +370,7 @@ public sealed class ListeningSession : IAsyncDisposable
         suggestion = null;
         previous.Store.Mark(PipelineStage.Cancelled);
         previous.Store.Interrupt();
+        previous.AutomaticRun?.Conversation.Finish(false, previous.Candidate!.Query);
         PublishSuggestion(previous, "回答已取消");
         return previous;
     }
@@ -373,6 +403,7 @@ public sealed class ListeningSession : IAsyncDisposable
             suggestion = null;
             run.Store.Mark(PipelineStage.Failed);
             run.Store.Fail("回答超时，请手动重试。");
+            run.AutomaticRun?.Conversation.Finish(false, run.Candidate!.Query);
             PublishSuggestion(run, run.Store.Error!);
         }
         CancelSuggestion(run);
@@ -436,14 +467,21 @@ public sealed class ListeningSession : IAsyncDisposable
                     Changed?.Invoke();
                 }
             }
+            ILiveProvider? completedProvider = null;
             lock (sync)
             {
                 if (suggestion != run) return;
                 run.Store.Mark(PipelineStage.AnswerComplete);
                 run.Store.Finish();
                 PublishSuggestion(run, missingEvidence ? "未找到知识库证据" : "回答已完成");
+                if (run.AutomaticRun is { } live && current == live && !live.StopRequested && run.Candidate is { } candidate)
+                {
+                    live.Conversation.Finish(true, candidate.Query);
+                    completedProvider = (candidate.Speaker == Speaker.Room ? live.Microphone : live.System).Live?.Provider;
+                }
                 suggestion = null;
             }
+            completedProvider?.AppendContext(OpenAILiveProtocol.AssistanceSummary(run.Store.Text), run.Candidate?.DelegationId);
             Changed?.Invoke();
         }
         catch (Exception error)
@@ -455,6 +493,7 @@ public sealed class ListeningSession : IAsyncDisposable
                     : error is OperationCanceledException ? "回答超时，请手动重试。" : error.Message;
                 run.Store.Mark(PipelineStage.Failed);
                 run.Store.Fail(message);
+                run.AutomaticRun?.Conversation.Finish(false, run.Candidate!.Query);
                 PublishSuggestion(run, message == "请先配置分析服务 API 密钥" || error is OperationCanceledException ? message : "回答失败：" + message);
                 suggestion = null;
             }
@@ -590,6 +629,8 @@ public sealed class ListeningSession : IAsyncDisposable
     private async Task TearDownAsync(Run run)
     {
         lock (sync) { run.StopRequested = true; snapshot = snapshot with { IsStopping = true }; }
+        await run.StartCancellation.CancelAsync().ConfigureAwait(false);
+        if (run.AutomaticWorker is not null) await run.AutomaticWorker.ConfigureAwait(false);
         await Task.WhenAll(run.System.Capture.StopAsync(), run.Microphone.Capture.StopAsync()).ConfigureAwait(false);
         lock (sync)
         {
@@ -689,10 +730,12 @@ public sealed class ListeningSession : IAsyncDisposable
         public Guid Id { get; } = Guid.NewGuid();
         public Guid QuestionId { get; } = Guid.NewGuid();
         public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
-        public SessionAnswer Snapshot() => new(Id, QuestionId, false, CreatedAt, Store.AnsweredAt, Store.CompletedAt,
+        public SessionAnswer Snapshot() => new(Id, QuestionId, Candidate is not null, CreatedAt, Store.AnsweredAt, Store.CompletedAt,
             Store.Question, Store.Text, Store.State.ToString().ToLowerInvariant(), Store.Warning, Store.Error,
             Store.CitedSources.Select(citation => new SessionCitation(citation.Index, citation.Source.Chunk.DocumentId,
-                citation.Source.Chunk.DocumentName, citation.Source.Chunk.Page, citation.Source.Chunk.Ordinal, citation.Source.Chunk.Text)).ToValueList(), null);
+                citation.Source.Chunk.DocumentName, citation.Source.Chunk.Page, citation.Source.Chunk.Ordinal, citation.Source.Chunk.Text)).ToValueList(), Candidate?.SourceId);
+        public Run? AutomaticRun { get; init; }
+        public QuestionCoordinator.Candidate? Candidate { get; init; }
         public AppSettings Settings { get; }
         public SuggestionStore Store { get; } = new();
         public CancellationTokenSource Cancellation { get; } = new();
@@ -702,6 +745,12 @@ public sealed class ListeningSession : IAsyncDisposable
 
     private sealed class Run(IAudioSourceFactory factory, ICaptureClock? clock, AppSettings settings, bool microphoneEnabled)
     {
+        public ConversationState Conversation { get; } = new();
+        public QuestionCoordinator Questions { get; } = new();
+        public HashSet<string> Delegations { get; } = [];
+        public PendingDelegation? PendingAutomatic { get; set; }
+        public DateTimeOffset AutomaticAt { get; set; }
+        public Task? AutomaticWorker { get; set; }
         public AppSettings Settings { get; } = settings;
         public Path System { get; } = new(factory, AudioInput.System, Speaker.Them, clock);
         public Path Microphone { get; } = new(factory, AudioInput.Microphone, settings.Mode == OperatingMode.InPerson ? Speaker.Room : Speaker.You, clock);

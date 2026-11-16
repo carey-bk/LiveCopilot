@@ -21,4 +21,5 @@
     <EmbeddedResource Include="../../src/LiveCopilot.App/*.cs"
                       LogicalName="AppSources/%(Filename)%(Extension)" />
   </ItemGroup>
+  <ItemGroup><Compile Include="../Shared/LocalLiveServer.cs" Link="LocalLiveServer.cs" /></ItemGroup>
 </Project>

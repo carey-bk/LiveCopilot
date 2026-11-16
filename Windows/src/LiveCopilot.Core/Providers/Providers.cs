@@ -29,7 +29,7 @@ public abstract record LiveEvent
     public sealed record Delegation(string Id, int OffsetMs) : LiveEvent;
     public sealed record SpeechActivity(bool Active) : LiveEvent;
     public sealed record Status(string Text) : LiveEvent;
-    public sealed record Failed(string Message) : LiveEvent;
+    public sealed record Failed(string Message, bool WillRetry = false) : LiveEvent;
     public sealed record Closed(bool Finalized) : LiveEvent;
 }
 /// Hosts serialize callbacks on their UI context, matching the Swift MainActor contract.

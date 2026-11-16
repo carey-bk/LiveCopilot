@@ -56,6 +56,29 @@ public sealed class SmokeIsolationTests
         finally { Environment.SetEnvironmentVariable("LIVECOPILOT_SMOKE", previous); }
     }
 
+    [Fact]
+    public async Task SmokeRejectsLiveBeforeCredentialReadOrWebSocketConnection()
+    {
+        var previous = Environment.GetEnvironmentVariable("LIVECOPILOT_SMOKE");
+        try
+        {
+            Environment.SetEnvironmentVariable("LIVECOPILOT_SMOKE", "1");
+            Assert.Throws<CopilotException>(() => OpenAILiveProvider.FromCredentials(new(), new UnreadableCredentials(), Speaker.Room));
+            await using var server = new LiveCopilot.Testing.LocalLiveServer();
+            await using var provider = new OpenAILiveProvider("fake", "gpt-live-1", Speaker.Room, ScenarioProfile.Meeting,
+                LiveSpeechLanguage.Mixed, new() { Endpoint = server.Endpoint });
+            Assert.Throws<CopilotException>(() => provider.Connect("private context"));
+            Assert.Empty(server.Requests);
+        }
+        finally { Environment.SetEnvironmentVariable("LIVECOPILOT_SMOKE", previous); }
+    }
+    private sealed class UnreadableCredentials : ICredentialStore
+    {
+        public string? Read(CredentialReference reference) => throw new InvalidOperationException("Must not read credentials in smoke");
+        public void Save(CredentialReference reference, string key) => throw new InvalidOperationException();
+        public void Clear(CredentialReference reference) => throw new InvalidOperationException();
+    }
+
     private sealed class CountingHandler : HttpMessageHandler
     {
         public int Calls { get; private set; }

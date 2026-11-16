@@ -156,7 +156,7 @@
                 <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
                 <StackPanel Margin="0,0,12,0">
                 <TextBlock Text="语音识别"/>
-                <ComboBox ItemsSource="{Binding Settings.ListeningServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.ListeningService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0">
+                <ComboBox AutomationProperties.AutomationId="OnboardingListeningServiceChoice" ItemsSource="{Binding Settings.ListeningServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.ListeningService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0">
                   <ComboBox.ItemContainerStyle>
                     <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
                       <Setter Property="IsEnabled" Value="{Binding IsAvailable}"/>

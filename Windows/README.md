@@ -1,13 +1,13 @@
 # LiveCopilot Windows：未签名安装包与 CI 冒烟截图（第 9 线）
 
-本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。第 4 线增加 WASAPI 音频、WPF 浮窗壳和全局快捷键；第 5 线通过可测试的 `ListeningSession` 连接双路采集与本地语音识别。第 6 线接入手动云端回答 / 总结 / 追问、流式浮窗正文及 Windows 凭据存储；第 7 线增加文档导入、知识库检索和浮窗来源；第 8 线增加中文分页设置窗口，集中管理通用、服务、知识库与快捷键配置。云端听写、自动建议执行和历史浏览尚未接入。原有 `StealthApp/` 源码与资源保持不变。
+本目录承接 Swift 版本中可独立测试的领域模型、配置、分析预设、状态存储及本地 ASR / embedding，使用 C# 12 / .NET 8。第 4 线增加 WASAPI 音频、WPF 浮窗壳和全局快捷键；第 5 线通过可测试的 `ListeningSession` 连接双路采集与本地语音识别。第 6 线接入手动云端回答 / 总结 / 追问、流式浮窗正文及 Windows 凭据存储；第 7 线增加文档导入、知识库检索和浮窗来源；第 8 线增加中文分页设置窗口，集中管理通用、服务、知识库与快捷键配置。第 13 线接入 OpenAI 云端实时转写与语义提问自动回答。原有 `StealthApp/` 源码与资源保持不变。
 
 ## 安装与首次运行
 
 1. 打开仓库 **Actions → Windows unsigned packages and smoke**，选择成功的运行。在页面底部 Artifacts 下载 `LiveCopilot-win-arm64-<run number>` 或 `LiveCopilot-win-x64-<run number>`。产物保留 **14 天**，过期后重新运行 workflow；这里不创建 GitHub Release 或 tag。
 2. Windows 11 ARM（包括 Mac M4 Max 上的 Windows ARM 虚拟机）优先选 **win-arm64**；普通 Intel/AMD Windows 选 **win-x64**。ARM 虚拟机遇到本地依赖或驱动问题时，可使用 Windows 的 x64 仿真运行 x64 包。两个架构使用相同安装标识，切换前退出应用并卸载旧架构；临时对比可分别解压便携包，避免同时运行。
 3. 解压 Actions artifact，运行其中的 `*Setup.exe`，按当前用户安装，无需预装 .NET。安装包和程序**未签名**；SmartScreen 拦截时，确认下载自该仓库 Actions，再点击 **“更多信息”→“仍要运行”**。无需申请或安装证书。也可解压其中的 `*Portable.zip`，在解压目录运行 `LiveCopilot.App.exe`；不要直接从 zip 内运行。
-4. 首次启动不会自动开始聆听、下载模型或检查更新。打开“设置”查看六个页面；模型不随包分发，没安装模型时会显示提示。“关于”页的更新开关默认关闭；本版本没有更新源，开启或点击“检查更新”也不联网。云端服务只有在配置凭据并主动使用功能时才会请求；云端听写目前尚未接入。
+4. 首次启动不会自动开始聆听、下载模型或检查更新。打开“设置”查看六个页面；模型不随包分发，没安装模型时会显示提示。“关于”页的更新开关默认关闭；本版本没有更新源，开启或点击“检查更新”也不联网。云端服务只有在配置凭据并主动使用功能时才会请求；OpenAI 云端听写在第 13 线接入，选择引擎与打开设置本身不会连接。
 
 安装目录为 `%LOCALAPPDATA%\LiveCopilot.Windows`，与数据目录 **`%LOCALAPPDATA%\LiveCopilot`** 分开。安装版与便携版均使用此数据目录，内含 `preferences`、`Models`、知识库和会话记录；便携包不会把用户数据写在程序旁边。服务密钥独立保存于 Windows 凭据管理器，未写入偏好文件。
 
@@ -221,7 +221,7 @@ Linux 可以交叉编译 WPF，但不能运行窗口；假源测试通过不构�
 
 启动后显示主窗口与浮窗，状态为“未开始聆听”，不创建语音提供器、不加载模型、不采集声音。点击“开始聆听”才加载本地语音并启动系统与麦克风两路；点击“停止”先停止两路采集，再等待识别器 flush，最后把有正式转写的会话保存到 `%LOCALAPPDATA%/LiveCopilot/sessions`。重复开始/停止不会重复连接或重复保存；关闭主窗口也会停止、保存并释放快捷键与浮窗。保存错误会显示在主窗口和浮窗，关闭时也会提示；本批没有历史浏览或保存重试 UI。
 
-宿主使用持久化的 `AppSettings`（默认 Zipformer）；第 8 线可通过主窗口「设置」修改。模型应预先放在 `%LOCALAPPDATA%/LiveCopilot/Models`，按上文清单及 receipt 安装；独立宿主/测试可向 `LocalLiveProvider` 注入其它 root。本批 UI 不下载模型、不预热 embedding、不强制 CPU。缺失、损坏、运行库错误都会明确显示失败；只有 provider 发出 Ready 后才读取并展示实际 `Backend`，未就绪时不宣称 GPU/CPU 成功。OpenAI 或 Apple 听写选择会在打开音频源之前被拒绝；设置页也会提示当前 Windows 支持范围。
+宿主使用持久化的 `AppSettings`（默认 Zipformer）；第 8 线可通过主窗口「设置」修改。模型应预先放在 `%LOCALAPPDATA%/LiveCopilot/Models`，按上文清单及 receipt 安装；独立宿主/测试可向 `LocalLiveProvider` 注入其它 root。本批 UI 不下载模型、不预热 embedding、不强制 CPU。缺失、损坏、运行库错误都会明确显示失败；只有 provider 发出 Ready 后才读取并展示实际 `Backend`，未就绪时不宣称 GPU/CPU 成功。第 13 线支持 OpenAI 云端听写；缺少共享密钥或选择 Apple 听写时在打开音频源之前拒绝启动。
 
 `ListeningSession` 位于纯 `net8.0` Platform，依赖音频工厂、`ILiveProvider` 工厂、设置快照、独占的 `TranscriptStore` 以及可选 `SessionStore` / `ICaptureClock`。Platform 仅引用 Core，不引用 LocalInference、sherpa、LLamaSharp、NAudio 或 WPF。WPF 宿主注入 `WasapiAudioSourceFactory`，每次开始为 Them / You 各创建一个新的 `LocalLiveProvider`；单次使用的 provider 在断开后不复用。`ListeningProvider` 的可选能力委托提供热词配置与已观察到的后端信息，避免向 Platform 泄漏原生实现。
 
@@ -317,7 +317,7 @@ dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -
 
 文档操作前必须先保存设置；导入、删除和重建会立即执行，不随「取消」撤销。操作期间禁用设置编辑、保存、取消及重复文档操作，关闭窗口会取消并等待任务收尾。录制快捷键时暂停全局绑定，按 Esc、点击鼠标、切换页面或失去焦点结束录制；保存后重新注册，外部程序占用组合时仍需在 Windows 中更换绑定。
 
-未安装本地模型时显示中文提示，可在服务/知识库页的模型卡片下载，详见第 10 线说明。云端/Apple 听写在 Windows 上仍不可用；本地双语模型自动识别中英文，听写语言不强制过滤识别结果。界面语言偏好会保存，本批设置窗口文案固定为中文；自动建议与连续提问策略可保存，但本批仍由快捷键手动触发建议。共享隐藏请求是否被会议软件实际遵守需要 Windows 真机验证。
+未安装本地模型时显示中文提示，可在服务/知识库页的模型卡片下载，详见第 10 线说明。Apple 听写在 Windows 上仍不可用，OpenAI 云端已在第 13 线接入；本地双语模型自动识别中英文，听写语言不强制过滤识别结果。界面语言偏好会保存，本批设置窗口文案固定为中文；OpenAI 云端支持自动建议与连续提问策略，本地语音的 Jev / Laya 自动触发仍即将推出。共享隐藏请求是否被会议软件实际遵守需要 Windows 真机验证。
 
 2026-11-15 第 8 线 Linux Release 验收：完整 solution（含 WPF App 和 Platform.Tests 两个目标）**0 warnings / 0 errors**；Core **279 通过**（273 + 6），LocalInference **61 通过、2 跳过**，Platform `net8.0` **277 通过、2 跳过**（198 + 79），全部 **0 失败**。新增测试覆盖默认值、即时范围校验、保存/取消、文件持久化、凭据隔离与安全错误、快捷键冲突与回滚、重建提示、保存通知异常隔离和会话配置快照；既有测试断言及 `TreatWarningsAsErrors` 未改变。
 
@@ -401,8 +401,18 @@ dotnet test tests/LiveCopilot.Platform.Tests/LiveCopilot.Platform.Tests.csproj -
 ## 明确不在本批范围
 
 - 不实现完整 OverlayView 对话 UI 或入门；第 8 线已提供独立设置页及迁移后的知识库管理，历史记录仅显示占位。
-- Laya / Jev / MLX、决策模型分类器、完整 AppCoordinator、云 Live providers 和自动建议留待后续；文档导入、手动请求 RAG 与 OpenAI embeddings HTTP 已接入。
+- Laya / Jev / MLX、决策模型分类器、完整 AppCoordinator 和本地自动建议留待后续；文档导入、手动请求 RAG 与 OpenAI embeddings HTTP 已接入。
 - WASAPI 真机设备/权限/进程排除、会议共享隐藏和全局快捷键体验尚未验收；没有签名、安装器或发行打包。
 - 不翻译 `AppleSpeech*`、`AppleLiveProvider`、`Laya*`、`AudioFlowMonitor`、`EchoMonitor`、`AppCoordinator`。
 - 不新增 `OnboardingStore`；后续仍需决策模型、Windows 真机与真实云服务验收、签名及发行打包。
 - 不修改 Mac 源码或资源，不进行签名、推送、PR、远程配置修改。
+
+## 第 13 线：OpenAI 云端实时转写
+
+「设置 → 服务 → 语音识别」和首次引导可选择 OpenAI 云端 · GPT-Live-1。价格沿用 Mac `ServiceGuide.LivePrice`：每路 $0.05/分钟，双路约 $0.10/分钟，连接静音也计时；回答模型和工具另计。使用「分析与回答 → API Key」中的共享 OpenAI 密钥（`CredentialReference.Live`）；云端语音工厂不读取环境密钥。保存配置不会连接；点击“开始聆听”后才连接，所有启用路径就绪后才开始采集。
+
+Core 的 `OpenAILiveProvider` 使用 .NET `ClientWebSocket`，遵循 Mac `/v1/live/sessions` 协议（`session.start`、24 kHz 单声道 PCM16 Base64、`session.input_audio.append`）。语义完整提问委托进入已有回答/RAG/历史链路；自身麦克风不触发回答，重复委托和已回答问题被抑制。自动开关在云端语音卡片中，连续提问策略在“实时回答触发”页；Jev / Laya 保持即将推出。
+
+启动超时 20 秒，网络故障最多重连 3 次（1/2/4 秒），重连保留最近上下文并丢弃待发音频。停止发送 `session.close` 并最多等待 8 秒，让最后转写进入历史；未确认完成会明确提示。错误仅显示安全分类，不显示服务端原始消息。
+
+新增测试仅使用进程内 loopback `HttpListener` WebSocket 和假 key，无生产依赖、真实 API 或费用。Smoke 添加 `services-speech-openai.png`，总数 34，断言云端价格、标签和说明卡完整可见；Smoke 模式在读取凭据或建立 WebSocket 前阻断连接。Linux 可交叉编译 Windows Smoke，实际 UIA 截图仍需 Windows 桌面。

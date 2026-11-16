@@ -17,7 +17,7 @@ public sealed class SettingsPolishTests
         Assert.Contains("术语增强", settings.SpeechChips); Assert.Contains("无 API 费用", settings.SpeechChips);
         settings.ListeningService = ListeningService.Paraformer; settings.LiveSpeechLanguage = LiveSpeechLanguage.English;
         Assert.DoesNotContain("术语增强", settings.SpeechChips); Assert.Contains("英文", settings.SpeechChips);
-        settings.ListeningService = ListeningService.OpenAI; Assert.Equal(["云端", "即将推出"], settings.SpeechChips);
+        settings.ListeningService = ListeningService.OpenAI; Assert.Equal(["云端", "多语言", "按量计费"], settings.SpeechChips);
     }
     [Fact]
     public void FreshLanguageDefaultsToSimplifiedChineseAndReopenPreservesSystemPreference()

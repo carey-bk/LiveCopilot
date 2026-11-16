@@ -81,7 +81,9 @@ public partial class OnboardingWindow : Window
     private void RefreshStatus()
     {
         var settings = viewModel.Settings;
-        ReadySpeech.Text = NativeRuntimeSupport.SpeechUnavailable ?? (settings.ListeningService switch
+        ReadySpeech.Text = settings.ListeningService == ListeningService.OpenAI
+            ? "OpenAI 云端 · 使用共享 OpenAI 密钥，开始聆听时连接"
+            : NativeRuntimeSupport.SpeechUnavailable ?? (settings.ListeningService switch
         {
             ListeningService.Zipformer => ZipformerModel.Status,
             ListeningService.Paraformer => ParaformerModel.Status,

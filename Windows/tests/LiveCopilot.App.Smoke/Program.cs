@@ -164,6 +164,18 @@ internal static class Program
                             RequireFullyVisible(settings, "ModelCardParaformerDownload");
                             Capture(settings, Path.Combine(output, "services-speech-lower.png"));
                             ScrollTo(settings, "SpeechServiceScroll", 0);
+                            var choice = Find(settings, "ListeningServiceChoice");
+                            ((ExpandCollapsePattern)choice.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Expand();
+                            Thread.Sleep(200);
+                            var cloud = choice.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "OpenAI 云端 · GPT-Live-1"))
+                                ?? throw new InvalidOperationException("OpenAI cloud choice missing");
+                            if (!cloud.Current.IsEnabled) throw new InvalidOperationException("OpenAI cloud choice disabled");
+                            ((SelectionItemPattern)cloud.GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
+                            ((ExpandCollapsePattern)choice.GetCurrentPattern(ExpandCollapsePattern.Pattern)).Collapse();
+                            Thread.Sleep(350);
+                            foreach (var id in new[] { "OpenAILivePrice", "OpenAILiveCloudTag", "OpenAILiveMultilingualTag", "OpenAILiveUsageTag", "OpenAILiveCard", "OpenAILiveAutomatic", "OpenAILiveKeyHint" })
+                                RequireFullyVisible(settings, id);
+                            Capture(settings, Path.Combine(output, "services-speech-openai.png"));
                         }
                         if (service == "AnalysisServiceTab")
                         {
@@ -209,13 +221,13 @@ internal static class Program
             if (!app.WaitForExit(15000)) throw new TimeoutException("App did not exit normally within 15 seconds.");
             app.WaitForExit(); // Drain redirected output callbacks before disposing the writers.
             if (app.ExitCode != 0) throw new InvalidOperationException($"App exited with code {app.ExitCode}.");
-            if (Directory.GetFiles(output, "*.png").Length != 33) throw new InvalidOperationException("Expected thirty-three screenshots.");
+            if (Directory.GetFiles(output, "*.png").Length != 34) throw new InvalidOperationException("Expected thirty-four screenshots.");
             var events = File.ReadAllLines(Path.Combine(output, "app-events.log"));
             foreach (var stage in new[] { "main shutdown requested", "main shutdown cleanup complete; closing", "main closed", "app exited: 0" })
                 if (events.Count(line => line.EndsWith(" " + stage, StringComparison.Ordinal)) != 1)
                     throw new InvalidOperationException($"Expected exactly one shutdown event: {stage}.");
             File.WriteAllText(Path.Combine(output, "result.json"), JsonSerializer.Serialize(new
-            { success = true, startupMs, appExitCode = app.ExitCode, pages, screenshots = 33, closeRequestsSent,
+            { success = true, startupMs, appExitCode = app.ExitCode, pages, screenshots = 34, closeRequestsSent,
                 historySessions = history.Count, historyActionsInvoked = false,
                 historyScreenshots = new[] { "settings-history-list.png", "settings-history-detail.png" } }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"PASS: main ready in {startupMs} ms; overlay, six settings pages, four service tabs and six onboarding steps captured; app exit code 0.");

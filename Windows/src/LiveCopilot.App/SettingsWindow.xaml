@@ -203,17 +203,33 @@
                       <TextBlock Grid.Column="2" Text="识别语言" Margin="0,0,10,0" VerticalAlignment="Center"/>
                       <ComboBox Grid.Column="3" Margin="0" ItemsSource="{Binding SpeechLanguages}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding LiveSpeechLanguage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                     </Grid>
-                    <TextBlock Text="{Binding ListeningHint}" Style="{StaticResource SettingsHint}"/>
-                    <ItemsControl ItemsSource="{Binding SpeechChips}" Margin="0,4,0,0">
+                    <TextBlock AutomationProperties.AutomationId="ListeningServiceHint" Text="{Binding ListeningHint}" Style="{StaticResource SettingsHint}"/>
+                    <TextBlock AutomationProperties.AutomationId="OpenAILivePrice" Text="{Binding LivePrice}" Style="{StaticResource SettingsHint}" Visibility="{Binding IsOpenAIListening, Converter={StaticResource Visible}}"/>
+                    <ItemsControl ItemsSource="{Binding SpeechChips}" Margin="0,4,0,0" Visibility="{Binding IsLocalListening, Converter={StaticResource Visible}}">
                       <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                       <ItemsControl.ItemTemplate><DataTemplate><Border Style="{StaticResource Chip}"><TextBlock Text="{Binding}" FontSize="13"/></Border></DataTemplate></ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <WrapPanel Margin="0,4,0,0" Visibility="{Binding IsOpenAIListening, Converter={StaticResource Visible}}">
+                      <Border Style="{StaticResource Chip}"><TextBlock AutomationProperties.AutomationId="OpenAILiveCloudTag" Text="云端" FontSize="13"/></Border>
+                      <Border Style="{StaticResource Chip}"><TextBlock AutomationProperties.AutomationId="OpenAILiveMultilingualTag" Text="多语言" FontSize="13"/></Border>
+                      <Border Style="{StaticResource Chip}"><TextBlock AutomationProperties.AutomationId="OpenAILiveUsageTag" Text="按量计费" FontSize="13"/></Border>
+                    </WrapPanel>
                   </StackPanel>
                 </Border>
+                <Border Style="{StaticResource SettingsCard}" Visibility="{Binding IsOpenAIListening, Converter={StaticResource Visible}}">
+                  <StackPanel>
+                    <TextBlock AutomationProperties.AutomationId="OpenAILiveCard" Text="OpenAI 云端 · GPT-Live-1" FontWeight="SemiBold"/>
+                    <CheckBox AutomationProperties.AutomationId="OpenAILiveAutomatic" Content="智能判断提问是否完整，自动生成回答" IsChecked="{Binding AutomaticSuggestions}"/>
+                    <TextBlock AutomationProperties.AutomationId="OpenAILiveLanguageHint" Text="语言选项仅影响识别偏好，不限制实际识别语言。" Style="{StaticResource SettingsHint}"/>
+                    <TextBlock AutomationProperties.AutomationId="OpenAILiveKeyHint" Text="使用“分析与回答 → API Key”中的共享 OpenAI 密钥。保存设置后，点击悬浮窗“开始聆听”连接云端。" Style="{StaticResource SettingsHint}"/>
+                  </StackPanel>
+                </Border>
+                <StackPanel Visibility="{Binding IsLocalListening, Converter={StaticResource Visible}}">
                 <TextBlock Text="模型连接与下载管理" Style="{StaticResource SettingsSectionTitle}"/>
                 <ContentControl Content="{Binding ZipformerModel, ElementName=SettingsRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
                 <ContentControl Content="{Binding ParaformerModel, ElementName=SettingsRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
                 <TextBlock Text="本地模型使用 CPU，无需 GPU 运行库。模型操作立即执行；关闭设置会取消操作并保留下载数据，删除会清理下载缓存。" Style="{StaticResource SettingsHint}"/>
+                </StackPanel>
               </StackPanel>
             </ScrollViewer>
           </TabItem>
@@ -233,7 +249,7 @@
                         <Slider Minimum="0" Maximum="1" Value="{Binding LayaThreshold}"/>
                       </DockPanel>
                     </StackPanel>
-                    <TextBlock Text="Windows 尚未接入自动触发。当前可通过悬浮窗按钮或快捷键请求回答。" Style="{StaticResource SettingsHint}"/>
+                    <TextBlock Text="OpenAI 云端由 GPT-Live-1 判断完整提问，在语音识别页开启自动回答；本地语音的 Jev / Laya 仍即将推出。" Style="{StaticResource SettingsHint}"/>
                   </StackPanel>
                 </Border>
                 <Border Style="{StaticResource SettingsCard}">
@@ -246,13 +262,13 @@
                 <Border Style="{StaticResource SettingsCard}">
                   <StackPanel>
                     <TextBlock Text="连续提问策略" Style="{StaticResource SettingsSectionTitle}"/>
-                    <StackPanel IsEnabled="False">
+                    <StackPanel IsEnabled="{Binding IsOpenAIListening}">
                       <DockPanel Margin="0,0,0,6">
                         <TextBlock Text="连续提问处理" Width="130" VerticalAlignment="Center"/>
-                        <ComboBox ItemsSource="{Binding QuestionPolicies}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ContinuousQuestionPolicy, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0"/>
+                        <ComboBox AutomationProperties.AutomationId="ContinuousQuestionPolicyChoice" ItemsSource="{Binding QuestionPolicies}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ContinuousQuestionPolicy, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0"/>
                       </DockPanel>
                     </StackPanel>
-                    <TextBlock Text="即将推出 · 已有偏好保留，自动触发接入后生效。" Style="{StaticResource SettingsHint}"/>
+                    <TextBlock Text="适用于 OpenAI 云端自动回答；本地语音触发即将推出。" Style="{StaticResource SettingsHint}"/>
                   </StackPanel>
                 </Border>
               </StackPanel>

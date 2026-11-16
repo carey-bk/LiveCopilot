@@ -10,7 +10,7 @@ public sealed record ListeningProvider(ILiveProvider Provider,
     Action<IReadOnlyList<string>>? UpdateTerms = null, Func<string?>? Backend = null);
 
 public sealed record ListeningPathSnapshot(bool Capturing = false, string? SourceDescription = null,
-    string? Backend = null, bool SpeechActive = false);
+    string? Backend = null, bool SpeechActive = false, string? Status = null);
 
 public sealed record ListeningSnapshot
 {
@@ -33,8 +33,8 @@ public sealed record ListeningSnapshot
     public string Status => IsStopping ? "正在停止并保存…" : State switch
     {
         ListeningState.Idle => "未开始聆听",
-        ListeningState.Starting => "正在加载本地语音并启动采集…",
-        ListeningState.Listening => "正在聆听",
+        ListeningState.Starting => System.Status ?? Microphone.Status ?? "正在准备语音识别并启动采集…",
+        ListeningState.Listening => System.Status ?? Microphone.Status ?? "正在聆听",
         ListeningState.Failed => "聆听失败",
         _ => "已停止聆听"
     };

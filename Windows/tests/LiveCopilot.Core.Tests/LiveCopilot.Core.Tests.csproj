@@ -6,4 +6,5 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2"><PrivateAssets>all</PrivateAssets></PackageReference>
     <ProjectReference Include="../../src/LiveCopilot.Core/LiveCopilot.Core.csproj" />
   </ItemGroup>
+  <ItemGroup><Compile Include="../Shared/LocalLiveServer.cs" Link="LocalLiveServer.cs" /></ItemGroup>
 </Project>
