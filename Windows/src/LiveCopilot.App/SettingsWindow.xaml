@@ -48,7 +48,19 @@
       </StackPanel>
     </DataTemplate>
   </Window.Resources>
-  <TabControl x:Name="Pages" TabStripPlacement="Left" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource NavigationTab}">
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="190"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+    <Border Grid.RowSpan="2" Background="{StaticResource Sidebar}">
+      <TextBlock Text="{Binding ShortVersion, Mode=OneWay}" ToolTip="{Binding DisplayVersion}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="18" VerticalAlignment="Bottom" Foreground="{StaticResource SecondaryInk}" FontSize="12"/>
+    </Border>
+  <TabControl x:Name="Pages" Grid.Row="0" Grid.ColumnSpan="2" TabStripPlacement="Left" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource NavigationTab}">
     <TabControl.Template>
       <ControlTemplate TargetType="TabControl">
         <Grid>
@@ -56,27 +68,14 @@
             <ColumnDefinition Width="190"/>
             <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
-          <Border Background="{StaticResource Sidebar}">
             <DockPanel>
               <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="16,32,8,24">
                 <Image Source="Resources/AppIcon.png" Width="24" Height="24" Margin="0,0,6,0"/>
                 <TextBlock Style="{StaticResource Brand}" FontSize="19"/>
               </StackPanel>
-              <TextBlock DockPanel.Dock="Bottom" Text="{Binding ShortVersion, Mode=OneWay}" ToolTip="{Binding DisplayVersion}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="18" Foreground="{StaticResource SecondaryInk}" FontSize="12"/>
               <StackPanel IsItemsHost="True"/>
             </DockPanel>
-          </Border>
-          <DockPanel Grid.Column="1" Margin="24,20,18,12">
-            <StackPanel DockPanel.Dock="Bottom" Margin="0,10,10,0">
-              <TextBlock Text="{Binding ValidationSummary}" Style="{StaticResource OptionalText}" Foreground="{StaticResource ErrorInk}"/>
-              <TextBlock Text="{Binding Status}" Style="{StaticResource OptionalText}" Foreground="{StaticResource SecondaryInk}"/>
-              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="保存" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" MinWidth="80" AutomationProperties.AutomationId="SaveSettings"/>
-                <Button Content="取消" Command="{Binding CancelCommand}" MinWidth="80" AutomationProperties.AutomationId="CancelSettings"/>
-              </StackPanel>
-            </StackPanel>
-            <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
-          </DockPanel>
+          <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Column="1" Margin="24,20,18,0" ContentSource="SelectedContent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
         </Grid>
       </ControlTemplate>
     </TabControl.Template>
@@ -468,4 +467,14 @@
       </DockPanel>
     </TabItem>
   </TabControl>
+    <!-- Keep actions in the window's UIA tree; TabControlAutomationPeer omits template chrome. -->
+    <StackPanel Grid.Row="1" Grid.Column="1" Margin="24,10,28,12">
+      <TextBlock Text="{Binding ValidationSummary}" Style="{StaticResource OptionalText}" Foreground="{StaticResource ErrorInk}"/>
+      <TextBlock Text="{Binding Status}" Style="{StaticResource OptionalText}" Foreground="{StaticResource SecondaryInk}"/>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button Content="保存" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" MinWidth="80" AutomationProperties.AutomationId="SaveSettings"/>
+        <Button Content="取消" Command="{Binding CancelCommand}" MinWidth="80" AutomationProperties.AutomationId="CancelSettings"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
 </Window>
