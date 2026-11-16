@@ -26,8 +26,13 @@ internal static class Program
         using var appStderr = new StreamWriter(Path.Combine(output, "app-stderr.log")) { AutoFlush = true };
         Process? app = null;
         Task<bool>? openSettings = null;
+        var historyRunId = Guid.NewGuid().ToString("N");
+        var historyDirectory = Path.Combine(Path.GetTempPath(), "LiveCopilot-smoke-" + historyRunId);
         try
         {
+            var history = HistoryFixtures.Seed(historyDirectory);
+            var historyFiles = Directory.GetFiles(Path.Combine(historyDirectory, "sessions"))
+                .ToDictionary(path => path, File.ReadAllBytes);
             var start = new ProcessStartInfo(Path.GetFullPath(args[0]))
             {
                 UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true
@@ -36,6 +41,7 @@ internal static class Program
             start.Environment["LIVECOPILOT_SMOKE"] = "1";
             start.Environment["LIVECOPILOT_SMOKE_ONBOARDING"] = "1";
             start.Environment["LIVECOPILOT_SMOKE_GUIDE"] = "1";
+            start.Environment["LIVECOPILOT_SMOKE_DATA_ID"] = historyRunId;
             start.Environment["LIVECOPILOT_INFERENCE_CPU"] = "1";
             start.Environment["LIVECOPILOT_SMOKE_LOG_DIRECTORY"] = output;
             var watch = Stopwatch.StartNew();
@@ -133,6 +139,7 @@ internal static class Program
 
                 Capture(settings, Path.Combine(output, $"{i + 1:00}-{pages[i]}.png"));
                 Console.WriteLine($"Selected and captured {pages[i]} ({tab.Current.Name}).");
+                if (pages[i] == "HistoryPage") CaptureHistory(settings, app, output, history);
                 if (pages[i] == "GeneralPage")
                 {
                     ScrollControlsIntoView(settings, "GeneralScroll", "OverlayAutoHeight", "OverlayCaptureProtection");
@@ -167,6 +174,10 @@ internal static class Program
                     }
                 }
             }
+            // Check before normal app exit, which intentionally removes its temporary data directory.
+            if (Directory.GetFiles(Path.Combine(historyDirectory, "sessions")).Length != historyFiles.Count ||
+                historyFiles.Any(pair => !File.Exists(pair.Key) || !pair.Value.SequenceEqual(File.ReadAllBytes(pair.Key))))
+                throw new InvalidOperationException("History smoke must leave all seeded sessions and drafts unchanged.");
             // Reopen tips through settings, skip them, then verify they stay dismissed after setup.
             Select(settings, "GeneralPage");
             ScrollTo(settings, "GeneralScroll", 0);
@@ -198,13 +209,15 @@ internal static class Program
             if (!app.WaitForExit(15000)) throw new TimeoutException("App did not exit normally within 15 seconds.");
             app.WaitForExit(); // Drain redirected output callbacks before disposing the writers.
             if (app.ExitCode != 0) throw new InvalidOperationException($"App exited with code {app.ExitCode}.");
-            if (Directory.GetFiles(output, "*.png").Length != 31) throw new InvalidOperationException("Expected thirty-one screenshots.");
+            if (Directory.GetFiles(output, "*.png").Length != 33) throw new InvalidOperationException("Expected thirty-three screenshots.");
             var events = File.ReadAllLines(Path.Combine(output, "app-events.log"));
             foreach (var stage in new[] { "main shutdown requested", "main shutdown cleanup complete; closing", "main closed", "app exited: 0" })
                 if (events.Count(line => line.EndsWith(" " + stage, StringComparison.Ordinal)) != 1)
                     throw new InvalidOperationException($"Expected exactly one shutdown event: {stage}.");
             File.WriteAllText(Path.Combine(output, "result.json"), JsonSerializer.Serialize(new
-            { success = true, startupMs, appExitCode = app.ExitCode, pages, screenshots = 31, closeRequestsSent }, new JsonSerializerOptions { WriteIndented = true }));
+            { success = true, startupMs, appExitCode = app.ExitCode, pages, screenshots = 33, closeRequestsSent,
+                historySessions = history.Count, historyActionsInvoked = false,
+                historyScreenshots = new[] { "settings-history-list.png", "settings-history-detail.png" } }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"PASS: main ready in {startupMs} ms; overlay, six settings pages, four service tabs and six onboarding steps captured; app exit code 0.");
             return 0;
         }
@@ -225,6 +238,9 @@ internal static class Program
                 if (app.WaitForExit(5000)) app.WaitForExit();
                 app.Dispose();
             }
+            try { if (Directory.Exists(historyDirectory)) Directory.Delete(historyDirectory, recursive: true); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            { Console.Error.WriteLine("Could not remove temporary smoke data: " + error.Message); }
         }
 #else
         Console.WriteLine("SKIP: WPF UI smoke requires an interactive Windows desktop.");
@@ -233,6 +249,45 @@ internal static class Program
     }
 
 #if WINDOWS
+    private static void CaptureHistory(AutomationElement settings, Process app, string output,
+        System.Collections.Generic.IReadOnlyList<LiveCopilot.Core.SessionRecord> history)
+    {
+        foreach (var row in history)
+            RequireFullyVisible(settings, "HistorySession-" + LiveCopilot.Core.CoreJson.Id(row.Id));
+        foreach (var id in new[] { "HistorySearch", "HistoryOpen", "HistoryDelete", "HistoryClearAll", "HistoryExportMarkdown", "HistoryExportText" })
+        {
+            RequireFullyVisible(settings, id);
+            if (!Find(settings, id).Current.IsEnabled) throw new InvalidOperationException($"History action is disabled: {id}");
+        }
+        Capture(settings, Path.Combine(output, "settings-history-list.png"));
+        Invoke(settings, "HistoryOpen");
+        Wait(() => settings.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.AutomationIdProperty, "HistoryDetailTitle"))
+            is { Current.IsOffscreen: false } ? settings : null, app, TimeSpan.FromSeconds(5), "history detail");
+        Thread.Sleep(350);
+        foreach (var id in new[] { "HistoryBack", "HistoryDetailDelete", "HistoryDetailExportMarkdown", "HistoryDetailExportText" })
+        {
+            RequireFullyVisible(settings, id);
+            if (!Find(settings, id).Current.IsEnabled) throw new InvalidOperationException($"History action is disabled: {id}");
+        }
+        var answer = history[0].Answers![0];
+        RequireFullyVisible(settings, "HistoryEvent-speech-" + LiveCopilot.Core.CoreJson.Id(history[0].Lines[0].Id));
+        RequireFullyVisible(settings, "HistoryEvent-question-" + LiveCopilot.Core.CoreJson.Id(answer.Id));
+        ScrollControlsIntoView(settings, "HistoryTimeline", "HistoryEvent-answer-" + LiveCopilot.Core.CoreJson.Id(answer.Id));
+        RequireFullyVisible(settings, "HistoryEvent-answer-" + LiveCopilot.Core.CoreJson.Id(answer.Id) + "-Sources");
+        Capture(settings, Path.Combine(output, "settings-history-detail.png"));
+        Invoke(settings, "HistoryBack");
+        Thread.Sleep(350);
+        Select(settings, "HistorySession-" + LiveCopilot.Core.CoreJson.Id(history[2].Id));
+        Invoke(settings, "HistoryOpen"); Thread.Sleep(350);
+        var scroll = (ScrollPattern)Find(settings, "HistoryTimeline").GetCurrentPattern(ScrollPattern.Pattern);
+        if (!scroll.Current.VerticallyScrollable) throw new InvalidOperationException("Long history must scroll.");
+        ScrollTo(settings, "HistoryTimeline", 100);
+        RequireFullyVisible(settings, "HistoryEvent-speech-" + LiveCopilot.Core.CoreJson.Id(history[2].Lines[^1].Id));
+        Invoke(settings, "HistoryBack");
+        Thread.Sleep(350);
+        Console.WriteLine("History: three synthetic sessions; transcript, question, answer and citation visible; long history scrolls; destructive/export actions checked without invocation.");
+    }
+
     private static void Invoke(AutomationElement root, string id) =>
         ((InvokePattern)Find(root, id).GetCurrentPattern(InvokePattern.Pattern)).Invoke();
     private static void Select(AutomationElement root, string id) =>

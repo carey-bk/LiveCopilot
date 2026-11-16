@@ -9,6 +9,29 @@ public sealed class SmokeEnvironmentCollection { }
 public sealed class SmokeIsolationTests
 {
     [Fact]
+    public void SmokeHarnessCanChooseOnlyAnIsolatedTemporaryRunId()
+    {
+        var previous = Environment.GetEnvironmentVariable("LIVECOPILOT_SMOKE");
+        var previousId = Environment.GetEnvironmentVariable("LIVECOPILOT_SMOKE_DATA_ID");
+        try
+        {
+            var id = Guid.NewGuid().ToString("N");
+            Environment.SetEnvironmentVariable("LIVECOPILOT_SMOKE_DATA_ID", id);
+            Environment.SetEnvironmentVariable("LIVECOPILOT_SMOKE", "1");
+            Assert.Equal(Path.Combine(Path.GetTempPath(), "LiveCopilot-smoke-" + id), AppPaths.DataDirectory);
+            Environment.SetEnvironmentVariable("LIVECOPILOT_SMOKE_DATA_ID", "/user/data");
+            Assert.StartsWith(Path.Combine(Path.GetTempPath(), "LiveCopilot-smoke-"), AppPaths.DataDirectory);
+            Environment.SetEnvironmentVariable("LIVECOPILOT_SMOKE", "0");
+            Assert.Equal(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LiveCopilot"), AppPaths.DataDirectory);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("LIVECOPILOT_SMOKE", previous);
+            Environment.SetEnvironmentVariable("LIVECOPILOT_SMOKE_DATA_ID", previousId);
+        }
+    }
+
+    [Fact]
     public async Task SmokeUsesTemporaryDataAndRejectsBothHttpPathsBeforeSending()
     {
         var previous = Environment.GetEnvironmentVariable("LIVECOPILOT_SMOKE");

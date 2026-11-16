@@ -4,6 +4,46 @@ namespace LiveCopilot.Platform.Tests;
 
 public sealed partial class XamlBindingTests
 {
+    [Theory]
+    [InlineData("HistoryRefresh", "RefreshCommand")]
+    [InlineData("HistoryOpen", "OpenCommand")]
+    [InlineData("HistoryBack", "BackCommand")]
+    [InlineData("HistoryDelete", "DeleteCommand")]
+    [InlineData("HistoryDetailDelete", "DeleteCommand")]
+    [InlineData("HistoryClearAll", "ClearCommand")]
+    [InlineData("HistoryExportMarkdown", "ExportMarkdownCommand")]
+    [InlineData("HistoryDetailExportMarkdown", "ExportMarkdownCommand")]
+    [InlineData("HistoryExportText", "ExportTextCommand")]
+    [InlineData("HistoryDetailExportText", "ExportTextCommand")]
+    public void HistoryActionsHaveStableIdsAndUseHistoryContext(string id, string command)
+    {
+        var button = Load(SettingsXaml).Descendants(Presentation + "Button")
+            .Single(e => (string?)e.Attribute("AutomationProperties.AutomationId") == id);
+        Assert.Equal(command, ParseBinding(button.Attribute("Command")!.Value)["Path"]);
+        Assert.Equal("HistoryViewModel", ContextFor(button));
+        Assert.DoesNotContain(button.Ancestors(), e => e.Name.LocalName == "ControlTemplate");
+    }
+
+    [Fact]
+    public void HistoryInputsAndTimelineHaveAutomationTargetsAndOneWayReadOnlyText()
+    {
+        var document = Load(SettingsXaml);
+        var history = document.Descendants().Single(e => (string?)e.Attribute("AutomationProperties.AutomationId") == "HistoryContent");
+        foreach (var control in history.Descendants().Where(e => e.Name.LocalName is "Button" or "TextBox" or "ListBox" or "TextBlock"))
+            Assert.NotNull(control.Attribute("AutomationProperties.AutomationId"));
+        foreach (var id in new[] { "HistorySearch", "HistoryList", "HistoryTimeline", "HistoryDetailTitle", "HistoryLoadNotice", "HistoryStatus" })
+            Assert.Single(history.Descendants(), e => (string?)e.Attribute("AutomationProperties.AutomationId") == id);
+        foreach (var id in new[] { "ContentId", "SourcesId" })
+        {
+            var text = history.Descendants(Presentation + "TextBox").Single(e =>
+                (string?)e.Attribute("AutomationProperties.AutomationId") == "{Binding " + id + "}");
+            Assert.Equal("OneWay", ParseBinding(text.Attribute("Text")!.Value)["Mode"]);
+        }
+        var itemIds = history.Descendants(Presentation + "Setter").Where(e => (string?)e.Attribute("Property") == "AutomationProperties.AutomationId");
+        Assert.Equal(2, itemIds.Count());
+        Assert.All(itemIds, e => Assert.Equal("{Binding AutomationId}", (string?)e.Attribute("Value")));
+    }
+
     [Fact]
     public void AutomationIdsAreNotHiddenInControlTemplateChrome()
     {

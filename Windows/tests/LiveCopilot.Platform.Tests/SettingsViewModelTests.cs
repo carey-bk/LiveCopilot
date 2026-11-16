@@ -215,7 +215,7 @@ public sealed class SettingsViewModelTests
         var preferences = new MemoryPreferenceStore(); var assembly = typeof(SettingsViewModelTests).Assembly;
         var vm = new SettingsViewModel(preferences, new MemoryCredentialStore(), new(preferences), assembly: assembly);
         Assert.Equal(assembly.GetName().Version!.ToString(), vm.Version); Assert.Equal("https://github.com/carey-bk/LiveCopilot", vm.ProjectUrl);
-        Assert.Contains("SmartScreen", vm.UnsignedNotice); Assert.Contains("仍要运行", vm.UnsignedNotice); Assert.Equal("即将推出", vm.HistoryNotice);
+        Assert.Contains("SmartScreen", vm.UnsignedNotice); Assert.Contains("仍要运行", vm.UnsignedNotice);
     }
 
     [Fact] public void SavedObserversReceiveIndependentSnapshotsEvenWhenEarlierObserverFails()

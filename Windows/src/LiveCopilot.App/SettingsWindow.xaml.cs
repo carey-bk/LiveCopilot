@@ -6,6 +6,7 @@ using System.Windows.Input;
 using LiveCopilot.Core;
 using LiveCopilot.LocalInference;
 using LiveCopilot.Platform.Hotkeys;
+using LiveCopilot.Platform.History;
 using LiveCopilot.Platform.Knowledge;
 using LiveCopilot.Platform.Lifecycle;
 using LiveCopilot.Platform.Settings;
@@ -15,12 +16,14 @@ namespace LiveCopilot.App;
 public partial class SettingsWindow : Window
 {
     private readonly SettingsViewModel viewModel;
+    private void HistoryLoaded(object sender, RoutedEventArgs e) => History.Refresh();
     private void OpenOperationGuide(object sender, RoutedEventArgs e) => ShowOperationGuide();
     partial void ShowOperationGuide();
     private readonly KnowledgeIndex knowledge;
     private readonly Func<AppSettings, IEmbeddingProvider> createEmbedding;
     private readonly HotkeyManager hotkeys;
     private readonly LocalModelManager models = new();
+    public HistoryViewModel History { get; }
     public ModelCardViewModel ZipformerModel { get; }
     public ModelCardViewModel ParaformerModel { get; }
     public ModelCardViewModel EmbeddingModelCard { get; }
@@ -41,6 +44,8 @@ public partial class SettingsWindow : Window
         ZipformerModel = new(LocalModelKind.TerminologySpeech, models);
         ParaformerModel = new(LocalModelKind.StreamingSpeech, models);
         EmbeddingModelCard = new(LocalModelKind.Embedding, models);
+        var historyDialogs = new HistoryDialogs(this);
+        History = new(new SessionStore(), historyDialogs, historyDialogs);
         InitializeComponent();
         WindowLayout.FitWorkArea(this);
         shutdown = new([

@@ -387,19 +387,107 @@
           <TextBlock Text="历史记录" FontSize="16"/>
         </StackPanel>
       </TabItem.Header>
-      <DockPanel>
-        <TextBlock DockPanel.Dock="Top" Text="历史记录" Style="{StaticResource PageTitle}"/>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-          <StackPanel Margin="0,0,10,12" IsEnabled="{Binding CanEdit}">
-            <Border Style="{StaticResource SettingsCard}">
-              <StackPanel>
-                <TextBlock Text="{Binding HistoryNotice}" FontSize="18"/>
-                <TextBlock Text="会话记录仍在本地保存，历史浏览界面即将推出。" Style="{StaticResource SettingsHint}"/>
-              </StackPanel>
-            </Border>
+      <Grid DataContext="{Binding History, ElementName=SettingsRoot}" Loaded="HistoryLoaded" AutomationProperties.AutomationId="HistoryContent">
+        <Grid.Resources>
+          <Style x:Key="HistoryText" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,6,0,0"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled"/>
+          </Style>
+        </Grid.Resources>
+        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid Visibility="{Binding ShowList, Converter={StaticResource Visible}}" AutomationProperties.AutomationId="HistoryListPage">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+              <Button Content="刷新" Command="{Binding RefreshCommand}" AutomationProperties.AutomationId="HistoryRefresh"/>
+              <Button Content="清空全部…" Command="{Binding ClearCommand}" AutomationProperties.AutomationId="HistoryClearAll"/>
+            </StackPanel>
+            <TextBlock Text="历史记录" Style="{StaticResource PageTitle}" AutomationProperties.AutomationId="HistoryTitle"/>
+          </DockPanel>
+          <DockPanel Grid.Row="1" Margin="0,4,0,8">
+            <TextBlock Text="搜索会话" VerticalAlignment="Center" Margin="0,0,12,0" AutomationProperties.AutomationId="HistorySearchLabel"/>
+            <TextBox Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="HistorySearch" AutomationProperties.Name="搜索标题、转写、问答和引用" ToolTip="搜索标题、转写、问题、回答和引用内容"/>
+          </DockPanel>
+          <DockPanel Grid.Row="2" Margin="0,0,0,8">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+              <Button Content="查看会话" Command="{Binding OpenCommand}" AutomationProperties.AutomationId="HistoryOpen"/>
+              <Button Content="删除…" Command="{Binding DeleteCommand}" AutomationProperties.AutomationId="HistoryDelete"/>
+              <Button Content="导出 Markdown" Command="{Binding ExportMarkdownCommand}" AutomationProperties.AutomationId="HistoryExportMarkdown"/>
+              <Button Content="导出文本" Command="{Binding ExportTextCommand}" AutomationProperties.AutomationId="HistoryExportText"/>
+            </StackPanel>
+            <TextBlock Text="{Binding CountLabel}" VerticalAlignment="Center" Foreground="{StaticResource SecondaryInk}" AutomationProperties.AutomationId="HistoryCount"/>
+          </DockPanel>
+          <Grid Grid.Row="3">
+            <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding Selected, Mode=TwoWay}" BorderThickness="0" Padding="0" Background="Transparent" MaxHeight="320" VerticalAlignment="Top"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.ScrollUnit="Item"
+                     AutomationProperties.AutomationId="HistoryList" AutomationProperties.Name="会话历史，按时间倒序">
+              <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                  <Setter Property="Height" Value="80"/><Setter Property="Padding" Value="10,8"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                  <Setter Property="AutomationProperties.AutomationId" Value="{Binding AutomationId}"/>
+                  <Setter Property="AutomationProperties.Name" Value="{Binding Title}"/>
+                </Style>
+              </ListBox.ItemContainerStyle>
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel>
+                    <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" AutomationProperties.AutomationId="{Binding TitleId}"/>
+                    <TextBlock Text="{Binding Metadata}" Foreground="{StaticResource SecondaryInk}" Margin="0,8,0,0" TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="{Binding MetadataId}"/>
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Text="{Binding EmptyMessage}" Visibility="{Binding IsEmpty, Converter={StaticResource Visible}}" TextWrapping="Wrap" Margin="16,24" Foreground="{StaticResource SecondaryInk}" AutomationProperties.AutomationId="HistoryEmpty"/>
+          </Grid>
+        </Grid>
+        <Grid Visibility="{Binding ShowDetail, Converter={StaticResource Visible}}" AutomationProperties.AutomationId="HistoryDetailPage">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <DockPanel Margin="0,0,0,10">
+            <Button DockPanel.Dock="Left" Content="← 返回列表" Command="{Binding BackCommand}" AutomationProperties.AutomationId="HistoryBack"/>
+            <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+              <Button Content="删除…" Command="{Binding DeleteCommand}" AutomationProperties.AutomationId="HistoryDetailDelete"/>
+              <Button Content="导出 Markdown" Command="{Binding ExportMarkdownCommand}" AutomationProperties.AutomationId="HistoryDetailExportMarkdown"/>
+              <Button Content="导出文本" Command="{Binding ExportTextCommand}" AutomationProperties.AutomationId="HistoryDetailExportText"/>
+            </StackPanel>
+          </DockPanel>
+          <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <TextBlock Text="{Binding Selected.Title}" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Selected.Title}" AutomationProperties.AutomationId="HistoryDetailTitle"/>
+            <TextBlock Text="{Binding Selected.Metadata}" Foreground="{StaticResource SecondaryInk}" Margin="0,6,0,0" AutomationProperties.AutomationId="HistoryDetailMetadata"/>
+            <TextBlock Text="{Binding AnswerNotice}" Foreground="{StaticResource SecondaryInk}" TextWrapping="Wrap" AutomationProperties.AutomationId="HistoryAnswerNotice"/>
           </StackPanel>
-        </ScrollViewer>
-      </DockPanel>
+          <ListBox Grid.Row="2" ItemsSource="{Binding Timeline}" BorderThickness="0" Padding="0" Background="Transparent" HorizontalContentAlignment="Stretch"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.ScrollUnit="Pixel"
+                   AutomationProperties.AutomationId="HistoryTimeline" AutomationProperties.Name="会话转写、问答和引用">
+            <ListBox.ItemContainerStyle>
+              <Style TargetType="ListBoxItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/>
+                <Setter Property="AutomationProperties.AutomationId" Value="{Binding AutomationId}"/>
+              </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Border Style="{StaticResource SettingsCard}" Margin="0,0,8,8">
+                  <StackPanel>
+                    <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" Foreground="{StaticResource SecondaryInk}" AutomationProperties.AutomationId="{Binding HeadingId}"/>
+                    <TextBox Text="{Binding Content, Mode=OneWay}" Style="{StaticResource HistoryText}" AutomationProperties.AutomationId="{Binding ContentId}"/>
+                    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Foreground="{StaticResource SecondaryInk}" FontSize="12" AutomationProperties.AutomationId="{Binding StatusId}"/>
+                    <TextBox Text="{Binding Sources, Mode=OneWay}" Style="{StaticResource HistoryText}" Visibility="{Binding HasSources, Converter={StaticResource Visible}}" AutomationProperties.AutomationId="{Binding SourcesId}" AutomationProperties.Name="知识库来源与引用"/>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+        <StackPanel Grid.Row="1" Margin="0,8,0,6">
+          <TextBlock Text="{Binding LoadNotice}" TextWrapping="Wrap" Foreground="{StaticResource SecondaryInk}" AutomationProperties.AutomationId="HistoryLoadNotice"/>
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.AutomationId="HistoryStatus"/>
+        </StackPanel>
+      </Grid>
     </TabItem>
     <TabItem AutomationProperties.AutomationId="ShortcutsPage">
       <TabItem.Header>

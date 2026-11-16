@@ -4,6 +4,7 @@ using System.Xml;
 using System.Xml.Linq;
 using LiveCopilot.Platform.Settings;
 using LiveCopilot.Platform.Overlay;
+using LiveCopilot.Platform.History;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -167,6 +168,43 @@ public sealed partial class XamlBindingTests
             (string?)element.Attribute("Text") == "{Binding Question, UpdateSourceTrigger=PropertyChanged}");
     }
 
+    [Fact]
+    public void HistoryContextsAndAllBindingPathsMatchRealModelsAndWindow()
+    {
+        var document = Load(SettingsXaml);
+        var history = document.Descendants().Single(e => (string?)e.Attribute("AutomationProperties.AutomationId") == "HistoryContent");
+        Assert.Equal("{Binding History, ElementName=SettingsRoot}", (string?)history.Attribute("DataContext"));
+        var source = CSharpSyntaxTree.ParseText(ReadResource("AppSources/SettingsWindow.xaml.cs")).GetRoot();
+        Assert.Contains(source.DescendantNodes().OfType<PropertyDeclarationSyntax>(), p =>
+            p.Identifier.Text == "History" && p.Type.ToString() == nameof(HistoryViewModel));
+        Assert.Contains(source.DescendantNodes().OfType<AssignmentExpressionSyntax>(), a =>
+            a.Left.ToString() == "History" && a.Right.ToString().Contains("historyDialogs", StringComparison.Ordinal));
+        foreach (var element in history.DescendantsAndSelf())
+            foreach (var attribute in element.Attributes().Where(a => a.Value.StartsWith("{Binding", StringComparison.Ordinal) && a.Name.LocalName != "DataContext"))
+            {
+                var path = ParseBinding(attribute.Value)["Path"];
+                var type = ContextFor(element) switch
+                {
+                    nameof(HistorySessionRow) => typeof(HistorySessionRow),
+                    nameof(HistoryEventRow) => typeof(HistoryEventRow),
+                    nameof(HistoryViewModel) => typeof(HistoryViewModel),
+                    var context => throw new InvalidOperationException("Unexpected history context: " + context)
+                };
+                foreach (var segment in path.Split('.'))
+                    type = (type.GetProperty(segment) ?? throw new InvalidOperationException(type.Name + "." + segment)).PropertyType;
+            }
+    }
+
+    [Fact]
+    public void HistoryDetailTextCannotWriteBackToReadOnlyTimelineRows()
+    {
+        var document = Load(SettingsXaml);
+        var content = document.Descendants(Presentation + "TextBox")
+            .Single(e => (string?)e.Attribute("AutomationProperties.AutomationId") == "{Binding ContentId}");
+        content.SetAttributeValue("Text", "{Binding Content}");
+        Assert.Contains("HistoryEventRow.Content is read-only", Assert.Single(Inspect(document, SettingsXaml)));
+    }
+
     private static List<string> Inspect(XDocument document, string file)
     {
         var errors = new List<string>();
@@ -236,6 +274,15 @@ public sealed partial class XamlBindingTests
     {
         foreach (var ancestor in element.AncestorsAndSelf())
         {
+            if (ancestor.Name.LocalName == "ListBox.ItemContainerStyle")
+                return (string?)ancestor.Parent?.Attribute("ItemsSource") switch
+                {
+                    "{Binding Sessions}" => nameof(HistorySessionRow),
+                    "{Binding Timeline}" => nameof(HistoryEventRow),
+                    _ => throw new InvalidOperationException("Unmapped item container DataContext")
+                };
+            if ((string?)ancestor.Attribute("DataContext") == "{Binding History, ElementName=SettingsRoot}" &&
+                (string?)ancestor.Attribute("AutomationProperties.AutomationId") == "HistoryContent") return nameof(HistoryViewModel);
             if (ancestor.Attribute("DataContext") is not null || ancestor.Elements().Any(child => child.Name.LocalName.EndsWith(".DataContext", StringComparison.Ordinal)))
                 throw new InvalidOperationException("Map the local DataContext before using write-back");
             if (ancestor.Name.LocalName == "DataTemplate")
@@ -244,6 +291,8 @@ public sealed partial class XamlBindingTests
                     "ModelCardTemplate" => "ModelCardViewModel",
                     "CredentialTemplate" => nameof(CredentialEditor),
                     null when (string?)ancestor.Parent?.Parent?.Attribute("ItemsSource") == "{Binding Shortcuts}" => nameof(ShortcutEditor),
+                    null when (string?)ancestor.Parent?.Parent?.Attribute("ItemsSource") == "{Binding Sessions}" => nameof(HistorySessionRow),
+                    null when (string?)ancestor.Parent?.Parent?.Attribute("ItemsSource") == "{Binding Timeline}" => nameof(HistoryEventRow),
                     _ => throw new InvalidOperationException("Unmapped DataTemplate DataContext")
                 };
         }
@@ -262,6 +311,9 @@ public sealed partial class XamlBindingTests
         {
             nameof(SettingsViewModel) => typeof(SettingsViewModel),
             nameof(OverlayViewModel) => typeof(OverlayViewModel),
+            nameof(HistoryViewModel) => typeof(HistoryViewModel),
+            nameof(HistorySessionRow) => typeof(HistorySessionRow),
+            nameof(HistoryEventRow) => typeof(HistoryEventRow),
             "OnboardingViewModel" => typeof(SettingsViewModel).Assembly.GetType("LiveCopilot.Platform.Onboarding.OnboardingViewModel")
                 ?? throw new InvalidOperationException("Missing onboarding view model"),
             nameof(CredentialEditor) => typeof(CredentialEditor),

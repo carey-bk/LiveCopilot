@@ -54,10 +54,12 @@ public sealed record SessionRecord([property: JsonRequired] Guid Id, [property: 
     public SessionRecord(DateTimeOffset startedAt, DateTimeOffset endedAt, ValueList<SessionLine> lines) : this(Guid.NewGuid(), startedAt, endedAt, lines) { }
     public ValueList<TranscriptFragment>? Fragments { get; init; }
     public int? SchemaVersion { get; init; }
+    // Optional v2 extension. Older Mac/Windows records have no captured scenario.
+    public ScenarioProfile? Scenario { get; init; }
     public ValueList<SessionAnswer>? Answers { get; init; }
     public string? GeneratedTitle { get; init; }
     public string? NamingState { get; init; }
-    [JsonIgnore] public string Title => GeneratedTitle ?? Preview;
+    [JsonIgnore] public string Title => string.IsNullOrWhiteSpace(GeneratedTitle) ? Preview : GeneratedTitle;
     [JsonIgnore] public string Preview => TextElements.Prefix(TextElements.NormalizeWhitespace(
         Answers?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a.Question))?.Question ?? Lines.FirstOrDefault(l => !string.IsNullOrWhiteSpace(l.Content))?.Content ?? StartedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)), 72);
     [JsonIgnore] public double Duration => Math.Max(0, (EndedAt - StartedAt).TotalSeconds);

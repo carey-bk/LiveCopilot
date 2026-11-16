@@ -4,7 +4,7 @@ using LiveCopilot.Platform.Sessions;
 
 namespace LiveCopilot.Platform.Tests;
 
-public sealed class ListeningReasoningTests
+public sealed partial class ListeningReasoningTests
 {
     [Theory] [InlineData(SuggestionMode.Reply)] [InlineData(SuggestionMode.Recap)] [InlineData(SuggestionMode.FollowUp)]
     public async Task ModesStreamSanitizedTextAndBuildRequestsFromSettings(SuggestionMode mode)
@@ -232,11 +232,11 @@ public sealed class ListeningReasoningTests
     {
         var transcript = new TranscriptStore(); transcript.Commit("已定稿问题？", Speaker.Them); transcript.Commit("已经回答", Speaker.You); return transcript;
     }
-    private static ListeningSession Session(Func<IReasoningProvider> factory, TranscriptStore? transcript = null, AppSettings? settings = null, TimeSpan? timeout = null) =>
+    private static ListeningSession Session(Func<IReasoningProvider> factory, TranscriptStore? transcript = null, AppSettings? settings = null, TimeSpan? timeout = null, SessionStore? history = null, IKnowledgeRetriever? knowledge = null) =>
         new(new FakeAudioFactory(new(), new()), (speaker, _) =>
         {
             var live = new FakeLiveProvider(speaker); return new(live, live.UpdateTerms);
-        }, settings ?? new(), transcript ?? Conversation(), reasoningFactory: factory, answerTimeout: timeout);
+        }, settings ?? new(), transcript ?? Conversation(), sessions: history, reasoningFactory: factory, answerTimeout: timeout, knowledgeRetriever: knowledge);
 
     private static async Task Until(ListeningSession session, Func<ListeningSnapshot, bool> condition)
     {

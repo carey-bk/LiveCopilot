@@ -24,6 +24,7 @@ public sealed class ListeningSession : IAsyncDisposable
     private readonly Func<AppSettings, IEmbeddingProvider>? embeddingFactory;
     private readonly TimeSpan answerTimeout;
     private SuggestionRun? suggestion;
+    private readonly List<SuggestionRun> pendingAnswers = [];
     private ListeningSnapshot snapshot = new();
     private Run? current;
     private bool disposed, resetting, archiveFailed;
@@ -89,7 +90,13 @@ public sealed class ListeningSession : IAsyncDisposable
                 ObjectDisposedException.ThrowIf(disposed, this);
                 if (current is not null || resetting) return;
                 previous = InterruptSuggestion();
-                if (!microphoneEnabled && settings.Mode == OperatingMode.InPerson)
+                // A typed-only conversation must be archived before starting a new audio run.
+                SaveStandaloneAnswers();
+                if (archiveFailed)
+                {
+                    run = null!;
+                }
+                else if (!microphoneEnabled && settings.Mode == OperatingMode.InPerson)
                 {
                     snapshot = snapshot with { State = ListeningState.Failed, Error = "现场交流需要麦克风，请开启麦克风后重试。" };
                     run = null!;
@@ -308,6 +315,7 @@ public sealed class ListeningSession : IAsyncDisposable
                         LanguageQuestion = question ?? latest
                     };
                     next = new(settings with { });
+                    if (sessions is not null) pendingAnswers.Add(next);
                     next.Store.Begin(mode, query);
                     next.Store.Trace = new();
                     next.Store.Mark(PipelineStage.AnalysisDispatched);
@@ -535,6 +543,7 @@ public sealed class ListeningSession : IAsyncDisposable
                 {
                     if (archiveFailed) return false;
                     transcript.Clear();
+                    pendingAnswers.Clear();
                     snapshot = new();
                 }
             }
@@ -555,6 +564,7 @@ public sealed class ListeningSession : IAsyncDisposable
             run = current;
             if (run is null)
             {
+                SaveStandaloneAnswers();
                 if (snapshot.State == ListeningState.Idle) snapshot = snapshot with { State = ListeningState.Stopped };
             }
             else { run.StopRequested = true; snapshot = snapshot with { IsStopping = true }; }
@@ -594,12 +604,14 @@ public sealed class ListeningSession : IAsyncDisposable
         TranscriptLine[] lines;
         ValueList<TranscriptFragment> fragments;
         bool hasContent;
+        ValueList<SessionAnswer> answers;
         lock (sync)
         {
             run.AcceptEvents = false;
             lines = transcript.ArchivedLines.ToArray();
             fragments = transcript.FragmentRevisions.ToValueList();
-            hasContent = transcript.HasContent;
+            answers = pendingAnswers.Select(a => a.Snapshot()).ToValueList();
+            hasContent = transcript.HasContent || answers.Count > 0;
         }
         if (run.System.Live is { } system) system.Provider.OnEvent = null;
         if (run.Microphone.Live is { } mic) mic.Provider.OnEvent = null;
@@ -607,7 +619,9 @@ public sealed class ListeningSession : IAsyncDisposable
         {
             try
             {
-                sessions.Save(lines, run.StartedAt, DateTimeOffset.UtcNow, fragments);
+                var saved = sessions.SaveSnapshot(lines.Select(l => new SessionLine(l)).ToValueList(), run.StartedAt, answers,
+                    DateTimeOffset.UtcNow, fragments, run.Settings.Scenario);
+                if (saved is not null) { lock (sync) pendingAnswers.Clear(); }
                 if (sessions.LastError is { } error) PersistenceError(error);
             }
             catch (Exception e) { PersistenceError(e.Message); }
@@ -622,6 +636,22 @@ public sealed class ListeningSession : IAsyncDisposable
         }
         run.StartCancellation.Dispose();
         Changed?.Invoke();
+    }
+
+    // Called under sync, only when no audio run owns the transcript. Clearing on success
+    // prevents duplicate archives on repeated Stop/Reset/Dispose and preserves failed saves.
+    private void SaveStandaloneAnswers()
+    {
+        if (pendingAnswers.Count == 0 || sessions is null || archiveFailed) return;
+        try
+        {
+            var first = pendingAnswers[0];
+            var saved = sessions.SaveSnapshot([], first.CreatedAt, pendingAnswers.Select(a => a.Snapshot()).ToValueList(),
+                DateTimeOffset.UtcNow, scenario: first.Settings.Scenario);
+            if (saved is not null) pendingAnswers.Clear();
+            if (sessions.LastError is { } error) PersistenceError(error);
+        }
+        catch (Exception e) { PersistenceError(e.Message); }
     }
 
     private async Task DisconnectAsync(Run run, Path path)
@@ -656,6 +686,13 @@ public sealed class ListeningSession : IAsyncDisposable
 
     private sealed class SuggestionRun
     {
+        public Guid Id { get; } = Guid.NewGuid();
+        public Guid QuestionId { get; } = Guid.NewGuid();
+        public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
+        public SessionAnswer Snapshot() => new(Id, QuestionId, false, CreatedAt, Store.AnsweredAt, Store.CompletedAt,
+            Store.Question, Store.Text, Store.State.ToString().ToLowerInvariant(), Store.Warning, Store.Error,
+            Store.CitedSources.Select(citation => new SessionCitation(citation.Index, citation.Source.Chunk.DocumentId,
+                citation.Source.Chunk.DocumentName, citation.Source.Chunk.Page, citation.Source.Chunk.Ordinal, citation.Source.Chunk.Text)).ToValueList(), null);
         public AppSettings Settings { get; }
         public SuggestionStore Store { get; } = new();
         public CancellationTokenSource Cancellation { get; } = new();

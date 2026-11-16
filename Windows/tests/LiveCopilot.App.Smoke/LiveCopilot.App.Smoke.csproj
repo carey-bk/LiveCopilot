@@ -7,4 +7,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/LiveCopilot.Core/LiveCopilot.Core.csproj" />
+  </ItemGroup>
 </Project>

@@ -53,7 +53,6 @@ public sealed partial class SettingsViewModel : ObservableObject, INotifyDataErr
         await updateChecker.CheckAsync(CheckForUpdates, cancellationToken);
     public string ProjectUrl => "https://github.com/carey-bk/LiveCopilot";
     public string UnsignedNotice => "此 Windows 版本尚未签名。如果 SmartScreen 拦截，请先确认来自可信来源，再点击“更多信息”→“仍要运行”。";
-    public string HistoryNotice => "即将推出";
     public string ListeningHint => ListeningService switch
     {
         ListeningService.Zipformer or ListeningService.Paraformer => speechUnavailable() ?? (speechInstalled(ListeningService)
