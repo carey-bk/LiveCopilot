@@ -11,6 +11,30 @@ namespace LiveCopilot.App.Smoke;
 
 internal static class SmokeDesktop
 {
+    internal static double DpiScale(AutomationElement window) => GetDpiForWindow(new IntPtr(window.Current.NativeWindowHandle)) / 96d;
+
+    internal static bool RequireFitsWorkArea(AutomationElement window)
+    {
+        var hwnd = new IntPtr(window.Current.NativeWindowHandle);
+        var monitor = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(MonitorFromWindow(hwnd, 2), ref monitor) || !GetWindowRect(hwnd, out var rect))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        var work = monitor.Work;
+        if (rect.Left < work.Left || rect.Top < work.Top || rect.Right > work.Right || rect.Bottom > work.Bottom)
+            throw new InvalidOperationException($"{window.Current.AutomationId} exceeds its monitor's work area.");
+        var limits = new MinMaxInfo();
+        _ = SendMessage(hwnd, 0x0024, IntPtr.Zero, ref limits); // WM_GETMINMAXINFO: actual native tracking constraints.
+        if (limits.MinTrack.X > work.Right - work.Left || limits.MinTrack.Y > work.Bottom - work.Top)
+            throw new InvalidOperationException($"{window.Current.AutomationId} minimum size exceeds its work area.");
+        var scale = DpiScale(window);
+        var width = (rect.Right - rect.Left) / scale;
+        var height = (rect.Bottom - rect.Top) / scale;
+        Console.WriteLine($"Work-area fit: {window.Current.AutomationId}, {width:F1} x {height:F1} DIP, scale {scale}; native minimum {limits.MinTrack.X} x {limits.MinTrack.Y} px.");
+        var compact = width >= 960 && height >= 660;
+        if (!compact) Console.WriteLine("Smaller than the 1024 x 768 layout baseline: content may scroll; window and footer containment remain required.");
+        return compact;
+    }
+
     internal static AutomationElement? FindWindow(int pid, string id)
     {
         var condition = new AndCondition(new PropertyCondition(AutomationElement.ProcessIdProperty, pid),
@@ -123,6 +147,20 @@ internal static class SmokeDesktop
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Input { public uint Type; public InputData Data; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo { public int Size; public NativeRect Monitor, Work; public uint Flags; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MinMaxInfo { public NativePoint Reserved, MaxSize, MaxPosition, MinTrack, MaxTrack; }
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+    [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
+    [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr hwnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessage(IntPtr hwnd, uint message, IntPtr wParam, ref MinMaxInfo info);
     [StructLayout(LayoutKind.Explicit)]
     private struct InputData { [FieldOffset(0)] public MouseInput Mouse; }
     [StructLayout(LayoutKind.Sequential)]

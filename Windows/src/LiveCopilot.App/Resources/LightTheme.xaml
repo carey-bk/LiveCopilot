@@ -13,7 +13,7 @@
   <SolidColorBrush x:Key="OverlaySurface" Color="#E8E8E8"/>
   <SolidColorBrush x:Key="ControlSurface" Color="#E4E4E4"/>
   <SolidColorBrush x:Key="Stroke" Color="#D1D1D1"/>
-  <SolidColorBrush x:Key="Success" Color="#34C759"/>
+  <SolidColorBrush x:Key="Success" Color="#28CD41"/>
   <SolidColorBrush x:Key="ChoiceSurface" Color="#50FFFFFF"/>
   <SolidColorBrush x:Key="ErrorInk" Color="#B42318"/>
   <LinearGradientBrush x:Key="OnboardingSurface" StartPoint="0,0" EndPoint="1,1">
@@ -40,12 +40,12 @@
   <Style x:Key="PageTitle" TargetType="TextBlock">
     <Setter Property="FontSize" Value="26"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
-    <Setter Property="Margin" Value="0,0,0,24"/>
+    <Setter Property="Margin" Value="0,0,0,16"/>
   </Style>
   <Style x:Key="SectionTitle" TargetType="TextBlock">
     <Setter Property="FontSize" Value="16"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
-    <Setter Property="Margin" Value="0,14,0,10"/>
+    <Setter Property="Margin" Value="0,10,0,8"/>
   </Style>
   <Style x:Key="Brand" TargetType="TextBlock">
     <Setter Property="FontSize" Value="22"/>
@@ -261,7 +261,8 @@
   <Style x:Key="NavigationTab" TargetType="TabItem">
     <Setter Property="Padding" Value="14,13"/>
     <Setter Property="Margin" Value="10,3"/>
-    <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+    <Setter Property="VerticalContentAlignment" Value="Stretch"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="TabItem">

@@ -1,7 +1,11 @@
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="LiveCopilot.App.OnboardingWindow" x:Name="OnboardingRoot" Style="{StaticResource {x:Type Window}}" Icon="Resources/AppIcon.png" Title="LiveCopilot — 欢迎" Width="1040" Height="780" MinWidth="940" MinHeight="640" WindowStartupLocation="CenterOwner" Background="{StaticResource OnboardingSurface}" AutomationProperties.AutomationId="OnboardingWindow" AutomationProperties.ItemStatus="{Binding Step}">
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="LiveCopilot.App.OnboardingWindow" x:Name="OnboardingRoot" Style="{StaticResource {x:Type Window}}" Icon="Resources/AppIcon.png" Title="LiveCopilot — 欢迎" Width="980" Height="680" MinWidth="860" MinHeight="560" WindowStartupLocation="CenterOwner" Background="{StaticResource OnboardingSurface}" AutomationProperties.AutomationId="OnboardingWindow" AutomationProperties.ItemStatus="{Binding Step}">
   <Window.Resources>
+    <Style x:Key="CompactChoiceCard" TargetType="ListBoxItem" BasedOn="{StaticResource ChoiceCard}">
+      <Setter Property="Padding" Value="12,8"/>
+      <Setter Property="Margin" Value="0,0,0,6"/>
+    </Style>
     <DataTemplate x:Key="ModelCardTemplate">
-      <Border Style="{StaticResource Card}">
+      <Border Style="{StaticResource Card}" Padding="10,8" Margin="0,0,0,8">
         <StackPanel>
           <DockPanel>
             <TextBlock DockPanel.Dock="Right" Text="{Binding Size}" Margin="12,0,0,0" Foreground="{StaticResource SecondaryInk}"/>
@@ -13,7 +17,7 @@
             <WrapPanel DockPanel.Dock="Right">
               <WrapPanel.Resources>
                 <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                  <Setter Property="Padding" Value="9,3"/>
+                  <Setter Property="Padding" Value="9,2"/>
                   <Setter Property="Margin" Value="4,0,0,0"/>
                 </Style>
               </WrapPanel.Resources>
@@ -24,7 +28,7 @@
             </WrapPanel>
             <TextBlock Text="{Binding Transfer}" VerticalAlignment="Center" Foreground="{StaticResource SecondaryInk}"/>
           </DockPanel>
-          <TextBlock Text="{Binding Hint}" Foreground="{StaticResource SecondaryInk}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+          <TextBlock Text="{Binding Hint}" Foreground="{StaticResource SecondaryInk}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0" AutomationProperties.AutomationId="{Binding AutomationId, StringFormat={}{0}Hint}"/>
         </StackPanel>
       </Border>
     </DataTemplate>
@@ -39,7 +43,7 @@
       </StackPanel>
     </DataTemplate>
   </Window.Resources>
-  <Grid Margin="36,28,36,26">
+  <Grid Margin="28,20,28,18">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
@@ -49,22 +53,22 @@
       <Image Source="Resources/AppIcon.png" Width="28" Height="28" Margin="0,0,8,0"/>
       <TextBlock Style="{StaticResource Brand}"/>
     </StackPanel>
-    <Grid Grid.Row="1" Margin="4,24,4,20">
+    <Grid Grid.Row="1" Margin="4,14,4,12">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="310"/>
-        <ColumnDefinition Width="36"/>
+        <ColumnDefinition Width="300"/>
+        <ColumnDefinition Width="24"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
-      <ScrollViewer x:Name="IntroScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel VerticalAlignment="Center" Margin="0,24,12,20">
+      <ScrollViewer x:Name="IntroScroll" AutomationProperties.AutomationId="OnboardingIntroScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel VerticalAlignment="Center" Margin="0,4,6,4">
           <TextBlock Text="{Binding Title}" Style="{StaticResource OnboardingTitle}" AutomationProperties.AutomationId="OnboardingTitle"/>
-          <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Hint}" Margin="0,18,0,20" FontSize="14"/>
+          <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Hint}" Margin="0,12,0,12" FontSize="14"/>
           <StackPanel Visibility="{Binding IsLanguage, Converter={StaticResource Visible}}">
-            <ListBox ItemsSource="{Binding Settings.Languages}" SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding Settings.Language, Mode=TwoWay}" ItemContainerStyle="{StaticResource ChoiceCard}" BorderThickness="0" Background="Transparent" AutomationProperties.AutomationId="OnboardingLanguage"/>
-            <TextBlock Text="语言偏好将保存；当前 Windows 界面使用简体中文。" Style="{StaticResource Hint}"/>
+            <ListBox ItemsSource="{Binding Settings.Languages}" SelectedValuePath="Value" DisplayMemberPath="Label" SelectedValue="{Binding Settings.Language, Mode=TwoWay}" ItemContainerStyle="{StaticResource CompactChoiceCard}" BorderThickness="0" Background="Transparent" AutomationProperties.AutomationId="OnboardingLanguage"/>
+            <TextBlock Text="偏好将保存；Windows 界面为简体中文。" Style="{StaticResource Hint}" AutomationProperties.AutomationId="OnboardingLanguageHint"/>
           </StackPanel>
           <StackPanel Visibility="{Binding IsScenario, Converter={StaticResource Visible}}">
-            <ListBox ItemsSource="{Binding UsageChoices}" SelectedValuePath="Value" SelectedValue="{Binding Usage, Mode=TwoWay}" ItemContainerStyle="{StaticResource ChoiceCard}" BorderThickness="0" Background="Transparent" AutomationProperties.AutomationId="OnboardingUsage">
+            <ListBox ItemsSource="{Binding UsageChoices}" SelectedValuePath="Value" SelectedValue="{Binding Usage, Mode=TwoWay}" ItemContainerStyle="{StaticResource CompactChoiceCard}" BorderThickness="0" Background="Transparent" AutomationProperties.AutomationId="OnboardingUsage">
               <ListBox.ItemTemplate>
                 <DataTemplate>
                   <DockPanel><TextBlock Text="{Binding Icon}" FontFamily="{StaticResource IconFont}" FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
@@ -73,9 +77,11 @@
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>
-            <TextBlock Text="使用场景" Margin="0,8,0,0"/>
-            <ComboBox ItemsSource="{Binding Settings.Scenarios}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.Scenario, Mode=TwoWay}" AutomationProperties.AutomationId="OnboardingScenario"/>
-            <TextBlock Text="选择只保存使用方式，不会开始采集。之后点击悬浮窗播放按钮，才会按所选方式开启监听。" Style="{StaticResource Hint}"/>
+            <DockPanel Margin="0,4,0,0">
+              <TextBlock Text="使用场景" Margin="0,0,12,0" VerticalAlignment="Center"/>
+              <ComboBox ItemsSource="{Binding Settings.Scenarios}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.Scenario, Mode=TwoWay}" Margin="0" AutomationProperties.AutomationId="OnboardingScenario"/>
+            </DockPanel>
+            <TextBlock Text="选择只保存偏好，不会采集音频。点击悬浮窗播放按钮后才会开始监听。" Style="{StaticResource Hint}" AutomationProperties.AutomationId="OnboardingScenarioHint"/>
           </StackPanel>
           <StackPanel Visibility="{Binding IsReady, Converter={StaticResource Visible}}">
             <TextBlock Text="随时唤出助手" FontWeight="SemiBold"/>
@@ -84,7 +90,7 @@
         </StackPanel>
       </ScrollViewer>
       <ScrollViewer x:Name="DetailScroll" AutomationProperties.AutomationId="OnboardingDetailScroll" Grid.Column="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <Grid Margin="0,8,14,24">
+        <Grid Margin="0,4,12,12">
           <StackPanel Visibility="{Binding IsLanguage, Converter={StaticResource Visible}}">
             <TextBlock Text="你好" FontSize="72" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,135,0,10"/>
             <TextBlock Text="欢迎使用 LiveCopilot" HorizontalAlignment="Center" Foreground="{StaticResource SecondaryInk}"/>
@@ -109,19 +115,22 @@
             </Border>
           </StackPanel>
           <StackPanel Visibility="{Binding IsModels, Converter={StaticResource Visible}}">
-            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}">
-              <StackPanel>
+            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}" Padding="10,8" Margin="0,0,0,8">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
+                <StackPanel Margin="0,0,12,0">
                 <TextBlock Text="语音识别"/>
-                <ComboBox ItemsSource="{Binding Settings.ListeningServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.ListeningService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                <ComboBox ItemsSource="{Binding Settings.ListeningServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.ListeningService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,4,0,0">
                   <ComboBox.ItemContainerStyle>
                     <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
                       <Setter Property="IsEnabled" Value="{Binding IsAvailable}"/>
                     </Style>
                   </ComboBox.ItemContainerStyle>
                 </ComboBox>
-              </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="1"><TextBlock Text="资料检索"/><ComboBox ItemsSource="{Binding Settings.EmbeddingServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.EmbeddingService, Mode=TwoWay}" Margin="0,4,0,0"/></StackPanel>
+              </Grid>
             </Border>
-            <Border Style="{StaticResource Card}" Background="{StaticResource Surface}"><StackPanel><TextBlock Text="资料检索"/><ComboBox ItemsSource="{Binding Settings.EmbeddingServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Settings.EmbeddingService, Mode=TwoWay}" /></StackPanel></Border>
             <ContentControl Content="{Binding ZipformerModel, ElementName=OnboardingRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
             <ContentControl Content="{Binding ParaformerModel, ElementName=OnboardingRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
             <ContentControl Content="{Binding EmbeddingModelCard, ElementName=OnboardingRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
@@ -199,8 +208,8 @@
       </ScrollViewer>
     </Grid>
     <StackPanel Grid.Row="2">
-      <TextBlock Text="{Binding Error}" Foreground="{StaticResource ErrorInk}"/>
-      <TextBlock Text="{Binding Settings.ValidationSummary}" Foreground="{StaticResource ErrorInk}"/>
+      <TextBlock Text="{Binding Error}" Style="{StaticResource OptionalText}" Foreground="{StaticResource ErrorInk}"/>
+      <TextBlock Text="{Binding Settings.ValidationSummary}" Style="{StaticResource OptionalText}" Foreground="{StaticResource ErrorInk}"/>
       <Grid Margin="0,10,0,0">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>
