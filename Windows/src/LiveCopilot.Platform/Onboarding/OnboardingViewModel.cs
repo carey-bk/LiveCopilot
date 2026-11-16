@@ -69,7 +69,7 @@ public sealed class OnboardingViewModel : ObservableObject
     public string Subtitle => Step switch
     {
         0 => "选择界面语言，之后随时可以在设置中更改。",
-        1 => "实时看懂对话，查找相关资料，获得可以说出口的回答建议。",
+        1 => "看懂对话，查找资料，获得回答建议。",
         2 => "配置本地语音与资料检索。按需下载，也可以稍后在设置中完成。",
         3 => "由你选择的 AI 服务生成回答，配置 API Key 后即可使用。",
         4 => "打开 Windows 隐私设置检查麦克风访问。仅输入问题，无需音频权限。",

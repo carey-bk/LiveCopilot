@@ -27,9 +27,9 @@ public sealed class ModelCardViewModel(LocalModelKind kind, LocalModelManager ma
     public double Progress => snapshot.Progress;
     public bool IsVerifying => snapshot.State is LocalModelState.Verifying or LocalModelState.Deleting;
     private string? Unavailable => Kind == LocalModelKind.Embedding ? NativeRuntimeSupport.EmbeddingUnavailable : NativeRuntimeSupport.SpeechUnavailable;
+    // The shared CPU notice is shown once per page, outside the individual cards.
     public string Hint => Unavailable ?? (AppRuntime.IsSmoke ? "冒烟模式：仅展示模型状态，下载已禁用。"
-        : Kind == LocalModelKind.Embedding ? "安装后即可导入或重新索引，无需重启。" : "安装或切换引擎后，重新开始聆听生效。") +
-        (string.IsNullOrEmpty(NativeRuntimeSupport.Notice) ? "" : "\n" + NativeRuntimeSupport.Notice);
+        : Kind == LocalModelKind.Embedding ? "安装后即可导入或重新索引，无需重启。" : "安装或切换引擎后，重新开始聆听生效。");
     public string Transfer => $"{Bytes(snapshot.DownloadedBytes)} / {Size}" +
         (snapshot.State == LocalModelState.Downloading ? $" · {Bytes((long)snapshot.BytesPerSecond)}/s" : "");
     public string DownloadLabel => snapshot.State == LocalModelState.Failed ? "重试下载" : snapshot.DownloadedBytes > 0 && !snapshot.IsInstalled ? "继续下载" : "下载";
