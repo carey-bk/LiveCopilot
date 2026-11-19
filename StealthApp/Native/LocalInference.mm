@@ -6,6 +6,7 @@
 #include <csignal>
 #include <iostream>
 #include <memory>
+#include <new>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -155,6 +156,12 @@ public:
     }
 };
 
+#if defined(__x86_64__)
+static constexpr bool kDefaultEmbeddingCPU = true;
+#else
+static constexpr bool kDefaultEmbeddingCPU = false;
+#endif
+
 class EmbeddingEngine {
     llama_model *model = nullptr;
     llama_context *context = nullptr;
@@ -162,6 +169,11 @@ class EmbeddingEngine {
     bool cpuOnly = false;
     uint32_t capacity = 0;
 
+    static uint32_t contextSizeFor(uint32_t count) {
+        uint32_t size = 512;
+        while (size < count) size *= 2;
+        return size;
+    }
     bool loadModel(bool cpu) {
         cpuOnly = cpu;
         auto params = llama_model_default_params();
@@ -183,19 +195,51 @@ class EmbeddingEngine {
         if (context) capacity = size;
         return context != nullptr;
     }
+    void switchToCPU(uint32_t count) {
+        if (context) { llama_free(context); context = nullptr; }
+        capacity = 0;
+        if (model) { llama_model_free(model); model = nullptr; }
+        if (!loadModel(true)) throw std::runtime_error("embedding_load");
+        if (!createContext(contextSizeFor(count))) throw std::runtime_error("embedding_context");
+    }
     void ensureContext(uint32_t count) {
         if (context && capacity >= count) return;
-        uint32_t size = 512;
-        while (size < count) size *= 2;
+        uint32_t size = contextSizeFor(count);
         if (context) { llama_free(context); context = nullptr; }
         capacity = 0;
         if (createContext(size)) return;
         if (!cpuOnly) {
-            llama_model_free(model); model = nullptr;
-            if (!loadModel(true)) throw std::runtime_error("embedding_load");
-            if (createContext(size)) return;
+            switchToCPU(count);
+            return;
         }
         throw std::runtime_error("embedding_context");
+    }
+    NSArray *runEmbedding(const llama_token *tokens, int count) {
+        ensureContext(static_cast<uint32_t>(count));
+        auto batch = llama_batch_init(count, 0, 1); batch.n_tokens = count;
+        for (int i = 0; i < count; ++i) {
+            batch.token[i] = tokens[i]; batch.pos[i] = i; batch.n_seq_id[i] = 1;
+            batch.seq_id[i][0] = 0; batch.logits[i] = true;
+        }
+        if (auto memory = llama_get_memory(context)) llama_memory_clear(memory, true);
+        int status = llama_decode(context, batch); llama_batch_free(batch);
+#ifdef LIVECOPILOT_TEST_GPU_DECODE_FAILURE
+        if (!cpuOnly) status = -3; // Test-only build: emulate a GPU that rejects this graph.
+#endif
+        if (status != 0) throw std::runtime_error("embedding_decode");
+        const float *vector = llama_get_embeddings_seq(context, 0);
+        const int dimension = llama_model_n_embd_out(model);
+        if (!vector || dimension != 1024) throw std::runtime_error("embedding_dimension");
+        double norm = 0;
+        for (int i = 0; i < dimension; ++i) {
+            if (!std::isfinite(vector[i])) throw std::runtime_error("embedding_finite");
+            norm += static_cast<double>(vector[i]) * vector[i];
+        }
+        if (norm <= 0) throw std::runtime_error("embedding_zero");
+        norm = std::sqrt(norm);
+        NSMutableArray *result = [NSMutableArray arrayWithCapacity:dimension];
+        for (int i = 0; i < dimension; ++i) [result addObject:@(vector[i] / norm)];
+        return result;
     }
 public:
     explicit EmbeddingEngine(const std::string &root, bool forceCPU = false)
@@ -218,35 +262,37 @@ public:
         if (model) llama_model_free(model);
         llama_backend_free();
     }
+    static constexpr int maxTokens = 8192;
+    bool isCPU() const { return cpuOnly; }
     NSArray *embed(NSString *text) {
         NSData *utf8 = [text dataUsingEncoding:NSUTF8StringEncoding];
         if (!utf8.length || utf8.length > 100000) throw std::runtime_error("text_size");
+        if (!model) throw std::runtime_error("embedding_load");
         const auto *vocab = llama_model_get_vocab(model);
         std::vector<llama_token> tokens(utf8.length + 8);
         int count = llama_tokenize(vocab, static_cast<const char *>(utf8.bytes), static_cast<int>(utf8.length), tokens.data(), static_cast<int>(tokens.size()), true, false);
-        if (count <= 0 || count > 8192) throw std::runtime_error("token_limit");
-        ensureContext(static_cast<uint32_t>(count));
-        auto batch = llama_batch_init(count, 0, 1); batch.n_tokens = count;
-        for (int i = 0; i < count; ++i) {
-            batch.token[i] = tokens[i]; batch.pos[i] = i; batch.n_seq_id[i] = 1;
-            batch.seq_id[i][0] = 0; batch.logits[i] = true;
+        if (count < 0 && -count <= maxTokens) {
+            // A negative count is the required buffer size, not an inference failure.
+            tokens.resize(static_cast<size_t>(-count));
+            count = llama_tokenize(vocab, static_cast<const char *>(utf8.bytes), static_cast<int>(utf8.length), tokens.data(), static_cast<int>(tokens.size()), true, false);
         }
-        if (auto memory = llama_get_memory(context)) llama_memory_clear(memory, true);
-        int status = llama_decode(context, batch); llama_batch_free(batch);
-        if (status != 0) throw std::runtime_error("embedding_decode");
-        const float *vector = llama_get_embeddings_seq(context, 0);
-        const int dimension = llama_model_n_embd_out(model);
-        if (!vector || dimension != 1024) throw std::runtime_error("embedding_dimension");
-        double norm = 0;
-        for (int i = 0; i < dimension; ++i) {
-            if (!std::isfinite(vector[i])) throw std::runtime_error("embedding_finite");
-            norm += static_cast<double>(vector[i]) * vector[i];
+        if (count <= 0 || count > maxTokens) throw std::runtime_error("token_limit");
+        try {
+            return runEmbedding(tokens.data(), count);
+        } catch (const std::runtime_error &error) {
+            // Runtime GPU decode or numerical faults (e.g. Metal command-buffer errors, NaN/Inf,
+            // or zero vector) fall back cleanly to CPU and stay on CPU for this worker's lifetime.
+            const std::string code = error.what();
+            if (cpuOnly || (code != "embedding_decode" && code != "embedding_finite" && code != "embedding_zero")) throw;
+        } catch (const std::bad_alloc &) {
+            if (cpuOnly) throw std::runtime_error("embedding_context");
         }
-        if (norm <= 0) throw std::runtime_error("embedding_zero");
-        norm = std::sqrt(norm);
-        NSMutableArray *result = [NSMutableArray arrayWithCapacity:dimension];
-        for (int i = 0; i < dimension; ++i) [result addObject:@(vector[i] / norm)];
-        return result;
+        try {
+            switchToCPU(static_cast<uint32_t>(count));
+            return runEmbedding(tokens.data(), count);
+        } catch (const std::bad_alloc &) {
+            throw std::runtime_error("embedding_context");
+        }
     }
 };
 
@@ -260,9 +306,11 @@ int main(int argc, char **argv) {
             const std::string mode(argv[1]), root(argv[2]);
             if (mode == "paraformer") streamingSpeech = std::make_unique<StreamingSpeechEngine>(root);
             else if (mode == "zipformer") streamingSpeech = std::make_unique<StreamingSpeechEngine>(root, true);
-            else if (mode == "embedding" || mode == "embedding-cpu") embedding = std::make_unique<EmbeddingEngine>(root, mode == "embedding-cpu");
+            else if (mode == "embedding" || mode == "embedding-cpu")
+                embedding = std::make_unique<EmbeddingEngine>(root, mode == "embedding-cpu" || kDefaultEmbeddingCPU);
             else return 2;
-            reply(@{ @"ready": @YES, @"protocol": @1 });
+            if (embedding) reply(@{ @"ready": @YES, @"protocol": @1, @"backend": embedding->isCPU() ? @"cpu" : @"metal" });
+            else reply(@{ @"ready": @YES, @"protocol": @1 });
             std::string line;
             while (std::getline(std::cin, line)) {
                 @autoreleasepool {
@@ -287,9 +335,14 @@ int main(int argc, char **argv) {
                         } else throw std::runtime_error("operation");
                         reply(response);
                     } catch (const std::runtime_error &error) {
-                        NSString *code = strcmp(error.what(), "embedding_context") == 0 ? @"embedding_context" : @"inference_failed";
-                        reply(@{ @"id": idValue, @"error": code });
-                    } catch (...) { reply(@{ @"id": idValue, @"error": @"inference_failed" }); }
+                        // Only fixed stage codes cross IPC; never input text, paths or native logs.
+                        static NSSet<NSString *> *known = [NSSet setWithArray:@[
+                            @"embedding_context", @"embedding_load", @"token_limit", @"text_size", @"embedding_decode",
+                            @"embedding_dimension", @"embedding_finite", @"embedding_zero"]];
+                        NSString *code = [NSString stringWithUTF8String:error.what()];
+                        reply(@{ @"id": idValue, @"error": code && [known containsObject:code] ? code : @"inference_failed" });
+                    } catch (const std::bad_alloc &) { reply(@{ @"id": idValue, @"error": @"embedding_context" }); }
+                    catch (...) { reply(@{ @"id": idValue, @"error": @"inference_failed" }); }
                 }
             }
         } catch (const std::runtime_error &error) {

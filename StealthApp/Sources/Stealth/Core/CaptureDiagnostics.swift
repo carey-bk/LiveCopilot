@@ -20,6 +20,8 @@ enum CaptureDiagnostics {
     enum Failure: String, Codable {
         case unknown, embedding_context, inference_failed, timeout, runtime_missing, runtime_start
         case embedding_load, model_load_failed, process_ended
+        /// A started embedding worker rejected one input at this stage (never the input itself).
+        case token_limit, text_size, embedding_decode, embedding_dimension, embedding_finite, embedding_zero
         /// Captured audio exceeded the bound while the speech model loaded, or after it was ready.
         case speech_load_slow, speech_behind
     }

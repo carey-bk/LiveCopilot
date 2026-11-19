@@ -45,14 +45,29 @@ enum DocumentChunker {
     static func chunk(_ sections: [DocumentSection], documentID: String, name: String,
                       maxCharacters: Int = 1600, overlap: Int = 180) -> [SourceChunk] {
         let size = max(128, maxCharacters), overlap = max(0, min(overlap, max(128, maxCharacters) / 3))
+        // A Character may hide many scalars (combining marks, emoji sequences, broken PDF text
+        // extraction), and every scalar can become a model token. Bound scalars as well so one passage
+        // cannot exceed the local model's 8,192-token input limit or force an oversized context.
+        let maxScalars = size * 2
         var result: [SourceChunk] = []
         for section in sections {
             let chars = Array(section.text.replacingOccurrences(of: "\r\n", with: "\n"))
+            var scalars = [0]
+            scalars.reserveCapacity(chars.count + 1)
+            for ch in chars { scalars.append(scalars[scalars.count - 1] + ch.unicodeScalars.count) }
             var start = 0
             while start < chars.count {
                 var end = min(start + size, chars.count)
+                if scalars[end] - scalars[start] > maxScalars {
+                    var low = start + 1, high = end // Largest end within budget; at least one Character.
+                    while low < high {
+                        let mid = (low + high + 1) / 2
+                        if scalars[mid] - scalars[start] <= maxScalars { low = mid } else { high = mid - 1 }
+                    }
+                    end = low
+                }
                 if end < chars.count {
-                    let lower = start + size / 2
+                    let lower = start + (end - start) / 2
                     if let boundary = (lower..<end).last(where: { "\n。.!?！？ ".contains(chars[$0]) }) { end = boundary + 1 }
                 }
                 let text = String(chars[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,7 +76,8 @@ enum DocumentChunker {
                                         ordinal: result.count, page: section.page, text: text, vector: [], embeddingModel: ""))
                 }
                 if end == chars.count { break }
-                start = max(start + 1, end - overlap)
+                // A scalar-limited passage may be shorter than the overlap; always advance by 2/3 of it.
+                start = max(start + 1, end - min(overlap, (end - start) / 3))
             }
         }
         return result

@@ -432,13 +432,98 @@ enum CoreChecks {
             do {
                 _ = try await oomProvider.embed(["oom"])
                 throw CheckError(description: "embedding_context unexpectedly succeeded")
-            } catch let error as CopilotError {
-                try expect(error.localizedDescription.contains("allocate inference memory"), "wrong embedding_context message: \(error)")
+            } catch let error as LocalInputError {
+                try expect(error.code == "embedding_context" && error.localizedDescription.contains("allocate inference memory"), "wrong embedding_context message: \(error)")
             }
             let oomModes = try String(contentsOf: oomLog, encoding: .utf8).split(separator: "\n").map(String.init)
             try expect(oomModes.count == 1, "embedding_context should not spawn a second worker, got \(oomModes)")
             oomProvider.close(initiator: .selfCheck)
             passed.append("local embedding provider defaults CPU on x86_64 and falls back to CPU on GPU crash")
+        }
+        // Regression: per-input worker rejections preserve fixed stage codes, diagnostics & localization,
+        // and never leak unknown error strings.
+        do {
+            let rejectingWorker = localFixture.appendingPathComponent("rejecting-worker")
+            try """
+            #!/bin/sh
+            printf '%s\\n' '{"ready":true}'
+            while IFS= read -r row; do
+              id=$(printf '%s' "$row" | sed 's/.*"id":"\\([^"]*\\)".*/\\1/')
+              case "$row" in
+                *token_limit*) code=token_limit;;
+                *text_size*) code=text_size;;
+                *embedding_context*) code=embedding_context;;
+                *embedding_load*) code=embedding_load;;
+                *embedding_decode*) code=embedding_decode;;
+                *embedding_dimension*) code=embedding_dimension;;
+                *embedding_finite*) code=embedding_finite;;
+                *embedding_zero*) code=embedding_zero;;
+                *) code=native_secret_path;;
+              esac
+              printf '{"id":"%s","error":"%s"}\\n' "$id" "$code"
+            done
+            """.write(to: rejectingWorker, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: rejectingWorker.path)
+            let cases: [(String, String, String, String)] = [
+                ("token_limit", "token_limit", "too large", "本地模型输入过长。"),
+                ("text_size", "text_size", "too large", "本地模型输入过长。"),
+                ("embedding_context", "embedding_context", "allocate inference memory", "本地模型无法分配推理内存"),
+                ("embedding_load", "embedding_load", "could not load", "本地模型加载失败"),
+                ("embedding_decode", "embedding_decode", "could not process", "本地模型无法处理此输入"),
+                ("embedding_dimension", "embedding_dimension", "could not process", "本地模型无法处理此输入"),
+                ("embedding_finite", "embedding_finite", "could not process", "本地模型无法处理此输入"),
+                ("embedding_zero", "embedding_zero", "could not process", "本地模型无法处理此输入"),
+                ("odd", "inference_failed", "could not process", "本地模型无法处理此输入")
+            ]
+            for (input, expectedCode, expectedEn, expectedZh) in cases {
+                let worker = LocalInferenceWorker(mode: "embedding", modelDirectory: localFixture, executable: rejectingWorker)
+                do {
+                    _ = try await worker.call(["op": "embed", "text": input], timeout: 15)
+                    throw CheckError(description: "rejected input \(input) unexpectedly succeeded")
+                } catch let error as LocalInputError {
+                    try expect(error.code == expectedCode && worker.failureCode == expectedCode, "per-input stage code lost for \(input): \(error.code) / \(worker.failureCode)")
+                    try expect(CaptureDiagnostics.Failure(rawValue: error.code) != nil, "missing CaptureDiagnostics.Failure case for \(error.code)")
+                    try expect(error.localizedDescription.contains(expectedEn), "wrong English message for \(error.code): \(error.localizedDescription)")
+                    let zh = L10n.text(error.localizedDescription, language: .simplifiedChinese)
+                    try expect(zh.contains(expectedZh), "missing Chinese localization for \(error.code): \(zh)")
+                }
+                worker.close(initiator: .selfCheck)
+            }
+            passed.append("per-input worker rejections keep fixed stage codes, diagnostics and localization")
+        }
+        // Regression: LocalEmbeddingProvider uses 240s per-request timeout for document indexing and 90s for live queries.
+        do {
+            try expect(LocalEmbeddingProvider.defaultQueryTimeout == 90, "expected 90s query timeout, got \(LocalEmbeddingProvider.defaultQueryTimeout)")
+            try expect(LocalEmbeddingProvider.defaultIndexingTimeout == 240, "expected 240s indexing timeout, got \(LocalEmbeddingProvider.defaultIndexingTimeout)")
+            let slowEmbedWorker = localFixture.appendingPathComponent("slow-embed-worker")
+            try """
+            #!/usr/bin/env python3
+            import json, sys, time
+            sys.stdout.write('{"ready":true}\\n'); sys.stdout.flush()
+            vec = [1.0] + [0.0] * 1023
+            for line in sys.stdin:
+                req = json.loads(line)
+                time.sleep(0.35)
+                sys.stdout.write(json.dumps({"id": req["id"], "vector": vec}) + "\\n"); sys.stdout.flush()
+            """.write(to: slowEmbedWorker, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: slowEmbedWorker.path)
+            let provider = LocalEmbeddingProvider(directory: localFixture, executable: slowEmbedWorker, queryTimeout: 0.12, indexingTimeout: 2.0)
+            do {
+                _ = try await provider.embed(["slow-query"])
+                throw CheckError(description: "query path should have timed out under queryTimeout")
+            } catch let error as CopilotError {
+                try expect(error.localizedDescription.contains("timed out"), "unexpected query timeout error: \(error)")
+            }
+            actor ProgressRecorder {
+                private(set) var values: [Int] = []
+                func record(_ value: Int) { values.append(value) }
+            }
+            let progressRecorder = ProgressRecorder()
+            let indexed = try await provider.embed(["slow-doc-chunk"], progress: { count in await progressRecorder.record(count) })
+            let progressUpdates = await progressRecorder.values
+            try expect(indexed.count == 1 && indexed[0].count == 1024 && progressUpdates == [1], "indexing path did not succeed under indexingTimeout")
+            provider.close(initiator: .selfCheck)
+            passed.append("local embedding provider separates 240s indexing timeout from 90s query timeout")
         }
         try check("audio flow separates no audio, digital silence, untranscribed audio and recognition") {
             var now: TimeInterval = 100
@@ -581,6 +666,38 @@ enum CoreChecks {
             let text = String(repeating: "样本量为128，延迟42毫秒。🧪", count: 40)
             let values = DocumentChunker.chunk([.init(text: text, page: nil)], documentID: "c", name: "中文.txt", maxCharacters: 128, overlap: 0)
             try expect(values.map(\.text).joined() == text, "chunk boundaries corrupted Unicode")
+        }
+        try check("chunks bound Unicode scalars hidden inside grapheme clusters while preserving ordinary text boundaries") {
+            // 4,000 Characters of 7 scalars each: a Character-only bound would produce >8,192-token passages.
+            let heavy = String(repeating: "a\u{301}\u{302}\u{303}\u{304}\u{305}\u{306}", count: 4_000)
+            let values = DocumentChunker.chunk([.init(text: heavy, page: 2)], documentID: "h", name: "h.pdf")
+            try expect(values.allSatisfy { $0.text.unicodeScalars.count <= 3_200 && $0.page == 2 }, "passage exceeded scalar bound")
+            try expect(values.count >= 9 && values.count < 40, "scalar-bounded chunking stalled or exploded: \(values.count)")
+            try expect(values.map(\.ordinal) == Array(values.indices), "ordinals are not consecutive")
+            // Single oversized grapheme cluster still makes forward progress without looping.
+            let hugeCluster = "a" + String(repeating: "\u{301}", count: 400) + " normal tail."
+            let hugeValues = DocumentChunker.chunk([.init(text: hugeCluster, page: 1)], documentID: "g", name: "g.pdf", maxCharacters: 128, overlap: 30)
+            try expect(!hugeValues.isEmpty && hugeValues.count <= 4, "huge grapheme cluster failed to advance cleanly: \(hugeValues.count)")
+            // Ordinary English & Chinese text boundaries match the pre-scalar-cap character chunker verbatim.
+            func legacyChunkTexts(_ text: String, maxCharacters: Int, overlap: Int) -> [String] {
+                let size = max(128, maxCharacters), ov = max(0, min(overlap, size / 3))
+                let chars = Array(text.replacingOccurrences(of: "\r\n", with: "\n"))
+                var out: [String] = [], start = 0
+                while start < chars.count {
+                    var end = min(start + size, chars.count)
+                    if end < chars.count, let b = (start + size / 2..<end).last(where: { "\n。.!?！？ ".contains(chars[$0]) }) { end = b + 1 }
+                    let s = String(chars[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !s.isEmpty { out.append(s) }
+                    if end == chars.count { break }
+                    start = max(start + 1, end - ov)
+                }
+                return out
+            }
+            let enDoc = String(repeating: fixture + "\n", count: 40)
+            try expect(chunks.map(\.text) == legacyChunkTexts(enDoc, maxCharacters: 256, overlap: 30), "ordinary English chunk boundaries changed")
+            let zhDoc = String(repeating: "这是一段正常的中文测试文本，用于验证标点断句与重叠切片边界保持一致。", count: 80)
+            let zhChunks = DocumentChunker.chunk([.init(text: zhDoc, page: 1)], documentID: "zh", name: "zh.pdf", maxCharacters: 1600, overlap: 180)
+            try expect(zhChunks.map(\.text) == legacyChunkTexts(zhDoc, maxCharacters: 1600, overlap: 180), "ordinary Chinese chunk boundaries changed")
         }
         try check("empty input and overlap safety") {
             try expect(DocumentChunker.chunk([.init(text: "  \n", page: nil)], documentID: "e", name: "e").isEmpty, "empty chunk created")

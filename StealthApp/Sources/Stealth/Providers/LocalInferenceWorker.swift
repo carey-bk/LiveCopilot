@@ -1,6 +1,22 @@
 import Foundation
 import Darwin
 
+/// The worker started and answered, but rejected this particular input. Only fixed stage codes
+/// cross IPC. Startup, missing-runtime, crash and timeout failures are reported as other errors.
+struct LocalInputError: LocalizedError, Equatable {
+    static let codes: Set<String> = ["embedding_context", "embedding_load", "token_limit", "text_size", "embedding_decode",
+                                     "embedding_dimension", "embedding_finite", "embedding_zero", "inference_failed"]
+    let code: String
+    var errorDescription: String? {
+        switch code {
+        case "embedding_context": return "Local model could not allocate inference memory, including on CPU. Close other apps and retry."
+        case "embedding_load": return "Local model could not load. Model files, available memory or runtime compatibility may be responsible. Restart the app and retry; if it persists, contact support."
+        case "token_limit", "text_size": return "Local model input is too large."
+        default: return "Local model could not process this input. Check model files and input length."
+        }
+    }
+}
+
 /// Private stdio IPC, with one serial queue per resident native worker. Audio and text never
 /// appear in command arguments, environment, diagnostics, temporary files or a listening socket.
 final class LocalInferenceWorker: @unchecked Sendable {
@@ -106,11 +122,11 @@ final class LocalInferenceWorker: @unchecked Sendable {
                         }
                         let response = try readMessage()
                         guard response["id"] as? String == id.uuidString else { throw CopilotError.message("Local model returned an invalid response.") }
-                        if response["error"] as? String == "embedding_context" {
-                            recordFailure("embedding_context")
-                            throw CopilotError.message("Local model could not allocate inference memory, including on CPU. Close other apps and retry.")
+                        if let error = response["error"] {
+                            let code = (error as? String).flatMap { LocalInputError.codes.contains($0) ? $0 : nil } ?? "inference_failed"
+                            recordFailure(code)
+                            throw LocalInputError(code: code)
                         }
-                        if response["error"] != nil { recordFailure("inference_failed"); throw CopilotError.message("Local model could not process this input. Check model files and input length.") }
                         try checkActiveCallState(id)
                         resumeCall(id, with: .success(response))
                     } catch {
@@ -278,9 +294,13 @@ final class LocalInferenceWorker: @unchecked Sendable {
 }
 
 final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable {
+    static let defaultQueryTimeout: TimeInterval = 90
+    static let defaultIndexingTimeout: TimeInterval = 240
     let model = LocalModelKind.embeddingIdentity
     private let directory: URL
     private let executable: URL?
+    private let queryTimeout: TimeInterval
+    private let indexingTimeout: TimeInterval
     private let workerLock = NSLock()
     private var worker: LocalInferenceWorker
     private var cpuFallbackActive: Bool
@@ -288,9 +308,11 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
     private let readinessLock = NSLock()
     private var prepared = false
     var isPrepared: Bool { readinessLock.withLock { prepared } }
-    init(directory: URL, executable: URL? = nil) {
+    init(directory: URL, executable: URL? = nil, queryTimeout: TimeInterval = defaultQueryTimeout, indexingTimeout: TimeInterval = defaultIndexingTimeout) {
         self.directory = directory
         self.executable = executable
+        self.queryTimeout = queryTimeout
+        self.indexingTimeout = indexingTimeout
         #if arch(x86_64)
         self.cpuFallbackActive = true
         self.worker = .init(mode: "embedding-cpu", modelDirectory: directory, executable: executable)
@@ -325,9 +347,14 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
         _ = try await embed(["warmup"])
     }
     func embed(_ texts: [String]) async throws -> [[Float]] {
-        try await embed(texts, progress: { _ in })
+        try await embed(texts, timeout: queryTimeout, progress: { _ in })
     }
+    /// Document indexing. A worker running on CPU (Intel default or GPU-to-CPU fallback) needs more
+    /// time per full-length passage than Metal, so allow longer per-chunk timeout than live queries.
     func embed(_ texts: [String], progress: @Sendable (Int) async -> Void) async throws -> [[Float]] {
+        try await embed(texts, timeout: indexingTimeout, progress: progress)
+    }
+    private func embed(_ texts: [String], timeout: TimeInterval, progress: @Sendable (Int) async -> Void) async throws -> [[Float]] {
         var vectors: [[Float]] = []
         // One text per IPC request lets a new interactive query run between import chunks.
         for text in texts {
@@ -335,7 +362,7 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
             let activeWorker = currentWorker()
             let response: [String: Any]
             do {
-                response = try await activeWorker.call(["op": "embed", "text": text])
+                response = try await activeWorker.call(["op": "embed", "text": text], timeout: timeout)
             } catch is CancellationError {
                 readinessLock.withLock { prepared = false }
                 throw CancellationError()
@@ -344,7 +371,7 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
                 // transparently switch to a CPU worker and retry this chunk once.
                 if activeWorker.failureCode == "process_ended",
                    let fallbackWorker = switchToCPUIfNeeded(failingWorker: activeWorker) {
-                    do { response = try await fallbackWorker.call(["op": "embed", "text": text]) }
+                    do { response = try await fallbackWorker.call(["op": "embed", "text": text], timeout: timeout) }
                     catch { readinessLock.withLock { prepared = false }; throw error }
                 } else {
                     readinessLock.withLock { prepared = false }
