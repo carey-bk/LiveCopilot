@@ -8,7 +8,21 @@ actor KnowledgeIndex {
     let directory: URL
     private let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-    init(directory: URL) throws {
+    // Per database connection. Keep a rowid-ordered prefix; scan the uncached suffix
+    // in the same order so equal cosines keep their original rank at the cutoff.
+    private struct DenseCache {
+        var chunks: [SourceChunk] = []
+        var chargedBytes = 0
+        var lastRowID: Int64?
+        var complete = false
+        var full = false
+        var dataVersion: Int64?
+    }
+    private var denseCache = DenseCache()
+    private let denseCacheBytes: Int
+
+    init(directory: URL, denseCacheBytes: Int = ProcessInfo.processInfo.environment["LIVECOPILOT_DISABLE_DENSE_CACHE"] == "1" ? 0 : 64 * 1024 * 1024) throws {
+        self.denseCacheBytes = max(0, denseCacheBytes)
         self.directory = directory
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
@@ -81,6 +95,7 @@ actor KnowledgeIndex {
                 bind(chunk.id, at: 1, to: f); bind(LexicalTokenizer.indexedText(chunk.text), at: 2, to: f); try done(f)
             }
             try exec("COMMIT")
+            denseCache = DenseCache()
         } catch { try? exec("ROLLBACK"); throw error }
     }
     private func removeChunks(_ documentID: String) throws {
@@ -96,6 +111,7 @@ actor KnowledgeIndex {
             let s = try statement("DELETE FROM documents WHERE id=?")
             defer { sqlite3_finalize(s) }; bind(id, at: 1, to: s); try done(s)
             try exec("COMMIT")
+            denseCache = DenseCache()
         } catch { try? exec("ROLLBACK"); throw error }
         let folder = directory.appendingPathComponent("originals/\(id)")
         if FileManager.default.fileExists(atPath: folder.path) { try FileManager.default.removeItem(at: folder) }
@@ -116,6 +132,68 @@ actor KnowledgeIndex {
         return result
     }
     func retrieve(query: RetrievalQuery, vector: [Float]?, model: String, limit: Int) throws -> [RetrievedSource] {
+        guard vector != nil, denseCacheBytes > 0 else {
+            return try rankedSources(query: query, vector: vector, model: model, limit: limit)
+        }
+        // One WAL snapshot covers version checking, FTS and the dense scan, even
+        // if another connection replaces a document during this request.
+        try exec("BEGIN")
+        do {
+            let version = try databaseVersion()
+            if denseCache.dataVersion != version {
+                denseCache = DenseCache(dataVersion: version)
+            }
+            let sources = try rankedSources(query: query, vector: vector, model: model, limit: limit)
+            try exec("COMMIT")
+            return sources
+        } catch {
+            try? exec("ROLLBACK")
+            denseCache = DenseCache()
+            throw error
+        }
+    }
+
+    private func databaseVersion() throws -> Int64 {
+        let s = try statement("PRAGMA data_version")
+        defer { sqlite3_finalize(s) }
+        guard sqlite3_step(s) == SQLITE_ROW else { throw databaseError() }
+        return sqlite3_column_int64(s, 0)
+    }
+
+    private func visitDenseChunks(_ visit: (SourceChunk) -> Void) throws {
+        for chunk in denseCache.chunks { visit(chunk) }
+        guard !denseCache.complete else { return }
+        let last = denseCache.lastRowID
+        let sql = last == nil ? "SELECT rowid,record FROM chunks ORDER BY rowid"
+                              : "SELECT rowid,record FROM chunks WHERE rowid > ? ORDER BY rowid"
+        let s = try statement(sql)
+        defer { sqlite3_finalize(s) }
+        if let last { sqlite3_bind_int64(s, 1, last) }
+        let decoder = JSONDecoder()
+        var step = sqlite3_step(s)
+        while step == SQLITE_ROW {
+            let chunk = try decoder.decode(SourceChunk.self, from: data(s, column: 1))
+            if !denseCache.full {
+                // Charge slack for array capacity, strings, ARC storage and the entry.
+                let strings = chunk.id.utf8.count + chunk.documentID.utf8.count + chunk.documentName.utf8.count
+                    + chunk.text.utf8.count + chunk.embeddingModel.utf8.count
+                let charge = 512 + chunk.vector.count * 8 + strings * 2
+                if charge <= denseCacheBytes - denseCache.chargedBytes {
+                    denseCache.chunks.append(chunk)
+                    denseCache.chargedBytes += charge
+                    denseCache.lastRowID = sqlite3_column_int64(s, 0)
+                } else {
+                    denseCache.full = true
+                }
+            }
+            visit(chunk)
+            step = sqlite3_step(s)
+        }
+        guard step == SQLITE_DONE else { throw databaseError() }
+        denseCache.complete = !denseCache.full
+    }
+
+    private func rankedSources(query: RetrievalQuery, vector: [Float]?, model: String, limit: Int) throws -> [RetrievedSource] {
         let terms = Set(LexicalTokenizer.retrievalTerms(query.lexical))
         func coverage(_ chunk: SourceChunk) -> Double {
             guard !terms.isEmpty else { return 0 }
@@ -128,13 +206,32 @@ actor KnowledgeIndex {
             // Absolute relevance is separate from RRF rank. A top-ranked unrelated
             // item is still unrelated. These conservative floors are not probabilities.
             let floor = model == LocalModelKind.embeddingIdentity ? 0.38 : 0.30
-            semantic = try allChunks().filter { $0.embeddingModel == model && $0.vector.count == vector.count }
-                .map { chunk -> (SourceChunk, Double) in
+            if denseCacheBytes == 0 {
+                semantic = try allChunks().filter { $0.embeddingModel == model && $0.vector.count == vector.count }
+                    .map { chunk -> (SourceChunk, Double) in
+                        let score = VectorMath.cosine(chunk.vector, vector)
+                        similarities[chunk.id] = score
+                        return (chunk, score)
+                    }.filter { $0.1 >= floor }
+                    .sorted { $0.1 > $1.1 }.prefix(24).map { $0.0 }
+            } else {
+                let lexicalIDs = Set(lex.map(\.id))
+                var best: [(chunk: SourceChunk, score: Double)] = []
+                try visitDenseChunks { chunk in
+                    guard chunk.embeddingModel == model, chunk.vector.count == vector.count else { return }
                     let score = VectorMath.cosine(chunk.vector, vector)
-                    similarities[chunk.id] = score
-                    return (chunk, score)
-                }.filter { $0.1 >= floor }
-                .sorted { $0.1 > $1.1 }.prefix(24).map { $0.0 }
+                    if lexicalIDs.contains(chunk.id) { similarities[chunk.id] = score }
+                    guard score >= floor else { return }
+                    if best.count == 24 {
+                        guard score > best[23].score else { return }
+                        best.removeLast()
+                    }
+                    let index = best.firstIndex { $0.score < score } ?? best.endIndex
+                    best.insert((chunk, score), at: index)
+                }
+                semantic = best.map(\.chunk)
+                for hit in best { similarities[hit.chunk.id] = hit.score }
+            }
         }
         return VectorMath.fuse(lexical: lex, semantic: semantic, limit: limit).map {
             var source = $0

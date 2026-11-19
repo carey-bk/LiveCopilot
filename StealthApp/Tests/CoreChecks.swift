@@ -133,8 +133,8 @@ enum CoreChecks {
         }
         try check("overlay preferences migrate and persist independently") {
             let migrated = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
-            try expect(migrated.overlayAutoHeight && migrated.overlayEdgeHide && migrated.showMenuBarIcon, "new window defaults missing")
-            var manual = migrated; manual.overlayAutoHeight = false; manual.overlayEdgeHide = false; manual.showMenuBarIcon = false
+            try expect(migrated.overlayAutoHeight && !migrated.overlayEdgeHide && migrated.showMenuBarIcon, "new window defaults missing")
+            var manual = migrated; manual.overlayAutoHeight = false; manual.overlayEdgeHide = true; manual.showMenuBarIcon = false
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(manual))
             try expect(restored == manual, "manual window preferences lost")
         }
@@ -534,6 +534,30 @@ enum CoreChecks {
         let v = try await MockEmbeddingProvider().embed([query.semantic])[0]
         let hybrid = try await index.retrieve(query: query, vector: v, model: "mock-embedding-v1", limit: 6)
         try expect(!hybrid.isEmpty, "hybrid failed"); passed.append("local hybrid retrieval end to end")
+        try await checkConcurrentKnowledge(root: root)
+        passed.append("dense cache isolates libraries and concurrent committed generations")
+        let cacheOff = try KnowledgeIndex(directory: root.appendingPathComponent("index"), denseCacheBytes: 0)
+        let tinyCache = try KnowledgeIndex(directory: root.appendingPathComponent("index"), denseCacheBytes: 600)
+        func verifyCache() async throws {
+            for limit in [1, 5, 12] {
+                let expected = try await cacheOff.retrieve(query: query, vector: v, model: "mock-embedding-v1", limit: limit)
+                for reader in [index, persisted, tinyCache] {
+                    let actual = try await reader.retrieve(query: query, vector: v, model: "mock-embedding-v1", limit: limit)
+                    try expect(actual == expected, "cached sources, scores or citations changed")
+                }
+            }
+        }
+        try await verifyCache()
+        var edited = restored
+        edited[0].vector = v
+        try await persisted.replaceChunks(edited, document: doc)
+        try await verifyCache()
+        do {
+            try await index.replaceChunks([edited[0], edited[0]], document: doc)
+            throw CheckError(description: "duplicate primary key accepted")
+        } catch is CopilotError {}
+        try await verifyCache()
+        try await persisted.replaceChunks(restored, document: doc)
         let wrong = try await index.retrieve(query: .formulate(question: "zzzzunrelated", context: ""), vector: v, model: "different-model", limit: 6)
         try expect(wrong.isEmpty, "incompatible model vectors used"); passed.append("embedding model mismatch exclusion")
         do { _ = try await index.reindex(doc, provider: FailingEmbedding()); throw CheckError(description: "failed embedding accepted") }
@@ -543,7 +567,10 @@ enum CoreChecks {
         let newDoc = try await index.reindex(doc, provider: MockEmbeddingProvider())
         let indexed = try await index.allChunks()
         try expect(indexed.count == newDoc.chunkCount, "re-index duplicated chunks"); passed.append("successful re-index atomically replaces chunks")
+        try await verifyCache()
         try await index.delete(doc.id)
+        try await verifyCache()
+        passed.append("dense cache parity across commits, rollback, external writes, re-index and delete")
         let empty = try await index.allChunks(); let emptyLex = try await index.lexical("latency")
         try expect(empty.isEmpty && emptyLex.isEmpty, "deletion left chunks or FTS rows"); passed.append("delete removes originals vectors metadata and FTS")
         // Provider tests exercise production request encoding/decoding and streamed error paths with no network.
@@ -755,6 +782,56 @@ enum CoreChecks {
         passed.append("Chat Completions truncated, empty, malformed and error streams fail safely")
         return passed
     }
+    private static func checkConcurrentKnowledge(root: URL) async throws {
+        let folder = root.appendingPathComponent("concurrent")
+        let writer = try KnowledgeIndex(directory: folder)
+        let readers = try [KnowledgeIndex(directory: folder), KnowledgeIndex(directory: folder, denseCacheBytes: 3_000)]
+        let other = try KnowledgeIndex(directory: root.appendingPathComponent("other"))
+        let doc = KnowledgeDocument(id: "same-document", name: "versioned", importedAt: Date(),
+                                    localPath: "", status: "Ready", chunkCount: 9, embeddingModel: "fixture")
+        func generation(_ version: Int) -> [SourceChunk] {
+            (0..<9).map { i in
+                SourceChunk(id: "same-\(i)", documentID: doc.id, documentName: "edition \(version)",
+                            ordinal: i, page: version, text: "marker \(version) item \(i)",
+                            vector: i == version ? [1, 0] : [0.5, 1], embeddingModel: "fixture")
+            }
+        }
+        let query = RetrievalQuery.formulate(question: "marker", context: "")
+        @Sendable func results(_ index: KnowledgeIndex) async throws -> [RetrievedSource] {
+            try await index.retrieve(query: query, vector: [1, 0], model: "fixture", limit: 12)
+        }
+        let first = generation(1), second = generation(2)
+        let empty = try await results(readers[0])
+        try expect(empty.isEmpty, "empty snapshot not empty")
+        try await writer.replaceChunks(first, document: doc)
+        let a = try await results(readers[0])
+        try await writer.replaceChunks(second, document: doc)
+        let b = try await results(readers[0])
+        try expect(a.count == 9 && b.count == 9 && a != b, "missing generation transition")
+        try await other.replaceChunks(generation(3), document: doc)
+        let isolated = try await results(other)
+        try expect(isolated != a && isolated != b, "library collision")
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                for i in 0..<60 {
+                    try await writer.replaceChunks(i.isMultiple(of: 2) ? first : second, document: doc)
+                }
+            }
+            for index in readers + readers {
+                group.addTask {
+                    for _ in 0..<75 {
+                        let observed = try await results(index)
+                        try expect(observed == a || observed == b, "mixed document generations")
+                    }
+                }
+            }
+            try await group.waitForAll()
+        }
+        let final = try await results(readers[1])
+        let unchanged = try await results(other)
+        try expect(final == b && unchanged == isolated, "post-commit visibility or library isolation failed")
+    }
+
 }
 struct FailingEmbedding: EmbeddingProvider {
     let model = "failing"

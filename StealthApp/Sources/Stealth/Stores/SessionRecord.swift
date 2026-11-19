@@ -60,7 +60,7 @@ struct SessionEvent: Identifiable, Equatable {
     }
     func exported(markdown: Bool, english: Bool = false) -> String {
         let heading = "[\(at.formatted(date: .omitted, time: .standard))] \(role(english: english))"
-        var value = (markdown ? "### " : "") + heading + "\n\n" + content
+        var value = (markdown ? "### " : "") + heading + "\n\n" + (kind == .answer && !markdown ? AnswerEmphasis.plainText(content) : content)
         if kind == .answer, let answer {
             value += "\n\n" + (english ? "Status: " : "状态：") + answer.state
             if let warning = answer.warning { value += "\n" + warning }

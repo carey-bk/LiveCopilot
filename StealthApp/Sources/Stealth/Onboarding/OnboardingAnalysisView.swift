@@ -2,42 +2,14 @@ import SwiftUI
 
 struct OnboardingAnalysisView: View {
     @ObservedObject var coordinator: AppCoordinator
-    @State private var credentialsTop = CGFloat.zero
-    @State private var usedScrollShortcut = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
     private var locked: Bool { coordinator.isRunning || coordinator.isTransitioning }
     private var shared: Bool { coordinator.settings.reasoningService == .sharedOpenAI }
     var body: some View {
-        GeometryReader { geometry in
-            ScrollViewReader { proxy in
-                VStack(spacing: 6) {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
-                            OnboardingAnswerConfiguration(coordinator: coordinator).disabled(locked)
-                            credentials
-                                .id("credentials")
-                                .background(GeometryReader { position in
-                                    Color.clear.preference(key: AnswerCredentialsPosition.self, value: position.frame(in: .named("answer-scroll")).minY)
-                                })
-                        }.padding(4)
-                    }.coordinateSpace(name: "answer-scroll")
-                        .onPreferenceChange(AnswerCredentialsPosition.self) { credentialsTop = $0 }
-                    if !usedScrollShortcut && credentialsTop > geometry.size.height - 80 {
-                        Button {
-                            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) {
-                                usedScrollShortcut = true
-                                proxy.scrollTo("credentials", anchor: .top)
-                            }
-                        } label: {
-                            Label(b("Configure your API key", "向下配置 API Key"), systemImage: "arrow.down")
-                                .font(.system(size: 11))
-                        }.buttonStyle(.plain).foregroundStyle(Color.accentColor)
-                            .accessibilityIdentifier("onboarding-view-performance-key")
-                    }
-                }
-            }
-        }
+        VStack(alignment: .leading, spacing: 12) {
+            OnboardingAnswerConfiguration(coordinator: coordinator).disabled(locked)
+            credentials
+        }.padding(4).frame(maxHeight: .infinity, alignment: .center)
     }
     private var credentials: some View {
         OnboardingServiceSection(number: 2, title: b("API Key & connection test", "API Key 与连接测试")) {
@@ -51,11 +23,6 @@ struct OnboardingAnalysisView: View {
             }
         }
     }
-}
-
-private struct AnswerCredentialsPosition: PreferenceKey {
-    static var defaultValue = CGFloat.zero
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 struct OnboardingConnectionFeedback: View {

@@ -168,3 +168,17 @@ final class HistoryTests: XCTestCase {
         print("Synthetic session title: \(title)")
     }
 }
+
+final class AnswerEmphasisTests: XCTestCase {
+    func testCompleteEmphasisAndUnicode() {
+        let text = AnswerEmphasis.parsed("延迟从 **820 毫秒降到 310 毫秒**，准确率 **97.8%**。")
+        XCTAssertEqual(String(text.characters), "延迟从 820 毫秒降到 310 毫秒，准确率 97.8%。")
+        XCTAssertEqual(text.runs.filter { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true }.count, 2)
+    }
+    func testPartialStreamingDelimitersAndParagraphs() {
+        XCTAssertEqual(AnswerEmphasis.plainText("采用 **early-exit", streaming: true), "采用 early-exit")
+        XCTAssertEqual(AnswerEmphasis.plainText("采用 **early-exit*", streaming: true), "采用 early-exit")
+        XCTAssertEqual(AnswerEmphasis.plainText("**方法**\n\n**结果**"), "方法\n\n结果")
+        XCTAssertEqual(AnswerEmphasis.plainText("[S1] 97.8%"), "[S1] 97.8%")
+    }
+}

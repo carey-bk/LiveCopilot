@@ -257,6 +257,11 @@ struct AnswerRequest {
         This response-language instruction has priority over scenario style, evidence language and history, unless the user explicitly requests another language or format in their answer style preferences.
         \(scenario.instructions)
         \(taskInstructions)
+        In the spoken answer, use Markdown **bold** for a few short key methods, conclusions or
+        important measurements that help the user scan while speaking. Usually emphasize 1-3 short
+        phrases per paragraph; a simple answer may need none. Keep numbers and units together,
+        and emphasize a before/after comparison together. Never bold whole sentences or paragraphs.
+        Do not add facts or verbosity for emphasis. Keep evidence notes and source markers unhighlighted.
         \(answerStyleInstructions)
         \(knowledgeMode.instructions)
         Clearly qualify uncertain inferences and hypothetical examples in natural language. Never
@@ -322,7 +327,7 @@ enum SuggestionParser {
         for line in text.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let heading = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "#*:： "))
-            let known = ["suggested answer", "evidence & notes", "evidence and notes", "recap", "follow-up", "建议回答", "回答建议", "证据与说明", "证据与备注", "总结", "追问"]
+            let known = ["suggested answer", "evidence & notes", "evidence and notes", "recap", "follow-up", "建议回答", "回答建议", "依据与补充", "依據與補充", "证据与说明", "证据与备注", "总结", "追问"]
             if trimmed.hasPrefix("## ") || trimmed.hasPrefix("### ") || known.contains(heading.lowercased()) {
                 flush(); title = heading
             } else { body.append(line) }
@@ -382,5 +387,27 @@ enum ProfessionalTerms {
             guard !term.isEmpty, seen.insert(term.folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX"))).inserted else { return nil }
             return term
         }
+    }
+}
+
+/// Shared display/copy interpretation; raw Markdown remains in saved answers.
+enum AnswerEmphasis {
+    static func parsed(_ source: String, streaming: Bool = false) -> AttributedString {
+        var text = source
+        if streaming {
+            // Hold an incomplete delimiter; complete emphasis is parsed normally.
+            if text.hasSuffix("*") && !text.hasSuffix("**") { text.removeLast() }
+            let pattern = #"(?<![\\*])\*\*(?!\*)"#
+            if let regex = try? NSRegularExpression(pattern: pattern) {
+                let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+                if matches.count % 2 == 1, let last = matches.last, let range = Range(last.range, in: text) {
+                    text.removeSubrange(range)
+                }
+            }
+        }
+        return (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+    }
+    static func plainText(_ source: String, streaming: Bool = false) -> String {
+        String(parsed(source, streaming: streaming).characters)
     }
 }

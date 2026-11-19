@@ -15,20 +15,20 @@ struct OnboardingAtmosphere: View {
     private var pink: UnitPoint {
         switch step {
         case .language: return UnitPoint(x: 0.08, y: 0.18)
+        case .workflow: return UnitPoint(x: 0.20, y: 0.12)
         case .introduction: return UnitPoint(x: 0.32, y: 0.06)
         case .models: return UnitPoint(x: 0.72, y: 0.15)
         case .analysis: return UnitPoint(x: 0.94, y: 0.48)
-        case .permissions: return UnitPoint(x: 0.62, y: 0.86)
         case .ready: return UnitPoint(x: 0.16, y: 0.62)
         }
     }
     private var blue: UnitPoint {
         switch step {
         case .language: return UnitPoint(x: 0.94, y: 0.90)
+        case .workflow: return UnitPoint(x: 0.90, y: 0.78)
         case .introduction: return UnitPoint(x: 0.83, y: 0.66)
         case .models: return UnitPoint(x: 0.22, y: 0.82)
         case .analysis: return UnitPoint(x: 0.08, y: 0.46)
-        case .permissions: return UnitPoint(x: 0.24, y: 0.06)
         case .ready: return UnitPoint(x: 0.88, y: 0.28)
         }
     }
@@ -50,17 +50,17 @@ struct OnboardingStepProgress: View {
     let language: AppLanguage
     let reduceMotion: Bool
     private var label: String {
-        ServiceGuide.text("Step \(step.rawValue + 1) of 6", "第 \(step.rawValue + 1) 步，共 6 步", language)
+        ServiceGuide.text("Step \(step.position + 1) of \(OnboardingStep.allCases.count)", "第 \(step.position + 1) 步，共 \(OnboardingStep.allCases.count) 步", language)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 6) {
                 ForEach(OnboardingStep.allCases) { item in
                     Capsule()
-                        .fill(item.rawValue <= step.rawValue ? Color.accentColor.opacity(item == step ? 1 : 0.55) : Color.primary.opacity(0.12))
+                        .fill(item.position <= step.position ? Color.accentColor.opacity(item == step ? 1 : 0.55) : Color.primary.opacity(0.12))
                         .frame(width: item == step ? 46 : 26, height: 7)
                 }
-            }.frame(width: 206, alignment: .leading)
+            }
                 .animation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.86).speed(OnboardingMotion.speed), value: step)
             Text(label).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
                 .contentTransition(.numericText())

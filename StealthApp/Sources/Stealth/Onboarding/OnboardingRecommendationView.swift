@@ -43,9 +43,7 @@ struct OnboardingRecommendationView: View {
                 HStack(spacing: 2) {
                     ForEach([true, false], id: \.self) { enabled in
                         recommendationButton(enabled ? b("Needed", "需要") : b("Not needed", "不需要"), selected: store.state.wantsKnowledge == enabled) {
-                            coordinator.onboarding.state.knowledgeRequested = enabled
-                            coordinator.onboarding.state.wantsKnowledge = enabled
-                            OnboardingRecommendation.apply(coordinator)
+                            OnboardingRecommendation.selectKnowledge(enabled, coordinator: coordinator)
                         }
                     }
                 }.padding(2).background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 7))
@@ -115,7 +113,7 @@ struct OnboardingDetectedModelsView: View {
                         Spacer(minLength: 3)
                         OnboardingCapabilityBadge(status: capability.status, language: coordinator.settings.language)
                     }
-                    Text(capability.enabled ? capability.model : b("Not enabled", "暂不启用"))
+                    Text(capability.id == .proactive ? b("Automatic question recognition", "自动识别提问") : capability.model)
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
@@ -138,7 +136,7 @@ struct OnboardingDetectedModelsView: View {
         switch feature {
         case .speech: return b("Speech recognition", "语音识别")
         case .knowledge: return b("Knowledge retrieval", "知识库检索")
-        case .proactive: return b("Proactive replies", "主动回答")
+        case .proactive: return "Jev Mode"
         }
     }
 }

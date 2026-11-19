@@ -33,7 +33,13 @@ struct SettingsView: View {
                 VStack(spacing: 5) {
                     ForEach(SettingsPage.allCases) { item in
                         Button { page = item } label: {
-                            Label(t(item.rawValue), systemImage: item.icon)
+                            Label {
+                                Text(t(item.rawValue))
+                            } icon: {
+                                Image(systemName: item.icon)
+                                    .font(.system(size: 14, weight: .regular))
+                                    .frame(width: 18)
+                            }
                                 .font(.system(size: 14, weight: page == item ? .semibold : .regular))
                                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 11)
                                 .background(page == item ? Color.accentColor.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 8))
@@ -52,6 +58,7 @@ struct SettingsView: View {
                 Text(t(page.rawValue)).font(.system(size: 24, weight: .semibold))
                 switch page {
                 case .general: ScrollView { general }
+                case .modesAndScenarios: ScrollView { modesAndScenarios }
                 case .services: ScrollView { services }
                 case .knowledge: knowledge
                 case .history: HistoryView(coordinator: coordinator)
@@ -180,37 +187,6 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(10)
             } label: { Label(t("Menu bar"), systemImage: "menubar.rectangle") }
-            SettingsSection {
-                VStack(alignment: .leading, spacing: 14) {
-                    Picker(t("Operating mode"), selection: $coordinator.settings.mode) {
-                        ForEach(OperatingMode.allCases) { Text(t($0.rawValue)).tag($0) }
-                    }.disabled(locked)
-                    Text(b("Remote Meeting separates system audio (Them) from your microphone (You); In-Person uses one room microphone, without speaker diarization.", "远程会议：系统音频标为对方、麦克风标为我；现场/答辩：仅用房间麦克风，不区分具体说话人。")).font(.caption).foregroundStyle(.secondary)
-                    Picker(t("Scenario"), selection: $coordinator.settings.scenario) {
-                        ForEach(ScenarioProfile.allCases) { Text(t($0.rawValue)).tag($0) }
-                    }.disabled(locked)
-                    Text(b("Interview: personal experience and talking points. Meeting: decisions and next actions. Defense: methods, evidence and limitations. These change answer instructions, not ASR accuracy.", "面试：个人经历与表达要点；会议：决策与后续行动；答辩：方法、证据与局限。场景改变回答提示词，不改变语音识别准确率。")).font(.caption).foregroundStyle(.secondary)
-                    if locked { Text(t("Stop listening to change mode or scenario.")).font(.caption).foregroundStyle(.secondary) }
-                    Toggle(t("Automatic suggestions for meaningful questions"), isOn: $coordinator.settings.automaticSuggestions)
-                        .accessibilityIdentifier("automatic-suggestions")
-                    Button(b("View real-time answer triggers", "查看实时回答触发")) { page = .services; serviceRole = 1 }
-                }.padding(10)
-            } label: { Label(t("Conversation"), systemImage: "waveform") }
-            SettingsSection {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle(t("Recap"), isOn: $coordinator.settings.recapEnabled)
-                        .accessibilityIdentifier("enable-recap")
-                    Text(t("Summarize recent topics, decisions and unresolved questions, including action items and owners when mentioned."))
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    Divider()
-                    Toggle(t("Follow-up"), isOn: $coordinator.settings.followUpEnabled)
-                        .accessibilityIdentifier("enable-follow-up")
-                    Text(.init(t("Suggest **one question you can ask next** to clarify information or explore the topic, phrased naturally to say aloud.")))
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    Text(t("Turning a tool off hides its button and disables its shortcut."))
-                        .font(.caption2).foregroundStyle(.secondary)
-                }.padding(10)
-            } label: { Label(t("Conversation tools"), systemImage: "list.bullet.rectangle") }
             liveSection(b("Audio permissions", "音频权限")) {
                 ForEach([true, false], id: \.self) { microphone in
                     HStack {
@@ -232,6 +208,43 @@ struct SettingsView: View {
 
         }.padding(.bottom, 4)
     }
+    private var modesAndScenarios: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            SettingsSection {
+                VStack(alignment: .leading, spacing: 14) {
+                    Picker(t("Operating mode"), selection: $coordinator.settings.mode) {
+                        ForEach(OperatingMode.allCases) { Text(t($0.rawValue)).tag($0) }
+                    }.disabled(locked)
+                    Text(b("Remote Meeting separates system audio (Them) from your microphone (You); In-Person uses one room microphone, without speaker diarization.", "远程会议：系统音频标为对方、麦克风标为我；现场/答辩：仅用房间麦克风，不区分具体说话人。")).font(.caption).foregroundStyle(.secondary)
+                    Picker(t("Scenario"), selection: $coordinator.settings.scenario) {
+                        ForEach(ScenarioProfile.allCases) { Text(t($0.rawValue)).tag($0) }
+                    }.disabled(locked)
+                    Text(b("Interview: personal experience and talking points. Meeting: decisions and next actions. Defense: methods, evidence and limitations. These change answer instructions, not ASR accuracy.", "面试：个人经历与表达要点；会议：决策与后续行动；答辩：方法、证据与局限。场景改变回答提示词，不改变语音识别准确率。")).font(.caption).foregroundStyle(.secondary)
+                    if locked { Text(t("Stop listening to change mode or scenario.")).font(.caption).foregroundStyle(.secondary) }
+                }.padding(10)
+            } label: { Label(t("Conversation"), systemImage: "waveform") }
+            JevModeCard(isOn: $coordinator.settings.automaticSuggestions, language: coordinator.settings.language,
+                        identifier: "automatic-suggestions", showTriggerSettings: {
+                page = .services
+                serviceRole = 1
+            })
+            SettingsSection {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle(t("Recap"), isOn: $coordinator.settings.recapEnabled)
+                        .accessibilityIdentifier("enable-recap")
+                    Text(t("Summarize recent topics, decisions and unresolved questions, including action items and owners when mentioned."))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Divider()
+                    Toggle(t("Follow-up"), isOn: $coordinator.settings.followUpEnabled)
+                        .accessibilityIdentifier("enable-follow-up")
+                    Text(.init(t("Suggest **one question you can ask next** to clarify information or explore the topic, phrased naturally to say aloud.")))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(t("Turning a tool off hides its button and disables its shortcut."))
+                        .font(.caption2).foregroundStyle(.secondary)
+                }.padding(10)
+            } label: { Label(t("Conversation tools"), systemImage: "list.bullet.rectangle") }
+        }.padding(.bottom, 4)
+    }
     private var automaticTriggerSettings: some View {
         JevSettingsView(coordinator: coordinator, laya: laya)
     }
@@ -240,7 +253,7 @@ struct SettingsView: View {
             Picker(t("Service role"), selection: $serviceRole) {
                 Text(b("Speech recognition", "语音识别")).tag(0)
                 Text(b("Answer triggers", "实时回答触发")).tag(1)
-                Text(b("Knowledge base", "知识库")).tag(2)
+                Text(b("Knowledge indexing", "知识库索引")).tag(2)
                 Text(b("Analysis & answers", "分析与回答")).tag(3)
             }.pickerStyle(.segmented).accessibilityIdentifier("service-role")
             switch serviceRole {
@@ -419,25 +432,36 @@ struct SettingsView: View {
     }
     private var embeddingService: some View {
         VStack(alignment: .leading, spacing: 18) {
-            liveSection(b("Indexing model", "索引模型")) {
-                Picker(t("Embedding provider"), selection: $coordinator.settings.embeddingService) {
+            liveSection(b("Knowledge indexing", "知识库索引")) {
+                Text(b("Index imported documents and retrieve relevant passages before an answer is generated.", "为导入的文档建立索引，在生成回答前找出相关片段。"))
+                Button(b("Configure the answer model in Analysis & answers", "前往「分析与回答」配置回答模型")) { serviceRole = 3 }
+                    .buttonStyle(.link)
+                Divider()
+                Picker(b("Knowledge index model", "知识库索引模型"), selection: $coordinator.settings.embeddingService) {
                     ForEach(EmbeddingService.allCases) { service in
-                        Text(t(service.label) + (service == .local ? b(" · local/free", " · 本地/免费") : b(" · billed per token", " · 按 token 计费"))).tag(service)
+                        Text(service == .local ? b("BGE-M3 (local, recommended)", "BGE-M3（本地，推荐）") : b("OpenAI index model (remote)", "OpenAI 索引模型（远程）")).tag(service)
                     }
                 }.disabled(coordinator.isIndexing || coordinator.answerIsRunning).accessibilityIdentifier("embedding-provider")
+                Text(b("Converts documents and questions to vectors to find related passages. This model does not generate answers.", "将文档和问题转换为向量，以便检索相关片段。此模型不负责生成回答。"))
+                    .font(.callout).foregroundStyle(.secondary)
                 if coordinator.settings.embeddingService == .openAI {
+                    Text(b("Billed per token · knowledge indexing only", "按 token 计费 · 仅用于知识库索引")).font(.caption)
                     modelField("Embedding model", value: $coordinator.settings.embeddingModel).disabled(coordinator.isIndexing)
                     Text(ServiceGuide.embeddingPrice(coordinator.settings.embeddingModel, language: coordinator.settings.language, compact: true))
                         .font(.caption).foregroundStyle(.secondary)
                 } else {
-                    Text(b("Runs locally · No API fees", "本地运行 · 无 API 费用")).font(.caption).foregroundStyle(.secondary)
+                    Text(b("Recommended for most users · runs locally · free · no OpenAI key required", "推荐多数用户使用 · 本地运行 · 免费 · 无需 OpenAI Key")).font(.caption).foregroundStyle(.secondary)
                 }
             }
             if coordinator.settings.embeddingService == .local {
-                Text(t("Document and query embeddings run on this Mac. No OpenAI key or network is needed after downloading the model.")).font(.callout).foregroundStyle(.secondary)
                 LocalModelCard(manager: coordinator.localModels, kind: .embedding, language: coordinator.settings.language, locked: locked || coordinator.isIndexing || coordinator.answerIsRunning, remove: { coordinator.removeLocalModel(.embedding) })
             } else {
                 Text(t("Extracted document text and retrieval queries are sent to OpenAI Embeddings using the shared OpenAI credential.")).font(.callout).foregroundStyle(.secondary)
+                if !coordinator.hasAPIKey {
+                    Text(b("No OpenAI key configured for remote indexing. Use local BGE-M3 to index without a key. Your answer model configuration is separate.", "远程索引尚未配置 OpenAI Key。可切回本地 BGE-M3 免密钥建立索引。回答模型在「分析与回答」中单独配置。")).font(.callout)
+                } else if case .failed = coordinator.embeddingVerification {
+                    Text(b("Remote indexing failed. You can switch to local BGE-M3. This check only tests knowledge indexing.", "远程索引连接失败，可切回本地 BGE-M3。本次检查仅针对知识库索引，不代表回答服务连接失败。")).font(.callout)
+                }
                 CredentialEditor(coordinator: coordinator, analysis: false, embeddingLayout: true)
             }
             if coordinator.knowledgeNeedsReindex {
@@ -685,7 +709,7 @@ struct SettingsView: View {
                     Button(t("Reset")) { recordShortcut { coordinator.resetHotkey(mode) } }
                 }.disabled(!coordinator.settings.isEnabled(mode))
                 if !coordinator.settings.isEnabled(mode) {
-                    Text(t("Enable this tool in General to use its shortcut.")).font(.caption).foregroundStyle(.secondary)
+                    Text(t("Enable this tool in Modes & Scenarios to use its shortcut.")).font(.caption).foregroundStyle(.secondary)
                 }
             }
             if shortcutConflict {
@@ -707,11 +731,12 @@ struct SettingsView: View {
 }
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-    case general = "General", services = "Services", knowledge = "Knowledge", history = "History", shortcuts = "Shortcuts", about = "About"
+    case general = "General", modesAndScenarios = "Modes & Scenarios", services = "Services", knowledge = "Knowledge", history = "History", shortcuts = "Shortcuts", about = "About"
     var id: String { rawValue.lowercased() }
     var icon: String {
         switch self {
         case .general: return "slider.horizontal.3"
+        case .modesAndScenarios: return "waveform"
         case .services: return "shippingbox"
         case .knowledge: return "books.vertical"
         case .history: return "clock.arrow.circlepath"
@@ -735,7 +760,7 @@ private struct LocalModelCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(kind == .embedding ? (ServiceGuide.text("Local knowledge index model", "知识库本地索引模型", language)) : kind.title).font(.headline)
+                    Text(kind == .embedding ? (ServiceGuide.text("BGE-M3 local index model", "BGE-M3 本地索引模型", language)) : kind.title).font(.headline)
                     Text(t("Download size") + " · " + kind.downloadSize).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -789,6 +814,7 @@ private struct LocalModelCard: View {
     private var statusTitle: String {
         if manager.checking == kind { return ServiceGuide.text("Checking…", "正在自检…", language) }
         if let report = manager.health[kind] {
+            if kind == .embedding && report.ready { return ServiceGuide.text("Self-check passed · offline indexing ready", "自检通过，可离线用于知识库索引", language) }
             return report.ready ? (ServiceGuide.text("Self-check passed · offline ready", "自检通过 · 可离线使用", language)) : (ServiceGuide.text("Self-check failed", "自检未通过", language))
         }
         if manager.downloading == kind { return ServiceGuide.text("Downloading…", "正在下载…", language) }
@@ -826,7 +852,13 @@ private struct CredentialStatus: View {
     }
 }
 
+extension Notification.Name {
+    static let onboardingFocusCredential = Notification.Name("livecopilot.onboarding.focusCredential")
+}
+
 struct CredentialEditor: View {
+    @FocusState private var credentialFocused: Bool
+
     @ObservedObject var coordinator: AppCoordinator
     let analysis: Bool
     var onboarding = false
@@ -849,6 +881,7 @@ struct CredentialEditor: View {
     @State private var testedCredentialRevision: UUID?
     @State private var connectionFailure: OnboardingConnectionFailure?
     private var effectiveFailure: OnboardingConnectionFailure? {
+        if analysisLayout { return coordinator.analysisConnectionFailure }
         if embeddingLayout, case .failed(let message) = coordinator.embeddingVerification {
             return .classify(CopilotError.message(message))
         }
@@ -859,7 +892,7 @@ struct CredentialEditor: View {
         if embeddingLayout { return coordinator.embeddingVerification.isReady }
         return connectionTestSucceeded
     }
-    private var connectionBusy: Bool { testingConnection || (embeddingLayout && coordinator.embeddingVerification.isChecking) }
+    private var connectionBusy: Bool { testingConnection || (analysisLayout && coordinator.testingAnalysisConnection) || (embeddingLayout && coordinator.embeddingVerification.isChecking) }
     private var analysisConnectionIdentity: String {
         let s = coordinator.settings
         return [s.reasoningService.rawValue, s.analysisModel, s.reasoningEffort, s.analysisProcessing.rawValue,
@@ -894,6 +927,11 @@ struct CredentialEditor: View {
         }
         .onAppear { editorVisible = true }
         .onDisappear { editorVisible = false; value = ""; editing = false; resetConnectionTest() }
+        .onReceive(NotificationCenter.default.publisher(for: .onboardingFocusCredential)) { _ in
+            guard onboarding else { return }
+            editing = true
+            credentialFocused = true
+        }
         .onChange(of: coordinator.settings.liveModel) { _, _ in if liveLayout { resetConnectionTest() } }
         .onChange(of: coordinator.settings.embeddingModel) { _, _ in if embeddingLayout { resetConnectionTest() } }
         .onChange(of: available) { _, newValue in if !newValue { resetConnectionTest() } }
@@ -906,7 +944,7 @@ struct CredentialEditor: View {
                 CredentialStatus(coordinator: coordinator, analysis: analysis, embedding: embeddingLayout)
                 if editing || (!available && !needsAuthorization) {
                     SecureField(t(available ? "Enter a replacement key" : "Enter a key to save in Keychain"), text: $value)
-                        .textFieldStyle(.roundedBorder).accessibilityIdentifier("credential-input")
+                        .textFieldStyle(.roundedBorder).focused($credentialFocused).accessibilityIdentifier("credential-input")
                 }
                 HStack(spacing: 10) {
                     if editing || (!available && !needsAuthorization) {
@@ -927,7 +965,8 @@ struct CredentialEditor: View {
                         }
                     }
                     if hasConnectionTest {
-                        Button(ServiceGuide.text("Test connection", "测试连接", coordinator.settings.language)) { testConnection() }
+                        Button(ServiceGuide.text(effectiveFailure == nil ? "Test connection" : "Retry test", effectiveFailure == nil ? "测试连接" : "重新测试", coordinator.settings.language)) { testConnection() }
+                            .buttonStyle(.borderedProminent).tint(.blue)
                             .disabled(!available || saving || checking || connectionBusy || coordinator.isRunning || coordinator.isTransitioning || (analysisLayout && coordinator.settings.analysisModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || (coordinator.isMock && !analysisLayout))
                             .accessibilityIdentifier(onboarding ? "onboarding-test-connection" : "credential-test-connection")
                         if connectionBusy {
@@ -960,10 +999,14 @@ struct CredentialEditor: View {
                         .accessibilityIdentifier("credential-check-result")
                 }
                 if !message.isEmpty { Text(t(message)).font(.caption).textSelection(.enabled) }
-                Text((onboarding || liveLayout)
+                Text(onboarding ? ServiceGuide.text("Check key confirms the saved key is accessible in this Mac’s Keychain.", "检查密钥会确认本机钥匙串中的密钥能否读取。", coordinator.settings.language) : liveLayout
                      ? ServiceGuide.text("Saved in macOS Keychain on this Mac. Each provider's key is managed separately.", "密钥保存在本机 macOS 钥匙串，各服务商密钥独立管理。", coordinator.settings.language)
                      : t("Saved securely on this Mac and reused on launch."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if onboarding && analysisLayout && connectionVerified && !coordinator.isMock {
+                    Label(ServiceGuide.text("Answer service ready. You can continue.", "回答服务已就绪，可以继续。", coordinator.settings.language), systemImage: "checkmark.circle.fill")
+                        .font(.caption).foregroundStyle(.green)
+                }
                 if analysisLayout {
                     Text(ServiceGuide.text("Testing sends one short example question, without your conversation or documents, and may incur API charges.", "测试仅发送一条简短示例问题，不附带对话或资料，可能产生 API 费用。", coordinator.settings.language))
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -1120,12 +1163,8 @@ private struct JevSettingsView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            card {
-                Toggle(isOn: $coordinator.settings.automaticSuggestions) {
-                    Text("Jev Mode").font(.headline).accessibilityAddTraits(.isHeader)
-                }.disabled(coordinator.isTestingLaya).accessibilityIdentifier("jev-enabled")
-                Text(b("Recognize when a response is needed and automatically generate answers.", "判断此时是否需要回应，自动生成回答。"))
-                    .font(.callout).foregroundStyle(.secondary)
+            JevModeCard(isOn: $coordinator.settings.automaticSuggestions, language: coordinator.settings.language,
+                        identifier: "jev-enabled", details: {
                 Label("Laya · " + stateTitle, systemImage: stateIcon)
                     .font(.caption).foregroundStyle(stateColor).accessibilityIdentifier("laya-runtime-status")
                 if coordinator.settings.listeningService == .openAI {
@@ -1150,7 +1189,8 @@ private struct JevSettingsView: View {
                     Spacer()
                     Text(b("More responses", "更多响应"))
                 }.font(.caption).foregroundStyle(.secondary)
-            }
+            })
+            .disabled(coordinator.isTestingLaya)
             card {
                 HStack {
                     Text(b("Local model management", "本地模型管理")).font(.headline)

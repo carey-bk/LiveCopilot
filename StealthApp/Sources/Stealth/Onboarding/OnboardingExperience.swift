@@ -49,14 +49,14 @@ struct OnboardingRecommendation: Equatable {
         }
         return result
     }
-    func applying(to settings: AppSettings) -> AppSettings {
+    func applying(to settings: AppSettings, preserveJev: Bool = false) -> AppSettings {
         var result = applyingSpeech(to: settings)
-        if !typing { result.automaticSuggestions = recommendsJev }
+        if !typing && !preserveJev { result.automaticSuggestions = recommendsJev }
         if wantsKnowledge { result.embeddingService = .local }
         return result
     }
     @MainActor func matches(_ coordinator: AppCoordinator) -> Bool {
-        applying(to: coordinator.settings) == coordinator.settings && coordinator.onboarding.state.wantsKnowledge == wantsKnowledge
+        applying(to: coordinator.settings, preserveJev: coordinator.onboarding.state.jevChoiceReviewed == true) == coordinator.settings && coordinator.onboarding.state.wantsKnowledge == wantsKnowledge
     }
     @MainActor static func selectedScenario(_ coordinator: AppCoordinator) -> OnboardingSpeechScenario {
         coordinator.onboarding.state.speechScenario ?? .mixedInterview
@@ -103,7 +103,7 @@ struct OnboardingRecommendation: Equatable {
     @MainActor static func apply(_ coordinator: AppCoordinator) {
         guard canEdit(coordinator) else { return }
         let plan = current(coordinator)
-        coordinator.settings = plan.applying(to: coordinator.settings)
+        coordinator.settings = plan.applying(to: coordinator.settings, preserveJev: coordinator.onboarding.state.jevChoiceReviewed == true)
         coordinator.onboarding.state.wantsKnowledge = plan.wantsKnowledge
         coordinator.onboarding.state.knowledgeRequested = plan.wantsKnowledge
         coordinator.onboarding.state.speechScenario = plan.speechScenario

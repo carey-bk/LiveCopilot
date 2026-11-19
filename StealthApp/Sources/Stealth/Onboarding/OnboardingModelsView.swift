@@ -63,7 +63,7 @@ struct OnboardingModelsView: View {
             OnboardingRecommendationView(coordinator: coordinator)
             capabilityCard(.speech, title: b("Live transcription", "实时转写"), icon: "waveform", status: setup[.speech].status) {
                 if store.state.prefersTyping {
-                    Text(b("Typing first · no speech setup needed", "先输入问题 · 暂不启用语音识别"))
+                    HStack { Text(speechName); Spacer(); speechLanguage.disabled(true) }
                 } else {
                     HStack(spacing: 8) {
                         Text(speechName).fontWeight(.medium)
@@ -72,25 +72,48 @@ struct OnboardingModelsView: View {
                         speechLanguage
                     }.id(coordinator.settings.listeningService).transition(.opacity)
                 }
+                if let kind = coordinator.settings.listeningService.localModel, models.installed.contains(kind) {
+                    HStack(spacing: 8) {
+                        if coordinator.currentSpeechRuntime == .loading {
+                            ProgressView().controlSize(.small)
+                            Text(b("Verifying model…", "正在验证模型…"))
+                        } else {
+                            Button(coordinator.currentSpeechRuntime == .failed ? b("Retry verification", "重新验证") : b("Verify model", "验证模型")) {
+                                coordinator.verifyOnboardingSpeech()
+                            }.disabled(locked).accessibilityIdentifier("onboarding-verify-speech")
+                            Text(b("Loads locally; no recording.", "仅加载本地模型，不录音。"))
+                                .foregroundStyle(.secondary)
+                        }
+                    }.font(.caption)
+                    if coordinator.currentSpeechRuntime == .failed, let error = coordinator.speechVerificationError {
+                        Text(error).font(.caption).foregroundStyle(.red).lineLimit(2).help(error)
+                    }
+                }
             }
             capabilityCard(.knowledge, title: b("Knowledge retrieval", "知识库检索"), icon: "books.vertical", status: setup[.knowledge].status) {
-                Toggle(isOn: knowledgeSelection) {
-                    Text(b("Search résumés, project experience and professional materials locally to ground personalized AI answers.", "本地智能检索简历、项目经历及专业资料，为 AI 生成个性化回答提供可靠依据。"))
-                        .fixedSize(horizontal: false, vertical: true)
-                }.disabled(!editable).accessibilityIdentifier("onboarding-knowledge")
+                Text(setup[.knowledge].model + " · " + (store.state.wantsKnowledge ? b("Enabled", "已启用") : b("Not enabled", "未启用")))
+                if store.state.wantsKnowledge && coordinator.settings.embeddingService == .local {
+                    Text(b("Recommended · indexes documents locally, free of API charges and keys.", "推荐本地 BGE-M3：为文档建索引、检索相关片段，免费且无需 API Key。")).font(.caption)
+                }
             }
             capabilityCard(.jev, title: "Jev Mode", icon: "bolt", status: setup[.proactive].status) {
-                if store.state.prefersTyping {
-                    Text(b("Typing first · generate replies manually", "先输入问题 · 手动生成回答"))
-                } else {
-                    Toggle(isOn: $coordinator.settings.automaticSuggestions) {
-                        Text(coordinator.settings.listeningService.isLocal
-                             ? b("Locally detects when a question is complete, then automatically requests AI analysis and reply suggestions.", "本地智能实时判断提问是否完整，自动触发 AI 分析并生成回答建议，无需手动操作。")
-                             : b("Detects complete questions through cloud speech and automatically requests AI reply suggestions.", "云端语音服务判断提问是否完整，自动触发 AI 分析并生成回答建议，无需手动操作。"))
-                            .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(b("Automatic question recognition", "自动识别提问") + " · " + (coordinator.settings.listeningService.isLocal ? "Laya" : "GPT-Live") + (coordinator.settings.automaticSuggestions ? b(" · Enabled", " · 已启用") : ""))
+                    Text(store.state.prefersTyping ? (coordinator.settings.automaticSuggestions
+                         ? b("Enabled for voice. Typed questions are submitted manually.", "语音模式已启用；手动输入时直接提交问题。")
+                         : b("Off. Typed questions are submitted manually.", "未启用；手动输入时直接提交问题。"))
+                         : b("Detects complete questions and can trigger answer suggestions.", "用于判断提问是否完整，并在合适时机触发回答建议。"))
+                    if coordinator.settings.automaticSuggestions && coordinator.settings.listeningService.isLocal {
+                        if laya.state == .loading {
+                            HStack { ProgressView().controlSize(.small); Text(b("Verifying Jev Mode…", "正在验证 Jev Mode…")) }.font(.caption)
+                        } else if laya.state == .failed {
+                            HStack {
+                                Button(b("Retry verification", "重新验证")) { laya.prepare() }
+                                    .disabled(!laya.isInstalled || locked).accessibilityIdentifier("onboarding-retry-jev")
+                                Button(b("Error details", "查看错误")) { detail = .jev }.buttonStyle(.borderless)
+                            }
+                        }
                     }
-                        .disabled(!editable || (coordinator.settings.listeningService.isLocal && laya.state == .unsupported))
-                        .accessibilityIdentifier("onboarding-jev")
                 }
             }
             OnboardingDownloadSummary(setup: setup, language: coordinator.settings.language)
@@ -106,7 +129,17 @@ struct OnboardingModelsView: View {
                 guard !Task.isCancelled else { return }
                 OnboardingRecommendation.applyInitialIfNeeded(coordinator)
             }
+            coordinator.prepareOnboardingLayaIfNeeded()
+            verifyInstalledSpeechIfNeeded()
         }
+        .task(id: store.state.wantsKnowledge && coordinator.settings.embeddingService == .local && models.downloading == nil) {
+            if store.state.wantsKnowledge && coordinator.settings.embeddingService == .local && models.downloading == nil {
+                await models.verifyEmbeddingIfNeeded()
+            }
+        }
+        .onChange(of: models.installed) { _, _ in verifyInstalledSpeechIfNeeded() }
+        .onChange(of: models.downloading) { _, _ in verifyInstalledSpeechIfNeeded() }
+        .onChange(of: coordinator.settings.listeningService) { _, _ in verifyInstalledSpeechIfNeeded() }
         .popover(item: $detail) { selected in
             OnboardingAdvancedPanel(title: detailTitle(selected), icon: detailIcon(selected), language: coordinator.settings.language, close: { detail = nil }) {
                 switch selected {
@@ -122,8 +155,12 @@ struct OnboardingModelsView: View {
             }
         }
     }
-    private var knowledgeSelection: Binding<Bool> {
-        Binding(get: { store.state.wantsKnowledge }, set: { OnboardingRecommendation.selectKnowledge($0, coordinator: coordinator) })
+    private func verifyInstalledSpeechIfNeeded() {
+        guard !preparingRecommendation, !store.state.prefersTyping,
+              let kind = coordinator.settings.listeningService.localModel,
+              models.downloading != kind, models.installed.contains(kind),
+              coordinator.currentSpeechRuntime == .idle else { return }
+        coordinator.verifyOnboardingSpeech()
     }
     private func detailTitle(_ detail: Capability) -> String {
         switch detail { case .speech: return b("Live transcription", "实时转写"); case .knowledge: return b("Knowledge retrieval", "知识库检索"); case .jev: return "Jev Mode" }
@@ -138,17 +175,15 @@ struct OnboardingModelsView: View {
                 Label(title, systemImage: icon).font(.system(size: 14, weight: .semibold))
                 OnboardingCapabilityBadge(status: status, language: coordinator.settings.language)
                 Spacer(minLength: 4)
-                if capability != .jev {
                 Button(b("Advanced", "高级设置")) { detail = capability }
                     .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Color.accentColor)
                     .disabled(store.state.prefersTyping && capability != .knowledge)
                     .accessibilityLabel(title + b(" advanced settings", "高级设置"))
                     .accessibilityIdentifier("onboarding-advanced-" + capability.rawValue)
-                }
             }
             content().font(.system(size: 12)).foregroundStyle(.secondary).controlSize(.small)
         }.padding(.horizontal, 13).padding(.vertical, 11)
-            .frame(maxWidth: .infinity).frame(height: capability == .speech ? 72 : 86, alignment: .topLeading)
+            .frame(maxWidth: .infinity).frame(minHeight: capability == .speech ? 72 : 86, alignment: .topLeading)
             .background(.background.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.primary.opacity(0.055)))
     }
@@ -228,15 +263,17 @@ struct OnboardingModelsView: View {
     }
     private var knowledgeDetails: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Toggle(b("Use my documents for answers", "用自己的资料辅助回答"), isOn: knowledgeSelection).disabled(!editable)
-            note(b("Optional. Import documents later in Settings → Knowledge.", "可选，之后从“设置 → 知识库”导入资料。"))
+            note(b("The index finds relevant passages in your documents. Configure the answer model in Analysis & answers.", "索引模型用来从文档中找到相关片段。生成回答的模型请在「分析与回答」中配置。"))
             if store.state.wantsKnowledge {
-                Picker(b("Knowledge service", "资料处理方式"), selection: $coordinator.settings.embeddingService) {
-                    Text(b("Local · BGE-M3", "本地 · BGE-M3")).tag(EmbeddingService.local)
-                    Text("OpenAI Embeddings").tag(EmbeddingService.openAI)
+                Picker(b("Knowledge index model", "知识库索引模型"), selection: $coordinator.settings.embeddingService) {
+                    Text(b("BGE-M3 (local, recommended)", "BGE-M3（本地，推荐）")).tag(EmbeddingService.local)
+                    Text(b("OpenAI index model (remote)", "OpenAI 索引模型（远程）")).tag(EmbeddingService.openAI)
                 }.disabled(!editable)
                 if coordinator.settings.embeddingService == .local {
                     modelStatus(.embedding)
+                    if case .failed = models.embeddingVerification {
+                        Button(b("Retry verification", "重新验证")) { Task { await models.verifyEmbedding() } }
+                    }
                     note(b("Embeddings and retrieval run on this Mac.", "向量生成与检索在本机完成。"))
                 } else {
                     note(b("Indexing sends extracted document text to OpenAI and incurs API fees.", "生成索引时会将资料文本发送至 OpenAI，并产生 API 费用。"))
@@ -247,8 +284,6 @@ struct OnboardingModelsView: View {
     }
     private var jevDetails: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Toggle(b("Automatic suggestions", "自动生成建议"), isOn: $coordinator.settings.automaticSuggestions)
-                .disabled(!editable || (coordinator.settings.listeningService.isLocal && laya.state == .unsupported))
             note(b("Detects complete questions and requests your answer service. Manual replies remain available; answer generation may incur API fees.", "识别完整问题后请求回答服务，仍可随时手动触发。生成回答可能产生 API 费用。"))
             if coordinator.settings.listeningService.isLocal {
                 OnboardingCapabilityBadge(status: setup[.proactive].status, language: coordinator.settings.language)
@@ -271,6 +306,12 @@ struct OnboardingModelsView: View {
                         note(b("Laya includes the model and an isolated runtime.", "Laya 包含模型与独立运行环境。"))
                     }
                 }
+                if laya.state == .failed {
+                    DisclosureGroup(b("Technical details", "技术详情")) {
+                        Text(laya.diagnosticEvents.suffix(5).joined(separator: "\n"))
+                            .font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                }
             } else {
                 note(b("The cloud speech service detects questions. No local Laya download is needed.", "由云端语音服务判断问题，无需下载本地 Laya。"))
             }
@@ -291,15 +332,14 @@ struct OnboardingModelsView: View {
                 .foregroundStyle(report.ready ? Color.green : Color.orange)
             Text(coordinator.settings.language.interfaceText(report.advice(english: !coordinator.settings.language.usesChinese))).font(.caption)
             if !report.ready { Text(b("Open Settings → Services for self-check and diagnostics.", "请到设置 → 服务运行自检或复制诊断信息。")).font(.caption) }
-        } else if models.installed.contains(kind) {
+        } else if models.installed.contains(kind) && kind != .embedding {
             Label(b("Downloaded · run self-check in Services", "已下载 · 可到服务页运行自检"), systemImage: "internaldrive").font(.callout).foregroundStyle(.secondary)
         } else if models.queued.contains(kind) {
             Button(b("Cancel queued downloads", "取消排队下载")) { models.cancel() }
         } else if let failure = models.failures[kind] {
             note(L10n.text(failure, language: coordinator.settings.language))
             Button(b("Retry download", "重试下载")) { models.enqueue([kind]) }.disabled(!editable || coordinator.isMock)
-        } else if models.installed.contains(kind) {
-            note(b("Files are installed. Runtime readiness is verified when used.", "文件已安装，使用时验证运行状态。"))
+
         }
     }
 }

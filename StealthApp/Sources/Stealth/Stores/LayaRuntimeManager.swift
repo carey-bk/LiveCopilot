@@ -42,6 +42,13 @@ final class LayaRuntimeManager: ObservableObject {
     }
     func install() { begin(download: true) }
     func prepare() { begin(download: false) }
+    private var automaticPreparationAttempted = false
+    /// Called on entering local setup. Never retries failure/cancellation or downloads resources.
+    func prepareInstalledOnce(enabled: Bool) {
+        guard enabled, state == .installed, !automaticPreparationAttempted else { return }
+        automaticPreparationAttempted = true
+        prepare()
+    }
     /// Re-hash the installed files and run a fresh local warmup; never downloads.
     func checkModel() { begin(download: false, reload: true) }
     /// The worker verifies the accepted downloaded checkpoint before publishing ready.
@@ -128,6 +135,7 @@ final class LayaRuntimeManager: ObservableObject {
         guard download || isInstalled else {
             state = .notInstalled; message = "Download Laya before loading it."; return
         }
+        automaticPreparationAttempted = true
         epoch &+= 1
         let stamp = epoch
         worker?.stop(); worker = nil
@@ -200,7 +208,7 @@ final class LayaRuntimeManager: ObservableObject {
                 if stamp == self.epoch {
                     self.worker?.stop(); self.worker = nil
                     self.installer?.stop(); self.installer = nil
-                    self.record("load_or_install_failed"); self.task = nil; self.progress = nil; self.state = .failed
+                    self.record("load_or_install_failed · " + error.localizedDescription); self.task = nil; self.progress = nil; self.state = .failed
                     self.downloadFileIndex = nil; self.downloadFileTotal = nil
                     self.message = self.isInstalled
                         ? "Laya was downloaded but could not start. Retry loading it; manual generation remains available."

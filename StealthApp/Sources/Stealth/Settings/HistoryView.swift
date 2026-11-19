@@ -218,7 +218,7 @@ private struct HistoryMessage: View {
                         DisclosureGroup(b("Evidence & notes", "依据与补充")) { markdown(section.content).padding(.top, 6) }.font(.caption)
                     } else {
                         if !section.title.isEmpty { Text(section.title).font(.subheadline.weight(.semibold)) }
-                        markdown(section.content)
+                        HighlightedAnswerText(content: section.content, fontSize: 13)
                     }
                 }
                 if let answer = event.answer {

@@ -6,59 +6,57 @@ struct OnboardingPermissionsView: View {
     @ObservedObject var store: OnboardingStore
     @ObservedObject var permissions: OnboardingPermissions
     private func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
-    private var needsSystemAudio: Bool { !store.state.prefersTyping && coordinator.settings.mode == .remote }
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text(b("Audio permissions", "权限准备")).font(.headline)
+                Spacer()
+                if !store.state.prefersTyping {
+                    Button(b("Check again", "重新检查")) { permissions.refresh() }
+                        .buttonStyle(.borderless).accessibilityIdentifier("onboarding-refresh-permissions")
+                }
+            }
             if store.state.prefersTyping {
-                Label(b("Typing needs no audio access", "输入问题无需音频权限"), systemImage: "keyboard").font(.headline)
-                Text(b("You can prepare system audio now for remote calls, or skip it until you start listening.", "可以提前准备远程会议所需的系统音频权限，也可以等需要监听时再设置。"))
+                Text(b("Typing needs no audio access. You can grant access in Settings if you switch to voice later.", "手动输入无需音频权限。之后如切换到语音模式，可在设置中补充授权。"))
                     .font(.callout).foregroundStyle(.secondary)
             } else {
-                if coordinator.settings.mode == .remote {
+                let remote = coordinator.settings.mode == .remote
+                if remote {
                     Toggle(b("Include my microphone", "同时收录我的麦克风"), isOn: $coordinator.micEnabled)
-                        .disabled(coordinator.isRunning || coordinator.isTransitioning)
+                        .disabled(coordinator.isRunning || coordinator.isTransitioning).font(.callout)
                 }
-                if coordinator.settings.mode == .inPerson || coordinator.micEnabled {
-                    permissionCard(title: b("Microphone", "麦克风"), icon: "mic", status: microphoneStatus,
-                                   detail: coordinator.settings.mode == .inPerson
-                                   ? b("Transcribe the room through your microphone. Speakers are not individually identified.", "通过麦克风转写现场对话，不区分具体说话人。")
-                                   : b("Include your voice in the conversation.", "将你自己的声音加入对话。"),
-                                   granted: permissions.microphone == .authorized) {
-                        if permissions.microphone == .notDetermined {
-                            Button(b("Allow microphone", "允许麦克风")) { Task { await permissions.requestMicrophone() } }
-                                .disabled(permissions.mock || permissions.requestingMicrophone).accessibilityIdentifier("onboarding-request-microphone")
-                        } else if permissions.microphone != .authorized {
-                            Button(b("Open microphone settings", "打开麦克风设置")) { permissions.openSettings(microphone: true) }.disabled(permissions.mock)
+                let needsMic = !remote || coordinator.micEnabled
+                permissionCard(title: b("Microphone", "麦克风"), icon: "mic",
+                               status: needsMic ? microphoneStatus : b("Not needed with microphone off", "麦克风关闭时无需授权"),
+                               detail: b("Capture your voice or the room.", "用于收录你的声音或现场对话。"),
+                               granted: needsMic && permissions.microphone == .authorized) {
+                    if needsMic && permissions.microphone == .notDetermined {
+                        Button(b("Allow microphone", "允许麦克风")) { Task { await permissions.requestMicrophone() } }
+                            .disabled(permissions.mock || permissions.requestingMicrophone).accessibilityIdentifier("onboarding-request-microphone")
+                    } else if needsMic && permissions.microphone != .authorized {
+                        Button(b("Open microphone settings", "打开麦克风设置")) { permissions.openSettings(microphone: true) }.disabled(permissions.mock)
+                    }
+                }
+                if remote {
+                    permissionCard(title: b("System audio", "系统音频"), icon: "speaker.wave.2",
+                                   status: permissions.screenAudio ? b("Allowed", "已允许") : b("Not allowed", "尚未允许"),
+                                   detail: b("Hear the other side of the call.", "用于听到远程会议中对方的声音。"), granted: permissions.screenAudio) {
+                        if !permissions.screenAudio || permissions.requestedScreenAudio {
+                            Text(b("When macOS prompts you to quit, LiveCopilot will close. Reopen LiveCopilot manually from Applications to continue setup.", "按 macOS 提示退出后，LiveCopilot 会关闭。请从「应用程序」手动重新打开 LiveCopilot，继续新手引导。"))
+                                .font(.caption).fixedSize(horizontal: false, vertical: true)
+                        }
+                        if !permissions.screenAudio {
+                            HStack {
+                                Button(b("Request access", "申请权限")) { permissions.requestScreenAudio() }
+                                    .disabled(permissions.mock).accessibilityIdentifier("onboarding-request-screen-audio")
+                                Button(b("Open privacy settings", "打开隐私设置")) { permissions.openSettings(microphone: false) }.disabled(permissions.mock)
+                            }
                         }
                     }
                 }
+                Text(b("Granting access does not start recording.", "授权不会立即开始录音。")).font(.caption).foregroundStyle(.secondary)
             }
-            permissionCard(title: b("System audio permission", "系统音频权限"), icon: "speaker.wave.2",
-                           status: permissions.screenAudio ? b("Allowed", "已允许") : b("Not allowed", "尚未允许"),
-                           detail: b("Hear the other side of a remote call. In macOS, allow LiveCopilot under Screen & System Audio Recording; only audio is processed.", "用于听到远程会议中对方的声音。请在 macOS“屏幕与系统音频录制”中允许 LiveCopilot；应用只处理音频。"),
-                           granted: permissions.screenAudio) {
-                Text(needsSystemAudio
-                     ? b("Required for your remote meeting mode", "当前远程会议模式需要此权限")
-                     : b("Optional now · needed only for remote meeting audio", "当前可跳过 · 仅远程会议音频需要"))
-                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                if !permissions.screenAudio {
-                    HStack {
-                        Button(b("Request system audio access", "申请系统音频权限")) { permissions.requestScreenAudio() }
-                            .disabled(permissions.mock).accessibilityIdentifier("onboarding-request-screen-audio")
-                        Button(b("Open privacy settings", "打开隐私设置")) { permissions.openSettings(microphone: false) }.disabled(permissions.mock)
-                    }
-                }
-                if permissions.requestedScreenAudio {
-                    Text(b("If macOS asks you to reopen the app, quit and reopen it. This guide keeps your place.", "如果 macOS 提示重新打开，请退出再启动应用，引导会保留当前进度。"))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Button(b("Check permissions again", "重新检查权限")) { permissions.refresh() }.accessibilityIdentifier("onboarding-refresh-permissions")
-            Text(b("If you skip a permission, you can continue with typing and complete setup later.", "暂不授权也可以继续输入问题，之后再补充配置。"))
-                .font(.caption).foregroundStyle(.secondary)
-            if coordinator.isMock { Text(b("Preview mode does not request system permissions.", "预览模式不会申请系统权限。"))
-                    .font(.caption).foregroundStyle(.secondary) }
-        }.padding(4)
+        }.padding(16).background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
     }
     private var microphoneStatus: String {
         switch permissions.microphone {
@@ -71,12 +69,15 @@ struct OnboardingPermissionsView: View {
     }
     private func permissionCard<Actions: View>(title: String, icon: String, status: String, detail: String,
                                                granted: Bool, @ViewBuilder actions: () -> Actions) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack { Label(title, systemImage: icon).font(.headline); Spacer(); if granted { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) } }
-            Text(detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Text(status).font(.caption.weight(.medium)).foregroundStyle(granted ? Color.green : Color.secondary)
-            actions()
-        }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Label(title, systemImage: icon).font(.callout.weight(.semibold))
+                Spacer()
+                Text(status).font(.caption.weight(.medium)).foregroundStyle(granted ? Color.green : Color.secondary)
+            }
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+            actions().controlSize(.small)
+        }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
     }
 }

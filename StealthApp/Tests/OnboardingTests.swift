@@ -4,6 +4,82 @@ import SwiftUI
 @testable import LiveCopilot
 
 final class OnboardingTests: XCTestCase {
+    @MainActor func testWorkflowNavigationPreferencesAndLayout() async throws {
+        let (suite, defaults) = defaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let app = AppCoordinator(mock: true, emitMockConversation: false, mockDefaults: defaults,
+                                 mockKnowledgeDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(suite))
+        let store = app.onboarding
+        store.state.step = .language
+        store.state.advance()
+        XCTAssertEqual(store.state.step, .workflow)
+        XCTAssertEqual(OnboardingStep.allCases, [.language, .workflow, .introduction, .models, .analysis, .ready])
+        let oldGuide = Data(#"{"version":1,"step":4,"disposition":"deferred","prefersTyping":true,"wantsKnowledge":true}"#.utf8)
+        let migrated = try JSONDecoder().decode(OnboardingState.self, from: oldGuide)
+        XCTAssertEqual(migrated.step, .introduction)
+        XCTAssertTrue(migrated.prefersTyping && migrated.wantsKnowledge)
+        for language in [AppLanguage.english, .simplifiedChinese, .traditionalChinese] {
+            app.settings.language = language
+            let pages: [(OnboardingStep, Bool, Bool)] = [(.workflow, false, true), (.introduction, false, true),
+                                                         (.introduction, false, false), (.introduction, true, false),
+                                                         (.models, true, false), (.analysis, false, true), (.ready, true, false)]
+            for (step, typing, remote) in pages {
+                store.state.step = step
+                store.state.prefersTyping = typing
+                app.settings.mode = remote ? .remote : .inPerson
+                app.settings.automaticSuggestions = true
+                let host = NSHostingView(rootView: OnboardingView(coordinator: app, close: {}, beginListening: {}, beginTyping: {}))
+                let size = NSSize(width: 1040, height: 660)
+                let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+                window.contentView = host
+                await Task.yield()
+                if step == .workflow, ProcessInfo.processInfo.environment["LIVECOPILOT_UI_ACCEPTANCE"] != nil {
+                    try await Task.sleep(for: .seconds(12))
+                }
+                host.layoutSubtreeIfNeeded()
+                XCTAssertEqual(host.bounds.size, size)
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                if let output = ProcessInfo.processInfo.environment["LIVECOPILOT_UI_ACCEPTANCE"], !output.isEmpty, !output.hasPrefix("$(") {
+                    let root = URL(fileURLWithPath: output)
+                    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                    try bitmap.representation(using: .png, properties: [:])?.write(to: root.appendingPathComponent("polish-\(language.rawValue)-\(step.rawValue)-\(typing)-\(remote).png"))
+                }
+                let attachment = XCTAttachment(data: try XCTUnwrap(bitmap.representation(using: .png, properties: [:])), uniformTypeIdentifier: "public.png")
+                attachment.name = "step-\(step.position + 1)-" + language.rawValue + (typing ? "-typing" : remote ? "-remote" : "-room")
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                window.orderOut(nil)
+            }
+
+        }
+        store.state.step = .workflow
+        store.state.jevChoiceReviewed = true
+        app.settings.automaticSuggestions = false
+        store.deferSetup()
+        var restored = OnboardingState.load(defaults: defaults, hasExistingData: true)
+        restored.reopen()
+        XCTAssertEqual(restored.step, .workflow)
+        XCTAssertEqual(restored.jevChoiceReviewed, true)
+        store.state = restored
+        store.state.advance()
+        XCTAssertEqual(store.state.step, .introduction)
+        store.state.back()
+        XCTAssertEqual(store.state.step, .workflow)
+        store.state.advance(); store.state.advance()
+        XCTAssertEqual(store.state.step, .models)
+        let mode = app.settings.mode
+        let scenario = app.settings.scenario
+        let typing = store.state.prefersTyping
+        OnboardingRecommendation.applyInitialIfNeeded(app)
+        OnboardingRecommendation.apply(app)
+        XCTAssertEqual(app.settings.mode, mode)
+        XCTAssertEqual(app.settings.scenario, scenario)
+        XCTAssertEqual(store.state.prefersTyping, typing)
+        XCTAssertFalse(app.settings.automaticSuggestions)
+        await app.shutdown()
+    }
+
     @MainActor func testVersion23SkippedGuideRetainsSavedParaformerOnUpgrade() throws {
         let (suite, defaults) = defaults()
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -272,7 +348,7 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(OnboardingCapabilityStatus.laya(.installed), .installed)
         XCTAssertEqual(OnboardingCapabilityStatus.laya(.loading), .verifying)
         XCTAssertEqual(OnboardingCapabilityStatus.laya(.ready), .ready)
-        XCTAssertEqual(OnboardingCapabilityStatus.laya(.failed), .attention)
+        XCTAssertEqual(OnboardingCapabilityStatus.laya(.failed), .loadFailed)
         XCTAssertEqual(OnboardingCapabilityStatus.apple(available: true, installed: true, busy: false, verified: false), .verify,
                        "Cached readiness for a different language must not show Ready")
         XCTAssertEqual(OnboardingCapabilityStatus.apple(available: true, installed: true, busy: false, verified: true), .ready)
@@ -413,16 +489,16 @@ final class OnboardingTests: XCTestCase {
         let store = OnboardingStore(defaults: defaults, dataDirectory: root)
         XCTAssertTrue(store.isNewInstall)
         XCTAssertTrue(store.state.shouldPresent)
-        store.state.step = .permissions; store.state.prefersTyping = true; store.state.wantsKnowledge = true
+        store.state.step = .introduction; store.state.prefersTyping = true; store.state.wantsKnowledge = true
         let recovered = OnboardingStore(defaults: defaults, dataDirectory: root)
         XCTAssertFalse(recovered.isNewInstall)
-        XCTAssertEqual(recovered.state.step, .permissions)
+        XCTAssertEqual(recovered.state.step, .introduction)
         XCTAssertTrue(recovered.state.shouldPresent && recovered.state.prefersTyping && recovered.state.wantsKnowledge)
         recovered.deferSetup()
         let deferred = OnboardingStore(defaults: defaults, dataDirectory: root)
         XCTAssertFalse(deferred.state.shouldPresent)
         deferred.reopen()
-        XCTAssertEqual(deferred.state.step, .permissions)
+        XCTAssertEqual(deferred.state.step, .introduction)
         deferred.complete()
         let complete = OnboardingStore(defaults: defaults, dataDirectory: root)
         XCTAssertFalse(complete.state.shouldPresent)

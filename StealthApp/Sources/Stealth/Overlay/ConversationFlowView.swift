@@ -126,7 +126,7 @@ struct AnswerMessageView: View {
     }
     static func isEvidence(_ title: String) -> Bool {
         let key = title.lowercased()
-        return key.contains("evidence") || key.contains("notes") || key.contains("证据") || key.contains("备注") || key.contains("说明")
+        return key.contains("依据") || key.contains("依據") || key.contains("evidence") || key.contains("notes") || key.contains("证据") || key.contains("备注") || key.contains("说明")
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -146,7 +146,7 @@ struct AnswerMessageView: View {
                     Text(status).font(.caption2).foregroundStyle(.secondary)
                     Spacer()
                     if !store.text.isEmpty {
-                        Button(t("Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(store.text, forType: .string) }
+                        Button(t("Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(AnswerEmphasis.plainText(store.text, streaming: store.isLoading), forType: .string) }
                             .font(.caption2).buttonStyle(.borderless)
                     }
                 }
@@ -158,7 +158,7 @@ struct AnswerMessageView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
                         }.font(.caption)
                     } else {
-                        Text(.init(section.content)).font(.system(size: fontSize)).textSelection(.enabled)
+                        HighlightedAnswerText(content: section.content, fontSize: fontSize, streaming: store.isLoading)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -210,5 +210,132 @@ private struct ConversationScrollObserver: NSViewRepresentable {
             }
         }
         deinit { if let observation { NotificationCenter.default.removeObserver(observation) } }
+    }
+}
+
+/// Native attributed text keeps emphasis backgrounds, selection and wrapping on macOS 14.
+struct HighlightedAnswerText: NSViewRepresentable {
+    let content: String
+    let fontSize: CGFloat
+    var streaming = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    func makeNSView(context: Context) -> NSTextView {
+        let storage = NSTextStorage()
+        let layout = CrayonLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: 100, height: CGFloat.greatestFiniteMagnitude))
+        storage.addLayoutManager(layout)
+        layout.addTextContainer(container)
+        container.lineFragmentPadding = 0
+        container.widthTracksTextView = true
+        let view = NSTextView(frame: .zero, textContainer: container)
+        view.textContainerInset = .zero
+        view.isEditable = false
+        view.isSelectable = true
+        view.drawsBackground = false
+        view.isHorizontallyResizable = false
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return view
+    }
+    func updateNSView(_ view: NSTextView, context: Context) {
+        let parsed = AnswerEmphasis.parsed(content, streaming: streaming)
+        let result = NSMutableAttributedString(string: "")
+        for run in parsed.runs {
+            let strong = run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
+            var attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: fontSize, weight: strong ? .semibold : .regular),
+                .foregroundColor: NSColor.labelColor
+            ]
+            if run.inlinePresentationIntent?.contains(.code) == true {
+                attributes[.font] = NSFont.monospacedSystemFont(ofSize: fontSize, weight: strong ? .semibold : .regular)
+            }
+            if run.inlinePresentationIntent?.contains(.emphasized) == true, let font = attributes[.font] as? NSFont {
+                attributes[.font] = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+            }
+            if run.inlinePresentationIntent?.contains(.strikethrough) == true {
+                attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+            }
+            let phrase = String(parsed[run.range].characters)
+            if strong { attributes[CrayonLayoutManager.mark] = colorScheme == .dark }
+            result.append(NSAttributedString(string: phrase, attributes: attributes))
+        }
+        if view.textStorage?.isEqual(to: result) != true {
+            view.textStorage?.setAttributedString(result)
+            view.invalidateIntrinsicContentSize()
+        }
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width.isFinite, width > 0,
+              let container = nsView.textContainer, let layout = nsView.layoutManager else { return nil }
+        container.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        layout.ensureLayout(for: container)
+        return CGSize(width: width, height: ceil(layout.usedRect(for: container).maxY))
+    }
+}
+
+private final class CrayonLayoutManager: NSLayoutManager {
+    static let mark = NSAttributedString.Key("LiveCopilotCrayon")
+    private let textures = NSCache<NSString, NSImage>()
+
+    override func drawBackground(forGlyphRange glyphs: NSRange, at origin: NSPoint) {
+        guard let storage = textStorage else { return }
+        let characters = characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        storage.enumerateAttribute(Self.mark, in: characters) { value, range, _ in
+            guard let dark = value as? Bool else { return }
+            let marked = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            self.enumerateLineFragments(forGlyphRange: marked) { _, _, container, line, _ in
+                let fragment = NSIntersectionRange(line, marked)
+                guard fragment.length > 0 else { return }
+                var rect = self.boundingRect(forGlyphRange: fragment, in: container)
+                rect.origin.x += origin.x
+                rect.origin.y += origin.y + rect.height * 0.49
+                rect.size.height *= 0.45
+                guard rect.width > 0, rect.height > 0 else { return }
+                self.texture(for: rect.size, dark: dark).draw(in: rect, from: .zero, operation: .sourceOver,
+                                                             fraction: 1, respectFlipped: true, hints: nil)
+            }
+        }
+        super.drawBackground(forGlyphRange: glyphs, at: origin)
+    }
+
+    // Generate a stable pigment mask at Retina resolution. Repainting a stream reuses the same grain.
+    private func texture(for size: CGSize, dark: Bool) -> NSImage {
+        let w = min(4096, max(2, Int(ceil(size.width * 2))))
+        let h = min(256, max(2, Int(ceil(size.height * 2))))
+        let key = "\(w)-\(h)-\(dark)" as NSString
+        if let image = textures.object(forKey: key) { return image }
+        let image = NSImage(size: size)
+        guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: w, pixelsHigh: h,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+            bitmapFormat: .alphaNonpremultiplied, bytesPerRow: w * 4, bitsPerPixel: 32),
+              let pixels = bitmap.bitmapData else { return image }
+        var seed: UInt32 = 271828
+        func noise() -> Double {
+            seed = seed &* 1664525 &+ 1013904223
+            return Double(seed >> 8) / 16777216
+        }
+        for y in 0..<h {
+            let row = Double(y) / Double(h - 1)
+            let pressure = 0.72 + noise() * 0.28
+            let left = noise() * 0.48, right = noise() * 0.48
+            for x in 0..<w {
+                let t = Double(x) / Double(w - 1)
+                let center = 0.52 + 0.07 * sin(Double(x) / 21) + 0.035 * sin(Double(x) / 7)
+                let edge = max(0, min(1, (0.48 - abs(row - center)) * 6))
+                let tip = max(0, min(1, min(Double(x)/Double(h) - left, Double(w-1-x)/Double(h) - right) * 2))
+                let grain = noise()
+                let alpha = edge * tip * pressure * (grain < 0.16 ? 0.08 : 0.25 + grain * 0.75)
+                let i = (y*w+x)*4
+                pixels[i] = UInt8(62 + 179*t)
+                pixels[i+1] = UInt8(164 - 47*t)
+                pixels[i+2] = UInt8(234 - 66*t)
+                pixels[i+3] = UInt8((dark ? 203 : 155) * alpha)
+            }
+        }
+        bitmap.size = size
+        image.addRepresentation(bitmap)
+        textures.totalCostLimit = 4 * 1024 * 1024
+        textures.setObject(image, forKey: key, cost: w*h*4)
+        return image
     }
 }

@@ -1,7 +1,18 @@
 import Foundation
 
 enum OnboardingStep: Int, Codable, CaseIterable, Identifiable {
-    case language, introduction, models, analysis, permissions, ready
+    // Raw IDs are persisted by older guides; declaration order drives navigation.
+    case language = 0, workflow = 6, introduction = 1, models = 2, analysis = 3, ready = 5
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let id = try container.decode(Int.self)
+        // The retired permission step now lives on the input-mode page.
+        guard let step = Self(rawValue: id == 4 ? Self.introduction.rawValue : id) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown onboarding step")
+        }
+        self = step
+    }
+    var position: Int { Self.allCases.firstIndex(of: self)! }
     var id: Int { rawValue }
 }
 
@@ -18,12 +29,13 @@ struct OnboardingState: Codable, Equatable {
     var localSetupReviewed: Bool? = false
     var speechScenario: OnboardingSpeechScenario?
     var speechManuallySelected: Bool?
+    var jevChoiceReviewed: Bool?
     // Independent of spoken languages; nil preserves older guides' actual choice.
     var knowledgeRequested: Bool?
 
     var shouldPresent: Bool { disposition == .inProgress }
-    mutating func advance() { step = OnboardingStep(rawValue: step.rawValue + 1) ?? .ready }
-    mutating func back() { step = OnboardingStep(rawValue: step.rawValue - 1) ?? .language }
+    mutating func advance() { step = OnboardingStep.allCases[min(step.position + 1, OnboardingStep.allCases.count - 1)] }
+    mutating func back() { step = OnboardingStep.allCases[max(0, step.position - 1)] }
     mutating func reopen() {
         if disposition == .completed || disposition == .existingUser { step = .language }
         disposition = .inProgress

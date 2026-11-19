@@ -35,7 +35,7 @@ struct OnboardingSetupInventory {
     }
     init() {}
     func localStatus(_ kind: LocalModelKind, runtime: CapabilityRuntimeState = .idle) -> OnboardingCapabilityStatus {
-        if downloading == kind { return .downloading }
+        if downloading == kind { return runtime == .loading && installed.contains(kind) ? .verifying : .downloading }
         if queued.contains(kind) { return .queued }
         if failedDownloads.contains(kind) && !installed.contains(kind) { return .downloadFailed }
         guard installed.contains(kind) else { return .download }
@@ -129,7 +129,7 @@ struct OnboardingSetupSnapshot {
             if i.speechRuntime == .ready { speechStatus = .ready }
             if i.speechRuntime == .failed { speechStatus = .attention }
         }
-        entries.append(.init(id: .speech, model: speechName, status: state.prefersTyping ? .off : speechStatus, enabled: !state.prefersTyping))
+        entries.append(.init(id: .speech, model: speechName, status: state.prefersTyping ? .notNeeded : speechStatus, enabled: !state.prefersTyping))
         let knowledgeStatus = settings.embeddingService == .local
             ? i.localStatus(.embedding, runtime: i.knowledgeRuntime) : (i.cloudKeyConfigured ? .verify : .configure)
         entries.append(.init(id: .knowledge, model: settings.embeddingService == .local ? "BGE-M3" : "OpenAI Embeddings",
@@ -139,7 +139,7 @@ struct OnboardingSetupSnapshot {
         let jevEnabled = !state.prefersTyping && settings.automaticSuggestions
         var jevStatus: OnboardingCapabilityStatus = usesLocalJev ? .laya(i.layaState) : speechStatus
         if usesLocalJev && i.layaState == .failed { jevStatus = i.layaInstalled ? .loadFailed : .downloadFailed }
-        entries.append(.init(id: .proactive, model: usesLocalJev ? "Laya · Jev Mode" : "GPT-Live · Jev Mode", status: jevEnabled ? jevStatus : .off, enabled: jevEnabled))
+        entries.append(.init(id: .proactive, model: usesLocalJev ? "Laya · Jev Mode" : "GPT-Live · Jev Mode", status: jevEnabled ? jevStatus : (settings.automaticSuggestions ? .notNeeded : .off), enabled: jevEnabled))
         if jevEnabled && usesLocalJev && i.layaState != .unsupported && !i.layaInstalled {
             downloads.append(.init(kind: .laya, name: ServiceGuide.text("Laya + runtime", "Laya 与运行环境", settings.language), bytes: i.layaDownloadBytes, status: jevStatus))
         }

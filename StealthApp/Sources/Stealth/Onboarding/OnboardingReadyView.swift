@@ -21,6 +21,7 @@ struct OnboardingReadyView: View {
     }
     private func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
     private var speechReady: Bool {
+        if coordinator.currentSpeechRuntime == .failed || coordinator.currentSpeechRuntime == .loading { return false }
         switch coordinator.settings.listeningService {
         case .zipformer: return models.installed.contains(.terminologySpeech)
         case .paraformer: return models.installed.contains(.streamingSpeech)
@@ -55,22 +56,25 @@ struct OnboardingReadyView: View {
     private var readiness: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(spacing: 0) {
-                if !store.state.prefersTyping {
-                    statusRow(b("Speech transcription", "语音转写"), detail: speechDetail, ready: speechReady, step: .models)
-                    Divider()
-                    statusRow(b("Audio permissions", "音频权限"), detail: permissionsReady ? b("Allowed · start to test audio", "已允许 · 开始使用后验证音频") : b("More access needed for this mode", "当前模式仍需授权"), ready: permissionsReady, step: .permissions)
-                    Divider()
-                }
+                let typing = store.state.prefersTyping
+                let setup = OnboardingSetupSnapshot(coordinator)
+                let optional = b("Not needed for manual input", "手动输入无需配置")
+                statusRow(b("Speech transcription", "语音转写"), detail: typing ? optional : speechDetail, ready: !typing && speechReady, step: .models)
+                Divider()
+                statusRow(b("Audio permissions", "音频权限"), detail: typing ? optional : audioDetail, ready: !typing && permissionsReady, step: .introduction)
+                Divider()
                 statusRow(b("Answer service", "回答服务"), detail: answerDetail, ready: coordinator.isAnalysisConnectionVerified, step: .analysis)
-                if store.state.wantsKnowledge {
-                    Divider()
-                    statusRow(b("Knowledge retrieval", "资料检索"), detail: knowledgeDetail,
-                              ready: coordinator.settings.embeddingService == .local ? models.installed.contains(.embedding) : coordinator.hasAPIKey, step: .models)
-                }
-                if !store.state.prefersTyping && coordinator.settings.automaticSuggestions && coordinator.settings.listeningService.isLocal {
-                    Divider()
-                    statusRow("Jev Mode", detail: laya.isReady ? b("Local detection ready", "本地判断已就绪") : laya.isBusy ? b("Preparing · manual replies remain available", "准备中 · 仍可手动触发") : laya.isInstalled ? b("Installed · loads when listening starts", "已安装 · 开始监听时加载") : b("Laya needs setup · use manual replies", "Laya 待配置 · 可手动触发"), ready: laya.isReady, step: .models)
-                }
+                Divider()
+                let knowledge = setup[.knowledge]
+                statusRow(b("Knowledge retrieval", "资料检索"), detail: knowledge.enabled ? knowledgeDetail : b("Not enabled", "未启用"),
+                          ready: knowledge.status == .ready, step: .models)
+                Divider()
+                let jev = setup[.proactive]
+                let jevDetail = coordinator.settings.automaticSuggestions
+                    ? b("Enabled for voice", "语音模式已启用") + " · " + (typing ? optional : jev.status.title(coordinator.settings.language))
+                    : b("Off · you can ask manually", "未启用 · 可手动提问")
+                statusRow("Jev Mode", detail: jevDetail, ready: jev.status == .ready,
+                          step: coordinator.settings.automaticSuggestions && !typing ? .models : .workflow)
             }.padding(.horizontal, 16).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
             HStack(spacing: 12) {
                 if OnboardingDownloads.hasPending(coordinator) {
@@ -94,12 +98,25 @@ struct OnboardingReadyView: View {
             }
         }
     }
+    private var audioDetail: String {
+        let mic = coordinator.settings.mode == .remote && !coordinator.micEnabled ? b("Microphone off", "麦克风已关闭") :
+            permissions.microphone == .authorized ? b("Microphone allowed", "麦克风已允许") : b("Microphone access needed", "麦克风待授权")
+        guard coordinator.settings.mode == .remote else { return mic }
+        return mic + " · " + (permissions.screenAudio ? b("System audio allowed", "系统音频已允许") : b("System audio access needed", "系统音频待授权"))
+    }
     private var answerDetail: String {
         if coordinator.isMock { return coordinator.isAnalysisConnectionVerified ? b("Preview test passed · no API call", "预览测试通过 · 未调用 API") : b("Preview provider · no real key", "示例服务 · 未使用真实密钥") }
         if coordinator.isAnalysisConnectionVerified { return b("Connection tested successfully this session", "本次运行已通过连接测试") }
         return coordinator.hasAnswerCredential ? b("Key configured · connection not yet tested", "密钥已配置 · 连接尚未测试") : b("Configure a key to generate answers", "配置密钥后可生成回答")
     }
     private var speechDetail: String {
+        switch coordinator.currentSpeechRuntime {
+        case .ready: return b("Speech recognition verified · ready to use", "语音识别验证通过 · 可以使用")
+        case .loading: return b("Verifying model…", "正在验证模型…")
+        case .failed: return b("Model verification failed · retry in setup", "模型验证失败 · 可返回配置重试")
+        case .idle: break
+        }
+
         if let kind = coordinator.settings.listeningService.localModel, models.failures[kind] != nil {
             return b("Download failed · review and retry", "下载失败 · 可查看并重试")
         }
@@ -110,9 +127,14 @@ struct OnboardingReadyView: View {
     }
     private var knowledgeDetail: String {
         if coordinator.settings.embeddingService == .openAI { return b("OpenAI · extracted text goes to the cloud", "OpenAI · 提取文本会发送至云端") }
-        if models.checking == .embedding { return b("Running local model self-check", "正在进行本地模型自检") }
-        if let report = models.health[.embedding], !report.ready { return b("Self-check failed · open Services for help", "自检未通过 · 请到服务页查看处理办法") }
-        if models.installed.contains(.embedding) { return models.health[.embedding]?.ready == true ? b("Self-check passed · import documents in Settings", "自检通过 · 可在设置中导入资料") : b("Downloaded · run self-check in Services", "已下载 · 可到服务页运行自检") }
+        if models.installed.contains(.embedding) {
+            switch coordinator.currentKnowledgeRuntime {
+            case .ready: return b("Self-check passed · import documents in Settings", "自检通过 · 可在设置中导入资料")
+            case .loading: return b("Running local model self-check", "正在进行本地模型自检")
+            case .failed: return b("Verification failed · retry in Local capabilities", "验证失败 · 可返回本地能力配置重新验证")
+            case .idle: return b("Installed · awaiting verification", "已安装，待验证")
+            }
+        }
         if models.failures[.embedding] != nil { return b("Download failed · review and retry", "下载失败 · 可查看并重试") }
         return models.downloading == .embedding || models.queued.contains(.embedding) ? b("Downloading / queued", "正在下载或等待下载") : b("Local model not downloaded", "本地模型尚未下载")
     }
@@ -141,14 +163,14 @@ private struct OnboardingPracticeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Text(b("Try a question", "试问一句")).font(.headline)
+                Text(b("Try your first question", "立即试一个问题")).font(.headline)
                 AnalysisProviderBrand(service: coordinator.settings.reasoningService, model: coordinator.settings.analysisModel, compact: true)
                 Spacer()
             }
             HStack {
                 TextField(b("How can I introduce an idea clearly?", "怎样清楚地介绍一个方案？"), text: $question)
                     .textFieldStyle(.roundedBorder).disabled(busy).accessibilityIdentifier("onboarding-practice-question")
-                Button(b("Ask this service", "向此服务提问")) { ask() }
+                Button(b("Test answer", "测试回答")) { ask() }
                     .disabled(!coordinator.hasAnswerCredential || busy || coordinator.isTransitioning)
                     .accessibilityIdentifier("onboarding-practice-ask")
                 if busy { ProgressView().controlSize(.small); Button(b("Cancel", "取消")) { cancel() } }

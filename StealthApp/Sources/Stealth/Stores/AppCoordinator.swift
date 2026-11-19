@@ -131,6 +131,40 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var isPreparingRetrieval = false
     @Published private(set) var retrievalLoadFailed = false
     @Published private(set) var speechRuntime: CapabilityRuntimeState = .idle
+    private var speechVerificationTask: Task<Void, Never>?
+    @Published private(set) var speechVerificationError: String?
+    /// Loads the same local recognizer used for listening, without opening audio devices.
+    func verifyOnboardingSpeech() {
+        guard !isMock, !isRunning, !isTransitioning, speechVerificationTask == nil,
+              let kind = settings.listeningService.localModel, localModels.installed.contains(kind) else { return }
+        let service = settings.listeningService
+        let epoch = liveEpoch
+        speechRuntimeService = service
+        speechRuntime = .loading
+        speechVerificationError = nil
+        speechVerificationTask = Task { [weak self] in
+            guard let self else { return }
+            let provider = LocalLiveProvider(directory: kind.location(in: self.localModels.root), speaker: .room,
+                contextual: kind == .terminologySpeech, terms: self.activeProfessionalTerms)
+            do {
+                try await provider.prepare()
+                try Task.checkCancellation()
+                if self.liveEpoch == epoch && !self.isRunning && self.speechRuntimeService == service {
+                    self.speechRuntime = .ready
+                }
+            } catch {
+                if self.liveEpoch == epoch && !self.isRunning && self.speechRuntimeService == service {
+                    self.speechRuntime = .failed
+                    self.speechVerificationError = error.localizedDescription
+                }
+            }
+            await provider.disconnect()
+            self.speechVerificationTask = nil
+            if !self.isShuttingDown, self.onboarding.state.step == .models,
+               !self.onboarding.state.prefersTyping, self.settings.listeningService != service,
+               self.currentSpeechRuntime == .idle { self.verifyOnboardingSpeech() }
+        }
+    }
     private var speechRuntimeService: ListeningService?
     private var speechRuntimeLanguage: AppleSpeechLanguage?
     var currentSpeechRuntime: CapabilityRuntimeState {
@@ -141,7 +175,13 @@ final class AppCoordinator: ObservableObject {
     var currentKnowledgeRuntime: CapabilityRuntimeState {
         if isPreparingRetrieval { return .loading }
         if localEmbedding?.isPrepared == true { return .ready }
-        return retrievalLoadFailed ? .failed : .idle
+        if retrievalLoadFailed { return .failed }
+        switch localModels.embeddingVerification {
+        case .idle: return .idle
+        case .checking: return .loading
+        case .ready: return .ready
+        case .failed: return .failed
+        }
     }
     let systemAudio = AudioCaptureManager()
     let mic = MicCaptureManager()
@@ -211,7 +251,8 @@ final class AppCoordinator: ObservableObject {
                 oldValue.scenario != settings.scenario ||
                 oldValue.mode != settings.mode || oldValue.listeningService != settings.listeningService {
                 questions.clear(); queueWake?.cancel(); queuedQuestionCount = 0
-                invalidateAutomaticTrigger()
+                // Configuration changes while idle must not cancel model installation or warmup.
+                invalidateAutomaticTrigger(releaseRuntime: isRunning && (!settings.automaticSuggestions || !settings.listeningService.isLocal))
                 configureAutomaticTrigger()
             } else if oldValue.layaThreshold != settings.layaThreshold {
                 configureAutomaticTrigger(prepare: false)
@@ -252,6 +293,14 @@ final class AppCoordinator: ObservableObject {
     @Published var analysisKeyNeedsAuthorization = false
     @Published var analysisKeyStatus = "No credential available."
     @Published private(set) var answerCredentialRevision = UUID()
+    @Published private(set) var testingAnalysisConnection = false
+    @Published private var analysisTestFailure: OnboardingConnectionFailure?
+    private var failedAnalysisSettings: AppSettings?
+    private var failedCredentialRevision: UUID?
+    var analysisConnectionFailure: OnboardingConnectionFailure? {
+        guard failedAnalysisSettings == settings, failedCredentialRevision == answerCredentialRevision else { return nil }
+        return analysisTestFailure
+    }
     @Published private(set) var verifiedAnalysisSettings: AppSettings?
     private var verifiedCredentialRevision: UUID?
     @Published private(set) var liveKeyCheckFeedback: CredentialCheckFeedback?
@@ -359,6 +408,16 @@ final class AppCoordinator: ObservableObject {
         }.store(in: &cancellables)
         Task { await refreshKnowledge() }
     }
+    /// One automatic warmup attempt per coordinator lifetime; failures require an explicit retry.
+    /// Installation already proceeds directly to worker.prepare() inside LayaRuntimeManager.
+    func prepareOnboardingLayaIfNeeded() {
+        guard !isMock, !isShuttingDown, !isRunning, !isTransitioning,
+              settings.automaticSuggestions, settings.listeningService.isLocal,
+              !onboarding.state.prefersTyping,
+              laya.state == .installed else { return }
+        laya.prepareInstalledOnce(enabled: true)
+    }
+
     /// Local transcribers use Laya; GPT-Live-1 owns its client delegation decisions.
     private var usesLaya: Bool { settings.listeningService.isLocal }
     private func invalidateAutomaticTrigger(releaseRuntime: Bool = true) {
@@ -650,16 +709,30 @@ final class AppCoordinator: ObservableObject {
 
     /// Only invoked by the explicit onboarding test button; never includes user data.
     func testAnalysisConnection() async throws {
+        guard !testingAnalysisConnection else { return }
+        testingAnalysisConnection = true
+        defer { testingAnalysisConnection = false }
         let testedSettings = settings, credentialRevision = answerCredentialRevision
         verifiedAnalysisSettings = nil
-        let provider: any ReasoningProvider = isMock ? (mockReasoning ?? MockReasoningProvider()) :
-            try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
-        try await AnalysisConnectionProbe.run(provider: provider)
-        try Task.checkCancellation()
-        guard credentialRevision == answerCredentialRevision else { return }
-        verifiedCredentialRevision = credentialRevision
-        verifiedAnalysisSettings = testedSettings
+        analysisTestFailure = nil
+        do {
+            let provider: any ReasoningProvider = isMock ? (mockReasoning ?? MockReasoningProvider()) :
+                try ReasoningProviderFactory.make(settings: settings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
+            try await AnalysisConnectionProbe.run(provider: provider)
+            try Task.checkCancellation()
+            guard credentialRevision == answerCredentialRevision else { return }
+            verifiedCredentialRevision = credentialRevision
+            verifiedAnalysisSettings = testedSettings
+        } catch {
+            if !Task.isCancelled {
+                failedAnalysisSettings = testedSettings
+                failedCredentialRevision = credentialRevision
+                analysisTestFailure = .classify(error)
+            }
+            throw error
+        }
     }
+
     func onboardingAnswer(_ question: String) throws -> AsyncThrowingStream<String, Error> {
         guard question.count <= 8000 else { throw CopilotError.message("Keep a manual question under 8,000 characters.") }
         let provider: any ReasoningProvider = isMock ? (mockReasoning ?? MockReasoningProvider()) :
@@ -1119,6 +1192,8 @@ final class AppCoordinator: ObservableObject {
         }
     }
     func shutdown() async {
+        speechVerificationTask?.cancel()
+        await speechVerificationTask?.value
         translation.stop()
         embeddingVerificationTask?.cancel(); await embeddingVerificationTask?.value
         isShuttingDown = true

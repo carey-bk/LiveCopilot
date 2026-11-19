@@ -20,14 +20,14 @@ private final class CaptureSharingPanel: NSPanel {
 }
 
 final class NativeTests: XCTestCase {
-    @MainActor func testAutomaticDockingDefaultsOnAndCanBeDisabledPersistently() throws {
+    @MainActor func testAutomaticDockingDefaultsOffAndCanBeEnabledPersistently() throws {
         let suite = "LiveCopilot-Docking-Tests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         var settings = AppSettings.load(defaults: defaults)
-        XCTAssertTrue(settings.overlayEdgeHide)
-        settings.overlayEdgeHide = false; settings.save(defaults: defaults)
-        XCTAssertFalse(AppSettings.load(defaults: defaults).overlayEdgeHide)
+        XCTAssertFalse(settings.overlayEdgeHide)
+        settings.overlayEdgeHide = true; settings.save(defaults: defaults)
+        XCTAssertTrue(AppSettings.load(defaults: defaults).overlayEdgeHide)
         let window = OverlayWindow(rootView: Text("Drag test"))
         defer { window.close() }
         window.setCaptureExcluded(false)

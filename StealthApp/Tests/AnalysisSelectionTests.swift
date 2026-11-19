@@ -3,6 +3,26 @@ import SwiftUI
 @testable import LiveCopilot
 
 final class AnalysisSelectionTests: XCTestCase {
+    func testCompatiblePresetsUseDistinctCredentialScopesAndValidEndpoints() throws {
+        var accounts = Set<String>()
+        XCTAssertEqual(CompatibleServicePreset.all.count, 7)
+        for preset in CompatibleServicePreset.all {
+            var settings = AppSettings()
+            settings.reasoningService = .compatible
+            settings.compatibleBaseURL = preset.baseURL
+            settings.compatiblePath = preset.path
+            settings.compatibleModel = "test-model"
+            let endpoint = try settings.compatibleEndpoint()
+            XCTAssertEqual(endpoint.absoluteString, preset.baseURL + "/chat/completions")
+            XCTAssertEqual(endpoint.scheme, "https")
+            XCTAssertEqual(CompatibleServicePreset.matching(baseURL: preset.baseURL + "/", path: preset.path)?.id, preset.id)
+            accounts.insert(try settings.analysisCredentialReference().account)
+        }
+        XCTAssertEqual(accounts.count, CompatibleServicePreset.all.count)
+        XCTAssertNil(CompatibleServicePreset.matching(baseURL: "https://example.org/v1", path: "chat/completions"))
+        XCTAssertNil(CompatibleServicePreset.matching(baseURL: "https://openrouter.ai/api/v1", path: "responses"))
+    }
+
     func testBillingAuthenticationAndRateLimitRemainDistinctAndPrivate() throws {
         let cases: [(Int, String, OnboardingConnectionFailure)] = [
             (429, "insufficient_quota", .billing), (429, "credit_balance_exhausted", .billing),
@@ -315,9 +335,13 @@ final class AnalysisSelectionTests: XCTestCase {
         do { try await app.testAnalysisConnection(); XCTFail("Expected network failure") }
         catch { XCTAssertEqual(OnboardingConnectionFailure.classify(error), .network) }
         XCTAssertFalse(app.isAnalysisConnectionVerified)
+        XCTAssertFalse(app.testingAnalysisConnection)
+        XCTAssertEqual(app.analysisConnectionFailure, .network)
+        app.settings.reasoningModel = "changed-model"
+        XCTAssertNil(app.analysisConnectionFailure)
         app.onboarding.state.step = .analysis
         app.onboarding.state.advance()
-        XCTAssertEqual(app.onboarding.state.step, .permissions, "A failed connection must not trap the user")
+        XCTAssertEqual(app.onboarding.state.step, .ready, "A failed connection must not trap the user")
         await app.shutdown(); defaults.removePersistentDomain(forName: suite)
     }
 

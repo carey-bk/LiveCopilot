@@ -13,10 +13,12 @@ struct OverlayView: View {
     @AppStorage("overlayTranscriptCollapsed") private var transcriptCollapsed = false
     @State private var chromeHeight: CGFloat = 368
     @State private var answerContentHeight: CGFloat = 56
+    var demonstrationAnswer: AppCoordinator.AnswerRecord?
     var onContentHeight: (CGFloat) -> Void
     var onMinimumHeight: (CGFloat) -> Void
-    init(coordinator: AppCoordinator, transcriptPreferences: UserDefaults = .standard, onContentHeight: @escaping (CGFloat) -> Void = { _ in }, onMinimumHeight: @escaping (CGFloat) -> Void = { _ in }) {
+    init(coordinator: AppCoordinator, demonstrationAnswer: AppCoordinator.AnswerRecord? = nil, transcriptPreferences: UserDefaults = .standard, onContentHeight: @escaping (CGFloat) -> Void = { _ in }, onMinimumHeight: @escaping (CGFloat) -> Void = { _ in }) {
         _transcriptCollapsed = AppStorage(wrappedValue: false, "overlayTranscriptCollapsed", store: transcriptPreferences)
+        self.demonstrationAnswer = demonstrationAnswer
         self.coordinator = coordinator; translation = coordinator.translation; transcript = coordinator.transcript; hotkeys = coordinator.hotkeys
         onboarding = coordinator.onboarding
         self.onContentHeight = onContentHeight; self.onMinimumHeight = onMinimumHeight
@@ -74,19 +76,25 @@ struct OverlayView: View {
                     transcriptView
                     Divider()
                     actions.frame(height: 28)
-                    bottom.frame(height: 78, alignment: .top)
+                    if demonstrationAnswer == nil { bottom.frame(height: 78, alignment: .top) }
                     Divider()
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .background(GeometryReader { measured in
                     Color.clear.preference(key: OverlayChromeHeightKey.self, value: measured.size.height)
                 })
+                if let record = demonstrationAnswer {
+                    AnswerMessageView(record: record, store: record.store, language: coordinator.settings.language, fontSize: answerSize)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                } else {
                 ConversationFlowView(coordinator: coordinator, fontSize: answerSize, onContentHeight: { height in
                     guard height.isFinite, height > 0, abs(height - answerContentHeight) > 0.5 else { return }
                     answerContentHeight = height
                     reportSize()
                 })
                 .frame(maxHeight: .infinity)
+                }
+
             }
             .padding(14)
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
@@ -191,7 +199,7 @@ struct OverlayView: View {
         HStack {
             HStack {
                 AppBrandTitle(iconSize: 22)
-                if coordinator.isMock { Text(t("MOCK")).font(.caption2.bold()).foregroundStyle(.orange) }
+                if coordinator.isMock && demonstrationAnswer == nil { Text(t("MOCK")).font(.caption2.bold()).foregroundStyle(.orange) }
                 Spacer(minLength: 0)
             }.overlay { OverlayDragRegion() }
                 .help(b("Turn off automatic docking to drag this header anywhere.", "关闭自动贴边后，可拖动这里自由移动窗口。"))
@@ -222,7 +230,8 @@ struct OverlayView: View {
         }.buttonStyle(.borderless)
     }
     private var transcriptViewportHeight: CGFloat {
-        transcriptCollapsed ? NSLayoutManager().defaultLineHeight(for: NSFont.systemFont(ofSize: transcriptSize)) * 3 + 6 : 90
+        if demonstrationAnswer != nil { return 60 }
+        return transcriptCollapsed ? NSLayoutManager().defaultLineHeight(for: NSFont.systemFont(ofSize: transcriptSize)) * 3 + 6 : 90
     }
     private var transcriptView: some View {
         ScrollViewReader { proxy in
@@ -254,7 +263,7 @@ struct OverlayView: View {
                     .onChange(of: transcript.lines) { _, _ in if transcriptCollapsed || followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
                     .onChange(of: transcript.partialThem) { _, _ in if transcriptCollapsed || followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
                     .onChange(of: transcript.partialYou) { _, _ in if transcriptCollapsed || followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
-                if !transcriptCollapsed {
+                if !transcriptCollapsed && demonstrationAnswer == nil {
                     Toggle(t("Follow transcript"), isOn: $followTranscript).font(.caption2).toggleStyle(OverlaySwitchStyle()).frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }

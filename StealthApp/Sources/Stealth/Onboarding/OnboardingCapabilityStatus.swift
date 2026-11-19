@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Presentation only: installed files do not prove that a runtime has loaded successfully.
 enum OnboardingCapabilityStatus: Equatable {
-    case ready, download, installed, verify, downloading, queued, verifying, loadFailed, downloadFailed, configure, attention, unavailable, off
+    case ready, download, installed, verify, downloading, queued, verifying, loadFailed, downloadFailed, configure, attention, unavailable, off, notNeeded
 
     @MainActor static func local(_ kind: LocalModelKind, models: LocalModelManager) -> Self {
         if models.downloading == kind { return .downloading }
@@ -24,7 +24,7 @@ enum OnboardingCapabilityStatus: Equatable {
         case .installing: return .downloading
         case .loading: return .verifying
         case .ready: return .ready
-        case .failed: return .attention
+        case .failed: return .loadFailed
         }
     }
     func title(_ language: AppLanguage) -> String {
@@ -32,7 +32,7 @@ enum OnboardingCapabilityStatus: Equatable {
         switch self {
         case .ready: pair = ("Ready", "已就绪")
         case .download: pair = ("Not downloaded", "未下载")
-        case .installed: pair = ("Installed", "已安装")
+        case .installed: pair = ("Installed · unverified", "已安装，待验证")
         case .loadFailed: pair = ("Load failed", "加载失败")
         case .downloadFailed: pair = ("Download failed", "下载失败")
         case .configure: pair = ("Setup needed", "待配置")
@@ -42,6 +42,7 @@ enum OnboardingCapabilityStatus: Equatable {
         case .verifying: pair = ("Verifying", "验证中")
         case .attention: pair = ("Needs attention", "需处理")
         case .unavailable: pair = ("Unavailable", "不可用")
+        case .notNeeded: pair = ("Optional for typing", "手动输入无需配置")
         case .off: pair = ("Not enabled", "未启用")
         }
         return ServiceGuide.text(pair.0, pair.1, language)
@@ -55,7 +56,7 @@ enum OnboardingCapabilityStatus: Equatable {
         case .downloading: return "arrow.down"
         case .queued: return "clock"
         case .attention, .loadFailed, .downloadFailed, .configure: return "exclamationmark.circle"
-        case .unavailable, .off: return "minus.circle"
+        case .unavailable, .off, .notNeeded: return "minus.circle"
         }
     }
 }
@@ -65,7 +66,7 @@ struct OnboardingCapabilityBadge: View {
     let language: AppLanguage
     private var color: Color {
         switch status {
-        case .ready, .installed: return .green
+        case .ready: return .green
         default: return .secondary
         }
     }

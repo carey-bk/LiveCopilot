@@ -49,7 +49,7 @@ final class LocalModelManager: ObservableObject {
         }
         verificationTask = operation
         await withTaskCancellationHandler { await operation.value } onCancel: { operation.cancel() }
-        verificationTask = nil; checking = nil
+        verificationTask = nil; checking = nil; installNext()
     }
     func enqueue(_ kinds: [LocalModelKind]) {
         refresh()
@@ -57,7 +57,7 @@ final class LocalModelManager: ObservableObject {
         installNext()
     }
     private func installNext() {
-        guard task == nil, !queued.isEmpty else { return }
+        guard task == nil, verificationTask == nil, !queued.isEmpty else { return }
         let kind = queued.removeFirst()
         if installed.contains(kind) { installNext() } else { install(kind) }
     }
