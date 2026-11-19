@@ -8,13 +8,13 @@
 
 A native macOS assistant for interviews, meetings and academic discussions. LiveCopilot transcribes speech, retrieves relevant passages from your documents and streams answer suggestions in a floating window. You can also type a question without starting the microphone.
 
-[Download 2.7.0](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.7.0) · [Product website](https://carey-bk.github.io/LiveCopilot/en/) · [Release notes](docs/releases/2.7.0.md)
+[Download 2.9.1](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.1) · [Product website](https://carey-bk.github.io/LiveCopilot/en/) · [Release notes](docs/releases/2.9.1.md)
 
 ## Download and requirements
 
-**2.7.0 · 38.38 MB · Universal macOS app · Developer ID signed and Apple notarized**
+**2.9.1 · 39.06 MB · Universal macOS app · Developer ID signed and Apple notarized**
 
-[Download DMG — Hong Kong mirror](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.7.0/LiveCopilot-2.7.0-macOS-universal.dmg) · [GitHub download and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.7.0)
+[Download DMG — Hong Kong mirror](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.1/LiveCopilot-2.9.1-macOS-universal.dmg) · [GitHub download and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.1)
 
 | Component | Requirement |
 |---|---|
@@ -27,22 +27,17 @@ The small installer **does not contain Laya weights**. Download the models you c
 
 Open the DMG, drag LiveCopilot into Applications and launch it there. Existing users can choose **LiveCopilot → Check for Updates…** in the application menu. Normal upgrades preserve settings, API keys, documents and history; updating Laya requires a separate model download.
 
-## What is new in 2.7?
+## What’s new in 2.9.1?
 
-- Compact three-line transcripts with consistent original/translation alignment and optional streaming translation.
-- Zipformer English casing cleanup for more readable transcripts.
-- General, mixed and knowledge-base-only answer modes; mixed mode uses general knowledge when documents are irrelevant.
-- Explicit automatic-answer waiting/blocking reasons, diagnostic counters and recent events.
-- Local diagnostic summaries and private support ZIP export, optionally including crash reports. Nothing is uploaded automatically.
-
-Translation uses your configured answer provider and may incur charges. Laya model weights are unchanged in 2.7.
-
-See the [2.7.0 release notes](docs/releases/2.7.0.md) and [validation report](docs/releases/2.7.0-validation.md) for changes, tests, notarization and download verification.
+- **Long conversations.** The floating window groups transcript and answer updates, reducing repeated layout and scrolling while a long answer streams.
+- **Stopping and quitting.** LiveCopilot limits how long it waits for audio and inference tasks to finish. Late updates from the previous session stay out of the next one.
+- **Local knowledge indexing.** BGE-M3 uses the CPU by default on Intel Macs and can retry on the CPU after a GPU failure. Long documents benefit from improved chunking and indexing timeouts.
+- **Troubleshooting.** Indexing errors link to the relevant model settings. Diagnostic reports record where the interface stalled or which stage was running when listening stopped.
 
 ## Start your first conversation
 
-1. **Install and open the setup guide.** Choose your interface language and usage mode. The guide can be reopened from General settings.
-2. **Prepare speech and local models.** For Chinese/English, start with Zipformer. Add BGE-M3 for document retrieval and Laya for automatic triggering on Apple Silicon. Download only what you need.
+1. **Install and open the setup guide.** The six-step guide walks you through choosing an input mode, preparing models and testing your answer service. The guide can be reopened from General settings.
+2. **Prepare speech and local models.** For Chinese/English, start with Zipformer. Use the recommended local BGE-M3 for document retrieval without an OpenAI key and Laya for automatic triggering on Apple Silicon. Download only what you need.
 3. **Connect your analysis service.** Choose OpenAI, DeepSeek, Qwen, GLM, Kimi or a compatible streaming Chat Completions endpoint, then save your API key.
 4. **Add context if needed.** Import PDF, Markdown, TXT or DOCX into Knowledge. Scanned PDFs need OCR first. Rebuild document indexes after changing the embedding model.
 5. **Listen or type.** In-person mode uses the microphone; remote-meeting mode captures system audio with an optional microphone. Grant the relevant macOS permissions. You can also type with listening off.

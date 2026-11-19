@@ -8,13 +8,13 @@
 
 面向面试、会议和学术答辩的原生 macOS 助手。LiveCopilot 实时转写语音，检索个人文档中的相关资料，并在悬浮窗中流式呈现回答建议。也可以不开麦，直接输入问题。
 
-[下载 2.7.0](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.7.0) · [产品介绍](https://carey-bk.github.io/LiveCopilot/) · [版本说明](docs/releases/2.7.0.md)
+[下载 2.9.1](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.1) · [产品介绍](https://carey-bk.github.io/LiveCopilot/) · [版本说明](docs/releases/2.9.1.md)
 
 ## 下载与使用要求
 
-**2.7.0 · 安装包 38.38 MB · macOS 通用版本 · Developer ID 签名与 Apple 公证**
+**2.9.1 · 安装包 39.06 MB · macOS 通用版本 · Developer ID 签名与 Apple 公证**
 
-[下载安装包 — 香港镜像](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.7.0/LiveCopilot-2.7.0-macOS-universal.dmg) · [GitHub 下载与校验值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.7.0)
+[下载安装包 — 香港镜像](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.1/LiveCopilot-2.9.1-macOS-universal.dmg) · [GitHub 下载与校验值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.1)
 
 | 功能 | 使用要求 |
 |---|---|
@@ -27,22 +27,17 @@
 
 打开 DMG，将 LiveCopilot 拖入「应用程序」后启动。已有用户可以从应用菜单选择「LiveCopilot → 检查更新…」。正常升级保留配置、API Key、文档和历史；Laya 模型更新独立于应用更新。
 
-## 2.7 升级了什么？
+## 2.9.1 更新了什么？
 
-- 转写区支持三行折叠，原文与译文格式一致；新增可选的流式转写翻译。
-- Zipformer 英文大小写整理，改善英文转写可读性。
-- 自由知识、混合知识、仅知识库三档；混合模式在资料无关时使用通用知识回答。
-- 自动回答显示具体等待或拦截原因，提供诊断计数和近期事件。
-- 导出本地诊断摘要及私下反馈 ZIP，可选包含崩溃报告，不会自动上传。
-
-翻译使用已配置的回答服务，可能产生费用。2.7 未更新 Laya 模型权重。
-
-详见 [2.7.0 版本说明](docs/releases/2.7.0.md)和[验证报告](docs/releases/2.7.0-validation.md)，包含测试、公证与下载校验结果。
+- **长对话更流畅。** 悬浮窗合并刷新转写和回答，生成长回答时减少重复排版和自动滚动带来的卡顿。
+- **停止监听与退出更稳定。** 音频或本地推理任务响应缓慢时，应用会限制等待时间。上一场会话迟到的更新也会被隔离。
+- **本地知识库索引更稳定。** BGE-M3 在 Intel Mac 上默认使用 CPU，GPU 推理失败时可回退到 CPU 重试。长文档的分段和索引超时处理也已改进。
+- **故障更容易排查。** 索引报错时可直接打开对应模型的设置。诊断报告会记录界面卡顿或停止监听时所处的阶段。
 
 ## 开始第一次对话
 
-1. **安装并打开引导。** 选择界面语言和使用方式；以后可从通用设置重新打开引导。
-2. **准备语音与本地模型。** 中英双语优先选择 Zipformer；需要文档检索时下载 BGE-M3，Apple Silicon 用户可下载 Laya 开启自动触发。按需下载即可。
+1. **安装并打开引导。** 六步引导会带你选择输入方式、准备模型并测试回答服务。以后可从通用设置重新打开。
+2. **准备语音与本地模型。** 中英双语优先选择 Zipformer；文档检索推荐使用本地 BGE-M3，无需 OpenAI Key，Apple Silicon 用户可下载 Laya 开启自动触发。按需下载即可。
 3. **连接分析服务。** 选择 OpenAI、DeepSeek、Qwen、GLM、Kimi 或兼容流式 Chat Completions 的服务，保存自己的 API Key。
 4. **按需添加资料。** 知识库支持 PDF、Markdown、TXT、DOCX。扫描版 PDF 请先 OCR；更换向量模型后重建文档索引。
 5. **开始监听或直接输入。** 现场模式使用麦克风；远程会议模式采集系统音频并可选用麦克风。按提示授予 macOS 权限，也可保持监听关闭、手动提问。

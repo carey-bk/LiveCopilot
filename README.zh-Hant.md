@@ -8,13 +8,13 @@
 
 面向面試、會議和學術答辯的原生 macOS 助手。LiveCopilot 即時轉錄語音，檢索個人文件中的相關資料，並在懸浮窗中串流呈現回答建議。也可以不開麥，直接輸入問題。
 
-[下載 2.7.0](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.7.0) · [產品介紹](https://carey-bk.github.io/LiveCopilot/zh-Hant/) · [版本說明](docs/releases/2.7.0.md)
+[下載 2.9.1](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.1) · [產品介紹](https://carey-bk.github.io/LiveCopilot/zh-Hant/) · [版本說明](docs/releases/2.9.1.md)
 
 ## 下載與使用要求
 
-**2.7.0 · 安裝檔 38.38 MB · macOS 通用版本 · Developer ID 簽名與 Apple 公證**
+**2.9.1 · 安裝檔 39.06 MB · macOS 通用版本 · Developer ID 簽名與 Apple 公證**
 
-[下載安裝檔 — 香港鏡像站](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.7.0/LiveCopilot-2.7.0-macOS-universal.dmg) · [GitHub 下載與驗證值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.7.0)
+[下載安裝檔 — 香港鏡像站](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.1/LiveCopilot-2.9.1-macOS-universal.dmg) · [GitHub 下載與驗證值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.1)
 
 | 功能 | 使用要求 |
 |---|---|
@@ -27,22 +27,17 @@
 
 打開 DMG，將 LiveCopilot 拖入「應用程式」後啟動。已有使用者可以從應用程式選單選擇「LiveCopilot → 檢查更新…」。正常升級保留設定、API Key、文件和歷史；Laya 模型更新獨立於應用程式更新。
 
-## 2.7 升級了什麼？
+## 2.9.1 更新了什麼？
 
-- 轉錄區支援三行摺疊，原文與譯文格式一致；新增可選的串流轉錄翻譯。
-- Zipformer 英文大小寫整理，改善英文轉錄可讀性。
-- 自由知識、混合知識、僅知識庫三種模式；混合模式在資料無關時使用通用知識回答。
-- 自動回答顯示具體等待或攔截原因，提供診斷計數和近期事件。
-- 匯出本地診斷摘要及私下回報 ZIP，可選擇包含當機報告，不會自動上傳。
-
-翻譯使用已設定的回答服務，可能產生費用。2.7 未更新 Laya 模型權重。
-
-詳見 [2.7.0 版本說明](docs/releases/2.7.0.md)和[驗證報告](docs/releases/2.7.0-validation.md)，包含測試、公證與下載驗證結果。
+- **長時間對話更順暢。** 懸浮視窗會合併更新逐字稿與回答，減少串流產生長回答時因重複排版或自動捲動造成的卡頓。
+- **停止監聽與結束程式更穩定。** 音訊或本機推論工作回應緩慢時，程式會限制等待時間。上一場對話延遲送達的更新也會被隔離。
+- **本機知識庫索引更穩定。** BGE-M3 在 Intel Mac 上預設使用 CPU，GPU 推論失敗時可改用 CPU 重試。長文件的分段與索引逾時處理也已改善。
+- **更容易排查問題。** 索引出錯時可直接開啟對應模型的設定。診斷報告會記錄介面卡住或停止監聽時所在的階段。
 
 ## 開始第一次對話
 
-1. **安裝並打開引導。** 選擇介面語言和使用方式；以後可從通用設定重新打開引導。
-2. **準備語音與本地模型。** 中英雙語優先選擇 Zipformer；需要文件檢索時下載 BGE-M3，Apple Silicon 使用者可下載 Laya 開啟自動觸發。按需下載即可。
+1. **安裝並打開引導。** 六步驟引導會帶你選擇輸入方式、準備模型並測試回答服務。日後可從一般設定重新開啟。
+2. **準備語音與本地模型。** 中英雙語優先選擇 Zipformer；文件檢索建議使用本機 BGE-M3，無需 OpenAI 金鑰，Apple Silicon 使用者可下載 Laya 開啟自動觸發。按需下載即可。
 3. **連接分析服務。** 選擇 OpenAI、DeepSeek、Qwen、GLM、Kimi 或相容串流 Chat Completions 的服務，保存自己的 API Key。
 4. **按需添加資料。** 知識庫支援 PDF、Markdown、TXT、DOCX。掃描版 PDF 請先 OCR；更換向量模型後重建文件索引。
 5. **開始監聽或直接輸入。** 現場模式使用麥克風；遠端會議模式採集系統音訊並可選用麥克風。按提示授予 macOS 權限，也可保持監聽關閉、手動提問。
