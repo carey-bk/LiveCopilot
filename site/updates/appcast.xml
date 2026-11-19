@@ -6,6 +6,16 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>LiveCopilot</title>
         <item>
+            <title>2.9.0</title>
+            <pubDate>Thu, 19 Nov 2026 09:34:21 +0800</pubDate>
+            <link>https://carey-bk.github.io/LiveCopilot/</link>
+            <sparkle:version>20261119.012251</sparkle:version>
+            <sparkle:shortVersionString>2.9.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<html><body><p>LiveCopilot 2.9.0</p><p>中文</p><p>六步新手引导帮助你选择输入方式、准备本地模型，并在开始使用前测试回答服务。自定义兼容接口支持配置服务地址和模型 ID。</p><p>新增「模式与场景」设置。新手引导、模式设置与实时回答触发页共用 Jev Mode 开关卡片，实时触发页还可查看 Laya 状态和调整灵敏度。</p><p>设置页现在明确区分知识库索引模型与回答模型。推荐在本机使用 BGE-M3 检索资料，无需 OpenAI Key。</p><p>知识库检索会复用已读取的向量。同一场监听中更换文档后，下一次提问即可使用更新后的资料。</p><p>English</p><p>Six-step onboarding guides you through audio inputs, local models and testing your answer service. Custom compatible endpoints support a configurable URL and model ID.</p><p>Conversation modes and tools now have their own settings page. Jev Mode uses the same switch card across onboarding and settings, with Laya status and sensitivity available under real-time triggers.</p><p>Knowledge indexing and answer generation are clearly identified in settings. The recommended local BGE-M3 index runs without an OpenAI API key.</p><p>Knowledge retrieval reuses vectors in memory and picks up document changes during an ongoing listening session.</p></body></html>]]></description>
+            <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.9.0/LiveCopilot-2.9.0-macOS-universal.dmg" length="38888220" type="application/octet-stream" sparkle:edSignature="NynTqnfhJeWbzulTeV/1EHpxkBO73n8fa/Ap/rKWey95ekydbg/Eg+pXa48TdjJ/rZeh+ANh9ic99bx4iWktBA=="/>
+        </item>
+        <item>
             <title>2.8.0</title>
             <pubDate>Fri, 06 Nov 2026 09:40:26 +0800</pubDate>
             <link>https://carey-bk.github.io/LiveCopilot/</link>
@@ -47,19 +57,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 </pre>]]></description>
             <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.7.0/LiveCopilot-2.7.0-macOS-universal.dmg" length="38375615" type="application/octet-stream" sparkle:edSignature="+BcX3x/tOIBKX21jzRN8a9voRg5YyhGvxz9meZiDFisTodD7nOCxnIi/h3t0cxI3mGEJ60mhPMrzFNnS4vp6AA=="/>
         </item>
-        <item>
-            <title>2.5.1</title>
-            <pubDate>Sun, 18 Oct 2026 10:52:06 +0800</pubDate>
-            <link>https://carey-bk.github.io/LiveCopilot/</link>
-            <sparkle:version>20261018.024634</sparkle:version>
-            <sparkle:shortVersionString>2.5.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<h2>LiveCopilot 2.5.1</h2><ul><li>设置文案更清晰：“使用场景”“自动生成回答建议”。</li><li>首页只保留顶部蓝色更新提示，点击“查看更新”进入“关于”页管理更新。</li><li>旧通用本地语音配置迁移默认采用 Zipformer；已保存的明确引擎选择保持不变。</li><li>保留设置、密钥、模型和历史记录。</li></ul><h3>English</h3><ul><li>Clearer settings labels for usage scenario and automatic answer suggestions.</li><li>One update notice on the settings home page; View Update opens management in About.</li><li>Zipformer for retired generic local speech configurations; explicit saved engine selections remain unchanged.</li><li>Existing settings, credentials, models and history are preserved.</li></ul>]]></description>
-            <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.5.1/LiveCopilot-2.5.1-macOS-universal.dmg" length="37971891" type="application/octet-stream" sparkle:edSignature="4vuY4e2HkOF95vk+sc/KFYK2oRyK5JVLTvWdcaMWCyJATRHbtI7SHrrX6tR2D+JO5ATvyoE3rk5ZqvrbkVtyAw=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: uAGnyH4eV5Cqx1st6mU4Xk6W9QqpgA+1f5cjNKpvhs8sZSGUpoyqCQLflc28OtSW7RWKLYWPaJWeq62j27eEDg==
-length: 7239
+edSignature: Ryy+d/MJuSluLUAckVL50u0XT2wR03PuQo27+OxnwGODb2Vj45HF5mn7mFiuweHrPbFII1AI7+COgnK+cDivAg==
+length: 7793
 -->
