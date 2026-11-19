@@ -35,20 +35,22 @@ enum L10n {
             if text == "\(speaker.rawValue): connecting to Live…" { return Self.text(speaker.rawValue, language: language) + "：正在连接实时服务…" }
             if text == "\(speaker.rawValue): disconnected — stop/start listening to retry." { return Self.text(speaker.rawValue, language: language) + "：连接已断开，请重新开始监听。" }
         }
-        let rules: [(String, String)] = [
-            (#"^Live authentication/access failed \(([a-z_]+)\).*$"#, "实时服务验证失败（$1），请检查密钥与模型权限。"),
-            (#"^Live command/session failed \(([a-z_]+)\).*$"#, "实时会话请求失败（$1），请检查模型配置、权限和网络。"),
-            (#"^Service authentication/access failed \((\d+)\).*$"#, "服务身份验证或访问失败（$1），请在“服务”中检查密钥与模型权限。"),
-            (#"^Service rejected the request \((\d+)\).*$"#, "服务拒绝请求（$1），请检查模型名称和配置。"),
-            (#"^Service is temporarily unavailable \((\d+)\).*$"#, "服务暂不可用（$1），请稍后重试。"),
-            (#"^Service request failed \(HTTP (\d+)\).*$"#, "服务请求失败（HTTP $1），请检查网络后重试。")
-        ]
-        for (pattern, replacement) in rules {
-            if let regex = try? NSRegularExpression(pattern: pattern), regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil {
+        for (regex, replacement) in compiledRules {
+            if regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil {
                 return regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: replacement)
             }
         }
         return text
+    }
+    private static let compiledRules: [(NSRegularExpression, String)] = [
+        (#"^Live authentication/access failed \(([a-z_]+)\).*$"#, "实时服务验证失败（$1），请检查密钥与模型权限。"),
+        (#"^Live command/session failed \(([a-z_]+)\).*$"#, "实时会话请求失败（$1），请检查模型配置、权限和网络。"),
+        (#"^Service authentication/access failed \((\d+)\).*$"#, "服务身份验证或访问失败（$1），请在“服务”中检查密钥与模型权限。"),
+        (#"^Service rejected the request \((\d+)\).*$"#, "服务拒绝请求（$1），请检查模型名称和配置。"),
+        (#"^Service is temporarily unavailable \((\d+)\).*$"#, "服务暂不可用（$1），请稍后重试。"),
+        (#"^Service request failed \(HTTP (\d+)\).*$"#, "服务请求失败（HTTP $1），请检查网络后重试。")
+    ].compactMap { pattern, replacement in
+        (try? NSRegularExpression(pattern: pattern)).map { ($0, replacement) }
     }
     static let chinese: [String: String] = [
         "History": "历史记录",

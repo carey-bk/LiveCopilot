@@ -113,9 +113,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsObservation: AnyCancellable?
     private var updateActivityObservation: AnyCancellable?
     private var onboardingObservation: AnyCancellable?
+    private let mainThreadWatchdog = MainThreadWatchdog()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         CaptureDiagnostics.record(.appLaunch)
+        if !coordinator.isMock { mainThreadWatchdog.start() }
         signal(SIGTERM, SIG_IGN)
         terminationSignal = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
         terminationSignal?.setEventHandler { NSApp.terminate(nil) }
@@ -142,7 +144,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             coordinator.appleSpeech.objectWillChange.eraseToAnyPublisher(),
             coordinator.laya.objectWillChange.eraseToAnyPublisher()
         ]).sink { [weak self] in
-            DispatchQueue.main.async { self?.coordinator.updates.activityDidChange() }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.coordinator.updates.activityDidChange()
+                self.mainThreadWatchdog.updateState(.init(
+                    isRunning: self.coordinator.isRunning,
+                    isTransitioning: self.coordinator.isTransitioning,
+                    answerIsRunning: self.coordinator.answerIsRunning,
+                    transcriptLineCount: self.coordinator.transcript.lines.count))
+            }
         }
         coordinator.updates.start()
         if AppPaths.isOnboardingPreview && ProcessInfo.processInfo.arguments.contains("--onboarding-dark") {
@@ -256,6 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        mainThreadWatchdog.stop()
         overlay?.stopWatching()
         hotkeys.unregisterAll()
         coordinator.saveSession()

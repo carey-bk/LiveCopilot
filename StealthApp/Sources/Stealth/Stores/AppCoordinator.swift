@@ -186,11 +186,15 @@ final class AppCoordinator: ObservableObject {
     let systemAudio = AudioCaptureManager()
     let mic = MicCaptureManager()
     private let systemFlow = AudioFlowMonitor(), micFlow = AudioFlowMonitor()
+    var systemFlowSnapshot: AudioFlowMonitor.Snapshot { systemFlow.snapshot() }
+    /// Test-only provider override to exercise the real capture → live provider → stop/restart lifecycle.
+    var testLiveProviderFactory: ((Speaker) -> any LiveProvider)?
     /// Far-end reference for Remote mode: content-free energy frames of both sources.
     let echo = EchoMonitor()
     /// A Remote-mode microphone turn. Until it shows speech the far end cannot explain, it is
     /// treated as possible speaker echo and does not act as the user's own speech.
-    private struct OwnTurn { let startedAt: TimeInterval; var speaking: Bool; var confirmed = false; var held = false; var text: String? }
+    private struct OwnTurn { let startedAt: TimeInterval; var speaking: Bool; var endedAt: TimeInterval? = nil; var confirmed = false; var held = false; var text: String? }
+    private static let ownTurnStaleSeconds: TimeInterval = 3.0
     private var ownTurn: OwnTurn?
     /// What the far end's recognizer produced in the last seconds, in memory only (never stored or logged).
     private var farEndTexts: [(at: TimeInterval, text: String)] = []
@@ -371,7 +375,12 @@ final class AppCoordinator: ObservableObject {
         else if settings.requiresOpenAIKey { refreshKeyState() }
         else { keyStatus = "OpenAI is not required by the selected local services." }
         refreshAnalysisKeyState()
-        systemAudio.onPCM16 = { [weak self] data in Task { @MainActor in self?.systemLive?.sendAudio(data) } }
+        systemAudio.onPCM16 = { [weak self] data, sessionID in
+            Task { @MainActor in
+                guard let self, self.liveEpoch == sessionID else { return }
+                self.systemLive?.sendAudio(data)
+            }
+        }
         mic.onPCM16 = { [weak self] data in Task { @MainActor in self?.micLive?.sendAudio(data) } }
         systemAudio.flow = systemFlow; mic.flow = micFlow
         systemAudio.echo = echo; mic.echo = echo
@@ -784,7 +793,7 @@ final class AppCoordinator: ObservableObject {
         guard !isRunning, !isTransitioning, !isIndexing, !answerIsRunning else { return }
         if kind == .embedding {
             retrievalPreparationTask?.cancel()
-            localEmbedding?.close(); localEmbedding = nil
+            localEmbedding?.close(initiator: .modelRemoved); localEmbedding = nil
         }
         if kind == .embedding { retrievalLoadFailed = false }
         localModels.remove(kind)
@@ -836,7 +845,7 @@ final class AppCoordinator: ObservableObject {
         sessionStartedAt = Date(); sessionWasVoice = true; sessionAnswerIDs = []
         echo.begin(sampleRate: settings.listeningService.sampleRate)
         endOwnTurn(); captureNotice = nil
-        if isMock {
+        if isMock && testLiveProviderFactory == nil {
             isRunning = true; statusMessage = "MOCK listening — sample conversation"
             configureAutomaticTrigger()
             guard emitMockConversation else { return }
@@ -850,11 +859,11 @@ final class AppCoordinator: ObservableObject {
             return
         }
         do {
-            let key = settings.listeningService == .openAI ? try credential() : ""
-            if let kind = settings.listeningService.localModel, !kind.isInstalled(in: localModels.root) {
+            let key = (testLiveProviderFactory == nil && settings.listeningService == .openAI) ? try credential() : ""
+            if testLiveProviderFactory == nil, let kind = settings.listeningService.localModel, !kind.isInstalled(in: localModels.root) {
                 throw CopilotError.message("Download the selected speech model and VAD in Services first.")
             }
-            if settings.listeningService == .apple {
+            if testLiveProviderFactory == nil, settings.listeningService == .apple {
                 guard AppleSpeechSupport.available else { throw CopilotError.message("Apple speech requires macOS 26 and a supported Mac and language.") }
                 guard await AppleSpeechSupport.installed(settings.appleSpeechLanguage) else { throw CopilotError.message("Download the selected Apple speech language in Services first.") }
             }
@@ -865,7 +874,7 @@ final class AppCoordinator: ObservableObject {
             flowSources = []
             statusMessage = "Starting audio capture…"
             // Acquire permissions/capture first; never leave paid sockets open after a capture failure.
-            if settings.mode == .remote { await systemAudio.start() }
+            if settings.mode == .remote { await systemAudio.start(sessionID: epoch) }
             guard liveEpoch == epoch else { return }
             if micEnabled || settings.mode == .inPerson { await mic.start() }
             guard liveEpoch == epoch else { return }
@@ -896,7 +905,9 @@ final class AppCoordinator: ObservableObject {
     }
     private func makeLive(key: String, speaker: Speaker, epoch: UUID) -> any LiveProvider {
         let provider: any LiveProvider
-        if settings.listeningService == .apple, #available(macOS 26, *) {
+        if let factory = testLiveProviderFactory {
+            provider = factory(speaker)
+        } else if settings.listeningService == .apple, #available(macOS 26, *) {
             provider = AppleLiveProvider(speaker: speaker, language: settings.appleSpeechLanguage, sessionStart: sessionStartedAt ?? Date())
         } else if let kind = settings.listeningService.localModel {
             provider = LocalLiveProvider(directory: kind.location(in: localModels.root), speaker: speaker, sessionStart: sessionStartedAt ?? Date(),
@@ -926,7 +937,7 @@ final class AppCoordinator: ObservableObject {
             if speaker == .you, echoGuardApplies, !text.isEmpty, !confirmOwnTurn(text: text) { holdOwnTurn(); return }
             transcript.setPartial(text, speaker: speaker)
             translation.updatePreview(text, speaker: speaker)
-            if !text.isEmpty { questionState = QuestionPhase.forming.rawValue; flow(for: speaker).notePartial() }
+            if !text.isEmpty { setQuestionState(QuestionPhase.forming.rawValue); flow(for: speaker).notePartial() }
             if !text.isEmpty { submitLaya(speaker: speaker, partial: text) }
         case .transcript(var fragment):
             let priorOwn = speaker == .you && ownTurn?.confirmed == true ? transcript.partialYou : ""
@@ -942,7 +953,7 @@ final class AppCoordinator: ObservableObject {
             transcript.ingest(fragment)
             translation.update(lines: transcript.lines)
             if speaker == .you { systemLive?.appendContext("You said: " + fragment.text, delegationID: nil) }
-            questionState = conversation.phase.rawValue
+            setQuestionState(conversation.phase.rawValue)
             if usesLaya { submitLaya(speaker: speaker) }
             else if pendingAutomatic != nil { scheduleAutomatic() }
         case .delegation(let id, _):
@@ -999,7 +1010,7 @@ final class AppCoordinator: ObservableObject {
         } else {
             ownTurnCheck?.cancel(); ownTurnCheck = nil
             guard var turn = ownTurn, turn.speaking else { return }
-            turn.speaking = false; ownTurn = turn
+            turn.speaking = false; turn.endedAt = now; ownTurn = turn
             // Only speech that was ever accepted as the user's ends as the user's.
             if turn.confirmed { applySpeechActivity(false, speaker: .you) }
         }
@@ -1047,6 +1058,9 @@ final class AppCoordinator: ObservableObject {
     /// Real barge-in is promoted here, mid-utterance.
     @discardableResult private func confirmOwnTurn(text: String? = nil) -> Bool {
         let now = ProcessInfo.processInfo.systemUptime
+        if let existing = ownTurn, !existing.speaking, let endedAt = existing.endedAt, now - endedAt > Self.ownTurnStaleSeconds {
+            ownTurn = nil
+        }
         var turn = ownTurn ?? OwnTurn(startedAt: now - Self.ownTurnLeadIn, speaking: false)
         if let text { turn.text = text }
         // Confirmation belongs to the evidence window, not the entire VAD turn. A
@@ -1191,22 +1205,63 @@ final class AppCoordinator: ObservableObject {
             self.request(query: question, mode: .reply, speaker: pending.speaker, delegationID: pending.id, automatic: true)
         }
     }
+    private func setQuestionState(_ next: String) {
+        if questionState != next { questionState = next }
+    }
+    /// Awaits a background task up to `seconds`, returning `true` if it timed out.
+    private func awaitBounded(_ task: Task<Void, Never>?, seconds: TimeInterval) async -> Bool {
+        guard let task else { return false }
+        let timeoutNS = UInt64(max(0.05, seconds) * 1_000_000_000)
+        return await withCheckedContinuation { cont in
+            var resumed = false
+            Task { @MainActor in
+                await task.value
+                guard !resumed else { return }
+                resumed = true
+                cont.resume(returning: false)
+            }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: timeoutNS)
+                guard !resumed else { return }
+                resumed = true
+                task.cancel()
+                cont.resume(returning: true)
+            }
+        }
+    }
+    private func disconnectProvidersBounded(_ a: (any LiveProvider)?, _ b: (any LiveProvider)?, seconds: TimeInterval = 18) async -> Bool {
+        guard a != nil || b != nil else { return false }
+        let task = Task { @MainActor in
+            async let closeA: Void = a?.disconnect() ?? ()
+            async let closeB: Void = b?.disconnect() ?? ()
+            _ = await (closeA, closeB)
+        }
+        return await awaitBounded(task, seconds: seconds)
+    }
     func shutdown() async {
         speechVerificationTask?.cancel()
-        await speechVerificationTask?.value
+        if await awaitBounded(speechVerificationTask, seconds: 2), !isMock {
+            CaptureDiagnostics.record(.shutdownStage, details: .init(lifecyclePhase: .verificationWait, timedOut: true))
+        }
         translation.stop()
-        embeddingVerificationTask?.cancel(); await embeddingVerificationTask?.value
+        embeddingVerificationTask?.cancel()
+        if await awaitBounded(embeddingVerificationTask, seconds: 2), !isMock {
+            CaptureDiagnostics.record(.shutdownStage, details: .init(lifecyclePhase: .verificationWait, timedOut: true))
+        }
         isShuttingDown = true
         retrievalPreparationTask?.cancel()
-        await retrievalPreparationTask?.value
+        if await awaitBounded(retrievalPreparationTask, seconds: 2.5), !isMock {
+            CaptureDiagnostics.record(.shutdownStage, details: .init(lifecyclePhase: .retrievalWait, timedOut: true))
+        }
         cancelAnswer()
         startupCheckTask?.cancel()
-        await startupCheckTask?.value
+        _ = await awaitBounded(startupCheckTask, seconds: 2)
         await stop(force: true)
-        localEmbedding?.close(); localEmbedding = nil
+        localEmbedding?.close(initiator: .shutdown); localEmbedding = nil
         await localModels.shutdown()
         await appleSpeech.shutdown()
         await laya.shutdown()
+        if !isMock { CaptureDiagnostics.record(.shutdownStage, details: .init(lifecyclePhase: .complete, timedOut: false)) }
     }
     func stop(force: Bool = false) async {
         guard force || !isTransitioning else { return }
@@ -1220,13 +1275,16 @@ final class AppCoordinator: ObservableObject {
         endOwnTurn(); captureNotice = nil
         await systemAudio.stop(); mic.stop()
         let a = systemLive, b = micLive; systemLive = nil; micLive = nil
-        async let closeA: Void = a?.disconnect() ?? ()
-        async let closeB: Void = b?.disconnect() ?? ()
-        _ = await (closeA, closeB)
+        let disconnectTimedOut = await disconnectProvidersBounded(a, b)
+        if disconnectTimedOut {
+            incompleteLocalStop = true
+            if !isMock { CaptureDiagnostics.record(.stopStage, details: .init(lifecyclePhase: .disconnectProviders, timedOut: true)) }
+        }
         // After the final flush, so finals produced by Stop are counted.
         for speaker in flowSources { finishAudioFlow(speaker, provider: speaker == .them ? a : b) }
         liveEpoch = UUID()
         saveSession()
+        if !isMock { CaptureDiagnostics.record(.stopStage, details: .init(lifecyclePhase: .complete, timedOut: disconnectTimedOut)) }
         statusMessage = incompleteLocalStop ? "Listening stopped. The final local speech segment could not be completed." : "Listening stopped — manual questions remain available"
     }
     /// Discard this session, including provider-side speech context and late buffered finals.
@@ -1362,15 +1420,67 @@ final class AppCoordinator: ObservableObject {
         request(query: query, mode: mode, speaker: mode == .reply ? latestSpeaker : nil, useContext: true,
                 contextOverride: context, languageQuestion: latest)
     }
+    private final class PendingAnswerBuffer {
+        let id: UUID
+        let store: SuggestionStore
+        var text = ""
+        var timer: Task<Void, Never>?
+        var lastFlushAt: TimeInterval = 0
+        var closed = false
+        init(id: UUID, store: SuggestionStore) { self.id = id; self.store = store }
+    }
+    private var activeDeltaBuffer: PendingAnswerBuffer?
+    private static let streamCoalesceInterval: TimeInterval = 0.08
+
+    private func enqueueAnswerDelta(_ delta: String, for buffer: PendingAnswerBuffer, immediate: Bool) {
+        guard !buffer.closed, activeDeltaBuffer === buffer, requestID == buffer.id else { return }
+        buffer.text.append(delta)
+        let now = ProcessInfo.processInfo.systemUptime
+        if immediate || now - buffer.lastFlushAt >= Self.streamCoalesceInterval {
+            flushAnswerDelta(buffer)
+        } else if buffer.timer == nil {
+            let remaining = max(0.005, Self.streamCoalesceInterval - (now - buffer.lastFlushAt))
+            buffer.timer = Task { @MainActor [weak self, weak buffer] in
+                do { try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) } catch { return }
+                guard !Task.isCancelled, let self, let buffer else { return }
+                self.flushAnswerDelta(buffer)
+            }
+        }
+    }
+
+    private func flushAnswerDelta(_ buffer: PendingAnswerBuffer) {
+        buffer.timer?.cancel(); buffer.timer = nil
+        guard !buffer.closed, activeDeltaBuffer === buffer, requestID == buffer.id else { return }
+        guard !buffer.text.isEmpty else { return }
+        let chunk = buffer.text
+        buffer.text.removeAll(keepingCapacity: true)
+        buffer.lastFlushAt = ProcessInfo.processInfo.systemUptime
+        buffer.store.appendDelta(chunk)
+        publishAnswer(buffer.id, store: buffer.store)
+    }
+
+    private func finalizeAnswerBuffer(_ buffer: PendingAnswerBuffer?) {
+        guard let buffer else { return }
+        buffer.timer?.cancel(); buffer.timer = nil
+        if !buffer.closed, !buffer.text.isEmpty {
+            let chunk = buffer.text
+            buffer.text.removeAll(keepingCapacity: false)
+            buffer.store.appendDelta(chunk)
+        }
+        buffer.closed = true
+        if activeDeltaBuffer === buffer { activeDeltaBuffer = nil }
+    }
+
     func askText(_ query: String) { manualIntervention(); request(query: query, mode: .reply, useContext: includeConversation) }
     func cancelAnswer() {
         manualIntervention()
+        finalizeAnswerBuffer(activeDeltaBuffer)
         activeStore?.mark(.cancelled); activeStore?.interrupt()
         if let store = activeStore { publishAnswer(requestID, store: store) }
         requestID = UUID(); answerTask?.cancel(); answerTimeout?.cancel(); answerIsRunning = false
         conversation.finish(success: false, question: activeStore?.question ?? suggestion.question)
         activeStore = nil
-        questionState = conversation.phase.rawValue
+        setQuestionState(conversation.phase.rawValue)
     }
     private func request(query: String, mode: SuggestionMode, speaker: Speaker? = nil,
                          delegationID: String? = nil, useContext: Bool = true,
@@ -1414,11 +1524,15 @@ final class AppCoordinator: ObservableObject {
         output.mark(.analysisDispatched)
         publishAnswer(id, store: output)
         onShowOverlay?(automatic)
+        let deltaBuffer = PendingAnswerBuffer(id: id, store: output)
+        finalizeAnswerBuffer(activeDeltaBuffer)
+        activeDeltaBuffer = deltaBuffer
         answerTimeout?.cancel()
         answerTimeout = Task { [weak self] in
             guard let self else { return }
             do { try await Task.sleep(nanoseconds: UInt64(self.answerTimeoutSeconds * 1_000_000_000)) } catch { return }
             guard self.requestID == id, self.answerIsRunning else { return }
+            self.finalizeAnswerBuffer(deltaBuffer)
             self.answerTask?.cancel(); self.requestID = UUID()
             output.fail(ServiceGuide.text("Answer timed out. Try again manually.", "回答超时，请手动重试。", self.settings.language))
             self.publishAnswer(id, store: output); self.answerIsRunning = false; self.activeStore = nil
@@ -1428,6 +1542,13 @@ final class AppCoordinator: ObservableObject {
         let epoch = liveEpoch, started = ProcessInfo.processInfo.systemUptime
         answerTask = Task { [weak self] in
             guard let self else { return }
+            defer {
+                if !deltaBuffer.closed {
+                    deltaBuffer.timer?.cancel(); deltaBuffer.timer = nil
+                    deltaBuffer.closed = true
+                    if self.activeDeltaBuffer === deltaBuffer { self.activeDeltaBuffer = nil }
+                }
+            }
             do {
                 var sources: [RetrievedSource] = []
                 do {
@@ -1491,12 +1612,17 @@ final class AppCoordinator: ObservableObject {
                         if first {
                             output.firstTextMS = Int((ProcessInfo.processInfo.systemUptime - started) * 1000); first = false
                             output.mark(.firstToken)
+                            self.enqueueAnswerDelta(delta, for: deltaBuffer, immediate: true)
+                        } else {
+                            // Coalesce high-frequency streaming deltas (~12 Hz) with a flush timer so
+                            // idle tails still appear promptly without per-token full-window redraws.
+                            self.enqueueAnswerDelta(delta, for: deltaBuffer, immediate: false)
                         }
-                        output.appendDelta(delta)
-                        self.publishAnswer(id, store: output)
                     }
+                    self.finalizeAnswerBuffer(deltaBuffer)
                 }
                 guard self.requestID == id else { return }
+                self.finalizeAnswerBuffer(deltaBuffer)
                 output.mark(.answerComplete)
                 output.finish(); self.conversation.finish(success: true, question: query)
                 if let delegationID, self.liveEpoch == epoch {
@@ -1505,6 +1631,7 @@ final class AppCoordinator: ObservableObject {
                 }
             } catch {
                 guard self.requestID == id, !Task.isCancelled else { return }
+                self.finalizeAnswerBuffer(deltaBuffer)
                 output.mark(.failed)
                 output.fail(error.localizedDescription); self.conversation.finish(success: false, question: query)
             }
@@ -1512,7 +1639,7 @@ final class AppCoordinator: ObservableObject {
             self.answerTimeout?.cancel(); self.answerIsRunning = false; self.activeStore = nil
             self.publishAnswer(id, store: output)
             self.drainQuestions()
-            self.questionState = self.conversation.phase.rawValue
+            self.setQuestionState(self.conversation.phase.rawValue)
             if self.pendingAutomatic != nil { self.scheduleAutomatic() }
             self.layaGate.retryPending()
         }

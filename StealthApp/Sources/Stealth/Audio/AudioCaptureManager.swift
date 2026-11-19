@@ -13,12 +13,22 @@ final class AudioCaptureManager: NSObject, ObservableObject {
     @Published private(set) var isCapturing = false
     @Published private(set) var lastError: String?
 
-    /// Called on a background queue with PCM16 mono 24kHz audio chunks.
-    var onPCM16: ((Data) -> Void)?
+    /// Called on a background queue with PCM16 mono chunks tagged by capture session epoch.
+    var onPCM16: ((Data, UUID) -> Void)?
     /// Optional content-free level/arrival accounting; observed on the capture queue.
     var flow: AudioFlowMonitor?
     /// Optional speaker-echo reference; observed on the capture queue with the buffer's capture time.
     var echo: EchoMonitor?
+
+    /// Controllable backend handle for deterministic tests without Screen Recording permission.
+    protocol StreamHandle: Sendable {
+        func stopCapture() async throws
+    }
+    var stopTimeoutSeconds: TimeInterval = 5.0
+    var testStreamFactory: ((_ deliver: @escaping @Sendable (Data, TimeInterval) -> Void) async throws -> any StreamHandle)?
+    var diagnosticObserver: ((CaptureDiagnostics.Stage, CaptureDiagnostics.Details?) -> Void)?
+    private var testHandle: (any StreamHandle)?
+    private var activeGate: CaptureSessionGate?
 
     private let log = Logger(subsystem: "com.livecopilot.app", category: "audio")
     private var stream: SCStream?
@@ -29,15 +39,49 @@ final class AudioCaptureManager: NSObject, ObservableObject {
     func configure(sampleRate: Double) { if !isCapturing { outputSampleRate = sampleRate } }
     private let outputQueue = DispatchQueue(label: "com.livecopilot.audio.output")
 
-    func start() async {
+    private func recordDiagnostic(_ stage: CaptureDiagnostics.Stage, code: Int? = nil, details: CaptureDiagnostics.Details? = nil) {
+        CaptureDiagnostics.record(stage, code: code, details: details)
+        diagnosticObserver?(stage, details)
+    }
+
+    func start(sessionID: UUID = UUID()) async {
         guard !isCapturing else { return }
         let revision = UUID(); captureRevision = revision
         lastError = nil
-        CaptureDiagnostics.record(.systemStart)
+        recordDiagnostic(.systemStart)
+        let gate = CaptureSessionGate(sessionID: sessionID)
+        if let testStreamFactory {
+            do {
+                let emit = onPCM16, flow = self.flow, echo = self.echo
+                let handle = try await testStreamFactory { data, captureTime in
+                    gate.deliverIfActive {
+                        flow?.observe(data)
+                        echo?.observe(data, source: .system, at: captureTime)
+                        emit?(data, gate.sessionID)
+                    }
+                }
+                guard captureRevision == revision else {
+                    gate.invalidate()
+                    try? await handle.stopCapture()
+                    return
+                }
+                self.activeGate = gate
+                self.testHandle = handle
+                self.isCapturing = true
+                recordDiagnostic(.systemReady, details: .init(sampleRate: outputSampleRate, channels: 1))
+            } catch {
+                gate.invalidate()
+                guard captureRevision == revision else { return }
+                recordDiagnostic(.systemFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
+                lastError = humanReadable(error)
+            }
+            return
+        }
         // Checking a denied/stale grant must not spawn a new macOS prompt on
         // every Start. The explicit Settings button owns the permission request.
         guard CGPreflightScreenCaptureAccess() else {
-            CaptureDiagnostics.record(.systemFailed)
+            gate.invalidate()
+            recordDiagnostic(.systemFailed)
             lastError = "Screen Recording permission is required. Grant it in System Settings → Privacy & Security → Screen Recording, then reopen LiveCopilot."
             return
         }
@@ -47,7 +91,7 @@ final class AudioCaptureManager: NSObject, ObservableObject {
             let content = try await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: false
             )
-            guard captureRevision == revision else { return }
+            guard captureRevision == revision else { gate.invalidate(); return }
             guard let display = content.displays.first else {
                 throw CaptureError.noDisplay
             }
@@ -66,23 +110,26 @@ final class AudioCaptureManager: NSObject, ObservableObject {
             cfg.queueDepth = 6
 
             let stream = SCStream(filter: filter, configuration: cfg, delegate: self)
-            let output = AudioStreamOutput(emit: onPCM16, flow: flow, echo: echo, sampleRate: outputSampleRate)
+            let output = AudioStreamOutput(gate: gate, emit: onPCM16, flow: flow, echo: echo, sampleRate: outputSampleRate)
             try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: outputQueue)
             self.output = output
             try await stream.startCapture()
             guard captureRevision == revision else {
+                gate.invalidate()
                 try? await stream.stopCapture()
                 return
             }
 
+            self.activeGate = gate
             self.stream = stream
             self.isCapturing = true
-            CaptureDiagnostics.record(.systemReady, details: .init(sampleRate: Double(cfg.sampleRate), channels: UInt32(cfg.channelCount)))
+            recordDiagnostic(.systemReady, details: .init(sampleRate: Double(cfg.sampleRate), channels: UInt32(cfg.channelCount)))
             log.info("System audio capture started")
             DebugLog.log("AUDIO capture started OK")
         } catch {
+            gate.invalidate()
             guard captureRevision == revision else { return }
-            CaptureDiagnostics.record(.systemFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
+            recordDiagnostic(.systemFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
             lastError = humanReadable(error)
             log.error("Capture start failed: \(error.localizedDescription, privacy: .public)")
             DebugLog.log("AUDIO capture FAILED: \(error.localizedDescription)")
@@ -91,13 +138,43 @@ final class AudioCaptureManager: NSObject, ObservableObject {
 
     func stop() async {
         captureRevision = UUID()
-        guard let stream else { return }
+        // Immediately silence old stream callbacks before awaiting stopCapture so late frames
+        // from a timed-out stream can never reach the next session's flow, echo, or provider.
+        activeGate?.invalidate()
+        activeGate = nil
+        let activeStream = self.stream
+        let activeTestHandle = self.testHandle
+        guard activeStream != nil || activeTestHandle != nil else { return }
         self.stream = nil
+        self.testHandle = nil
         self.output = nil
         self.isCapturing = false
-        CaptureDiagnostics.record(.systemStopped)
-        do { try await stream.stopCapture() } catch {
-            log.error("Stop failed: \(error.localizedDescription, privacy: .public)")
+        let timeoutNS = UInt64(max(0.05, stopTimeoutSeconds) * 1_000_000_000)
+        let timedOut: Bool = await withCheckedContinuation { cont in
+            var resumed = false
+            Task { @MainActor [weak self] in
+                do {
+                    if let activeStream { try await activeStream.stopCapture() }
+                    else if let activeTestHandle { try await activeTestHandle.stopCapture() }
+                } catch {
+                    self?.log.error("Stop failed: \(error.localizedDescription, privacy: .public)")
+                }
+                // Record .systemStopped only when the underlying stream actually confirms stop.
+                self?.recordDiagnostic(.systemStopped)
+                guard !resumed else { return }
+                resumed = true
+                cont.resume(returning: false)
+            }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: timeoutNS)
+                guard !resumed else { return }
+                resumed = true
+                cont.resume(returning: true)
+            }
+        }
+        if timedOut {
+            recordDiagnostic(.stopStage, details: .init(lifecyclePhase: .systemStop, timedOut: true))
+            log.error("System audio stopCapture timed out after \(self.stopTimeoutSeconds)s")
         }
         log.info("System audio capture stopped")
     }
@@ -126,24 +203,48 @@ extension AudioCaptureManager: SCStreamDelegate {
     }
 }
 
+/// Synchronizes capture session teardown with background sample callbacks so late frames
+/// from a timed-out SCStream never touch the next session's flow, echo monitor, or live provider.
+private final class CaptureSessionGate: @unchecked Sendable {
+    let sessionID: UUID
+    private let lock = NSLock()
+    private var active = true
+    init(sessionID: UUID) { self.sessionID = sessionID }
+    func invalidate() {
+        lock.lock()
+        active = false
+        lock.unlock()
+    }
+    func deliverIfActive(_ body: () -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard active else { return }
+        body()
+    }
+}
+
 private final class AudioStreamOutput: NSObject, SCStreamOutput {
     private let converter = PCMConverter()
-    private let emit: ((Data) -> Void)?
+    private let gate: CaptureSessionGate
+    private let emit: ((Data, UUID) -> Void)?
     private let flow: AudioFlowMonitor?
     private let echo: EchoMonitor?
-    init(emit: ((Data) -> Void)?, flow: AudioFlowMonitor?, echo: EchoMonitor?, sampleRate: Double) {
-        self.emit = emit; self.flow = flow; self.echo = echo; converter.configure(sampleRate: sampleRate)
+    init(gate: CaptureSessionGate, emit: ((Data, UUID) -> Void)?, flow: AudioFlowMonitor?, echo: EchoMonitor?, sampleRate: Double) {
+        self.gate = gate; self.emit = emit; self.flow = flow; self.echo = echo; converter.configure(sampleRate: sampleRate)
     }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .audio, sampleBuffer.isValid, let buffer = sampleBuffer.toPCMBuffer(),
               let data = converter.convert(buffer) else { return }
-        flow?.observe(data)
         // Presentation time is on the host clock. ScreenCaptureKit delivers later than the
         // microphone tap, so arrival time would misalign the echo reference.
         let start = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        echo?.observe(data, source: .system, at: EchoMonitor.captureEnd(
-            start: start.isValid ? start.seconds : nil, duration: Double(buffer.frameLength) / buffer.format.sampleRate))
-        emit?(data)
+        let captureTime = EchoMonitor.captureEnd(
+            start: start.isValid ? start.seconds : nil, duration: Double(buffer.frameLength) / buffer.format.sampleRate)
+        gate.deliverIfActive {
+            flow?.observe(data)
+            echo?.observe(data, source: .system, at: captureTime)
+            emit?(data, gate.sessionID)
+        }
     }
 }
 

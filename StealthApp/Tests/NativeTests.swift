@@ -1275,3 +1275,460 @@ final class TerminologyTests: XCTestCase {
         XCTAssertEqual(ModelDownload.zipDecoder.installedName, "decoder.onnx")
     }
 }
+
+// MARK: - Independent Audit Regression Tests (P1 Cold-Start Race, P1 Stale Audio Isolation, P2 Streaming Coalescer)
+
+private final class ControllableStreamHandle: AudioCaptureManager.StreamHandle, @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopContinuation: CheckedContinuation<Void, Never>?
+    private let shouldHangStop: Bool
+    private var released = false
+
+    init(hangStop: Bool) { self.shouldHangStop = hangStop }
+
+    func stopCapture() async throws {
+        guard shouldHangStop else { return }
+        await withCheckedContinuation { cont in
+            lock.lock()
+            if released {
+                lock.unlock()
+                cont.resume()
+            } else {
+                stopContinuation = cont
+                lock.unlock()
+            }
+        }
+    }
+
+    func releaseStop() {
+        lock.lock()
+        released = true
+        let cont = stopContinuation
+        stopContinuation = nil
+        lock.unlock()
+        cont?.resume()
+    }
+}
+
+@MainActor
+private final class RecordingLiveProvider: LiveProvider {
+    var onEvent: ((LiveEvent) -> Void)?
+    let tag: String
+    private(set) var receivedAudio: [Data] = []
+    private let finalTextOnDisconnect: String?
+
+    init(tag: String, finalTextOnDisconnect: String? = nil) {
+        self.tag = tag
+        self.finalTextOnDisconnect = finalTextOnDisconnect
+    }
+    func connect(context: String) { onEvent?(.ready) }
+    func sendAudio(_ data: Data) { receivedAudio.append(data) }
+    func appendContext(_ text: String, delegationID: String?) {}
+    func disconnect() async {
+        if let finalTextOnDisconnect, !receivedAudio.isEmpty {
+            onEvent?(.transcript(.init(id: "final-\(tag)", speaker: .them, text: finalTextOnDisconnect, startMS: 0, endMS: 500, receivedAt: Date())))
+        }
+        onEvent?(.closed(finalized: true))
+    }
+}
+
+private struct ScriptedReasoning: ReasoningProvider {
+    let handler: @Sendable (AnswerRequest, AsyncThrowingStream<String, Error>.Continuation) -> Void
+    func stream(_ request: AnswerRequest) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in handler(request, continuation) }
+    }
+}
+
+final class ReliabilityAuditRegressionTests: XCTestCase {
+    private func makeCountingWorkerScript(in dir: URL, name: String, spawnLog: URL, hangBeforeReady: Bool = false) throws -> URL {
+        let url = dir.appendingPathComponent(name)
+        let body: String
+        if hangBeforeReady {
+            body = """
+            #!/bin/sh
+            echo spawn >> \(String(reflecting: spawnLog.path))
+            while :; do sleep 1; done
+            """
+        } else {
+            body = """
+            #!/usr/bin/env python3
+            import json, sys
+            with open(\(String(reflecting: spawnLog.path)), "a") as f: f.write("spawn\\n")
+            sys.stdout.write(json.dumps({"ready": True}) + "\\n"); sys.stdout.flush()
+            for line in sys.stdin:
+                req = json.loads(line)
+                sys.stdout.write(json.dumps({"id": req["id"], "ok": True}) + "\\n"); sys.stdout.flush()
+            """
+        }
+        try body.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        return url
+    }
+
+    private func spawnCount(_ spawnLog: URL) -> Int {
+        guard let text = try? String(contentsOf: spawnLog, encoding: .utf8) else { return 0 }
+        return text.split(separator: "\n").count
+    }
+
+    func testColdStartTimeoutPreventsLaunchAndRecoversNextRequest() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("audit-cold-timeout-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let spawnLog = dir.appendingPathComponent("spawns.log")
+        let script = try makeCountingWorkerScript(in: dir, name: "worker.py", spawnLog: spawnLog)
+
+        let worker = LocalInferenceWorker(mode: "embedding", modelDirectory: dir, executable: script, sigkillGraceSeconds: 0.2)
+        defer { worker.close(initiator: .selfCheck) }
+
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        var armed = true
+        let hookLock = NSLock()
+        worker.onBeforeStartProcess = {
+            hookLock.lock()
+            let shouldPause = armed
+            armed = false
+            hookLock.unlock()
+            if shouldPause {
+                entered.signal()
+                _ = release.wait(timeout: .now() + 5)
+            }
+        }
+
+        let timedCall = Task {
+            try await worker.call(["op": "ping"], timeout: 0.05)
+        }
+        // Deterministically wait until request 1 is active and paused right before ensureStarted().
+        XCTAssertEqual(entered.wait(timeout: .now() + 2), .success, "Request never reached cold-start barrier")
+        // Wait past the 50ms deadline while still paused before child launch.
+        try await Task.sleep(nanoseconds: 140_000_000)
+        release.signal()
+
+        do {
+            _ = try await timedCall.value
+            XCTFail("Expired cold-start request must not launch worker or succeed")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("timed out"), "Expected timeout error, got: \(error)")
+        }
+        XCTAssertEqual(spawnCount(spawnLog), 0, "Expired request must not spawn a child process")
+
+        // Next normal request on the same worker must start cleanly and succeed.
+        let recovered = try await worker.call(["op": "ping"], timeout: 3.0)
+        XCTAssertEqual(recovered["ok"] as? Bool, true)
+        XCTAssertEqual(spawnCount(spawnLog), 1, "Only the subsequent valid request should spawn the worker")
+    }
+
+    func testColdStartCancelPreventsLaunchAndStuckReadyTimesOut() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("audit-cold-cancel-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let spawnLog = dir.appendingPathComponent("spawns.log")
+        let script = try makeCountingWorkerScript(in: dir, name: "worker.py", spawnLog: spawnLog)
+
+        let worker = LocalInferenceWorker(mode: "embedding", modelDirectory: dir, executable: script, sigkillGraceSeconds: 0.2)
+        defer { worker.close(initiator: .selfCheck) }
+
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        var armed = true
+        let hookLock = NSLock()
+        worker.onBeforeStartProcess = {
+            hookLock.lock()
+            let shouldPause = armed
+            armed = false
+            hookLock.unlock()
+            if shouldPause {
+                entered.signal()
+                _ = release.wait(timeout: .now() + 5)
+            }
+        }
+
+        let cancelledCall = Task { try await worker.call(["op": "ping"], timeout: 5.0) }
+        XCTAssertEqual(entered.wait(timeout: .now() + 2), .success)
+        cancelledCall.cancel()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        release.signal()
+
+        do {
+            _ = try await cancelledCall.value
+            XCTFail("Cancelled cold-start request must throw CancellationError")
+        } catch is CancellationError {
+            // Expected
+        } catch {
+            XCTFail("Expected CancellationError, got: \(error)")
+        }
+        XCTAssertEqual(spawnCount(spawnLog), 0, "Cancelled request must not spawn a child process")
+
+        let recovered = try await worker.call(["op": "ping"], timeout: 3.0)
+        XCTAssertEqual(recovered["ok"] as? Bool, true)
+        XCTAssertEqual(spawnCount(spawnLog), 1)
+
+        // Process launched, never sends {"ready":true} -> timeout kills it cleanly and recovers on fresh worker.
+        let stuckLog = dir.appendingPathComponent("stuck-spawns.log")
+        let stuckScript = try makeCountingWorkerScript(in: dir, name: "stuck-ready.sh", spawnLog: stuckLog, hangBeforeReady: true)
+        let stuckWorker = LocalInferenceWorker(mode: "embedding", modelDirectory: dir, executable: stuckScript, sigkillGraceSeconds: 0.2)
+        defer { stuckWorker.close(initiator: .selfCheck) }
+        do {
+            _ = try await stuckWorker.call(["op": "ping"], timeout: 0.35)
+            XCTFail("Stuck ready handshake should time out")
+        } catch is CopilotError {
+            XCTAssertEqual(stuckWorker.failureCode, "timeout")
+        }
+        XCTAssertEqual(spawnCount(stuckLog), 1)
+    }
+
+    @MainActor
+    func testSystemAudioStopTimeoutIsolatesStaleFramesAndNormalStopFlushes() async throws {
+        let defaults = UserDefaults(suiteName: "com.livecopilot.test.audio-isolation.\(UUID().uuidString)")!
+        let app = AppCoordinator(mock: true, emitMockConversation: false, mockDefaults: defaults)
+        app.settings.mode = .remote
+        app.settings.listeningService = .apple
+        app.settings.automaticSuggestions = false
+        app.micEnabled = false
+        app.systemAudio.stopTimeoutSeconds = 0.15
+
+        var diagEvents: [(CaptureDiagnostics.Stage, CaptureDiagnostics.Details?)] = []
+        app.systemAudio.diagnosticObserver = { stage, details in
+            diagEvents.append((stage, details))
+        }
+
+        // Helper: 100ms (1600 samples @ 16kHz) PCM16 tagged buffer
+        func makeTaggedPCM(sampleValue: Int16, durationSamples: Int = 1600) -> Data {
+            var data = Data(count: durationSamples * 2)
+            data.withUnsafeMutableBytes { raw in
+                let ptr = raw.bindMemory(to: Int16.self)
+                for i in 0..<durationSamples { ptr[i] = sampleValue.littleEndian }
+            }
+            return data
+        }
+
+        // --- Part 1: Normal stop flushes final transcript and confirms .systemStopped without timeout ---
+        var deliverNormal: (@Sendable (Data, TimeInterval) -> Void)?
+        var normalProvider: RecordingLiveProvider?
+        app.systemAudio.testStreamFactory = { deliver in
+            deliverNormal = deliver
+            return ControllableStreamHandle(hangStop: false)
+        }
+        app.testLiveProviderFactory = { _ in
+            let p = RecordingLiveProvider(tag: "normal", finalTextOnDisconnect: " final tail segment")
+            normalProvider = p
+            return p
+        }
+
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        let normalFrame = makeTaggedPCM(sampleValue: 4000)
+        deliverNormal?(normalFrame, ProcessInfo.processInfo.systemUptime)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await app.stop()
+        XCTAssertFalse(app.isRunning)
+        XCTAssertEqual(normalProvider?.receivedAudio.count, 1)
+        XCTAssertTrue(app.transcript.lines.contains(where: { $0.content.contains("final tail segment") }),
+                      "Normal stop must still flush the last transcript segment")
+        XCTAssertTrue(diagEvents.contains(where: { $0.0 == .systemStopped }), "Normal stop must confirm .systemStopped")
+        XCTAssertFalse(diagEvents.contains(where: { $0.0 == .stopStage && $0.1?.lifecyclePhase == .systemStop && $0.1?.timedOut == true }))
+
+        // --- Part 2: Session A stop times out -> Session B starts -> stale A frames must NOT enter B ---
+        diagEvents.removeAll()
+        var deliverA: (@Sendable (Data, TimeInterval) -> Void)?
+        var deliverB: (@Sendable (Data, TimeInterval) -> Void)?
+        var handleA: ControllableStreamHandle?
+        var providerA: RecordingLiveProvider?
+        var providerB: RecordingLiveProvider?
+        var sessionIndex = 0
+
+        app.systemAudio.testStreamFactory = { deliver in
+            sessionIndex += 1
+            if sessionIndex == 1 {
+                deliverA = deliver
+                let h = ControllableStreamHandle(hangStop: true)
+                handleA = h
+                return h
+            } else {
+                deliverB = deliver
+                return ControllableStreamHandle(hangStop: false)
+            }
+        }
+        app.testLiveProviderFactory = { _ in
+            if sessionIndex == 1 {
+                let p = RecordingLiveProvider(tag: "A")
+                providerA = p
+                return p
+            } else {
+                let p = RecordingLiveProvider(tag: "B")
+                providerB = p
+                return p
+            }
+        }
+
+        // Capture Session A's onPCM16 sessionID via a spy so we can also simulate a pre-stop
+        // main-queue callback arriving AFTER Session B starts.
+        var sessionAID: UUID?
+        let originalOnPCM = app.systemAudio.onPCM16
+        app.systemAudio.onPCM16 = { data, id in
+            if sessionAID == nil { sessionAID = id }
+            originalOnPCM?(data, id)
+        }
+
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        let frameA_loud = makeTaggedPCM(sampleValue: 20000) // ~ -4 dBFS, clearly loud
+        let frameB_silent = makeTaggedPCM(sampleValue: 0)   // digital silence, -96 dBFS
+
+        // Deliver one legitimate frame during Session A to capture Session A's epoch ID.
+        deliverA?(frameA_loud, ProcessInfo.processInfo.systemUptime)
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertNotNil(sessionAID, "Should capture Session A's sessionID")
+
+        await app.stop()
+        XCTAssertFalse(app.isRunning)
+        // Diagnostics must distinguish stop-wait timeout from confirmed underlying stop!
+        XCTAssertTrue(diagEvents.contains(where: { $0.0 == .stopStage && $0.1?.lifecyclePhase == .systemStop && $0.1?.timedOut == true }),
+                      "Timed-out stop must record stopStage(systemStop, timedOut: true)")
+        XCTAssertFalse(diagEvents.contains(where: { $0.0 == .systemStopped }),
+                       "Timed-out stop must NOT claim .systemStopped before underlying stream actually stops")
+
+        // Start Session B while Session A's stopCapture() is still hung.
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        let nowB = ProcessInfo.processInfo.systemUptime
+        // 1. Deliver a late loud frame from Session A's old stream callback AFTER Session B started.
+        deliverA?(frameA_loud, nowB)
+        // 2. Simulate an already-enqueued MainActor callback from Session A executing during Session B.
+        if let staleID = sessionAID { originalOnPCM?(frameA_loud, staleID) }
+        // 3. Deliver Session B's own silent frame.
+        deliverB?(frameB_silent, nowB)
+        try await Task.sleep(nanoseconds: 80_000_000)
+
+        // Assert Session B's LiveProvider ONLY received Session B's frame!
+        XCTAssertEqual(providerB?.receivedAudio, [frameB_silent],
+                       "Session B must only receive its own frames, never stale Session A frames")
+        // Assert Session B's AudioFlowMonitor was NOT polluted by Session A's loud frame!
+        let flowB = app.systemFlowSnapshot
+        XCTAssertEqual(flowB.verdict, .digitalSilence, "Stale loud Session A frame polluted Session B's audio flow verdict")
+        XCTAssertEqual(flowB.peakDBFS, -96, "Stale loud Session A frame polluted Session B's peak dBFS")
+        // Assert Session B's EchoMonitor reference was NOT polluted by Session A's loud frame!
+        let assessment = app.echo.assess(from: nowB - 0.5, to: nowB + 0.1, now: nowB + 0.05)
+        XCTAssertFalse(assessment.systemActive, "Stale loud Session A frame polluted Session B's echo reference")
+
+        // Release Session A's hung stopCapture() and verify confirmed .systemStopped arrives now.
+        handleA?.releaseStop()
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertTrue(diagEvents.contains(where: { $0.0 == .systemStopped }),
+                      "Underlying stream confirmation should record .systemStopped once stopCapture completes")
+
+        _ = providerA
+        await app.shutdown()
+    }
+
+    @MainActor
+    func testStreamingCoalescerIdleFlushAndTerminalSnapshots() async throws {
+        // 1. Burst followed by idle pause: first token immediate, buffered second token flushed within batch interval.
+        do {
+            let reasoning = ScriptedReasoning { _, cont in
+                cont.yield("alpha")
+                cont.yield(" beta")
+                Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    cont.finish()
+                }
+            }
+            let app = AppCoordinator(mock: true, mockReasoning: reasoning, emitMockConversation: false)
+            app.askText("idle flush check")
+            for _ in 0..<50 where app.suggestion.text.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }
+            XCTAssertTrue(app.suggestion.text.hasPrefix("alpha"))
+            try await Task.sleep(nanoseconds: 250_000_000)
+            XCTAssertEqual(app.suggestion.text, "alpha beta", "Buffered delta must flush on timer even with no further tokens")
+            await app.shutdown()
+        }
+
+        // 2. Cancel right after burst: terminal snapshot includes buffered text immediately and never mutates afterward.
+        do {
+            let reasoning = ScriptedReasoning { _, cont in
+                cont.yield("alpha")
+                cont.yield(" beta")
+                Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    cont.finish()
+                }
+            }
+            let app = AppCoordinator(mock: true, mockReasoning: reasoning, emitMockConversation: false)
+            app.askText("cancel snapshot check")
+            for _ in 0..<50 where app.suggestion.text.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }
+            app.cancelAnswer()
+            let snapshotAtCancel = app.suggestion.text
+            XCTAssertEqual(snapshotAtCancel, "alpha beta", "Cancelled snapshot must flush consumed buffer before terminal publish")
+            try await Task.sleep(nanoseconds: 200_000_000)
+            XCTAssertEqual(app.suggestion.text, snapshotAtCancel, "Cancelled terminal snapshot must remain stable")
+            await app.shutdown()
+        }
+
+        // 3. Stream failure right after burst: preserves full text once and stays stable.
+        do {
+            let reasoning = ScriptedReasoning { _, cont in
+                cont.yield("alpha")
+                cont.yield(" beta")
+                Task {
+                    try? await Task.sleep(nanoseconds: 20_000_000)
+                    cont.finish(throwing: CopilotError.message("boom"))
+                }
+            }
+            let app = AppCoordinator(mock: true, mockReasoning: reasoning, emitMockConversation: false)
+            app.askText("failure snapshot check")
+            for _ in 0..<100 where app.answerIsRunning { try await Task.sleep(nanoseconds: 10_000_000) }
+            XCTAssertEqual(app.suggestion.text, "alpha beta", "Failed snapshot must include buffered delta once")
+            XCTAssertEqual(app.suggestion.state, .failed)
+            try await Task.sleep(nanoseconds: 150_000_000)
+            XCTAssertEqual(app.suggestion.text, "alpha beta")
+            await app.shutdown()
+        }
+
+        // 4. Answer timeout right after burst: flushes buffered text before publishing timeout terminal state.
+        do {
+            let reasoning = ScriptedReasoning { _, cont in
+                cont.yield("alpha")
+                cont.yield(" beta")
+                Task {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    cont.finish()
+                }
+            }
+            let app = AppCoordinator(mock: true, mockReasoning: reasoning, emitMockConversation: false)
+            app.answerTimeoutSeconds = 0.04
+            app.askText("timeout snapshot check")
+            for _ in 0..<100 where app.answerIsRunning { try await Task.sleep(nanoseconds: 10_000_000) }
+            XCTAssertEqual(app.suggestion.text, "alpha beta", "Timed-out snapshot must flush buffered delta before terminal fail")
+            try await Task.sleep(nanoseconds: 150_000_000)
+            XCTAssertEqual(app.suggestion.text, "alpha beta")
+            await app.shutdown()
+        }
+
+        // 5. Replacement by next question: old answer keeps its buffered text, old timer never mutates new answer.
+        do {
+            let reasoning = ScriptedReasoning { req, cont in
+                if req.query.question.contains("first") {
+                    cont.yield("alpha")
+                    cont.yield(" beta")
+                    Task {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        cont.finish()
+                    }
+                } else {
+                    cont.yield("gamma")
+                    cont.finish()
+                }
+            }
+            let app = AppCoordinator(mock: true, mockReasoning: reasoning, emitMockConversation: false)
+            app.askText("first question")
+            for _ in 0..<50 where app.suggestion.text.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }
+            let firstID = app.selectedAnswerID
+            app.askText("second question")
+            for _ in 0..<100 where app.answerIsRunning { try await Task.sleep(nanoseconds: 10_000_000) }
+            try await Task.sleep(nanoseconds: 180_000_000)
+            let firstRecord = app.answers.first(where: { $0.id == firstID })
+            XCTAssertEqual(firstRecord?.store.text, "alpha beta", "Replaced answer must retain its full consumed text")
+            XCTAssertEqual(app.suggestion.text, "gamma", "Old flush timer must never pollute the replacement answer")
+            await app.shutdown()
+        }
+    }
+}

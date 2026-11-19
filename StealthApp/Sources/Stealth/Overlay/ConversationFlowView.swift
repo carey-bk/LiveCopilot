@@ -16,11 +16,45 @@ struct ConversationScrollState {
     mutating func jumpToLatest() { followsLatest = true }
 }
 
+private final class ConversationScrollController {
+    var state = ConversationScrollState()
+    private var pendingScroll: DispatchWorkItem?
+    private var lastScrollAt: TimeInterval = 0
+
+    func scheduleScrollToBottom(proxy: ScrollViewProxy) {
+        guard state.followsLatest else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let delay = max(0.016, 0.1 - (now - lastScrollAt))
+        guard pendingScroll == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingScroll = nil
+            guard self.state.followsLatest else { return }
+            self.lastScrollAt = ProcessInfo.processInfo.systemUptime
+            proxy.scrollTo("conversation-bottom", anchor: .bottom)
+        }
+        pendingScroll = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    func reset() {
+        pendingScroll?.cancel()
+        pendingScroll = nil
+        state = ConversationScrollState()
+    }
+
+    func cancel() {
+        pendingScroll?.cancel()
+        pendingScroll = nil
+    }
+}
+
 struct ConversationFlowView: View {
     @ObservedObject var coordinator: AppCoordinator
     let fontSize: CGFloat
     var onContentHeight: (CGFloat) -> Void = { _ in }
-    @State private var scroll = ConversationScrollState()
+    @State private var scrollController = ConversationScrollController()
+    @State private var followsLatest = true
     @State private var hasNewAnswer = false
     private func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
     var body: some View {
@@ -40,16 +74,22 @@ struct ConversationFlowView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(GeometryReader { measured in
-                        Color.clear.preference(key: ConversationContentHeightKey.self, value: measured.size.height)
+                        // Clamp above the overlay's 1000pt max height so LazyVStack estimate
+                        // jitter on long histories cannot feed back into OverlayView layout.
+                        Color.clear.preference(key: ConversationContentHeightKey.self, value: min(measured.size.height, 1200))
                     })
                     .background(ConversationScrollObserver { offset, distance, height in
-                        scroll.observe(offset: offset, distanceToBottom: distance, viewportHeight: height)
-                        if scroll.followsLatest { hasNewAnswer = false }
+                        scrollController.state.observe(offset: offset, distanceToBottom: distance, viewportHeight: height)
+                        let nextFollows = scrollController.state.followsLatest
+                        if followsLatest != nextFollows { followsLatest = nextFollows }
+                        if nextFollows && hasNewAnswer { hasNewAnswer = false }
                     })
                 }.accessibilityIdentifier("conversation-flow")
-                if !scroll.followsLatest {
+                if !followsLatest {
                     Button {
-                        scroll.jumpToLatest(); hasNewAnswer = false
+                        scrollController.state.jumpToLatest()
+                        followsLatest = true
+                        hasNewAnswer = false
                         proxy.scrollTo("conversation-bottom", anchor: .bottom)
                     } label: {
                         ConversationJumpLabel(title: hasNewAnswer ? b("New answer · Jump to latest", "有新回答 · 跳到最新") : b("Jump to latest", "回到最新"))
@@ -58,15 +98,17 @@ struct ConversationFlowView: View {
                 }
             }
             .onPreferenceChange(ConversationContentHeightKey.self, perform: onContentHeight)
-            .onAppear { DispatchQueue.main.async { if scroll.followsLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) } } }
+            .onAppear { scrollController.scheduleScrollToBottom(proxy: proxy) }
+            .onDisappear { scrollController.cancel() }
             .onChange(of: coordinator.answerRevision) { _, _ in
-                if scroll.followsLatest {
-                    // Let the new card or streaming text complete layout first.
-                    DispatchQueue.main.async { if scroll.followsLatest { proxy.scrollTo("conversation-bottom", anchor: .bottom) } }
-                } else { hasNewAnswer = true }
+                if scrollController.state.followsLatest {
+                    scrollController.scheduleScrollToBottom(proxy: proxy)
+                } else if !hasNewAnswer { hasNewAnswer = true }
             }
             .onChange(of: coordinator.conversationGeneration) { _, _ in
-                scroll = ConversationScrollState(); hasNewAnswer = false
+                scrollController.reset()
+                if !followsLatest { followsLatest = true }
+                if hasNewAnswer { hasNewAnswer = false }
             }
         }
     }
@@ -220,6 +262,12 @@ struct HighlightedAnswerText: NSViewRepresentable {
     var streaming = false
     @Environment(\.colorScheme) private var colorScheme
 
+    final class Coordinator {
+        var lastKey: (content: String, fontSize: CGFloat, streaming: Bool, isDark: Bool)?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSTextView {
         let storage = NSTextStorage()
         let layout = CrayonLayoutManager()
@@ -238,6 +286,13 @@ struct HighlightedAnswerText: NSViewRepresentable {
         return view
     }
     func updateNSView(_ view: NSTextView, context: Context) {
+        let isDark = colorScheme == .dark
+        if let last = context.coordinator.lastKey,
+           last.content == content, last.fontSize == fontSize,
+           last.streaming == streaming, last.isDark == isDark {
+            return
+        }
+        context.coordinator.lastKey = (content, fontSize, streaming, isDark)
         let parsed = AnswerEmphasis.parsed(content, streaming: streaming)
         let result = NSMutableAttributedString(string: "")
         for run in parsed.runs {
@@ -256,7 +311,7 @@ struct HighlightedAnswerText: NSViewRepresentable {
                 attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
             }
             let phrase = String(parsed[run.range].characters)
-            if strong { attributes[CrayonLayoutManager.mark] = colorScheme == .dark }
+            if strong { attributes[CrayonLayoutManager.mark] = isDark }
             result.append(NSAttributedString(string: phrase, attributes: attributes))
         }
         if view.textStorage?.isEqual(to: result) != true {

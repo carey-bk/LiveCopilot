@@ -57,9 +57,11 @@ enum AppleSpeechSupport {
     private(set) var recognitionStats = RecognitionStats()
     private var connectedAt: TimeInterval = 0
     private var backlog = AudioBacklog()
+    private let disconnectTimeoutSeconds: TimeInterval
 
-    init(speaker: Speaker, language: AppleSpeechLanguage, sessionStart: Date = Date()) {
+    init(speaker: Speaker, language: AppleSpeechLanguage, sessionStart: Date = Date(), disconnectTimeoutSeconds: TimeInterval = 15) {
         self.speaker = speaker; self.language = language; self.sessionStart = sessionStart
+        self.disconnectTimeoutSeconds = max(0.1, disconnectTimeoutSeconds)
     }
     func prepare() async throws {
         if analyzer != nil { return }
@@ -211,31 +213,64 @@ enum AppleSpeechSupport {
     func appendContext(_ text: String, delegationID: String?) {}
     func disconnect() async {
         closing = true; active = false
-        // Bound endpoint finalization too, not just the final session drain.
-        let deadline = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
-            guard !Task.isCancelled else { return }
-            self?.failed = true
-            await self?.analyzer?.cancelAndFinishNow()
-        }
-        defer { deadline.cancel() }
-        if !ready { loading?.cancel(); await loading?.value }
-        endpointTask?.cancel(); await endpointTask?.value; pendingEndpoint = nil
-        continuation?.finish()
-        var finalized = ready && !failed && pending.isEmpty
-        if let analyzer {
-            if ready {
-                do { try await analyzer.finalizeAndFinishThroughEndOfInput(); await resultTask?.value }
-                catch {
-                    let recognition = error as NSError
-                    // Apple's recognizer rejects a genuinely silent stream when
-                    // finalizing it. No speech and no transcript is a valid stop.
-                    finalized = !heardSpeech && recognition.domain == "SFSpeechErrorDomain" && recognition.code == 1
+        let wasReady = ready
+        let pendingEmpty = pending.isEmpty
+        let activeAnalyzer = analyzer
+        let activeLoading = loading
+        let activeEndpoint = endpointTask
+        let activeResult = resultTask
+        let activeContinuation = continuation
+        let timeoutNS = UInt64(disconnectTimeoutSeconds * 1_000_000_000)
+
+        // Hard-bound disconnect so an unresponsive SpeechAnalyzer, AssetInventory, or
+        // transcriber.results stream can never wedge AppCoordinator.isTransitioning.
+        let finalized: Bool = await withCheckedContinuation { cont in
+            var resumed = false
+            var drainTask: Task<Void, Never>?
+            var timeoutTask: Task<Void, Never>?
+            func finish(_ value: Bool) {
+                guard !resumed else { return }
+                resumed = true
+                timeoutTask?.cancel()
+                drainTask?.cancel()
+                cont.resume(returning: value)
+            }
+            timeoutTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: timeoutNS)
+                guard !Task.isCancelled, !resumed else { return }
+                self?.failed = true
+                activeLoading?.cancel(); activeEndpoint?.cancel(); activeResult?.cancel()
+                activeContinuation?.finish()
+                if let activeAnalyzer { Task { await activeAnalyzer.cancelAndFinishNow() } }
+                finish(false)
+            }
+            drainTask = Task { @MainActor [weak self] in
+                if !wasReady { activeLoading?.cancel(); await activeLoading?.value }
+                activeEndpoint?.cancel(); await activeEndpoint?.value
+                self?.pendingEndpoint = nil
+                activeContinuation?.finish()
+                var ok = wasReady && !(self?.failed ?? true) && pendingEmpty
+                if let activeAnalyzer {
+                    if wasReady {
+                        do {
+                            try await activeAnalyzer.finalizeAndFinishThroughEndOfInput()
+                            await activeResult?.value
+                        } catch {
+                            let recognition = error as NSError
+                            // Apple's recognizer rejects a genuinely silent stream when
+                            // finalizing it. No speech and no transcript is a valid stop.
+                            ok = !(self?.heardSpeech ?? true) && recognition.domain == "SFSpeechErrorDomain" && recognition.code == 1
+                        }
+                    } else {
+                        await activeAnalyzer.cancelAndFinishNow()
+                    }
                 }
-            } else { await analyzer.cancelAndFinishNow() }
+                finish(ok)
+            }
         }
+
         endpointTask?.cancel(); resultTask?.cancel(); loading?.cancel()
-        pending.removeAll(); continuation = nil; analyzer = nil; ready = false; closing = false
+        pendingEndpoint = nil; pending.removeAll(); continuation = nil; analyzer = nil; ready = false; closing = false
         onEvent?(.partialTranscript("")); onEvent?(.speechActivity(false))
         onEvent?(.closed(finalized: finalized && !failed))
     }

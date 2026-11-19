@@ -1,5 +1,32 @@
 import SwiftUI
 
+/// Reference box for window-sizing metrics that must NOT trigger SwiftUI body invalidation.
+private final class OverlayLayoutMetrics {
+    var chromeHeight: CGFloat = 368
+    var answerContentHeight: CGFloat = 56
+    private var transcriptScrollWork: DispatchWorkItem?
+    private var lastTranscriptScrollAt: TimeInterval = 0
+
+    func scheduleTranscriptScroll(proxy: ScrollViewProxy) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let delay = max(0.016, 0.1 - (now - lastTranscriptScrollAt))
+        guard transcriptScrollWork == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.transcriptScrollWork = nil
+            self.lastTranscriptScrollAt = ProcessInfo.processInfo.systemUptime
+            proxy.scrollTo("latest", anchor: .bottom)
+        }
+        transcriptScrollWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    func cancelTranscriptScroll() {
+        transcriptScrollWork?.cancel()
+        transcriptScrollWork = nil
+    }
+}
+
 struct OverlayView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var translation: TranscriptTranslationStore
@@ -11,8 +38,7 @@ struct OverlayView: View {
     @State private var query = ""
     @State private var followTranscript = true
     @AppStorage("overlayTranscriptCollapsed") private var transcriptCollapsed = false
-    @State private var chromeHeight: CGFloat = 368
-    @State private var answerContentHeight: CGFloat = 56
+    @State private var layoutMetrics = OverlayLayoutMetrics()
     var demonstrationAnswer: AppCoordinator.AnswerRecord?
     var onContentHeight: (CGFloat) -> Void
     var onMinimumHeight: (CGFloat) -> Void
@@ -31,9 +57,9 @@ struct OverlayView: View {
     private func reportSize() {
         // Only the answer viewport grows. The voice area and composer keep
         // their position relative to the window's stable top edge.
-        let fixedHeight = chromeHeight + 10 + 28 // inter-pane spacing and outer padding
+        let fixedHeight = layoutMetrics.chromeHeight + 10 + 28 // inter-pane spacing and outer padding
         onMinimumHeight(fixedHeight + 56)
-        onContentHeight(fixedHeight + max(56, answerContentHeight))
+        onContentHeight(fixedHeight + max(56, layoutMetrics.answerContentHeight))
     }
     var body: some View {
         GeometryReader { geometry in
@@ -88,8 +114,9 @@ struct OverlayView: View {
                         .frame(maxHeight: .infinity, alignment: .top)
                 } else {
                 ConversationFlowView(coordinator: coordinator, fontSize: answerSize, onContentHeight: { height in
-                    guard height.isFinite, height > 0, abs(height - answerContentHeight) > 0.5 else { return }
-                    answerContentHeight = height
+                    let clamped = min(height, 1200)
+                    guard clamped.isFinite, clamped > 0, abs(clamped - layoutMetrics.answerContentHeight) > 0.5 else { return }
+                    layoutMetrics.answerContentHeight = clamped
                     reportSize()
                 })
                 .frame(maxHeight: .infinity)
@@ -110,11 +137,12 @@ struct OverlayView: View {
             reportSize()
         }
         .onPreferenceChange(OverlayChromeHeightKey.self) { height in
-            guard height > 0, abs(height - chromeHeight) > 0.5 else { return }
-            chromeHeight = height
+            guard height > 0, abs(height - layoutMetrics.chromeHeight) > 0.5 else { return }
+            layoutMetrics.chromeHeight = height
             reportSize()
         }
         .onAppear { reportSize() }
+        .onDisappear { layoutMetrics.cancelTranscriptScroll() }
     }
     private var top: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -237,7 +265,7 @@ struct OverlayView: View {
         ScrollViewReader { proxy in
             VStack(spacing: 2) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
+                    LazyVStack(alignment: .leading, spacing: 6) {
                         if !transcript.hasContent {
                             Text(t("Conversation appears here when listening.")).font(.system(size: transcriptSize)).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -256,13 +284,13 @@ struct OverlayView: View {
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading).id("latest")
                 }.frame(height: transcriptViewportHeight)
-                    .onAppear { if transcriptCollapsed || followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
-                    .onChange(of: transcriptCollapsed) { _, _ in if transcriptCollapsed || followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
-                    .onChange(of: followTranscript) { _, value in if transcriptCollapsed || value { proxy.scrollTo("latest", anchor: .bottom) } }
-                    .onChange(of: translation.values) { _, _ in if transcriptCollapsed || followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
-                    .onChange(of: transcript.lines) { _, _ in if transcriptCollapsed || followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
-                    .onChange(of: transcript.partialThem) { _, _ in if transcriptCollapsed || followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
-                    .onChange(of: transcript.partialYou) { _, _ in if transcriptCollapsed || followTranscript { proxy.scrollTo("latest", anchor: .bottom) } }
+                    .onAppear { if transcriptCollapsed || followTranscript { layoutMetrics.scheduleTranscriptScroll(proxy: proxy) } }
+                    .onChange(of: transcriptCollapsed) { _, _ in if transcriptCollapsed || followTranscript { layoutMetrics.scheduleTranscriptScroll(proxy: proxy) } }
+                    .onChange(of: followTranscript) { _, value in if transcriptCollapsed || value { layoutMetrics.scheduleTranscriptScroll(proxy: proxy) } }
+                    .onChange(of: translation.values) { _, _ in if transcriptCollapsed || followTranscript { layoutMetrics.scheduleTranscriptScroll(proxy: proxy) } }
+                    .onChange(of: transcript.lines) { _, _ in if transcriptCollapsed || followTranscript { layoutMetrics.scheduleTranscriptScroll(proxy: proxy) } }
+                    .onChange(of: transcript.partialThem) { _, _ in if transcriptCollapsed || followTranscript { layoutMetrics.scheduleTranscriptScroll(proxy: proxy) } }
+                    .onChange(of: transcript.partialYou) { _, _ in if transcriptCollapsed || followTranscript { layoutMetrics.scheduleTranscriptScroll(proxy: proxy) } }
                 if !transcriptCollapsed && demonstrationAnswer == nil {
                     Toggle(t("Follow transcript"), isOn: $followTranscript).font(.caption2).toggleStyle(OverlaySwitchStyle()).frame(maxWidth: .infinity, alignment: .trailing)
                 }
@@ -273,20 +301,28 @@ struct OverlayView: View {
     private func transcriptRow(_ source: String, speaker: Speaker, translated: String?, partial: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             transcriptTextRow(source, label: t(speaker.rawValue), color: speaker == .you ? .blue : .green,
-                              textColor: partial ? .secondary : .primary)
+                              textColor: partial ? .secondary : .primary, selectable: !partial)
             if let translated {
-                transcriptTextRow(translated, label: b("Tr.", "译"), color: .blue, textColor: .blue)
+                transcriptTextRow(translated, label: b("Tr.", "译"), color: .blue, textColor: .blue, selectable: !partial)
             }
         }
     }
-    private func transcriptTextRow(_ text: String, label: String, color: Color, textColor: Color) -> some View {
+    private func transcriptTextRow(_ text: String, label: String, color: Color, textColor: Color, selectable: Bool) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Text(label).font(.system(size: max(11, transcriptSize - 1), weight: .bold))
                 .foregroundStyle(color).frame(width: speakerWidth, alignment: .leading)
             // ASR fragments retain separator spaces for merging; do not render them as indentation.
-            Text(text.trimmingCharacters(in: .whitespacesAndNewlines))
-                .font(.system(size: transcriptSize)).foregroundStyle(textColor)
-                .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            if selectable {
+                Text(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .font(.system(size: transcriptSize)).foregroundStyle(textColor)
+                    .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                // Volatile partial rows mutate many times per second; skipping SelectionOverlay
+                // avoids rebuilding NSAttributedString/NSParagraphStyle on every partial frame.
+                Text(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .font(.system(size: transcriptSize)).foregroundStyle(textColor)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private var footer: some View {

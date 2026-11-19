@@ -68,7 +68,7 @@ enum LocalModelSelfCheck {
         }
         try Task.checkCancellation()
         let worker = LocalInferenceWorker(mode: kind == .embedding ? "embedding" : kind == .terminologySpeech ? "zipformer" : "paraformer", modelDirectory: directory, executable: executable)
-        defer { worker.close() }
+        defer { worker.close(initiator: .selfCheck) }
         do {
             if kind == .embedding {
                 let response = try await worker.call(["op": "embed", "text": "Local model self-check. 本地模型自检。"])

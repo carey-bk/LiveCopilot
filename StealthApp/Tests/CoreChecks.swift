@@ -271,6 +271,175 @@ enum CoreChecks {
             passed.append("writing to an exited local worker fails visibly instead of terminating the app")
         }
         deafWorker.close()
+        // Regression: queue wait must be covered by timeout, and a cancelled queued call must
+        // resume immediately instead of hanging behind an active request.
+        let slowWorkerScript = localFixture.appendingPathComponent("slow-worker")
+        try """
+        #!/usr/bin/env python3
+        import json, sys, time
+        sys.stdout.write('{"ready":true}\\n'); sys.stdout.flush()
+        for line in sys.stdin:
+            req = json.loads(line)
+            delay = float(req.get("delay", 0))
+            if delay > 0: time.sleep(delay)
+            sys.stdout.write(json.dumps({"id": req["id"], "ok": True}) + "\\n"); sys.stdout.flush()
+        """.write(to: slowWorkerScript, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: slowWorkerScript.path)
+        do {
+            let queuedWorker = LocalInferenceWorker(mode: "embedding", modelDirectory: localFixture, executable: slowWorkerScript, sigkillGraceSeconds: 0.2)
+            let head = Task { try await queuedWorker.call(["op": "ping", "delay": 1.2], timeout: 5) }
+            try await Task.sleep(nanoseconds: 150_000_000)
+            let t0 = ProcessInfo.processInfo.systemUptime
+            do {
+                _ = try await queuedWorker.call(["op": "ping", "delay": 0], timeout: 0.25)
+                throw CheckError(description: "queued call bypassed timeout")
+            } catch is CopilotError {
+                let elapsed = ProcessInfo.processInfo.systemUptime - t0
+                try expect(elapsed < 0.8, "queued timeout waited for head request (\(elapsed)s)")
+            }
+            let cancelStart = ProcessInfo.processInfo.systemUptime
+            let queuedCancel = Task { try await queuedWorker.call(["op": "ping", "delay": 0], timeout: 5) }
+            try await Task.sleep(nanoseconds: 50_000_000)
+            queuedCancel.cancel()
+            do {
+                _ = try await queuedCancel.value
+                throw CheckError(description: "cancelled queued call succeeded")
+            } catch is CancellationError {
+                let elapsed = ProcessInfo.processInfo.systemUptime - cancelStart
+                try expect(elapsed < 0.6, "cancelled queued call waited for head request (\(elapsed)s)")
+            }
+            _ = try await head.value
+            queuedWorker.close(initiator: .selfCheck)
+            passed.append("local worker timeout covers queue wait and queued cancellation resumes immediately")
+        }
+        // Regression: a child process that ignores SIGTERM must be escalated to SIGKILL so
+        // Darwin.read unblocks and subsequent requests recover on a fresh worker.
+        let stubSigterm = localFixture.appendingPathComponent("ignore-sigterm-worker")
+        try """
+        #!/usr/bin/env python3
+        import json, signal, sys, time
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        sys.stdout.write('{"ready":true}\\n'); sys.stdout.flush()
+        for line in sys.stdin:
+            req = json.loads(line)
+            if req.get("hang"):
+                while True: time.sleep(10)
+            sys.stdout.write(json.dumps({"id": req["id"], "ok": True}) + "\\n"); sys.stdout.flush()
+        """.write(to: stubSigterm, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stubSigterm.path)
+        do {
+            let sigkillWorker = LocalInferenceWorker(mode: "embedding", modelDirectory: localFixture, executable: stubSigterm, sigkillGraceSeconds: 0.25)
+            let t0 = ProcessInfo.processInfo.systemUptime
+            do {
+                _ = try await sigkillWorker.call(["op": "ping", "hang": true], timeout: 0.25)
+                throw CheckError(description: "SIGTERM-ignoring worker succeeded")
+            } catch is CopilotError {
+                let elapsed = ProcessInfo.processInfo.systemUptime - t0
+                try expect(elapsed < 2.5, "SIGKILL escalation took too long (\(elapsed)s)")
+            }
+            let recovered = try await sigkillWorker.call(["op": "ping", "hang": false], timeout: 3.0)
+            try expect(recovered["ok"] as? Bool == true, "worker did not recover after SIGKILL escalation")
+            sigkillWorker.close(initiator: .selfCheck)
+            passed.append("local worker escalates SIGTERM-ignoring child to SIGKILL and recovers subsequent requests")
+        }
+        // Regression: cold-start timeout before child launch must fail once without spawning, and next request succeeds.
+        do {
+            let spawnLog = localFixture.appendingPathComponent("cold-spawns.log")
+            let countWorker = localFixture.appendingPathComponent("count-worker")
+            try """
+            #!/usr/bin/env python3
+            import json, sys
+            with open(\(String(reflecting: spawnLog.path)), "a") as f: f.write("spawn\\n")
+            sys.stdout.write('{"ready":true}\\n'); sys.stdout.flush()
+            for line in sys.stdin:
+                req = json.loads(line)
+                sys.stdout.write(json.dumps({"id": req["id"], "ok": True}) + "\\n"); sys.stdout.flush()
+            """.write(to: countWorker, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: countWorker.path)
+            let coldWorker = LocalInferenceWorker(mode: "embedding", modelDirectory: localFixture, executable: countWorker, sigkillGraceSeconds: 0.2)
+            let entered = DispatchSemaphore(value: 0)
+            let release = DispatchSemaphore(value: 0)
+            let hookLock = NSLock()
+            var armed = true
+            coldWorker.onBeforeStartProcess = {
+                hookLock.lock()
+                let pause = armed; armed = false
+                hookLock.unlock()
+                if pause { entered.signal(); _ = release.wait(timeout: .now() + 5) }
+            }
+            let expiredTask = Task { try await coldWorker.call(["op": "ping"], timeout: 0.05) }
+            try expect(entered.wait(timeout: .now() + 2) == .success, "cold-start barrier was not reached")
+            try await Task.sleep(nanoseconds: 130_000_000)
+            release.signal()
+            do {
+                _ = try await expiredTask.value
+                throw CheckError(description: "expired cold-start call succeeded")
+            } catch is CopilotError {}
+            let spawnsAfterTimeout = (try? String(contentsOf: spawnLog, encoding: .utf8).split(separator: "\n").count) ?? 0
+            try expect(spawnsAfterTimeout == 0, "expired cold-start request spawned a worker")
+            let ok = try await coldWorker.call(["op": "ping"], timeout: 3.0)
+            try expect(ok["ok"] as? Bool == true, "next request after cold-start timeout failed")
+            let spawnsAfterRecovery = (try? String(contentsOf: spawnLog, encoding: .utf8).split(separator: "\n").count) ?? 0
+            try expect(spawnsAfterRecovery == 1, "expected exactly 1 spawn after recovery")
+            coldWorker.close(initiator: .selfCheck)
+            passed.append("local worker cold-start timeout skips launch and recovers next request")
+        }
+        // Regression: LocalEmbeddingProvider falls back to embedding-cpu if the GPU worker crashes out-of-process,
+        // stays sticky on CPU for subsequent chunks, and does not loop on embedding_context.
+        do {
+            let modeLog = localFixture.appendingPathComponent("embedding-fallback-modes.log")
+            let fallbackWorker = localFixture.appendingPathComponent("embedding-fallback-worker")
+            try """
+            #!/usr/bin/env python3
+            import json, sys
+            mode = sys.argv[1]
+            with open(\(String(reflecting: modeLog.path)), "a") as f: f.write(mode + "\\n")
+            sys.stdout.write('{"ready":true}\\n'); sys.stdout.flush()
+            vec = [1.0] + [0.0] * 1023
+            for line in sys.stdin:
+                req = json.loads(line)
+                if req.get("text") == "oom":
+                    sys.stdout.write(json.dumps({"id": req["id"], "error": "embedding_context"}) + "\\n"); sys.stdout.flush()
+                    continue
+                if mode == "embedding" and req.get("text") == "crash-gpu":
+                    sys.exit(1)
+                sys.stdout.write(json.dumps({"id": req["id"], "vector": vec}) + "\\n"); sys.stdout.flush()
+            """.write(to: fallbackWorker, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fallbackWorker.path)
+            let provider = LocalEmbeddingProvider(directory: localFixture, executable: fallbackWorker)
+            let vectors = try await provider.embed(["ok-1", "crash-gpu", "ok-2"])
+            try expect(vectors.count == 3 && vectors.allSatisfy { $0.count == 1024 && $0[0] == 1.0 }, "embedding CPU fallback did not produce valid vectors")
+            let modes = try String(contentsOf: modeLog, encoding: .utf8).split(separator: "\n").map(String.init)
+            #if arch(x86_64)
+            try expect(modes == ["embedding-cpu"], "x86_64 should start directly on embedding-cpu, got \(modes)")
+            #else
+            try expect(modes == ["embedding", "embedding-cpu"], "expected single GPU→CPU fallback and sticky CPU worker, got \(modes)")
+            #endif
+            provider.close(initiator: .selfCheck)
+            let oomLog = localFixture.appendingPathComponent("embedding-oom-modes.log")
+            let oomWorker = localFixture.appendingPathComponent("embedding-oom-worker")
+            try """
+            #!/usr/bin/env python3
+            import json, sys
+            with open(\(String(reflecting: oomLog.path)), "a") as f: f.write(sys.argv[1] + "\\n")
+            sys.stdout.write('{"ready":true}\\n'); sys.stdout.flush()
+            for line in sys.stdin:
+                req = json.loads(line)
+                sys.stdout.write(json.dumps({"id": req["id"], "error": "embedding_context"}) + "\\n"); sys.stdout.flush()
+            """.write(to: oomWorker, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: oomWorker.path)
+            let oomProvider = LocalEmbeddingProvider(directory: localFixture, executable: oomWorker)
+            do {
+                _ = try await oomProvider.embed(["oom"])
+                throw CheckError(description: "embedding_context unexpectedly succeeded")
+            } catch let error as CopilotError {
+                try expect(error.localizedDescription.contains("allocate inference memory"), "wrong embedding_context message: \(error)")
+            }
+            let oomModes = try String(contentsOf: oomLog, encoding: .utf8).split(separator: "\n").map(String.init)
+            try expect(oomModes.count == 1, "embedding_context should not spawn a second worker, got \(oomModes)")
+            oomProvider.close(initiator: .selfCheck)
+            passed.append("local embedding provider defaults CPU on x86_64 and falls back to CPU on GPU crash")
+        }
         try check("audio flow separates no audio, digital silence, untranscribed audio and recognition") {
             var now: TimeInterval = 100
             let flow = AudioFlowMonitor(clock: { now })
@@ -308,6 +477,12 @@ enum CoreChecks {
             try expect(events.count == 1 && events[0].stage == .audioSummary, "one unknown stage discarded the whole journal")
             let line = CaptureDiagnostics.summaryLine(events[0])
             try expect(line.contains("speaker=You verdict=digitalSilence") && line.contains("backlog_ms_max=40"), "audio summary fields missing")
+            let exitLine = CaptureDiagnostics.summaryLine(.init(time: Date(timeIntervalSince1970: 0), stage: .workerExit, code: 15, details: .init(workerMode: "embedding", workerTerminationInitiator: .selfCheck)))
+            try expect(exitLine.contains("worker=embedding initiator=selfCheck"), "worker initiator missing from summary")
+            let stallLine = CaptureDiagnostics.summaryLine(.init(time: Date(timeIntervalSince1970: 0), stage: .mainThreadStall, code: nil, details: .init(stallMS: 2100, isRunning: true, isTransitioning: false, answerIsRunning: false, transcriptLineCount: 42)))
+            try expect(stallLine.contains("stall_ms=2100") && stallLine.contains("lines=42"), "main thread stall fields missing from summary")
+            let stopLine = CaptureDiagnostics.summaryLine(.init(time: Date(timeIntervalSince1970: 0), stage: .stopStage, code: nil, details: .init(lifecyclePhase: .disconnectProviders, timedOut: true)))
+            try expect(stopLine.contains("phase=disconnectProviders timed_out=true"), "stop stage fields missing from summary")
         }
         try check("mixed Mandarin turn keeps the reply without copying the interview question") {
             let question = "你好我们开始今天的面试请你用一分钟介绍一下自己以及你最近做的一个项目"

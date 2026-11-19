@@ -4,51 +4,98 @@ import Darwin
 /// Private stdio IPC, with one serial queue per resident native worker. Audio and text never
 /// appear in command arguments, environment, diagnostics, temporary files or a listening socket.
 final class LocalInferenceWorker: @unchecked Sendable {
+    private final class PendingCall {
+        let continuation: CheckedContinuation<[String: Any], Error>
+        var deadline: DispatchWorkItem?
+        init(continuation: CheckedContinuation<[String: Any], Error>) { self.continuation = continuation }
+    }
     private let queue = DispatchQueue(label: "com.livecopilot.local-inference", qos: .userInitiated)
     private let lock = NSLock()
     private let executable: URL
     private let arguments: [String]
+    private let sigkillGraceSeconds: TimeInterval
     private var process: Process?
     private var input: FileHandle?
     private var output: FileHandle?
     private var buffer = Data()
     private var activeID: UUID?
+    private var pendingCalls: [UUID: PendingCall] = [:]
+    private var terminationInitiators: [Int32: CaptureDiagnostics.WorkerTerminationInitiator] = [:]
     private var cancelled = Set<UUID>()
     private var timedOut = Set<UUID>()
     private var closed = false
     private var diagnosticCode = "unknown"
+    /// Controllable test barrier invoked on the serial queue after `activeID` is set and before launching/checking the child process.
+    var onBeforeStartProcess: (() -> Void)?
     var failureCode: String { lock.lock(); defer { lock.unlock() }; return diagnosticCode }
     private func recordFailure(_ code: String) {
         lock.lock(); diagnosticCode = code; lock.unlock()
         CaptureDiagnostics.record(.workerFailure, details: .init(workerMode: diagnosticMode, failure: CaptureDiagnostics.Failure(rawValue: code) ?? .unknown))
     }
-    private var diagnosticMode: String { ["embedding", "asr", "streaming", "zipformer", "paraformer"].contains(arguments.first ?? "") ? arguments[0] : "other" }
+    private var diagnosticMode: String { ["embedding", "embedding-cpu", "asr", "streaming", "zipformer", "paraformer"].contains(arguments.first ?? "") ? arguments[0] : "other" }
 
-    init(mode: String, modelDirectory: URL, executable: URL? = nil) {
+    init(mode: String, modelDirectory: URL, executable: URL? = nil, sigkillGraceSeconds: TimeInterval = 1.5) {
         self.executable = executable ?? Bundle.main.resourceURL!.appendingPathComponent("LocalRuntime/livecopilot-inference")
+        self.sigkillGraceSeconds = max(0.05, sigkillGraceSeconds)
         arguments = [mode, modelDirectory.path]
     }
-    deinit { if let process, process.isRunning { process.terminate() }; try? input?.close(); try? output?.close() }
+    deinit {
+        lock.lock()
+        terminateProcessLocked(initiator: .deinitCleanup)
+        lock.unlock()
+        try? input?.close(); try? output?.close()
+    }
 
     func call(_ payload: [String: Any], timeout: TimeInterval = 90) async throws -> [String: Any] {
         let id = UUID()
         return try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { continuation in
+                let pending = PendingCall(continuation: continuation)
+                let deadline = DispatchWorkItem { [weak self] in self?.interrupt(id, timeout: true) }
+                pending.deadline = deadline
+                lock.lock()
+                if closed || cancelled.contains(id) {
+                    cancelled.remove(id)
+                    lock.unlock()
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                pendingCalls[id] = pending
+                lock.unlock()
+                // Start the timeout before queueing so backlog wait cannot bypass the deadline.
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
                 queue.async { [self] in
                     lock.lock()
-                    let rejected = closed || cancelled.contains(id)
+                    guard pendingCalls[id] != nil else {
+                        cancelled.remove(id); timedOut.remove(id)
+                        lock.unlock()
+                        return
+                    }
+                    let rejected = closed || cancelled.contains(id) || timedOut.contains(id)
+                    let rejectedByTimeout = timedOut.contains(id)
                     if !rejected { activeID = id }
                     lock.unlock()
-                    defer { lock.lock(); activeID = nil; cancelled.remove(id); timedOut.remove(id); lock.unlock() }
-                    guard !rejected else { continuation.resume(throwing: CancellationError()); return }
-                    let deadline = DispatchWorkItem { [weak self] in self?.interrupt(id, timeout: true) }
-                    DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
-                    defer { deadline.cancel() }
+                    defer {
+                        lock.lock()
+                        activeID = nil; cancelled.remove(id); timedOut.remove(id)
+                        let leftover = pendingCalls.removeValue(forKey: id)
+                        leftover?.deadline?.cancel()
+                        lock.unlock()
+                    }
+                    if rejected {
+                        if rejectedByTimeout {
+                            resumeCall(id, with: .failure(CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")), failureCodeOnResume: "timeout")
+                        } else {
+                            resumeCall(id, with: .failure(CancellationError()))
+                        }
+                        return
+                    }
                     do {
-                        try ensureStarted()
-                        lock.lock(); let cancelledNow = closed || cancelled.contains(id); lock.unlock()
-                        if cancelledNow { throw CancellationError() }
+                        onBeforeStartProcess?()
+                        try checkActiveCallState(id)
+                        try ensureStarted(for: id)
+                        try checkActiveCallState(id)
                         var message = payload; message["id"] = id.uuidString
                         var bytes = try JSONSerialization.data(withJSONObject: message)
                         guard bytes.count < 4 * 1024 * 1024 else { throw CopilotError.message("Local model input is too large.") }
@@ -64,32 +111,104 @@ final class LocalInferenceWorker: @unchecked Sendable {
                             throw CopilotError.message("Local model could not allocate inference memory, including on CPU. Close other apps and retry.")
                         }
                         if response["error"] != nil { recordFailure("inference_failed"); throw CopilotError.message("Local model could not process this input. Check model files and input length.") }
-                        lock.lock(); let wasCancelled = cancelled.contains(id); lock.unlock()
-                        if wasCancelled { throw CancellationError() }
-                        continuation.resume(returning: response)
+                        try checkActiveCallState(id)
+                        resumeCall(id, with: .success(response))
                     } catch {
                         discardProcess()
                         lock.lock(); let wasCancelled = cancelled.contains(id) || closed, expired = timedOut.contains(id); lock.unlock()
-                        if expired { recordFailure("timeout") }
-                        else if !wasCancelled && failureCode == "process_ended" { recordFailure("process_ended") }
-                        continuation.resume(throwing: wasCancelled ? CancellationError() : expired ? CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.") : error)
+                        let reportedFailure = expired ? "timeout" : (!wasCancelled && failureCode == "process_ended" ? "process_ended" : nil)
+                        let resolvedError: Error = wasCancelled
+                            ? CancellationError()
+                            : (expired ? CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.") : error)
+                        resumeCall(id, with: .failure(resolvedError), failureCodeOnResume: reportedFailure)
                     }
                 }
             }
         } onCancel: { self.interrupt(id) }
     }
-    private func interrupt(_ id: UUID, timeout: Bool = false) {
-        lock.lock(); defer { lock.unlock() }
-        if timeout { guard activeID == id else { return }; timedOut.insert(id); diagnosticCode = "timeout" }
-        else { cancelled.insert(id) }
-        if activeID == id, let process, process.isRunning { process.terminate() }
-    }
-    func close() {
-        lock.lock(); closed = true
-        if let process, process.isRunning { process.terminate() }
+    private func checkActiveCallState(_ id: UUID) throws {
+        lock.lock()
+        let isCancelled = closed || cancelled.contains(id)
+        let isTimedOut = timedOut.contains(id)
         lock.unlock()
+        if isCancelled { throw CancellationError() }
+        if isTimedOut { throw CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.") }
     }
-    private func ensureStarted() throws {
+    private func resumeCall(_ id: UUID, with result: Result<[String: Any], Error>, failureCodeOnResume: String? = nil) {
+        lock.lock()
+        let pending = pendingCalls.removeValue(forKey: id)
+        pending?.deadline?.cancel()
+        lock.unlock()
+        guard let pending else { return }
+        if let failureCodeOnResume { recordFailure(failureCodeOnResume) }
+        switch result {
+        case .success(let value): pending.continuation.resume(returning: value)
+        case .failure(let error): pending.continuation.resume(throwing: error)
+        }
+    }
+    private func terminateProcessLocked(initiator: CaptureDiagnostics.WorkerTerminationInitiator) {
+        guard let process, process.isRunning else { return }
+        let pid = process.processIdentifier
+        if terminationInitiators[pid] == nil { terminationInitiators[pid] = initiator }
+        let grace = sigkillGraceSeconds
+        process.terminate()
+        // Escalate to SIGKILL if the child ignores SIGTERM or is stuck so Darwin.read gets EOF.
+        DispatchQueue.global().asyncAfter(deadline: .now() + grace) {
+            if process.isRunning { Darwin.kill(pid, SIGKILL) }
+        }
+    }
+    private func takeTerminationInitiator(for pid: Int32) -> CaptureDiagnostics.WorkerTerminationInitiator {
+        lock.lock(); defer { lock.unlock() }
+        return terminationInitiators.removeValue(forKey: pid) ?? .external
+    }
+    private func interrupt(_ id: UUID, timeout: Bool = false) {
+        var immediatePending: PendingCall?
+        lock.lock()
+        if timeout {
+            guard activeID == id || pendingCalls[id] != nil else { lock.unlock(); return }
+            timedOut.insert(id); diagnosticCode = "timeout"
+            if activeID == id, let process, process.isRunning {
+                terminateProcessLocked(initiator: .workerTimeout)
+            } else {
+                // Either queued, or active during cold start before any child process exists:
+                // fail the caller immediately so cold-start races can never outlive the deadline.
+                immediatePending = pendingCalls.removeValue(forKey: id)
+                immediatePending?.deadline?.cancel()
+            }
+        } else {
+            cancelled.insert(id)
+            if activeID == id, let process, process.isRunning {
+                terminateProcessLocked(initiator: .userCancel)
+            } else {
+                immediatePending = pendingCalls.removeValue(forKey: id)
+                immediatePending?.deadline?.cancel()
+            }
+        }
+        lock.unlock()
+        if let immediatePending {
+            if timeout {
+                recordFailure("timeout")
+                immediatePending.continuation.resume(throwing: CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files."))
+            } else {
+                immediatePending.continuation.resume(throwing: CancellationError())
+            }
+        }
+    }
+    func close(initiator: CaptureDiagnostics.WorkerTerminationInitiator = .shutdown) {
+        var queuedToCancel: [PendingCall] = []
+        lock.lock()
+        closed = true
+        terminateProcessLocked(initiator: initiator)
+        for (id, pending) in pendingCalls where id != activeID {
+            pending.deadline?.cancel()
+            queuedToCancel.append(pending)
+            pendingCalls.removeValue(forKey: id)
+        }
+        lock.unlock()
+        for pending in queuedToCancel { pending.continuation.resume(throwing: CancellationError()) }
+    }
+    private func ensureStarted(for id: UUID) throws {
+        try checkActiveCallState(id)
         if let process, process.isRunning { return }
         guard FileManager.default.isExecutableFile(atPath: executable.path) else {
             recordFailure("runtime_missing")
@@ -99,12 +218,20 @@ final class LocalInferenceWorker: @unchecked Sendable {
         child.executableURL = executable; child.arguments = arguments
         child.environment = ["PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory(), "TMPDIR": NSTemporaryDirectory(), "LANG": "en_US.UTF-8"]
         let mode = diagnosticMode
-        child.terminationHandler = { process in
-            CaptureDiagnostics.record(.workerExit, code: Int(process.terminationStatus), details: .init(workerMode: mode, workerPID: process.processIdentifier, terminationReason: process.terminationReason.rawValue))
+        child.terminationHandler = { [weak self] process in
+            let initiator = self?.takeTerminationInitiator(for: process.processIdentifier) ?? .external
+            CaptureDiagnostics.record(.workerExit, code: Int(process.terminationStatus), details: .init(workerMode: mode, workerPID: process.processIdentifier, terminationReason: process.terminationReason.rawValue, workerTerminationInitiator: initiator))
         }
         child.standardInput = stdin; child.standardOutput = stdout; child.standardError = FileHandle.nullDevice
         lock.lock()
-        guard !closed, activeID.map({ !cancelled.contains($0) }) ?? false else { lock.unlock(); throw CancellationError() }
+        let isCancelled = closed || activeID != id || cancelled.contains(id)
+        let isTimedOut = timedOut.contains(id)
+        guard !isCancelled, !isTimedOut else {
+            lock.unlock()
+            throw isCancelled
+                ? CancellationError()
+                : CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")
+        }
         process = child
         do { try child.run(); CaptureDiagnostics.record(.workerStart, details: .init(workerMode: mode, workerPID: child.processIdentifier)) } catch { process = nil; diagnosticCode = "runtime_start"; lock.unlock(); recordFailure("runtime_start"); throw CopilotError.message("Local runtime could not start. Reinstall the complete LiveCopilot app.") }
         lock.unlock()
@@ -144,7 +271,7 @@ final class LocalInferenceWorker: @unchecked Sendable {
     }
     private func discardProcess() {
         lock.lock()
-        if let process, process.isRunning { process.terminate() }
+        terminateProcessLocked(initiator: .discardOnError)
         process = nil; lock.unlock()
         try? input?.close(); try? output?.close(); input = nil; output = nil; buffer.removeAll()
     }
@@ -152,11 +279,45 @@ final class LocalInferenceWorker: @unchecked Sendable {
 
 final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable {
     let model = LocalModelKind.embeddingIdentity
-    private let worker: LocalInferenceWorker
+    private let directory: URL
+    private let executable: URL?
+    private let workerLock = NSLock()
+    private var worker: LocalInferenceWorker
+    private var cpuFallbackActive: Bool
+    private var closed = false
     private let readinessLock = NSLock()
     private var prepared = false
     var isPrepared: Bool { readinessLock.withLock { prepared } }
-    init(directory: URL, executable: URL? = nil) { worker = .init(mode: "embedding", modelDirectory: directory, executable: executable) }
+    init(directory: URL, executable: URL? = nil) {
+        self.directory = directory
+        self.executable = executable
+        #if arch(x86_64)
+        self.cpuFallbackActive = true
+        self.worker = .init(mode: "embedding-cpu", modelDirectory: directory, executable: executable)
+        #else
+        self.cpuFallbackActive = false
+        self.worker = .init(mode: "embedding", modelDirectory: directory, executable: executable)
+        #endif
+    }
+    private func currentWorker() -> LocalInferenceWorker {
+        workerLock.withLock { worker }
+    }
+    private func switchToCPUIfNeeded(failingWorker: LocalInferenceWorker) -> LocalInferenceWorker? {
+        var previous: LocalInferenceWorker?
+        let replacement: LocalInferenceWorker? = workerLock.withLock {
+            guard !closed else { return nil }
+            if cpuFallbackActive {
+                return worker !== failingWorker ? worker : nil
+            }
+            cpuFallbackActive = true
+            previous = worker
+            let next = LocalInferenceWorker(mode: "embedding-cpu", modelDirectory: directory, executable: executable)
+            worker = next
+            return next
+        }
+        previous?.close(initiator: .discardOnError)
+        return replacement
+    }
     func prepare() async throws {
         guard !isPrepared else { return }
         // Exercise both model loading and the first inference/Metal setup with fixed local text.
@@ -171,9 +332,25 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
         // One text per IPC request lets a new interactive query run between import chunks.
         for text in texts {
             try Task.checkCancellation()
+            let activeWorker = currentWorker()
             let response: [String: Any]
-            do { response = try await worker.call(["op": "embed", "text": text]) }
-            catch { readinessLock.withLock { prepared = false }; throw error }
+            do {
+                response = try await activeWorker.call(["op": "embed", "text": text])
+            } catch is CancellationError {
+                readinessLock.withLock { prepared = false }
+                throw CancellationError()
+            } catch {
+                // If the GPU worker crashed out-of-process before in-process fallback could run,
+                // transparently switch to a CPU worker and retry this chunk once.
+                if activeWorker.failureCode == "process_ended",
+                   let fallbackWorker = switchToCPUIfNeeded(failingWorker: activeWorker) {
+                    do { response = try await fallbackWorker.call(["op": "embed", "text": text]) }
+                    catch { readinessLock.withLock { prepared = false }; throw error }
+                } else {
+                    readinessLock.withLock { prepared = false }
+                    throw error
+                }
+            }
             guard let numbers = response["vector"] as? [NSNumber], numbers.count == 1024 else {
                 throw CopilotError.message("Local model returned an invalid response.")
             }
@@ -185,5 +362,12 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
         }
         return vectors
     }
-    func close() { readinessLock.withLock { prepared = false }; worker.close() }
+    func close(initiator: CaptureDiagnostics.WorkerTerminationInitiator = .shutdown) {
+        readinessLock.withLock { prepared = false }
+        let current = workerLock.withLock { () -> LocalInferenceWorker in
+            closed = true
+            return worker
+        }
+        current.close(initiator: initiator)
+    }
 }
