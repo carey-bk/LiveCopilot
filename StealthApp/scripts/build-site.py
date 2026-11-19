@@ -57,7 +57,7 @@ for language, copy in content.items():
     case = sample['meeting']
     path, lang = locales[language]
     prefix = '../' if path else ''
-    badge = '<b>' + '.'.join(version.split('.')[:2]) + '</b>'
+    badge = '<b>' + version + '</b>'
     label = '<span>' + data['pill_text'] + '</span>'
     data.update(
         lang=lang, prefix=prefix, home='./', version=version, sha256=download['sha256'],
