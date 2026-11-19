@@ -1731,4 +1731,21 @@ final class ReliabilityAuditRegressionTests: XCTestCase {
             await app.shutdown()
         }
     }
+
+    @MainActor func testKnowledgeDiagnosticsButtonTargetsKnowledgeIndexingTab() async {
+        let target = SettingsView.knowledgeModelDiagnosticsTarget
+        XCTAssertEqual(target.page, .services)
+        XCTAssertEqual(target.serviceRole, .knowledgeIndexing)
+        XCTAssertEqual(target.serviceRole.rawValue, 2)
+
+        let app = AppCoordinator(mock: true, emitMockConversation: false)
+        app.settings.language = .simplifiedChinese
+        app.settings.embeddingService = .local
+        let host = NSHostingView(rootView: SettingsView(coordinator: app, initialPage: target.page, initialServiceRole: target.serviceRole.rawValue))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 920, height: 700), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        window.contentView = nil
+        await app.shutdown()
+    }
 }

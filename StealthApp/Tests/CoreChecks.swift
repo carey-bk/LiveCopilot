@@ -826,6 +826,8 @@ enum CoreChecks {
         try check("UI translations preserve source content and source identity") {
             try expect(L10n.text("API key configured", language: .simplifiedChinese) == "API Key 已配置", "credential status not translated")
             try expect(L10n.text("API key configured", language: .english) == "API key configured", "English not selectable")
+            try expect(L10n.text("Indexing complete. Retrieval is local.", language: .simplifiedChinese) == "索引完成，检索在本机进行。", "exact indexing completion message hijacked by prefix")
+            try expect(L10n.text("Indexing documents…", language: .simplifiedChinese) == "正在导入并建立索引…", "exact indexing documents message hijacked by prefix")
             try expect(chunks[0].displayLabel(language: .simplifiedChinese).contains("第 3 页"), "source page lost")
             try expect(chunks[0].text.contains("128"), "source content altered")
         }
@@ -842,6 +844,7 @@ enum CoreChecks {
             try expect(L10n.text("History", language: traditional) == "歷史記錄", "dictionary chrome not converted")
             try expect(L10n.text("我的简体文档和对话", language: traditional) == "我的简体文档和对话", "user content was converted")
             try expect(ServiceGuide.text("Settings", "设置", .simplifiedChinese) == "设置", "simplified changed")
+            try expect(L10n.text("Indexing 简体文档.pdf", language: traditional) == "正在索引 简体文档.pdf", "indexing prefix changed document name")
             try expect(L10n.text("Re-indexing 简体文档.pdf", language: traditional) == "正在重建索引 简体文档.pdf", "index status changed document name")
             try expect(chunks[0].displayLabel(language: traditional).contains("第 3 頁"), "source page not traditional")
             var settings = AppSettings(); settings.language = traditional

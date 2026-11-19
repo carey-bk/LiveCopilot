@@ -3,6 +3,14 @@ import AVFoundation
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    enum ServiceRole: Int {
+        case speechRecognition = 0
+        case answerTriggers = 1
+        case knowledgeIndexing = 2
+        case analysisAndAnswers = 3
+    }
+    static let knowledgeModelDiagnosticsTarget: (page: SettingsPage, serviceRole: ServiceRole) = (.services, .knowledgeIndexing)
+
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var hotkeys: HotkeyStore
     @ObservedObject var laya: LayaRuntimeManager
@@ -226,7 +234,7 @@ struct SettingsView: View {
             JevModeCard(isOn: $coordinator.settings.automaticSuggestions, language: coordinator.settings.language,
                         identifier: "automatic-suggestions", showTriggerSettings: {
                 page = .services
-                serviceRole = 1
+                serviceRole = ServiceRole.answerTriggers.rawValue
             })
             SettingsSection {
                 VStack(alignment: .leading, spacing: 12) {
@@ -251,16 +259,16 @@ struct SettingsView: View {
     private var services: some View {
         VStack(alignment: .leading, spacing: 20) {
             Picker(t("Service role"), selection: $serviceRole) {
-                Text(b("Speech recognition", "语音识别")).tag(0)
-                Text(b("Answer triggers", "实时回答触发")).tag(1)
-                Text(b("Knowledge indexing", "知识库索引")).tag(2)
-                Text(b("Analysis & answers", "分析与回答")).tag(3)
+                Text(b("Speech recognition", "语音识别")).tag(ServiceRole.speechRecognition.rawValue)
+                Text(b("Answer triggers", "实时回答触发")).tag(ServiceRole.answerTriggers.rawValue)
+                Text(b("Knowledge indexing", "知识库索引")).tag(ServiceRole.knowledgeIndexing.rawValue)
+                Text(b("Analysis & answers", "分析与回答")).tag(ServiceRole.analysisAndAnswers.rawValue)
             }.pickerStyle(.segmented).accessibilityIdentifier("service-role")
-            switch serviceRole {
-            case 1: automaticTriggerSettings
-            case 2: embeddingService
-            case 3: analysisService
-            default: liveService
+            switch ServiceRole(rawValue: serviceRole) ?? .speechRecognition {
+            case .answerTriggers: automaticTriggerSettings
+            case .knowledgeIndexing: embeddingService
+            case .analysisAndAnswers: analysisService
+            case .speechRecognition: liveService
             }
         }.padding(.bottom, 4)
     }
@@ -434,7 +442,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 18) {
             liveSection(b("Knowledge indexing", "知识库索引")) {
                 Text(b("Index imported documents and retrieve relevant passages before an answer is generated.", "为导入的文档建立索引，在生成回答前找出相关片段。"))
-                Button(b("Configure the answer model in Analysis & answers", "前往「分析与回答」配置回答模型")) { serviceRole = 3 }
+                Button(b("Configure the answer model in Analysis & answers", "前往「分析与回答」配置回答模型")) { serviceRole = ServiceRole.analysisAndAnswers.rawValue }
                     .buttonStyle(.link)
                 Divider()
                 Picker(b("Knowledge index model", "知识库索引模型"), selection: $coordinator.settings.embeddingService) {
@@ -609,7 +617,7 @@ struct SettingsView: View {
                     Label(b("Knowledge indexing is not verified. Configure a local model or API Key and complete verification to continue.", "知识库索引服务尚未验证通过。请前往配置，下载本地模型或保存 API Key 并完成验证。"), systemImage: "info.circle")
                         .font(.callout).foregroundStyle(.secondary)
                     Spacer(minLength: 8)
-                    Button(b("Configure", "去配置")) { serviceRole = 2; page = .services }
+                    Button(b("Configure", "去配置")) { serviceRole = ServiceRole.knowledgeIndexing.rawValue; page = .services }
                 }.padding(14).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
             }
             knowledgeContent
@@ -649,7 +657,10 @@ struct SettingsView: View {
             }
             if !coordinator.knowledgeMessage.isEmpty { Text(t(coordinator.knowledgeMessage)).font(.caption).textSelection(.enabled) }
             if coordinator.settings.embeddingService == .local {
-                Button(b("Check local model / copy diagnostics", "检查本地模型 / 复制诊断信息")) { page = .services; serviceRole = 1 }
+                Button(b("Check local model / copy diagnostics", "检查本地模型 / 复制诊断信息")) {
+                    page = Self.knowledgeModelDiagnosticsTarget.page
+                    serviceRole = Self.knowledgeModelDiagnosticsTarget.serviceRole.rawValue
+                }
                     .accessibilityIdentifier("knowledge-model-diagnostics")
             }
             List {

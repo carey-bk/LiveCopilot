@@ -4,7 +4,7 @@ import Foundation
 /// Raw protocol/status strings remain stable for diagnostics and persisted V1 data.
 enum L10n {
     static func text(_ text: String, language: AppLanguage) -> String {
-        if language.usesChinese {
+        if language.usesChinese, chinese[text] == nil {
             for (prefix, translated) in [("Indexing ", "正在索引 "), ("Re-indexing ", "正在重建索引 ")] where text.hasPrefix(prefix) {
                 return language.interfaceText(translated) + text.dropFirst(prefix.count)
             }
