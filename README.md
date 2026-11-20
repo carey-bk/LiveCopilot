@@ -8,13 +8,13 @@
 
 A native macOS assistant for interviews, meetings and academic discussions. LiveCopilot transcribes speech, retrieves relevant passages from your documents and streams answer suggestions in a floating window. You can also type a question without starting the microphone.
 
-[Download 2.9.1](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.1) · [Product website](https://carey-bk.github.io/LiveCopilot/en/) · [Release notes](docs/releases/2.9.1.md)
+[Download 2.9.2](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.2) · [Product website](https://carey-bk.github.io/LiveCopilot/en/) · [Release notes](docs/releases/2.9.2.md)
 
 ## Download and requirements
 
-**2.9.1 · 39.06 MB · Universal macOS app · Developer ID signed and Apple notarized**
+**2.9.2 · 39.38 MB · Universal macOS app · Developer ID signed and Apple notarized**
 
-[Download DMG — Hong Kong mirror](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.1/LiveCopilot-2.9.1-macOS-universal.dmg) · [GitHub download and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.1)
+[Download DMG — Hong Kong mirror](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.2/LiveCopilot-2.9.2-macOS-universal.dmg) · [GitHub download and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.2)
 
 | Component | Requirement |
 |---|---|
@@ -27,12 +27,12 @@ The small installer **does not contain Laya weights**. Download the models you c
 
 Open the DMG, drag LiveCopilot into Applications and launch it there. Existing users can choose **LiveCopilot → Check for Updates…** in the application menu. Normal upgrades preserve settings, API keys, documents and history; updating Laya requires a separate model download.
 
-## What’s new in 2.9.1?
+## What’s new in 2.9.2?
 
-- **Long conversations.** The floating window groups transcript and answer updates, reducing repeated layout and scrolling while a long answer streams.
-- **Stopping and quitting.** LiveCopilot limits how long it waits for audio and inference tasks to finish. Late updates from the previous session stay out of the next one.
-- **Local knowledge indexing.** BGE-M3 uses the CPU by default on Intel Macs and can retry on the CPU after a GPU failure. Long documents benefit from improved chunking and indexing timeouts.
-- **Troubleshooting.** Indexing errors link to the relevant model settings. Diagnostic reports record where the interface stalled or which stage was running when listening stopped.
+- Session history can recover from a failed disk write and retain follow-up questions and answers. Repeated resets archive the session once.
+- Improved microphone switching and cleanup after system audio capture timeouts or unexpected cloud disconnects.
+- Reduced transcript refreshes and audio callback contention during long sessions. The overlay uses a lighter background on Intel Macs during video calls.
+- Improved document decoding, large-document indexing, local embedding fallback, and translation error handling.
 
 ## Start your first conversation
 

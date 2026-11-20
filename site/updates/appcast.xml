@@ -6,6 +6,16 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>LiveCopilot</title>
         <item>
+            <title>2.9.2</title>
+            <pubDate>Fri, 20 Nov 2026 12:57:40 +0800</pubDate>
+            <link>https://carey-bk.github.io/LiveCopilot/</link>
+            <sparkle:version>20261120.043744</sparkle:version>
+            <sparkle:shortVersionString>2.9.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<html><body><p>LiveCopilot 2.9.2</p><p>中文</p><p>改进会话历史保存。磁盘写入失败后可重试，保留随后追加的追问和回答。连续重置同一场会话只生成一条历史。</p><p>改进麦克风切换、远程音频采集超时和云端连接关闭后的清理，减少停止或重新开始监听时的状态异常。</p><p>减少长会话中的转写刷新和音频回调等待。Intel Mac 上的悬浮窗使用更轻量的背景，降低视频会议期间的合成负担。</p><p>改进知识库文本编码处理、大文档分段、本地向量模型回退及翻译服务错误处理。</p><p>English</p><p>Session history can recover from a failed disk write and retain follow-up questions and answers. Repeated resets archive the session once.</p><p>Improved microphone switching and cleanup after system audio capture timeouts or unexpected cloud disconnects.</p><p>Reduced transcript refreshes and audio callback contention during long sessions. The overlay uses a lighter background on Intel Macs during video calls.</p><p>Improved document decoding, large-document indexing, local embedding fallback, and translation error handling.</p></body></html>]]></description>
+            <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.2/LiveCopilot-2.9.2-macOS-universal.dmg" length="39376188" type="application/octet-stream" sparkle:edSignature="XZ+KuM5eufBj6ypdPwbIAn8r7UAMYF98dIrBwkOm7eZAyA/AQBKcJyA7Y42j+gSj0bsRXVW0OdrrhpJAg6jRCQ=="/>
+        </item>
+        <item>
             <title>2.9.1</title>
             <pubDate>Thu, 19 Nov 2026 20:39:40 +0800</pubDate>
             <link>https://carey-bk.github.io/LiveCopilot/</link>
@@ -25,19 +35,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
             <description><![CDATA[<html><body><p>LiveCopilot 2.9.0</p><p>中文</p><p>六步新手引导帮助你选择输入方式、准备本地模型，并在开始使用前测试回答服务。自定义兼容接口支持配置服务地址和模型 ID。</p><p>新增「模式与场景」设置。新手引导、模式设置与实时回答触发页共用 Jev Mode 开关卡片，实时触发页还可查看 Laya 状态和调整灵敏度。</p><p>设置页现在明确区分知识库索引模型与回答模型。推荐在本机使用 BGE-M3 检索资料，无需 OpenAI Key。</p><p>知识库检索会复用已读取的向量。同一场监听中更换文档后，下一次提问即可使用更新后的资料。</p><p>English</p><p>Six-step onboarding guides you through audio inputs, local models and testing your answer service. Custom compatible endpoints support a configurable URL and model ID.</p><p>Conversation modes and tools now have their own settings page. Jev Mode uses the same switch card across onboarding and settings, with Laya status and sensitivity available under real-time triggers.</p><p>Knowledge indexing and answer generation are clearly identified in settings. The recommended local BGE-M3 index runs without an OpenAI API key.</p><p>Knowledge retrieval reuses vectors in memory and picks up document changes during an ongoing listening session.</p></body></html>]]></description>
             <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.9.0/LiveCopilot-2.9.0-macOS-universal.dmg" length="38888220" type="application/octet-stream" sparkle:edSignature="NynTqnfhJeWbzulTeV/1EHpxkBO73n8fa/Ap/rKWey95ekydbg/Eg+pXa48TdjJ/rZeh+ANh9ic99bx4iWktBA=="/>
         </item>
-        <item>
-            <title>2.8.0</title>
-            <pubDate>Fri, 06 Nov 2026 09:40:26 +0800</pubDate>
-            <link>https://carey-bk.github.io/LiveCopilot/</link>
-            <sparkle:version>20261106.013207</sparkle:version>
-            <sparkle:shortVersionString>2.8.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<html><body><p># LiveCopilot 2.8.0</p><p>## 中文</p><p>- 改善远程会议中的说话人归属，减少扬声器回声被识别成我方发言及错误打断回答。</p><p>- 保留对方插话前已识别的我方内容，改善插话时句首被截断的问题。</p><p>- 改善麦克风设备变化后的恢复与本地识别进程异常处理。</p><p>- 个性化额外提示词新增保存状态与按钮，自定义格式优先于默认回答风格。</p><p>- 精简自动回答状态文案，减少悬浮窗重复信息；默认开启回答区自动伸缩，关闭自动贴边和共享隐藏。</p><p>- 专业术语识别标记为 Beta，移到模型管理下方。热词增强效果仍因词汇与发音而异，不保证准确识别。</p><p>已有配置保留。应用与安装包使用 Developer ID 签名并通过 Apple 公证。支持 Apple Silicon 与 Intel Mac。</p><p>## English</p><p>- Improved speaker attribution in remote meetings, reducing speaker echo appearing as your speech and incorrectly interrupting answers.</p><p>- Preserved recognized speech when the other participant interrupts and improved clipped phrase beginnings.</p><p>- Improved microphone recovery after device changes and handling of local recognition worker failures.</p><p>- Added explicit saving for custom answer instructions; custom formatting takes priority over default answer style.</p><p>- Simplified answer status messages and removed repeated overlay information. Automatic answer-area sizing defaults on; edge hiding and capture exclusion default off.</p><p>- Marked terminology enhancement as Beta and moved it below model management. Recognition improvements remain dependent on vocabulary and pronunciation.</p><p>Existing settings are preserved. Developer ID signed and Apple notarized, for Apple Silicon and Intel Macs.</p></body></html>]]></description>
-            <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.8.0/LiveCopilot-2.8.0-macOS-universal.dmg" length="38632051" type="application/octet-stream" sparkle:edSignature="UOxySrPg70J7I0jBUIb7/+r/e38Pk+Uq2OeJH2RpjTf3q0WsUOJqVWWMOMHqXVbeTl3oTQwcYzf94JHWDm08CQ=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: 24JOshVDqvT2cxABbvwL2TBi+xUkreBaRU3Dhb9jAqFGNpU7NYecN5dUt1JEKlsDansxMCprRToJXqnri9XgBQ==
-length: 7331
+edSignature: PC3jBmv8zt/kkAQvwqCLfPzWZjVIdpu2XWCY92wHhcInxpPxnmHTgaIc2ZSQ9h768G5Y8QrH5I0l1eLRV5MpAA==
+length: 6684
 -->

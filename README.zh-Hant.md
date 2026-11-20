@@ -8,13 +8,13 @@
 
 面向面試、會議和學術答辯的原生 macOS 助手。LiveCopilot 即時轉錄語音，檢索個人文件中的相關資料，並在懸浮窗中串流呈現回答建議。也可以不開麥，直接輸入問題。
 
-[下載 2.9.1](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.1) · [產品介紹](https://carey-bk.github.io/LiveCopilot/zh-Hant/) · [版本說明](docs/releases/2.9.1.md)
+[下載 2.9.2](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.2) · [產品介紹](https://carey-bk.github.io/LiveCopilot/zh-Hant/) · [版本說明](docs/releases/2.9.2.md)
 
 ## 下載與使用要求
 
-**2.9.1 · 安裝檔 39.06 MB · macOS 通用版本 · Developer ID 簽名與 Apple 公證**
+**2.9.2 · 安裝檔 39.38 MB · macOS 通用版本 · Developer ID 簽名與 Apple 公證**
 
-[下載安裝檔 — 香港鏡像站](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.1/LiveCopilot-2.9.1-macOS-universal.dmg) · [GitHub 下載與驗證值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.1)
+[下載安裝檔 — 香港鏡像站](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.2/LiveCopilot-2.9.2-macOS-universal.dmg) · [GitHub 下載與驗證值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.2)
 
 | 功能 | 使用要求 |
 |---|---|
@@ -27,12 +27,12 @@
 
 打開 DMG，將 LiveCopilot 拖入「應用程式」後啟動。已有使用者可以從應用程式選單選擇「LiveCopilot → 檢查更新…」。正常升級保留設定、API Key、文件和歷史；Laya 模型更新獨立於應用程式更新。
 
-## 2.9.1 更新了什麼？
+## 2.9.2 更新了什麼？
 
-- **長時間對話更順暢。** 懸浮視窗會合併更新逐字稿與回答，減少串流產生長回答時因重複排版或自動捲動造成的卡頓。
-- **停止監聽與結束程式更穩定。** 音訊或本機推論工作回應緩慢時，程式會限制等待時間。上一場對話延遲送達的更新也會被隔離。
-- **本機知識庫索引更穩定。** BGE-M3 在 Intel Mac 上預設使用 CPU，GPU 推論失敗時可改用 CPU 重試。長文件的分段與索引逾時處理也已改善。
-- **更容易排查問題。** 索引出錯時可直接開啟對應模型的設定。診斷報告會記錄介面卡住或停止監聽時所在的階段。
+- 改善對話紀錄儲存。磁碟寫入失敗後可重試，保留後續追問與回答。連續重設同一場對話只會產生一筆紀錄。
+- 改善麥克風切換、系統音訊擷取逾時與雲端連線中斷後的處理。
+- 減少長時間監聽時的逐字稿更新和音訊回呼等待。Intel Mac 的懸浮視窗使用較輕量的背景。
+- 改善文件編碼辨識、大型文件分段、本機向量模型備援與翻譯服務錯誤處理。
 
 ## 開始第一次對話
 
