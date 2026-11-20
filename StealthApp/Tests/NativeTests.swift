@@ -1283,10 +1283,13 @@ private final class ControllableStreamHandle: AudioCaptureManager.StreamHandle, 
     private var stopContinuation: CheckedContinuation<Void, Never>?
     private let shouldHangStop: Bool
     private var released = false
+    private var _stopCount = 0
+    var stopCount: Int { lock.withLock { _stopCount } }
 
     init(hangStop: Bool) { self.shouldHangStop = hangStop }
 
     func stopCapture() async throws {
+        lock.withLock { _stopCount += 1 }
         guard shouldHangStop else { return }
         await withCheckedContinuation { cont in
             lock.lock()
@@ -1315,6 +1318,7 @@ private final class RecordingLiveProvider: LiveProvider {
     var onEvent: ((LiveEvent) -> Void)?
     let tag: String
     private(set) var receivedAudio: [Data] = []
+    private(set) var disconnectCount = 0
     private let finalTextOnDisconnect: String?
 
     init(tag: String, finalTextOnDisconnect: String? = nil) {
@@ -1325,6 +1329,7 @@ private final class RecordingLiveProvider: LiveProvider {
     func sendAudio(_ data: Data) { receivedAudio.append(data) }
     func appendContext(_ text: String, delegationID: String?) {}
     func disconnect() async {
+        disconnectCount += 1
         if let finalTextOnDisconnect, !receivedAudio.isEmpty {
             onEvent?(.transcript(.init(id: "final-\(tag)", speaker: .them, text: finalTextOnDisconnect, startMS: 0, endMS: 500, receivedAt: Date())))
         }
@@ -1746,6 +1751,535 @@ final class ReliabilityAuditRegressionTests: XCTestCase {
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         window.contentView = nil
+        await app.shutdown()
+    }
+
+    @MainActor func testToggleMicMuteRaceCleanupAndCrossSessionIsolation() async throws {
+        let defaults = UserDefaults(suiteName: "com.livecopilot.test.toggle-mic.\(UUID().uuidString)")!
+        let app = AppCoordinator(mock: true, emitMockConversation: false, mockDefaults: defaults)
+        app.settings.mode = .remote
+        app.settings.listeningService = .apple
+        app.settings.automaticSuggestions = false
+        app.micEnabled = true
+
+        // Part 1: Degraded Remote mode (system audio fails to start, only mic captures).
+        // Intentional mute must NOT misfire mic.$isCapturing failure sink to terminate isRunning.
+        var createdMicProviders: [RecordingLiveProvider] = []
+        var deliverMicA: (@Sendable (Data, TimeInterval) -> Void)?
+        var deliverMicB: (@Sendable (Data, TimeInterval) -> Void)?
+        var micStartCount = 0
+        app.systemAudio.testStreamFactory = { _ in throw AudioCaptureManager.CaptureError.noDisplay }
+        app.mic.testStartHandler = { deliver in
+            micStartCount += 1
+            if micStartCount == 1 { deliverMicA = deliver }
+            else { deliverMicB = deliver }
+            return true
+        }
+        app.testLiveProviderFactory = { speaker in
+            let p = RecordingLiveProvider(tag: "\(speaker.rawValue)-\(createdMicProviders.count)")
+            if speaker == .you { createdMicProviders.append(p) }
+            return p
+        }
+
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        XCTAssertFalse(app.systemAudio.isCapturing)
+        XCTAssertTrue(app.mic.isCapturing)
+        XCTAssertEqual(createdMicProviders.count, 1)
+
+        // Intentional mute in mic-only Remote mode must keep the listening session alive.
+        app.toggleMic()
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertFalse(app.micEnabled)
+        XCTAssertFalse(app.mic.isCapturing)
+        XCTAssertTrue(app.isRunning, "Intentional mic mute must not kill a degraded Remote session")
+
+        // Part 2: Rapid Unmute -> Mute -> Unmute must serialize and leave no leaked micLive provider.
+        app.toggleMic() // unmute
+        app.toggleMic() // mute
+        app.toggleMic() // unmute
+        try await Task.sleep(nanoseconds: 120_000_000)
+        XCTAssertTrue(app.micEnabled)
+        XCTAssertTrue(app.mic.isCapturing)
+        XCTAssertTrue(app.isRunning)
+
+        // Part 3: Unmute racing with stop() must never leave hardware mic capturing after stop().
+        app.toggleMic() // mute first
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertFalse(app.mic.isCapturing)
+        var releaseDelayedStart: CheckedContinuation<Bool, Never>?
+        app.mic.testStartHandler = { deliver in
+            deliverMicB = deliver
+            return await withCheckedContinuation { cont in releaseDelayedStart = cont }
+        }
+        app.toggleMic() // unmute starts and suspends inside mic.start
+        for _ in 0..<40 where releaseDelayedStart == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertNotNil(releaseDelayedStart)
+        let stopTask = Task { await app.stop() }
+        try await Task.sleep(nanoseconds: 30_000_000)
+        releaseDelayedStart?.resume(returning: true)
+        await stopTask.value
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertFalse(app.isRunning)
+        XCTAssertFalse(app.mic.isCapturing, "Mic capture must not remain active after stop() raced with toggleMic()")
+
+        // Part 4: Cross-session mic frame isolation (stale Session A tap frame must not enter Session B).
+        func makePCM(_ value: Int16, samples: Int = 1600) -> Data {
+            var data = Data(count: samples * 2)
+            data.withUnsafeMutableBytes { raw in
+                let ptr = raw.bindMemory(to: Int16.self)
+                for i in 0..<samples { ptr[i] = value.littleEndian }
+            }
+            return data
+        }
+        var providerB: RecordingLiveProvider?
+        app.micEnabled = true
+        app.mic.testStartHandler = { deliver in
+            deliverMicB = deliver
+            return true
+        }
+        app.testLiveProviderFactory = { speaker in
+            let p = RecordingLiveProvider(tag: "sessionB-\(speaker.rawValue)")
+            if speaker == .you { providerB = p }
+            return p
+        }
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        XCTAssertTrue(app.mic.isCapturing)
+        let nowB = ProcessInfo.processInfo.systemUptime
+        let loudA = makePCM(20000)
+        let silentB = makePCM(0)
+        deliverMicA?(loudA, nowB)
+        deliverMicB?(silentB, nowB)
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertEqual(providerB?.receivedAudio, [silentB], "Stale Session A mic frame must never reach Session B provider")
+        XCTAssertEqual(app.micFlowSnapshot.verdict, .digitalSilence, "Stale Session A mic frame must not pollute Session B micFlow")
+
+        await app.shutdown()
+    }
+
+    @MainActor func testShutdownBoundsStalledIndexingAndPreventsRestart() async throws {
+        struct HangingEmbedding: EmbeddingProvider {
+            let model = "hang-test"
+            func embed(_ texts: [String]) async throws -> [[Float]] {
+                try await Task.sleep(nanoseconds: 30_000_000_000)
+                return texts.map { _ in [1, 0, 0, 0] }
+            }
+        }
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("livecopilot-shutdown-test-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let sampleDoc = tempDir.appendingPathComponent("note.txt")
+        try "LiveCopilot bounded shutdown verification sample.".write(to: sampleDoc, atomically: true, encoding: .utf8)
+
+        let defaults = UserDefaults(suiteName: "com.livecopilot.test.shutdown-bound.\(UUID().uuidString)")!
+        let app = AppCoordinator(mock: true, emitMockConversation: false, mockDefaults: defaults,
+                                 mockEmbedding: HangingEmbedding(), mockKnowledgeDirectory: tempDir.appendingPathComponent("kb", isDirectory: true))
+        app.shutdownSubsystemTimeoutSeconds = 0.25
+        app.importDocuments([sampleDoc])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(app.isIndexing)
+
+        let started = ProcessInfo.processInfo.systemUptime
+        await app.shutdown()
+        let elapsed = ProcessInfo.processInfo.systemUptime - started
+        XCTAssertLessThan(elapsed, 2.0, "shutdown() must complete within bounded timeout even with a stalled indexing task")
+
+        await app.start()
+        XCTAssertFalse(app.isRunning, "start() must remain blocked after shutdown()")
+    }
+
+    @MainActor func testSessionStoreAsyncIOAndFlushDurability() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("livecopilot-async-sessions-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let seedStore = SessionStore(root: root, asyncIO: false)
+        let older = try XCTUnwrap(seedStore.save(lines: [TranscriptLine(speaker: .them, at: Date(timeIntervalSince1970: 1_790_000_000), content: "Earlier meeting")],
+                                                 startedAt: Date(timeIntervalSince1970: 1_790_000_000)))
+
+        let asyncStore = SessionStore(root: root, asyncIO: true)
+        let newer = try XCTUnwrap(asyncStore.save(lines: [TranscriptLine(speaker: .them, at: Date(timeIntervalSince1970: 1_790_001_000), content: "Current meeting")],
+                                                  startedAt: Date(timeIntervalSince1970: 1_790_001_000)))
+        await asyncStore.flush(timeout: 2.0)
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(asyncStore.sessions.count, 2, "Async load must merge existing disk sessions with newly saved in-memory sessions")
+        XCTAssertEqual(asyncStore.sessions.first?.id, newer.id)
+        XCTAssertEqual(asyncStore.sessions.last?.id, older.id)
+
+        asyncStore.delete(older)
+        await asyncStore.flush(timeout: 2.0)
+
+        let reloaded = SessionStore(root: root, asyncIO: false)
+        XCTAssertEqual(reloaded.sessions.map(\.id), [newer.id], "Flushed async save + delete must match disk state on reload")
+    }
+
+    @MainActor func testSubmitLayaCoalescesRapidPartialsAndDeliversTrailingUpdate() async throws {
+        final class PredictionCounter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var inputs: [String] = []
+            func record(_ text: String) { lock.withLock { inputs.append(text) } }
+            var values: [String] { lock.withLock { inputs } }
+        }
+        let counter = PredictionCounter()
+        let defaults = UserDefaults(suiteName: "com.livecopilot.test.laya-throttle.\(UUID().uuidString)")!
+        let app = AppCoordinator(mock: true, layaPredictor: { text, _ in
+            counter.record(text)
+            return 0.2
+        }, emitMockConversation: false, mockDefaults: defaults)
+        app.settings.mode = .inPerson
+        app.settings.listeningService = .apple
+        app.settings.automaticSuggestions = true
+        app.layaPartialThrottleInterval = 0.15
+
+        await app.start()
+        app.receiveMockEvent(.speechActivity(true), speaker: .room)
+        for i in 1...10 {
+            app.receiveMockEvent(.partialTranscript("How does caching step \(i) work in detail"), speaker: .room)
+        }
+        // Wait for trailing partial flush + Laya debounce window to settle.
+        try await Task.sleep(nanoseconds: 650_000_000)
+        let recorded = counter.values
+        XCTAssertFalse(recorded.isEmpty, "At least one partial must reach Laya")
+        XCTAssertLessThanOrEqual(recorded.count, 3, "Rapid 10-partial burst should coalesce rather than evaluating every frame")
+        XCTAssertTrue(recorded.last?.contains("step 10") == true, "Trailing partial flush must deliver the latest partial text")
+        await app.shutdown()
+    }
+
+    @MainActor func testCloudLiveTerminalFailureStopsListeningInsteadOfZombieCapture() async throws {
+        // HTTP 422 must also be classified as non-retryable.
+        XCTAssertFalse(LiveProtocol.connectionFailure(status: 422, error: nil).retry)
+
+        let defaults = UserDefaults(suiteName: "com.livecopilot.test.cloud-live-fail.\(UUID().uuidString)")!
+        let app = AppCoordinator(mock: true, emitMockConversation: false, mockDefaults: defaults)
+        app.settings.mode = .remote
+        app.settings.listeningService = .openAI
+        app.settings.automaticSuggestions = false
+        app.micEnabled = false
+
+        var activeProvider: RecordingLiveProvider?
+        app.systemAudio.testStreamFactory = { _ in ControllableStreamHandle(hangStop: false) }
+        app.testLiveProviderFactory = { _ in
+            let p = RecordingLiveProvider(tag: "cloud")
+            activeProvider = p
+            return p
+        }
+
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        XCTAssertTrue(app.systemAudio.isCapturing)
+
+        activeProvider?.onEvent?(.failed("API key rejected. (HTTP 401)"))
+        for _ in 0..<40 where app.isRunning || app.systemAudio.isCapturing {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertFalse(app.isRunning, "Terminal cloud Live failure must stop listening instead of leaving zombie capture")
+        XCTAssertFalse(app.systemAudio.isCapturing, "Hardware audio capture must stop after terminal cloud Live failure")
+        XCTAssertEqual(app.statusMessage, "API key rejected. (HTTP 401)")
+        await app.shutdown()
+    }
+
+    @MainActor func testUncheckingSharedOpenAIKeyPreservesHasAPIKeyForReenabling() async {
+        let defaults = UserDefaults(suiteName: "com.livecopilot.test.shared-key-toggle.\(UUID().uuidString)")!
+        let app = AppCoordinator(mock: true, emitMockConversation: false, mockDefaults: defaults)
+        app.settings.listeningService = .zipformer
+        app.settings.embeddingService = .local
+        app.settings.reasoningService = .sharedOpenAI
+        app.hasAPIKey = true
+
+        // Switching from .sharedOpenAI to .separateOpenAI makes requiresOpenAIKey == false,
+        // but must NOT wipe hasAPIKey so the "Use speech OpenAI key" toggle remains reversible.
+        app.settings.selectAnalysisService(.separateOpenAI)
+        XCTAssertFalse(app.settings.requiresOpenAIKey)
+        XCTAssertTrue(app.hasAPIKey, "Unchecking Use speech OpenAI key must not clear hasAPIKey and permanently lock the toggle")
+
+        // Switching back to .sharedOpenAI works cleanly.
+        app.settings.selectAnalysisService(.sharedOpenAI)
+        XCTAssertTrue(app.settings.requiresOpenAIKey)
+        XCTAssertTrue(app.hasAPIKey)
+        await app.shutdown()
+    }
+
+    @MainActor func testLowPowerVideoConferenceOptimizationsForIntelAndSCStream() async throws {
+        // 1. Lightweight non-blur surface activates on Intel hosts or when Reduce Transparency is enabled.
+        XCTAssertTrue(WindowBackgroundView.usesLightweightSurface(reduceTransparency: false, isIntel: true))
+        XCTAssertTrue(WindowBackgroundView.usesLightweightSurface(reduceTransparency: true, isIntel: false))
+        XCTAssertFalse(WindowBackgroundView.usesLightweightSurface(reduceTransparency: false, isIntel: false))
+
+        // 2. Audio-only ScreenCaptureKit config minimizes display-capture rate & VRAM surface pool.
+        let cfg = AudioCaptureManager.makeAudioOnlyStreamConfiguration(sampleRate: 16000)
+        XCTAssertTrue(cfg.capturesAudio)
+        XCTAssertTrue(cfg.excludesCurrentProcessAudio)
+        XCTAssertEqual(cfg.sampleRate, 16000)
+        XCTAssertEqual(cfg.channelCount, 1)
+        XCTAssertEqual(cfg.width, 2)
+        XCTAssertEqual(cfg.height, 2)
+        XCTAssertEqual(cfg.queueDepth, 1)
+        XCTAssertFalse(cfg.showsCursor)
+        XCTAssertFalse(cfg.scalesToFit)
+        XCTAssertGreaterThanOrEqual(cfg.minimumFrameInterval.seconds, 10.0)
+
+        // 3. LocalLiveProvider coalesces 20ms (640B) audio bursts to cut IPC wakeups ~5x and flushes tail cleanly.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("batch-ipc-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let countLog = dir.appendingPathComponent("calls.log")
+        let script = dir.appendingPathComponent("batch-worker.py")
+        try """
+        #!/usr/bin/env python3
+        import base64, json, sys
+        sys.stdout.write('{"ready":true}\\n'); sys.stdout.flush()
+        for line in sys.stdin:
+            req = json.loads(line)
+            if req.get("op") == "audio":
+                nbytes = len(base64.b64decode(req.get("pcm", "")))
+                with open(\(String(reflecting: countLog.path)), "a") as f: f.write(f"{nbytes}\\n")
+                sys.stdout.write(json.dumps({"id": req["id"], "segments": [], "partial": "", "speaking": False}) + "\\n")
+            elif req.get("op") == "flush":
+                sys.stdout.write(json.dumps({"id": req["id"], "segments": [], "partial": "", "speaking": False}) + "\\n")
+            else:
+                sys.stdout.write(json.dumps({"id": req["id"], "ok": True}) + "\\n")
+            sys.stdout.flush()
+        """.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+
+        let provider = LocalLiveProvider(directory: dir, speaker: .them, executable: script)
+        var ready = false
+        provider.onEvent = { if case .ready = $0 { ready = true } }
+        provider.connect(context: "")
+        for _ in 0..<100 where !ready { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertTrue(ready)
+
+        // Send 10 consecutive 20ms (640B) chunks = 6400B -> should coalesce into far fewer than 10 IPC calls.
+        let chunk20ms = Data(count: 640)
+        for _ in 0..<10 { provider.sendAudio(chunk20ms) }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        // Send one sub-threshold 20ms tail chunk (640B < 3072B) -> 120ms max-wait timer must flush it.
+        provider.sendAudio(chunk20ms)
+        try await Task.sleep(nanoseconds: 250_000_000)
+        await provider.disconnect()
+
+        let sizes = (try? String(contentsOf: countLog, encoding: .utf8))?.split(separator: "\n").compactMap { Int($0) } ?? []
+        XCTAssertEqual(sizes.reduce(0, +), 7040, "All 11x 640B audio chunks including sub-threshold tail must be delivered")
+        XCTAssertGreaterThanOrEqual(sizes.count, 2, "Initial burst and delayed tail should both flush")
+        XCTAssertLessThanOrEqual(sizes.count, 4, "11x 20ms audio frames should coalesce into far fewer IPC round-trips")
+    }
+
+    @MainActor func testStopDuringToggleMicClearsFlagAndPreventsStaleStopOfNextSession() async throws {
+        let suite = "com.livecopilot.test.mic-toggle-cross-session.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let app = AppCoordinator(mock: true, emitMockConversation: false, mockDefaults: defaults)
+        app.settings.mode = .remote
+        app.settings.listeningService = .apple
+        app.settings.automaticSuggestions = false
+        app.micEnabled = true
+        // Mic-only degraded remote session so unexpected mic disconnect in Session B must also stop isRunning.
+        app.systemAudio.testStreamFactory = { _ in throw AudioCaptureManager.CaptureError.noDisplay }
+
+        var micProviders: [RecordingLiveProvider] = []
+        app.testLiveProviderFactory = { speaker in
+            let p = RecordingLiveProvider(tag: "\(speaker.rawValue)-\(micProviders.count)")
+            if speaker == .you { micProviders.append(p) }
+            return p
+        }
+        app.mic.testStartHandler = { _ in true }
+
+        // Session A: start, then mute mic cleanly.
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        XCTAssertTrue(app.mic.isCapturing)
+        app.toggleMic()
+        for _ in 0..<40 where app.mic.isCapturing { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertFalse(app.mic.isCapturing)
+
+        // Start unmute in Session A, suspending inside mic.start after isTogglingMic is set.
+        var releaseToggleA: CheckedContinuation<Bool, Never>?
+        app.mic.testStartHandler = { _ in
+            await withCheckedContinuation { cont in releaseToggleA = cont }
+        }
+        app.toggleMic()
+        for _ in 0..<40 where releaseToggleA == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertNotNil(releaseToggleA)
+
+        // Stop Session A while toggleMic() is still suspended.
+        await app.stop()
+        XCTAssertFalse(app.isRunning)
+
+        // Start Session B with healthy mic.
+        app.micEnabled = true
+        app.mic.testStartHandler = { _ in true }
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        XCTAssertTrue(app.mic.isCapturing)
+        let providerB = try XCTUnwrap(micProviders.last)
+        XCTAssertEqual(providerB.disconnectCount, 0)
+
+        // Now let Session A's stale toggleMic() resume late: it must NOT stop Session B's mic.
+        releaseToggleA?.resume(returning: true)
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertTrue(app.isRunning, "Stale Session A toggleMic completion must not disrupt Session B")
+        XCTAssertTrue(app.mic.isCapturing, "Stale Session A toggleMic completion must not stop Session B's mic")
+        XCTAssertEqual(providerB.disconnectCount, 0)
+
+        // Now simulate an unexpected microphone disconnect in Session B:
+        // Session B's mic.$isCapturing failure sink MUST fire (isTogglingMic must not have leaked from A).
+        app.mic.stop()
+        for _ in 0..<40 where app.isRunning || providerB.disconnectCount == 0 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(app.isRunning, "Unexpected mic disconnect in Session B must trigger failure handling")
+        XCTAssertEqual(providerB.disconnectCount, 1, "Session B's mic LiveProvider must be disconnected on unexpected mic loss")
+        await app.shutdown()
+    }
+
+    @MainActor func testCloudSessionClosedStopsCaptureWhileNormalUserStopRemainsClean() async throws {
+        let suite = "com.livecopilot.test.cloud-session-closed.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let app = AppCoordinator(mock: true, emitMockConversation: false, mockDefaults: defaults)
+        app.settings.mode = .remote
+        app.settings.listeningService = .openAI
+        app.settings.automaticSuggestions = false
+        app.micEnabled = false
+
+        // --- Path 1: Unexpected server-initiated session.closed stops listening and hardware capture ---
+        var handle1: ControllableStreamHandle?
+        var provider1: OpenAILiveProvider?
+        app.systemAudio.testStreamFactory = { _ in
+            let h = ControllableStreamHandle(hangStop: false)
+            handle1 = h
+            return h
+        }
+        app.testLiveProviderFactory = { speaker in
+            let p = OpenAILiveProvider(key: "test-key", model: "gpt-live-1", speaker: speaker, scenario: .interview, language: app.settings.liveSpeechLanguage)
+            p.activateWithoutSocketForTesting()
+            provider1 = p
+            return p
+        }
+
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        XCTAssertTrue(app.systemAudio.isCapturing)
+        let active1 = try XCTUnwrap(provider1)
+        active1.injectServerJSONForTesting(#"{"type":"session.started"}"#)
+        XCTAssertTrue(active1.isActiveForTesting)
+
+        // Inject server-initiated session.closed while listening is active.
+        active1.injectServerJSONForTesting(#"{"type":"session.closed"}"#)
+        for _ in 0..<60 where app.isRunning || app.systemAudio.isCapturing {
+            try await Task.sleep(nanoseconds: 15_000_000)
+        }
+        XCTAssertFalse(active1.isActiveForTesting, "OpenAILiveProvider must close connection on session.closed")
+        XCTAssertFalse(app.isRunning, "Server-initiated session.closed must stop listening")
+        XCTAssertFalse(app.systemAudio.isCapturing, "Server-initiated session.closed must stop system audio capture")
+        XCTAssertEqual(handle1?.stopCount, 1)
+        XCTAssertTrue(app.statusMessage.contains("closed by the service"), "Unexpected status: \(app.statusMessage)")
+
+        // --- Path 2: Normal user stop() receiving session.closed during disconnect stays clean ---
+        var handle2: ControllableStreamHandle?
+        var provider2: OpenAILiveProvider?
+        app.systemAudio.testStreamFactory = { _ in
+            let h = ControllableStreamHandle(hangStop: false)
+            handle2 = h
+            return h
+        }
+        app.testLiveProviderFactory = { speaker in
+            let p = OpenAILiveProvider(key: "test-key", model: "gpt-live-1", speaker: speaker, scenario: .interview, language: app.settings.liveSpeechLanguage)
+            p.activateWithoutSocketForTesting()
+            provider2 = p
+            return p
+        }
+
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        XCTAssertTrue(app.systemAudio.isCapturing)
+        let active2 = try XCTUnwrap(provider2)
+        active2.injectServerJSONForTesting(#"{"type":"session.started"}"#)
+
+        let stopTask = Task { await app.stop() }
+        for _ in 0..<40 where !active2.isClosingForTesting {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(active2.isClosingForTesting, "User stop() should send session.close and await session.closed")
+        active2.injectServerJSONForTesting(#"{"type":"session.closed"}"#)
+        await stopTask.value
+
+        XCTAssertFalse(app.isRunning)
+        XCTAssertFalse(app.systemAudio.isCapturing)
+        XCTAssertEqual(handle2?.stopCount, 1)
+        XCTAssertEqual(app.statusMessage, "Listening stopped — manual questions remain available")
+        await app.shutdown()
+    }
+
+    @MainActor func testIntentionalMicMuteWithClosedEventPreservesPendingRemoteQuestion() async throws {
+        let suite = "com.livecopilot.test.mute-preserves-laya.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        final class CapturedQuestions: @unchecked Sendable {
+            private let lock = NSLock()
+            private var values: [String] = []
+            func append(_ q: String) { lock.withLock { values.append(q) } }
+            var all: [String] { lock.withLock { values } }
+        }
+        let captured = CapturedQuestions()
+        let reasoner = ScriptedReasoning { req, cont in
+            captured.append(req.query.question)
+            cont.yield("## Suggested answer\nCache invalidation answer.")
+            cont.finish()
+        }
+
+        let app = AppCoordinator(mock: true, layaPredictor: { _, _ in 0.96 }, mockReasoning: reasoner,
+                                 emitMockConversation: false, mockDefaults: defaults)
+        app.settings.mode = .remote
+        app.settings.listeningService = .paraformer
+        app.settings.automaticSuggestions = true
+        app.micEnabled = true
+
+        var systemProvider: RecordingLiveProvider?
+        var micProvider: RecordingLiveProvider?
+        app.systemAudio.testStreamFactory = { _ in ControllableStreamHandle(hangStop: false) }
+        app.mic.testStartHandler = { _ in true }
+        app.testLiveProviderFactory = { speaker in
+            let p = RecordingLiveProvider(tag: speaker.rawValue)
+            if speaker == .them { systemProvider = p } else { micProvider = p }
+            return p
+        }
+
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        XCTAssertTrue(app.systemAudio.isCapturing)
+        XCTAssertTrue(app.mic.isCapturing)
+
+        // Remote speaker asks a substantive question, entering Laya's pending quiet window.
+        let questionText = "Can you explain how the cache invalidation strategy works?"
+        systemProvider?.onEvent?(.speechActivity(true))
+        systemProvider?.onEvent?(.transcript(.init(id: "remote-q1", speaker: .them, text: questionText,
+                                                   startMS: 0, endMS: 1800, receivedAt: Date())))
+        systemProvider?.onEvent?(.speechActivity(false))
+
+        // Immediately mute mic while the remote question is pending; RecordingLiveProvider.disconnect()
+        // emits .closed(finalized: true) just like production LocalLiveProvider / AppleLiveProvider.
+        app.toggleMic()
+        for _ in 0..<40 where app.mic.isCapturing || (micProvider?.disconnectCount ?? 0) == 0 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(app.micEnabled)
+        XCTAssertFalse(app.mic.isCapturing)
+        XCTAssertEqual(micProvider?.disconnectCount, 1)
+        XCTAssertTrue(app.isRunning)
+        XCTAssertTrue(app.systemAudio.isCapturing)
+
+        // Wait for Laya's quiet window and automatic answer generation to fire.
+        for _ in 0..<120 where captured.all.isEmpty {
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        XCTAssertEqual(captured.all.count, 1, "Intentional mic mute emitting .closed must NOT reset Laya and drop Them's pending question")
+        XCTAssertTrue(captured.all.first?.contains("cache invalidation") == true)
         await app.shutdown()
     }
 }

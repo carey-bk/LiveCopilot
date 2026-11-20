@@ -65,6 +65,10 @@ enum LocalModelInstaller {
     private static func prefixMirrors(_ hosts: [String], _ url: URL) -> [URL] {
         hosts.compactMap { URL(string: "https://" + $0 + "/" + url.absoluteString) }
     }
+    static func isAcceptableDownloadStatus(_ statusCode: Int, resumed: Bool) -> Bool {
+        statusCode == 200 || (resumed && statusCode == 206)
+    }
+
     static func download(_ item: ModelDownload, to destination: URL,
                          progress: @escaping @Sendable (Double?, String) -> Void = { _, _ in }) async throws {
         if item.name == ModelDownload.zipBPE.name,
@@ -87,10 +91,13 @@ enum LocalModelInstaller {
             defer { session.invalidateAndCancel() }
             do {
                 var resumeData: Data?
+                var usedResumeData = false
                 var result: (URL, URLResponse)?
                 for attempt in 0..<2 {
                     do {
+                        let attemptResumed = resumeData != nil
                         result = try await observer.run(session: session, address: address, resumeData: resumeData)
+                        usedResumeData = attemptResumed
                         break
                     } catch {
                         try Task.checkCancellation()
@@ -100,11 +107,17 @@ enum LocalModelInstaller {
                 }
                 guard let (temporary, response) = result else { throw URLError(.cannotLoadFromNetwork) }
                 defer { try? FileManager.default.removeItem(at: temporary) }
-                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                guard let http = response as? HTTPURLResponse,
+                      Self.isAcceptableDownloadStatus(http.statusCode, resumed: usedResumeData) else {
                     throw CopilotError.message("HTTP download failed: " + host)
                 }
                 // Validate each source before accepting it, including mirror responses.
-                try await Task.detached { try item.verify(temporary) }.value
+                let verifyTask = Task.detached(priority: .utility) { try item.verify(temporary) }
+                try await withTaskCancellationHandler {
+                    try await verifyTask.value
+                } onCancel: {
+                    verifyTask.cancel()
+                }
                 try Task.checkCancellation()
                 try FileManager.default.moveItem(at: temporary, to: destination)
                 progress(1, item.name + " · " + host + " · verified")
@@ -134,7 +147,12 @@ enum LocalModelInstaller {
             let destination = stage.appendingPathComponent(item.name)
             try await downloader(item, destination)
             status("Verifying local model…")
-            try await Task.detached(priority: .utility) { try item.verify(destination) }.value
+            let verifyTask = Task.detached(priority: .utility) { try item.verify(destination) }
+            try await withTaskCancellationHandler {
+                try await verifyTask.value
+            } onCancel: {
+                verifyTask.cancel()
+            }
             try Task.checkCancellation()
             try fm.moveItem(at: destination, to: payload.appendingPathComponent(item.installedName ?? item.name))
         }

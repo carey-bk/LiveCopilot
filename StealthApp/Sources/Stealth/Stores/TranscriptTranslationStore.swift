@@ -25,11 +25,18 @@ final class TranscriptTranslationStore: ObservableObject {
     @Published private(set) var values: [UUID: Translation] = [:]
     @Published private(set) var busy = false
     @Published private(set) var failed = false
+    @Published private(set) var lastError: String?
     private var provider: (any ReasoningProvider)?
     private var lines: [TranscriptLine] = []
     private var confirmed: [TranscriptLine] = []
     private var previews: [Speaker: TranscriptLine] = [:]
     private var cache: [String: String] = [:]
+    private var circuitOpen = false
+    private var consecutiveFailures = 0
+    private var backoffUntil: TimeInterval = 0
+    private var backoffTask: Task<Void, Never>?
+    var rateLimitBackoffSeconds: TimeInterval = 10.0
+    var baseBackoffSeconds: TimeInterval = 2.0
     func previewText(_ source: String, speaker: Speaker) -> String? {
         guard let line = previews[speaker], line.content == source else { return nil }
         return text(for: line)
@@ -45,7 +52,9 @@ final class TranscriptTranslationStore: ObservableObject {
     private func refresh() {
         lines = Array(confirmed.suffix(20)) + previews.values.sorted { $0.at < $1.at }
         let ids = Set(lines.map(\.id))
-        values = values.filter { ids.contains($0.key) }; completed = completed.filter { ids.contains($0.key) }
+        let filteredValues = values.filter { ids.contains($0.key) }
+        if filteredValues != values { values = filteredValues }
+        completed = completed.filter { ids.contains($0.key) }
         for line in lines where completed[line.id] != line.content {
             if let text = cache[line.content] {
                 values[line.id] = Translation(source: line.content, text: text)
@@ -74,8 +83,12 @@ final class TranscriptTranslationStore: ObservableObject {
         update(lines: lines)
     }
     func stop() {
-        generation = UUID(); task?.cancel(); task = nil; timeoutTask?.cancel(); timeoutTask = nil; activeLine = nil; provider = nil
-        enabled = false; busy = false; failed = false; values = [:]; completed = [:]; lines = []; confirmed = []; previews = [:]; cache = [:]
+        generation = UUID(); task?.cancel(); task = nil; timeoutTask?.cancel(); timeoutTask = nil
+        backoffTask?.cancel(); backoffTask = nil
+        activeLine = nil; provider = nil
+        enabled = false; busy = false; failed = false; lastError = nil
+        circuitOpen = false; consecutiveFailures = 0; backoffUntil = 0
+        values = [:]; completed = [:]; lines = []; confirmed = []; previews = [:]; cache = [:]
     }
     func resetSession() {
         let active = enabled, provider = provider, target = target
@@ -87,9 +100,51 @@ final class TranscriptTranslationStore: ObservableObject {
         confirmed = lines
         refresh()
     }
+    private func recordFailure(_ error: Error) {
+        failed = true
+        lastError = error.localizedDescription
+        consecutiveFailures += 1
+        if let http = error as? ServiceHTTPFailure {
+            DebugLog.log("translation.failed kind=\(http.kind) status=\(http.status)")
+            switch http.kind {
+            case .authentication, .billing, .permission, .model:
+                // Permanent credential/account/model failure: open circuit until user fixes settings/key.
+                circuitOpen = true
+                return
+            case .rateLimit:
+                let delay = min(60.0, rateLimitBackoffSeconds * pow(2.0, Double(min(4, consecutiveFailures - 1))))
+                backoffUntil = ProcessInfo.processInfo.systemUptime + delay
+                scheduleBackoffPump(after: delay)
+                return
+            case .parameters, .service:
+                break
+            }
+        } else {
+            DebugLog.log("translation.failed err=\((error as NSError).domain):\((error as NSError).code)")
+        }
+        let delay = min(30.0, baseBackoffSeconds * pow(2.0, Double(min(4, consecutiveFailures - 1))))
+        backoffUntil = ProcessInfo.processInfo.systemUptime + delay
+        scheduleBackoffPump(after: delay)
+    }
+    private func scheduleBackoffPump(after delay: TimeInterval) {
+        backoffTask?.cancel()
+        let token = generation
+        let wait = max(0.05, delay)
+        backoffTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) } catch { return }
+            guard let self, self.generation == token, self.enabled, !self.circuitOpen else { return }
+            self.backoffTask = nil
+            self.pump()
+        }
+    }
     private func pump() {
-        guard task == nil, enabled, let provider,
+        guard task == nil, enabled, !circuitOpen, let provider,
               let line = lines.last(where: { completed[$0.id] != $0.content }) else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        if backoffUntil > now {
+            if backoffTask == nil { scheduleBackoffPump(after: backoffUntil - now) }
+            return
+        }
         let token = generation, language = target
         let isPreview = previews.values.contains { $0.id == line.id }
         busy = true; activeLine = line
@@ -98,7 +153,8 @@ final class TranscriptTranslationStore: ObservableObject {
             guard let self, self.generation == token else { return }
             self.generation = UUID(); self.task?.cancel(); self.task = nil; self.activeLine = nil
             self.values[line.id] = nil; self.completed[line.id] = line.content
-            self.failed = true; self.busy = false; self.pump()
+            self.recordFailure(CopilotError.message("Translation timed out."))
+            self.busy = false; self.pump()
         }
         task = Task { [weak self] in
             do {
@@ -111,28 +167,37 @@ final class TranscriptTranslationStore: ObservableObject {
                 var request = AnswerRequest(query: .init(question: "", semantic: "", lexical: ""), conversation: "", scenario: .interview, sources: [])
                 request.translationText = line.content; request.translationTarget = language.prompt
                 var output = ""
+                var lastPublish: TimeInterval = 0
                 for try await delta in provider.stream(request) {
                     try Task.checkCancellation()
                     output += delta
                     guard output.count <= 16_000 else { throw CopilotError.message("Translation too long") }
                     guard token == self.generation else { return }
-                    if self.lines.contains(where: { $0.id == line.id && $0.content == line.content }) {
-                        self.values[line.id] = Translation(source: line.content, text: output)
+                    let now = ProcessInfo.processInfo.systemUptime
+                    if lastPublish == 0 || now - lastPublish >= 0.08 {
+                        lastPublish = now
+                        if self.lines.contains(where: { $0.id == line.id && $0.content == line.content }) {
+                            self.values[line.id] = Translation(source: line.content, text: output)
+                        }
                     }
                 }
                 try Task.checkCancellation()
                 guard token == self.generation else { return }
-                guard !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw CopilotError.message("Empty translation") }
+                let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { throw CopilotError.message("Empty translation") }
                 if self.lines.contains(where: { $0.id == line.id && $0.content == line.content }) {
-                    self.values[line.id] = Translation(source: line.content, text: output.trimmingCharacters(in: .whitespacesAndNewlines))
+                    self.values[line.id] = Translation(source: line.content, text: trimmed)
                 }
                 if self.cache.count >= 80 { self.cache.removeAll() }
-                self.cache[line.content] = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                self.cache[line.content] = trimmed
                 self.failed = false
+                self.lastError = nil
+                self.consecutiveFailures = 0
+                self.backoffUntil = 0
             } catch {
                 guard let self, token == self.generation, !Task.isCancelled else { return }
                 self.values[line.id] = nil
-                self.failed = true
+                self.recordFailure(error)
             }
             guard let self, token == self.generation else { return }
             self.completed[line.id] = line.content

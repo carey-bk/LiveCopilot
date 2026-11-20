@@ -50,53 +50,88 @@ struct LocalModelHealth: Sendable {
 }
 
 enum LocalModelSelfCheck {
-    static func run(_ kind: LocalModelKind, root: URL, executable: URL? = nil) async throws -> LocalModelHealth {
+    static func run(
+        _ kind: LocalModelKind,
+        root: URL,
+        executable: URL? = nil,
+        verifyFiles: (@Sendable (LocalModelKind, URL) throws -> Void)? = nil
+    ) async throws -> LocalModelHealth {
         func result(_ stage: LocalModelHealth.Stage, _ checksum: String, _ code: String) -> LocalModelHealth {
             .init(stage: stage, checkedAt: Date(), checksum: checksum, runtimeCode: code)
+        }
+        func stage(for code: String) -> LocalModelHealth.Stage {
+            switch code {
+            case "runtime_missing", "runtime_start": return .runtime
+            case "embedding_context": return .memory
+            case "embedding_load", "model_load_failed": return .load
+            case "process_ended", "timeout": return .interrupted
+            default: return .inference
+            }
         }
         let directory = kind.location(in: root)
         do {
             // No real user input is read; only the pinned model payloads are hashed.
-            try await Task.detached(priority: .utility) {
-                for file in kind.downloads {
-                    try file.verify(directory.appendingPathComponent(file.installedName ?? file.name))
+            let hashTask = Task.detached(priority: .utility) {
+                if let verifyFiles {
+                    try verifyFiles(kind, directory)
+                } else {
+                    for file in kind.downloads {
+                        try Task.checkCancellation()
+                        try file.verify(directory.appendingPathComponent(file.installedName ?? file.name))
+                    }
                 }
-            }.value
+            }
+            try await withTaskCancellationHandler {
+                try await hashTask.value
+            } onCancel: {
+                hashTask.cancel()
+            }
         } catch {
             try Task.checkCancellation()
             return result(.files, "failed", "file_verification_failed")
         }
         try Task.checkCancellation()
-        let worker = LocalInferenceWorker(mode: kind == .embedding ? "embedding" : kind == .terminologySpeech ? "zipformer" : "paraformer", modelDirectory: directory, executable: executable)
+        if kind == .embedding {
+            func checkEmbedding(mode: String) async throws -> LocalModelHealth {
+                let worker = LocalInferenceWorker(mode: mode, modelDirectory: directory, executable: executable)
+                defer { worker.close(initiator: .selfCheck) }
+                do {
+                    let response = try await worker.call(["op": "embed", "text": "Local model self-check. 本地模型自检。"])
+                    guard let vector = response["vector"] as? [NSNumber], vector.count == 1024,
+                          vector.allSatisfy({ $0.doubleValue.isFinite }),
+                          abs(vector.reduce(0) { $0 + $1.doubleValue * $1.doubleValue } - 1) < 0.01 else {
+                        return result(.inference, "passed", "invalid_vector")
+                    }
+                    try Task.checkCancellation()
+                    return result(.ready, "passed", "ok")
+                } catch {
+                    try Task.checkCancellation()
+                    let code = worker.failureCode
+                    return result(stage(for: code), "passed", code)
+                }
+            }
+            let primary = try await checkEmbedding(mode: "embedding")
+            #if !arch(x86_64)
+            if primary.stage == .interrupted && (primary.runtimeCode == "process_ended" || primary.runtimeCode == "timeout") {
+                try Task.checkCancellation()
+                return try await checkEmbedding(mode: "embedding-cpu")
+            }
+            #endif
+            return primary
+        }
+        let worker = LocalInferenceWorker(mode: kind == .terminologySpeech ? "zipformer" : "paraformer", modelDirectory: directory, executable: executable)
         defer { worker.close(initiator: .selfCheck) }
         do {
-            if kind == .embedding {
-                let response = try await worker.call(["op": "embed", "text": "Local model self-check. 本地模型自检。"])
-                guard let vector = response["vector"] as? [NSNumber], vector.count == 1024,
-                      vector.allSatisfy({ $0.doubleValue.isFinite }),
-                      abs(vector.reduce(0) { $0 + $1.doubleValue * $1.doubleValue } - 1) < 0.01 else {
-                    return result(.inference, "passed", "invalid_vector")
-                }
-            } else {
-                let response = try await worker.call(["op": "audio", "pcm": Data(repeating: 0, count: 32000).base64EncodedString()])
-                guard response["segments"] is [Any], response["partial"] is String else {
-                    return result(.inference, "passed", "invalid_audio_response")
-                }
+            let response = try await worker.call(["op": "audio", "pcm": Data(repeating: 0, count: 32000).base64EncodedString()])
+            guard response["segments"] is [Any], response["partial"] is String else {
+                return result(.inference, "passed", "invalid_audio_response")
             }
             try Task.checkCancellation()
             return result(.ready, "passed", "ok")
         } catch {
             try Task.checkCancellation()
             let code = worker.failureCode
-            let stage: LocalModelHealth.Stage
-            switch code {
-            case "runtime_missing", "runtime_start": stage = .runtime
-            case "embedding_context": stage = .memory
-            case "embedding_load", "model_load_failed": stage = .load
-            case "process_ended", "timeout": stage = .interrupted
-            default: stage = .inference
-            }
-            return result(stage, "passed", code)
+            return result(stage(for: code), "passed", code)
         }
     }
 }

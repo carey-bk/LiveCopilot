@@ -14,7 +14,12 @@ final class LocalLiveProvider: LiveProvider, RecognitionStatsReporting {
     private var closing = false
     private var pending = Data()
     private var pump: Task<Void, Never>?
+    private var batchFlushTask: Task<Void, Never>?
     private var loading: Task<Void, Never>?
+    /// Minimum audio bytes to coalesce before sending an IPC command (3072 B = 96 ms = 3 VAD windows @ 16 kHz PCM16).
+    /// Reduces 50 Hz ScreenCaptureKit IPC/JSON/ONNX wakeups by ~5x on low-power Intel Macs while disconnect flushes immediately.
+    var minBatchBytes = 3072
+    var maxBatchWaitSeconds: TimeInterval = 0.12
     private var speaking = false
     private var inferenceFailed = false
     private var partial = ""
@@ -64,21 +69,52 @@ final class LocalLiveProvider: LiveProvider, RecognitionStatsReporting {
         guard (pending.count + data.count) / 32 <= RecognitionStats.maximumBacklogMS else {
             let failure = RecognitionStats.overflowFailure(ready: ready)
             recognitionStats.failure = failure
-            active = false; inferenceFailed = true; pending.removeAll(); worker.close()
+            active = false; inferenceFailed = true; batchFlushTask?.cancel(); batchFlushTask = nil; pending.removeAll(); worker.close()
             partial = ""; onEvent?(.partialTranscript(""))
             onEvent?(.failed(failure == .speech_load_slow
                 ? "Local speech model took too long to load. Close other heavy apps, then stop/start listening."
                 : "Local recognition fell behind. Stop/start listening and reduce other heavy workloads.")); return
         }
         pending.append(data); capturedBytes += data.count
-        recognitionStats.noteBacklog(ms: pending.count / 32); drain()
+        recognitionStats.noteBacklog(ms: pending.count / 32)
+        if pending.count >= minBatchBytes || closing {
+            batchFlushTask?.cancel(); batchFlushTask = nil
+            drain(force: closing)
+        } else {
+            scheduleBatchFlush()
+        }
     }
-    private func drain() {
-        guard ready, pump == nil else { return }
+    private func scheduleBatchFlush() {
+        guard ready, pump == nil, batchFlushTask == nil, !pending.isEmpty else { return }
+        let waitNS = UInt64(max(0.01, maxBatchWaitSeconds) * 1_000_000_000)
+        batchFlushTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: waitNS) } catch { return }
+            guard let self else { return }
+            self.batchFlushTask = nil
+            self.drain(force: true)
+        }
+    }
+    private func drain(force: Bool = false) {
+        guard ready, pump == nil, !pending.isEmpty else { return }
+        guard force || closing || pending.count >= minBatchBytes else {
+            scheduleBatchFlush()
+            return
+        }
+        batchFlushTask?.cancel(); batchFlushTask = nil
         pump = Task { [weak self] in
             guard let self else { return }
-            defer { self.pump = nil }
+            defer {
+                self.pump = nil
+                if self.ready && !self.pending.isEmpty && !Task.isCancelled {
+                    if self.closing || self.pending.count >= self.minBatchBytes {
+                        self.drain(force: self.closing)
+                    } else {
+                        self.scheduleBatchFlush()
+                    }
+                }
+            }
             while !self.pending.isEmpty && !Task.isCancelled {
+                guard self.closing || force || self.pending.count >= self.minBatchBytes else { break }
                 let count = min(self.pending.count, 16000) // Up to 0.5 s per IPC command.
                 let data = Data(self.pending.prefix(count)); self.pending.removeFirst(count)
                 do {
@@ -108,7 +144,7 @@ final class LocalLiveProvider: LiveProvider, RecognitionStatsReporting {
         }
     }
     private func fail() {
-        active = false; pending.removeAll(); worker.close()
+        active = false; batchFlushTask?.cancel(); batchFlushTask = nil; pending.removeAll(); worker.close()
         partial = ""; onEvent?(.partialTranscript(""))
         onEvent?(.failed("Local model stopped unexpectedly or timed out. Retry after checking model files."))
     }
@@ -123,12 +159,14 @@ final class LocalLiveProvider: LiveProvider, RecognitionStatsReporting {
         defer { deadline.cancel() }
         var finalized = pending.isEmpty && !inferenceFailed
         if ready {
+            batchFlushTask?.cancel(); batchFlushTask = nil
+            if !pending.isEmpty { drain(force: true) }
             await pump?.value
             if !inferenceFailed, let result = try? await worker.call(["op": "flush"], timeout: 15) {
                 consume(result, flush: true); finalized = pending.isEmpty
             } else { finalized = false }
         }
-        worker.close(); pump?.cancel(); pending.removeAll(); ready = false
+        worker.close(); batchFlushTask?.cancel(); batchFlushTask = nil; pump?.cancel(); pending.removeAll(); ready = false
         partial = ""; onEvent?(.partialTranscript(""))
         onEvent?(.closed(finalized: finalized))
     }

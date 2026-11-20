@@ -167,6 +167,219 @@ final class HistoryTests: XCTestCase {
         XCTAssertFalse(title.isEmpty); XCTAssertLessThanOrEqual(title.count, 80)
         print("Synthetic session title: \(title)")
     }
+    @MainActor func testTranscriptStoreIngestParityAndScaling() {
+        let store = TranscriptStore(), at = Date()
+        let start = ProcessInfo.processInfo.systemUptime
+        // 4,000 fragments arranged in 2,000 speaker turns, each merging two adjacent fragments (< 1600 ms gap).
+        for turn in 0..<2_000 {
+            let speaker: Speaker = turn.isMultiple(of: 2) ? .them : .you
+            let baseMS = turn * 4_000
+            store.ingest(.init(id: "t\(turn)-a", speaker: speaker, text: "Turn \(turn) part A",
+                               startMS: baseMS, endMS: baseMS + 500, receivedAt: at.addingTimeInterval(Double(turn))))
+            store.ingest(.init(id: "t\(turn)-b", speaker: speaker, text: " part B",
+                               startMS: baseMS + 700, endMS: baseMS + 1_200, receivedAt: at.addingTimeInterval(Double(turn) + 0.5)))
+        }
+        // Identical re-ingest must not append a duplicate revision.
+        store.ingest(.init(id: "t0-a", speaker: .them, text: "Turn 0 part A", startMS: 0, endMS: 500, receivedAt: at))
+        // Revisions to both earliest and latest fragments must update their archived lines in place.
+        store.ingest(.init(id: "t0-a", speaker: .them, text: "Revised 0 part A", startMS: 0, endMS: 500, receivedAt: at))
+        store.ingest(.init(id: "t1999-b", speaker: .you, text: " revised B",
+                           startMS: 1999 * 4_000 + 700, endMS: 1999 * 4_000 + 1_200, receivedAt: at.addingTimeInterval(1999.5)))
+        let elapsed = ProcessInfo.processInfo.systemUptime - start
+        XCTAssertLessThan(elapsed, 2.0, "4,000-fragment ingestion regressed toward O(N^2): \(elapsed)s")
+        XCTAssertEqual(store.archivedLines.count, 2_000)
+        XCTAssertEqual(store.lines.count, Config.transcriptLineLimit)
+        XCTAssertEqual(store.archivedLines.first?.content, "Revised 0 part A part B")
+        XCTAssertEqual(store.archivedLines.last?.content, "Turn 1999 part A revised B")
+        XCTAssertEqual(store.lines.last?.content, "Turn 1999 part A revised B")
+        XCTAssertEqual(store.fragmentRevisions.count, 4_002)
+        let saved = store.archiveSnapshot(since: at)
+        XCTAssertEqual(saved.count, 2_000)
+        XCTAssertEqual(saved.first?.fragmentIDs, ["t0-a", "t0-b"])
+        XCTAssertEqual(saved.first?.content, "Revised 0 part A part B")
+        // Verify clear() resets O(1) index and revision caches cleanly.
+        store.clear()
+        XCTAssertTrue(store.archivedLines.isEmpty)
+        XCTAssertTrue(store.fragmentRevisions.isEmpty)
+        store.ingest(.init(id: "t0-a", speaker: .them, text: "Turn 0 part A", startMS: 0, endMS: 500, receivedAt: at))
+        XCTAssertEqual(store.archivedLines.count, 1)
+        XCTAssertEqual(store.fragmentRevisions.count, 1)
+    }
+    func testConversationStateBoundedHistoryAndInterveningCandidateParity() {
+        var state = ConversationState()
+        let base = Date(timeIntervalSince1970: 1_790_000_000)
+        for i in 0..<2_601 {
+            let speaker: Speaker = i.isMultiple(of: 2) ? .them : .you
+            let accepted = state.append(.init(id: "h\(i)", speaker: speaker, text: "History turn \(i) with enough words.",
+                                              startMS: i * 2_000, endMS: i * 2_000 + 800,
+                                              receivedAt: base.addingTimeInterval(Double(i))))
+            XCTAssertTrue(accepted)
+        }
+        XCTAssertEqual(state.fragments.count, 2_400)
+        XCTAssertEqual(state.fragments.first?.id, "h201")
+        // Retained ID rejects identical duplicate and accepts a valid text revision.
+        XCTAssertFalse(state.append(.init(id: "h2600", speaker: .them, text: "History turn 2600 with enough words.",
+                                          startMS: 2_600 * 2_000, endMS: 2_600 * 2_000 + 800,
+                                          receivedAt: base.addingTimeInterval(2_600))))
+        XCTAssertTrue(state.append(.init(id: "h2600", speaker: .them, text: "Revised history turn 2600.",
+                                         startMS: 2_600 * 2_000, endMS: 2_600 * 2_000 + 900,
+                                         receivedAt: base.addingTimeInterval(2_600))))
+        XCTAssertEqual(state.fragments.last?.text, "Revised history turn 2600.")
+        // Evicted ID was removed from seenEventIDs, so reusing it appends normally.
+        XCTAssertTrue(state.append(.init(id: "h0", speaker: .you, text: "Reused evicted ID.",
+                                         startMS: 2_601 * 2_000, endMS: 2_601 * 2_000 + 500,
+                                         receivedAt: base.addingTimeInterval(2_601))))
+
+        // Intervening opposite-speaker turn keeps a repeated question separate while adjacent repeat collapses.
+        let tailBaseMS = 6_000_000
+        let tailAt = base.addingTimeInterval(3_000)
+        let tailFragments: [TranscriptFragment] = [
+            .init(id: "q1", speaker: .them, text: "What is the cache hit rate?", startMS: tailBaseMS, endMS: tailBaseMS + 500, receivedAt: tailAt),
+            .init(id: "a1", speaker: .you, text: "Let me check that metric.", startMS: tailBaseMS + 600, endMS: tailBaseMS + 900, receivedAt: tailAt.addingTimeInterval(0.5)),
+            .init(id: "q2", speaker: .them, text: " What is the cache hit rate?", startMS: tailBaseMS + 1_000, endMS: tailBaseMS + 1_500, receivedAt: tailAt.addingTimeInterval(1.0)),
+            .init(id: "q3", speaker: .them, text: " What is the cache hit rate?", startMS: tailBaseMS + 1_600, endMS: tailBaseMS + 2_100, receivedAt: tailAt.addingTimeInterval(1.5))
+        ]
+        var small = ConversationState()
+        for fragment in tailFragments {
+            XCTAssertTrue(state.append(fragment))
+            XCTAssertTrue(small.append(fragment))
+        }
+        let expected = small.candidate(speaker: .them, now: tailAt.addingTimeInterval(2), cooldown: 0, force: true)
+        XCTAssertEqual(expected, "What is the cache hit rate? What is the cache hit rate?")
+        let start = ProcessInfo.processInfo.systemUptime
+        for _ in 0..<50 {
+            let actual = state.candidate(speaker: .them, now: tailAt.addingTimeInterval(2), cooldown: 0, force: true)
+            XCTAssertEqual(actual, expected)
+        }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 1.0, "candidate() regressed to scanning full history")
+    }
+    func testCaptureDiagnosticsFlushAndWatchdogOffMainStallCallback() {
+        XCTAssertTrue(CaptureDiagnostics.flush(timeout: 0.5))
+
+        final class StallProbe: @unchecked Sendable {
+            let lock = NSLock()
+            var mainUnblocked = false
+            var fulfilled = false
+            var sawMainThreadCallback = false
+            var sawLateOffMainCallback = false
+            var lastStallMS = 0
+            var lastLineCount = 0
+            let lateReported: XCTestExpectation
+            init(_ expectation: XCTestExpectation) { self.lateReported = expectation }
+        }
+
+        let probe = StallProbe(expectation(description: "Watchdog reports late stall off main thread"))
+        let watchdog = MainThreadWatchdog(intervalSeconds: 0.04, thresholdSeconds: 0.06, cooldownSeconds: 0.0) { ms, state in
+            let isMain = Thread.isMainThread
+            var shouldFulfill = false
+            probe.lock.withLock {
+                if isMain { probe.sawMainThreadCallback = true }
+                probe.lastStallMS = ms
+                probe.lastLineCount = state.transcriptLineCount
+                if probe.mainUnblocked && !probe.fulfilled {
+                    probe.fulfilled = true
+                    probe.sawLateOffMainCallback = !isMain
+                    shouldFulfill = true
+                }
+            }
+            if shouldFulfill { probe.lateReported.fulfill() }
+        }
+        watchdog.updateState(.init(isRunning: true, isTransitioning: false, answerIsRunning: false, transcriptLineCount: 7))
+        watchdog.start()
+        defer { watchdog.stop() }
+
+        // Block the main thread long enough for the timer (up to 200ms leeway) to queue a main ping
+        // and exceed thresholdSeconds before the main run loop drains it.
+        Thread.sleep(forTimeInterval: 0.38)
+        probe.lock.withLock { probe.mainUnblocked = true }
+
+        wait(for: [probe.lateReported], timeout: 2.0)
+        watchdog.stop()
+        probe.lock.withLock {
+            XCTAssertFalse(probe.sawMainThreadCallback, "MainThreadWatchdog must never invoke onStall on the main thread")
+            XCTAssertTrue(probe.sawLateOffMainCallback, "Expected late stall callback off the main thread")
+            XCTAssertGreaterThanOrEqual(probe.lastStallMS, 60)
+            XCTAssertEqual(probe.lastLineCount, 7)
+        }
+    }
+
+    @MainActor func testAsyncSessionSaveFailureRetainsSnapshotBlocksResetRetriesOnceAndSeparatesDraftFailure() async throws {
+        let root = try directory()
+        let sessionsDir = root.appendingPathComponent("sessions", isDirectory: true)
+        try FileManager.default.createDirectory(at: sessionsDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: sessionsDir.path) }
+
+        let suite = "HistoryAsyncDurability-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let app = AppCoordinator(mock: true, mockReasoning: TitleProvider(value: "Durable response"),
+                                 emitMockConversation: false, mockDefaults: defaults,
+                                 sessionStoreRoot: sessionsDir, sessionAsyncIO: true)
+        app.settings.automaticSuggestions = false
+
+        // Part 1: Real JSON write failure on asyncIO queue retains snapshot, blocks reset/start,
+        // and retrying after storage recovers creates exactly ONE history record.
+        await app.start()
+        app.transcript.commit("Critical interview question that must not be lost", speaker: .them)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: sessionsDir.path)
+
+        await app.stop()
+        XCTAssertTrue(app.hasPendingUnsavedSession, "Failed JSON write must retain unsaved session state")
+        XCTAssertTrue(app.sessions.sessions.isEmpty, "Failed JSON write must not publish a fake saved record")
+        XCTAssertTrue(app.transcript.lines.contains(where: { $0.content.contains("Critical interview question") }))
+
+        // Reset and starting next session must remain blocked while storage still fails.
+        await app.resetConversation()
+        XCTAssertTrue(app.hasPendingUnsavedSession, "resetConversation() must not discard an unsaved session")
+        XCTAssertTrue(app.transcript.lines.contains(where: { $0.content.contains("Critical interview question") }))
+
+        await app.start()
+        XCTAssertFalse(app.isRunning, "start() must not begin a new session before the failed snapshot is saved")
+        XCTAssertTrue(app.hasPendingUnsavedSession)
+
+        // Restore storage permissions and retry saving.
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: sessionsDir.path)
+        let savedFirst = await app.retrySaveSession()
+        XCTAssertTrue(savedFirst, "Retry must persist the retained snapshot once storage recovers")
+        XCTAssertFalse(app.hasPendingUnsavedSession)
+        XCTAssertEqual(app.sessions.sessions.count, 1)
+
+        // Repeated retry must be idempotent and never create a duplicate record.
+        let savedSecond = await app.retrySaveSession()
+        XCTAssertTrue(savedSecond)
+        XCTAssertEqual(app.sessions.sessions.count, 1)
+
+        await app.sessions.flush(timeout: 2.0)
+        let reloadedAfterRetry = SessionStore(root: sessionsDir, asyncIO: false)
+        XCTAssertEqual(reloadedAfterRetry.sessions.count, 1, "Disk must contain exactly one persisted history record")
+        XCTAssertEqual(reloadedAfterRetry.sessions.first?.lines.first?.content, "Critical interview question that must not be lost")
+
+        // Part 2: JSON saved OK but TXT draft export fails -> handled separately as warning;
+        // session IS durably saved, reset succeeds, and no duplicate is created.
+        app.sessions.testDraftWriter = { _, _ in throw CocoaError(.fileWriteNoPermission) }
+        await app.start()
+        XCTAssertTrue(app.isRunning)
+        app.transcript.commit("JSON persisted while TXT draft failed", speaker: .them)
+        await app.stop()
+
+        XCTAssertFalse(app.hasPendingUnsavedSession, "TXT draft export failure must not treat a persisted JSON session as unsaved")
+        XCTAssertEqual(app.sessions.sessions.count, 2)
+        XCTAssertTrue(app.sessions.lastDraftWarning?.contains("transcript draft could not be written") == true)
+        XCTAssertTrue(app.statusMessage.contains("transcript draft could not be written"))
+
+        // Reset must succeed cleanly without duplicating the saved session.
+        await app.resetConversation()
+        XCTAssertTrue(app.transcript.lines.isEmpty)
+        XCTAssertEqual(app.sessions.sessions.count, 2)
+
+        await app.sessions.flush(timeout: 2.0)
+        let reloadedFinal = SessionStore(root: sessionsDir, asyncIO: false)
+        XCTAssertEqual(reloadedFinal.sessions.count, 2)
+        XCTAssertTrue(reloadedFinal.sessions.contains(where: { $0.lines.first?.content == "JSON persisted while TXT draft failed" }))
+
+        await app.shutdown()
+    }
 }
 
 final class AnswerEmphasisTests: XCTestCase {

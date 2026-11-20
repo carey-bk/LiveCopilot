@@ -7,7 +7,11 @@ protocol HTTPTransport {
 
 struct URLSessionTransport: HTTPTransport {
     let session: URLSession
-    init(session: URLSession = .shared) { self.session = session }
+    let maxJSONBodyBytes: Int
+    init(session: URLSession = .shared, maxJSONBodyBytes: Int = OpenAIHTTP.maxJSONErrorBytes) {
+        self.session = session
+        self.maxJSONBodyBytes = max(1, maxJSONBodyBytes)
+    }
     func data(for request: URLRequest) async throws -> (Data, Int) {
         let (data, response) = try await session.data(for: request)
         return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
@@ -17,14 +21,28 @@ struct URLSessionTransport: HTTPTransport {
             let task = Task {
                 do {
                     let (bytes, response) = try await session.bytes(for: request)
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    let httpResponse = response as? HTTPURLResponse
+                    let status = httpResponse?.statusCode ?? 0
                     if !(200..<300).contains(status) {
                         var errorData = Data()
                         for try await byte in bytes {
+                            if errorData.count & 0x3FF == 0 { try Task.checkCancellation() }
                             errorData.append(byte)
-                            if errorData.count >= 8192 { break }
+                            if errorData.count >= maxJSONBodyBytes { break }
                         }
                         try OpenAIHTTP.check(status, data: errorData)
+                    }
+                    if OpenAIHTTP.isJSONContentType(httpResponse?.value(forHTTPHeaderField: "Content-Type")) {
+                        var jsonData = Data()
+                        for try await byte in bytes {
+                            if jsonData.count & 0x3FF == 0 { try Task.checkCancellation() }
+                            if jsonData.count >= maxJSONBodyBytes {
+                                throw CopilotError.message("Service returned an oversized JSON error response. Check your account, model access, or retry.")
+                            }
+                            jsonData.append(byte)
+                        }
+                        try OpenAIHTTP.checkJSONErrorBody(jsonData)
+                        throw CopilotError.message("Service returned JSON instead of a reasoning stream. Check the endpoint and model configuration.")
                     }
                     var framer = StreamingLines()
                     for try await byte in bytes {
@@ -43,6 +61,14 @@ struct URLSessionTransport: HTTPTransport {
 }
 
 enum OpenAIHTTP {
+    static let maxJSONErrorBytes = 262_144
+    static func isJSONContentType(_ header: String?) -> Bool {
+        guard let header else { return false }
+        let mediaType = header.split(separator: ";", maxSplits: 1).first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        return mediaType == "application/json" || mediaType == "text/json" || mediaType.hasSuffix("+json")
+    }
     static func request(path: String, key: String, body: [String: Any]) throws -> URLRequest {
         guard !key.isEmpty else { throw CopilotError.message("Add an OpenAI API key in Settings, or launch with OPENAI_API_KEY.") }
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/\(path)")!)
@@ -56,6 +82,13 @@ enum OpenAIHTTP {
     static func check(_ status: Int, data: Data? = nil) throws {
         guard (200..<300).contains(status) else { throw ServiceHTTPFailure(status: status, data: data) }
     }
+    static func checkJSONErrorBody(_ data: Data) throws {
+        let payload = data.starts(with: [0xEF, 0xBB, 0xBF]) ? Data(data.dropFirst(3)) : data
+        if let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+           let errorValue = object["error"], !(errorValue is NSNull) {
+            throw ServiceHTTPFailure(status: 0, data: payload)
+        }
+    }
 
 }
 
@@ -65,8 +98,10 @@ struct OpenAIEmbeddingProvider: EmbeddingProvider {
     var transport: any HTTPTransport = URLSessionTransport()
     func embed(_ texts: [String]) async throws -> [[Float]] {
         guard !texts.isEmpty else { return [] }
+        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else { throw CopilotError.message("Enter an embedding model name in Services.") }
         let request = try OpenAIHTTP.request(path: "embeddings", key: key,
-                                             body: ["model": model, "input": texts, "encoding_format": "float"])
+                                             body: ["model": trimmedModel, "input": texts, "encoding_format": "float"])
         let (data, status) = try await transport.data(for: request)
         try OpenAIHTTP.check(status, data: data)
         struct Response: Decodable {
@@ -90,6 +125,7 @@ struct OpenAIEmbeddingProvider: EmbeddingProvider {
 struct StreamingLines {
     private var bytes: [UInt8] = []
     private var afterCR = false
+    private var isFirstLine = true
     mutating func consume(_ byte: UInt8) throws -> String? {
         if afterCR {
             afterCR = false
@@ -105,8 +141,17 @@ struct StreamingLines {
     }
     mutating func finish() throws -> String? { bytes.isEmpty ? nil : try flush() }
     private mutating func flush() throws -> String {
-        defer { bytes.removeAll(keepingCapacity: true) }
-        guard let text = String(bytes: bytes, encoding: .utf8) else {
+        defer {
+            bytes.removeAll(keepingCapacity: true)
+            isFirstLine = false
+        }
+        let slice: ArraySlice<UInt8>
+        if isFirstLine && bytes.count >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF {
+            slice = bytes.dropFirst(3)
+        } else {
+            slice = bytes[...]
+        }
+        guard let text = String(bytes: slice, encoding: .utf8) else {
             throw CopilotError.message("Reasoning stream contained invalid text encoding. Retry this question.")
         }
         return text
@@ -156,8 +201,16 @@ struct OpenAIReasoningProvider: ReasoningProvider {
                     func handle(_ payload: String) async throws {
                         if payload == "[DONE]" { return }
                         guard let data = payload.data(using: .utf8),
-                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                              let type = obj["type"] as? String else { throw CopilotError.message("Malformed reasoning stream. Retry this question.") }
+                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                            throw CopilotError.message("Malformed reasoning stream. Retry this question.")
+                        }
+                        if let errorValue = obj["error"], !(errorValue is NSNull), (obj["type"] as? String) != "response.failed" {
+                            let failure = errorValue as? [String: Any] ?? obj
+                            throw ServiceHTTPFailure(status: 0, data: try? JSONSerialization.data(withJSONObject: failure))
+                        }
+                        guard let type = obj["type"] as? String else {
+                            throw CopilotError.message("Malformed reasoning stream. Retry this question.")
+                        }
                         if !reportedService {
                             reportedService = true
                             await request.onStreamProgress?(.firstServiceEvent, ProcessInfo.processInfo.systemUptime)

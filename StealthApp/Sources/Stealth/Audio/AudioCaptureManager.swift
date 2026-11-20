@@ -22,13 +22,21 @@ final class AudioCaptureManager: NSObject, ObservableObject {
 
     /// Controllable backend handle for deterministic tests without Screen Recording permission.
     protocol StreamHandle: Sendable {
+        func startCapture() async throws
         func stopCapture() async throws
     }
+    var startTimeoutSeconds: TimeInterval = 10.0
     var stopTimeoutSeconds: TimeInterval = 5.0
     var testStreamFactory: ((_ deliver: @escaping @Sendable (Data, TimeInterval) -> Void) async throws -> any StreamHandle)?
     var diagnosticObserver: ((CaptureDiagnostics.Stage, CaptureDiagnostics.Details?) -> Void)?
     private var testHandle: (any StreamHandle)?
     private var activeGate: CaptureSessionGate?
+    private var pendingGates: [UUID: CaptureSessionGate] = [:]
+
+    private struct StartedSCStream {
+        let stream: SCStream
+        let output: AudioStreamOutput
+    }
 
     private let log = Logger(subsystem: "com.livecopilot.app", category: "audio")
     private var stream: SCStream?
@@ -44,25 +52,82 @@ final class AudioCaptureManager: NSObject, ObservableObject {
         diagnosticObserver?(stage, details)
     }
 
+    /// Runs an async MainActor operation with a hard upper time bound so a wedged ScreenCaptureKit
+    /// XPC call or hung stream handle cannot stall session startup or rollback indefinitely.
+    /// If `operation` ignores task cancellation and resolves after the timeout, `onLateSuccess`
+    /// runs in a fresh uncancelled MainActor task to tear down the leaked stream or handle.
+    private static func runWithTimeout<T>(
+        _ seconds: TimeInterval,
+        onLateSuccess: (@MainActor (T) async -> Void)? = nil,
+        operation: @escaping @MainActor () async throws -> T
+    ) async throws -> T {
+        let timeoutNS = UInt64(max(0.05, seconds) * 1_000_000_000)
+        return try await withCheckedThrowingContinuation { cont in
+            let gate = TimeoutGate()
+            let workTask = Task { @MainActor in
+                do {
+                    let value = try await operation()
+                    if gate.claim() {
+                        cont.resume(returning: value)
+                    } else if let onLateSuccess {
+                        Task { @MainActor in
+                            await onLateSuccess(value)
+                        }
+                    }
+                } catch {
+                    guard gate.claim() else { return }
+                    cont.resume(throwing: error)
+                }
+            }
+            let timerTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: timeoutNS)
+                guard gate.claim() else { return }
+                workTask.cancel()
+                cont.resume(throwing: CaptureError.timedOut)
+            }
+            gate.setTimer(timerTask)
+        }
+    }
+
     func start(sessionID: UUID = UUID()) async {
         guard !isCapturing else { return }
         let revision = UUID(); captureRevision = revision
+        for staleGate in pendingGates.values { staleGate.invalidate() }
+        pendingGates.removeAll()
         lastError = nil
         recordDiagnostic(.systemStart)
         let gate = CaptureSessionGate(sessionID: sessionID)
+        pendingGates[revision] = gate
+        defer { pendingGates.removeValue(forKey: revision) }
+        let stopTimeout = stopTimeoutSeconds
         if let testStreamFactory {
             do {
                 let emit = onPCM16, flow = self.flow, echo = self.echo
-                let handle = try await testStreamFactory { data, captureTime in
-                    gate.deliverIfActive {
-                        flow?.observe(data)
-                        echo?.observe(data, source: .system, at: captureTime)
-                        emit?(data, gate.sessionID)
+                let handle: any StreamHandle = try await Self.runWithTimeout(
+                    startTimeoutSeconds,
+                    onLateSuccess: { (lateHandle: any StreamHandle) in
+                        gate.invalidate()
+                        try? await Self.runWithTimeout(stopTimeout) {
+                            try await lateHandle.stopCapture()
+                        }
+                    },
+                    operation: {
+                        let handle = try await testStreamFactory { data, captureTime in
+                            gate.deliverIfActive {
+                                flow?.observe(data)
+                                echo?.observe(data, source: .system, at: captureTime)
+                                emit?(data, gate.sessionID)
+                            }
+                        }
+                        try await handle.startCapture()
+                        return handle
                     }
-                }
+                )
                 guard captureRevision == revision else {
                     gate.invalidate()
-                    try? await handle.stopCapture()
+                    try? await Self.runWithTimeout(stopTimeout) {
+                        try await handle.stopCapture()
+                    }
                     return
                 }
                 self.activeGate = gate
@@ -88,40 +153,50 @@ final class AudioCaptureManager: NSObject, ObservableObject {
         do {
             // Pick the main display as the capture surface. We discard video frames;
             // ScreenCaptureKit still requires a content filter built from shareable content.
-            let content = try await SCShareableContent.excludingDesktopWindows(
-                false, onScreenWindowsOnly: false
-            )
+            let content = try await Self.runWithTimeout(startTimeoutSeconds) {
+                try await SCShareableContent.excludingDesktopWindows(
+                    false, onScreenWindowsOnly: false
+                )
+            }
             guard captureRevision == revision else { gate.invalidate(); return }
             guard let display = content.displays.first else {
                 throw CaptureError.noDisplay
             }
 
             let filter = SCContentFilter(display: display, excludingWindows: [])
-
-            let cfg = SCStreamConfiguration()
-            cfg.capturesAudio = true
-            cfg.excludesCurrentProcessAudio = true          // never capture our own sounds
-            cfg.sampleRate = Int(Config.realtimeSampleRate)
-            cfg.channelCount = 1
-            // Minimise video work — we only want audio.
-            cfg.width = 2
-            cfg.height = 2
-            cfg.minimumFrameInterval = CMTime(value: 1, timescale: 1)
-            cfg.queueDepth = 6
+            let cfg = Self.makeAudioOnlyStreamConfiguration(sampleRate: Config.realtimeSampleRate)
 
             let stream = SCStream(filter: filter, configuration: cfg, delegate: self)
             let output = AudioStreamOutput(gate: gate, emit: onPCM16, flow: flow, echo: echo, sampleRate: outputSampleRate)
             try stream.addStreamOutput(output, type: .audio, sampleHandlerQueue: outputQueue)
-            self.output = output
-            try await stream.startCapture()
+            let log = self.log
+            let started = try await Self.runWithTimeout(
+                startTimeoutSeconds,
+                onLateSuccess: { (late: StartedSCStream) in
+                    gate.invalidate()
+                    log.warning("Stopping late ScreenCaptureKit stream after start timeout")
+                    try? await Self.runWithTimeout(stopTimeout) {
+                        try await late.stream.stopCapture()
+                    }
+                    withExtendedLifetime(late.output) {}
+                },
+                operation: {
+                    try await stream.startCapture()
+                    return StartedSCStream(stream: stream, output: output)
+                }
+            )
             guard captureRevision == revision else {
                 gate.invalidate()
-                try? await stream.stopCapture()
+                try? await Self.runWithTimeout(stopTimeout) {
+                    try await started.stream.stopCapture()
+                }
+                withExtendedLifetime(started.output) {}
                 return
             }
 
             self.activeGate = gate
-            self.stream = stream
+            self.output = started.output
+            self.stream = started.stream
             self.isCapturing = true
             recordDiagnostic(.systemReady, details: .init(sampleRate: Double(cfg.sampleRate), channels: UInt32(cfg.channelCount)))
             log.info("System audio capture started")
@@ -140,6 +215,8 @@ final class AudioCaptureManager: NSObject, ObservableObject {
         captureRevision = UUID()
         // Immediately silence old stream callbacks before awaiting stopCapture so late frames
         // from a timed-out stream can never reach the next session's flow, echo, or provider.
+        for gate in pendingGates.values { gate.invalidate() }
+        pendingGates.removeAll()
         activeGate?.invalidate()
         activeGate = nil
         let activeStream = self.stream
@@ -180,6 +257,9 @@ final class AudioCaptureManager: NSObject, ObservableObject {
     }
 
     private func humanReadable(_ error: Error) -> String {
+        if let captureError = error as? CaptureError, captureError == .timedOut {
+            return "System audio capture timed out while starting. Check Screen Recording permission or retry."
+        }
         let ns = error as NSError
         if ns.domain == SCStreamError.errorDomain && ns.code == SCStreamError.userDeclined.rawValue {
             return "Screen Recording permission is required. Grant it in System Settings → Privacy & Security → Screen Recording, then reopen LiveCopilot."
@@ -187,7 +267,28 @@ final class AudioCaptureManager: NSObject, ObservableObject {
         return error.localizedDescription
     }
 
-    enum CaptureError: Error { case noDisplay }
+    enum CaptureError: Error, Equatable { case noDisplay, timedOut }
+
+    /// Minimize ScreenCaptureKit display-capture & GPU surface work when only system audio is needed.
+    /// Audio callbacks arrive on CoreAudio cadence independent of the discarded video frame interval.
+    nonisolated static func makeAudioOnlyStreamConfiguration(sampleRate: Double) -> SCStreamConfiguration {
+        let cfg = SCStreamConfiguration()
+        cfg.capturesAudio = true
+        cfg.excludesCurrentProcessAudio = true
+        cfg.sampleRate = Int(sampleRate)
+        cfg.channelCount = 1
+        cfg.width = 2
+        cfg.height = 2
+        cfg.minimumFrameInterval = CMTime(value: 10, timescale: 1)
+        cfg.queueDepth = 1
+        cfg.showsCursor = false
+        cfg.scalesToFit = false
+        return cfg
+    }
+}
+
+extension AudioCaptureManager.StreamHandle {
+    func startCapture() async throws {}
 }
 
 // MARK: - SCStream callbacks
@@ -196,10 +297,43 @@ extension AudioCaptureManager: SCStreamDelegate {
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         Task { @MainActor in
             guard self.stream === stream else { return }
-            CaptureDiagnostics.record(.systemFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
+            self.activeGate?.invalidate()
+            self.activeGate = nil
+            self.stream = nil
+            self.output = nil
+            self.recordDiagnostic(.systemFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
             self.lastError = self.humanReadable(error)
             self.isCapturing = false
         }
+    }
+}
+
+/// Ensures a timeout race resumes its CheckedThrowingContinuation at most once and cancels the timer on completion.
+private final class TimeoutGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var resumed = false
+    private var timerTask: Task<Void, Never>?
+
+    func setTimer(_ task: Task<Void, Never>) {
+        lock.lock()
+        let alreadyResumed = resumed
+        if !alreadyResumed { timerTask = task }
+        lock.unlock()
+        if alreadyResumed { task.cancel() }
+    }
+
+    func claim() -> Bool {
+        lock.lock()
+        guard !resumed else {
+            lock.unlock()
+            return false
+        }
+        resumed = true
+        let task = timerTask
+        timerTask = nil
+        lock.unlock()
+        task?.cancel()
+        return true
     }
 }
 

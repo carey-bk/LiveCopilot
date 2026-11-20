@@ -70,7 +70,9 @@ final class TranscriptStore: ObservableObject {
     func commit(_ line: String, speaker: Speaker, now: Date = Date()) {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        archivedLines.append(TranscriptLine(speaker: speaker, at: now, content: trimmed))
+        let entry = TranscriptLine(speaker: speaker, at: now, content: trimmed)
+        lineIndexByID[entry.id] = archivedLines.count
+        archivedLines.append(entry)
         lines = Array(archivedLines.suffix(Config.transcriptLineLimit))
     }
 
@@ -80,7 +82,7 @@ final class TranscriptStore: ObservableObject {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         if let saved = protectedPreview, now.timeIntervalSince(saved.at) < 12,
-           value.hasPrefix(saved.text), let index = archivedLines.firstIndex(where: { $0.id == saved.id }) {
+           value.hasPrefix(saved.text), let index = lineIndex(for: saved.id) {
             archivedLines[index] = TranscriptLine(id: saved.id, speaker: .you, at: saved.at, content: value)
             protectedPreview = (saved.id, value, now)
             lines = Array(archivedLines.suffix(Config.transcriptLineLimit))
@@ -103,10 +105,23 @@ final class TranscriptStore: ObservableObject {
     private var lastFragmentEnd: [Speaker: Int] = [:]
     private var fragmentsByLine: [UUID: [TranscriptFragment]] = [:]
     private var fragmentLine: [String: UUID] = [:]
+    private var latestRevisionByID: [String: TranscriptFragment] = [:]
+    private var lineIndexByID: [UUID: Int] = [:]
+
+    private func lineIndex(for id: UUID) -> Int? {
+        if let index = lineIndexByID[id], index < archivedLines.count, archivedLines[index].id == id {
+            return index
+        }
+        return archivedLines.lastIndex(where: { $0.id == id })
+    }
+
     func ingest(_ fragment: TranscriptFragment) {
-        if fragmentRevisions.last(where: { $0.id == fragment.id }) != fragment { fragmentRevisions.append(fragment) }
+        if latestRevisionByID[fragment.id] != fragment {
+            latestRevisionByID[fragment.id] = fragment
+            fragmentRevisions.append(fragment)
+        }
         defer { lines = Array(archivedLines.suffix(Config.transcriptLineLimit)) }
-        if let lineID = fragmentLine[fragment.id], let index = archivedLines.firstIndex(where: { $0.id == lineID }),
+        if let lineID = fragmentLine[fragment.id], let index = lineIndex(for: lineID),
            var parts = fragmentsByLine[lineID], let part = parts.firstIndex(where: { $0.id == fragment.id }) {
             parts[part] = fragment; fragmentsByLine[lineID] = parts
             let old = archivedLines[index]
@@ -117,7 +132,7 @@ final class TranscriptStore: ObservableObject {
             protectedPreview = nil
             let final = fragment.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if fragment.receivedAt.timeIntervalSince(saved.at) < 12, final.hasPrefix(saved.text),
-               let index = archivedLines.firstIndex(where: { $0.id == saved.id }) {
+               let index = lineIndex(for: saved.id) {
                 archivedLines[index] = TranscriptLine(id: saved.id, speaker: .you, at: saved.at, content: final)
                 fragmentsByLine[saved.id] = [fragment]
                 fragmentLine[fragment.id] = saved.id
@@ -128,9 +143,11 @@ final class TranscriptStore: ObservableObject {
         if let last = archivedLines.last, last.speaker == fragment.speaker,
            let end = lastFragmentEnd[fragment.speaker], fragment.startMS >= end,
            fragment.startMS - end < 1600, last.content.count < 1800 {
-            archivedLines = Array(archivedLines.dropLast()) + [TranscriptLine(id: last.id, speaker: last.speaker, at: last.at, content: last.content + fragment.text)]
+            archivedLines[archivedLines.count - 1] = TranscriptLine(id: last.id, speaker: last.speaker, at: last.at, content: last.content + fragment.text)
         } else {
-            archivedLines = archivedLines + [TranscriptLine(speaker: fragment.speaker, at: fragment.receivedAt, content: fragment.text)]
+            let entry = TranscriptLine(speaker: fragment.speaker, at: fragment.receivedAt, content: fragment.text)
+            lineIndexByID[entry.id] = archivedLines.count
+            archivedLines.append(entry)
         }
         if let id = archivedLines.last?.id {
             fragmentsByLine[id, default: []].append(fragment); fragmentLine[fragment.id] = id
@@ -141,6 +158,7 @@ final class TranscriptStore: ObservableObject {
     func clear() {
         protectedPreview = nil
         fragmentsByLine = [:]; fragmentLine = [:]
+        latestRevisionByID = [:]; lineIndexByID = [:]
         lastFragmentEnd = [:]
         archivedLines = []; fragmentRevisions = []
         lines = []

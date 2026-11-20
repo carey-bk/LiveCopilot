@@ -70,7 +70,13 @@ actor KnowledgeIndex {
     func documents() throws -> [KnowledgeDocument] {
         let s = try statement("SELECT record FROM documents"); defer { sqlite3_finalize(s) }
         var documents: [KnowledgeDocument] = []
-        while sqlite3_step(s) == SQLITE_ROW { documents.append(try JSONDecoder().decode(KnowledgeDocument.self, from: data(s, column: 0))) }
+        let decoder = JSONDecoder()
+        var step = sqlite3_step(s)
+        while step == SQLITE_ROW {
+            documents.append(try decoder.decode(KnowledgeDocument.self, from: data(s, column: 0)))
+            step = sqlite3_step(s)
+        }
+        guard step == SQLITE_DONE else { throw databaseError() }
         return documents.sorted { $0.importedAt > $1.importedAt }
     }
     func saveDocument(_ document: KnowledgeDocument) throws {
@@ -119,7 +125,13 @@ actor KnowledgeIndex {
     func allChunks() throws -> [SourceChunk] {
         let s = try statement("SELECT record FROM chunks"); defer { sqlite3_finalize(s) }
         var chunks: [SourceChunk] = []
-        while sqlite3_step(s) == SQLITE_ROW { chunks.append(try JSONDecoder().decode(SourceChunk.self, from: data(s, column: 0))) }
+        let decoder = JSONDecoder()
+        var step = sqlite3_step(s)
+        while step == SQLITE_ROW {
+            chunks.append(try decoder.decode(SourceChunk.self, from: data(s, column: 0)))
+            step = sqlite3_step(s)
+        }
+        guard step == SQLITE_DONE else { throw databaseError() }
         return chunks
     }
     func lexical(_ query: String, limit: Int = 24) throws -> [SourceChunk] {
@@ -128,7 +140,13 @@ actor KnowledgeIndex {
         let s = try statement("SELECT c.record FROM chunks_fts JOIN chunks c ON c.id=chunks_fts.chunk_id WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts) LIMIT ?")
         defer { sqlite3_finalize(s) }; bind(match, at: 1, to: s); sqlite3_bind_int(s, 2, Int32(limit))
         var result: [SourceChunk] = []
-        while sqlite3_step(s) == SQLITE_ROW { result.append(try JSONDecoder().decode(SourceChunk.self, from: data(s, column: 0))) }
+        let decoder = JSONDecoder()
+        var step = sqlite3_step(s)
+        while step == SQLITE_ROW {
+            result.append(try decoder.decode(SourceChunk.self, from: data(s, column: 0)))
+            step = sqlite3_step(s)
+        }
+        guard step == SQLITE_DONE else { throw databaseError() }
         return result
     }
     func retrieve(query: RetrievalQuery, vector: [Float]?, model: String, limit: Int) throws -> [RetrievedSource] {
@@ -241,30 +259,97 @@ actor KnowledgeIndex {
         }
     }
 
-    func importDocument(_ url: URL, provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {
-        let sections = try DocumentParser.extract(url)
+    private static let maxChunksPerDocument = 4000
+    private static let maxChunksMessage = "Document exceeds the V1 limit of 4,000 chunks; split it into smaller documents."
+
+    private nonisolated static func runOffActor<T: Sendable>(
+        _ operation: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try Task.checkCancellation()
+        let task = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
+            return try operation()
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    private nonisolated static func extractAndChunk(
+        _ url: URL,
+        documentID: String,
+        name: String,
+        textEncoding: DocumentParser.TextEncodingChoice = .automatic
+    ) async throws -> [SourceChunk] {
+        try await runOffActor {
+            let sections = try DocumentParser.extract(url, textEncoding: textEncoding)
+            try Task.checkCancellation()
+            let chunks = DocumentChunker.chunk(sections, documentID: documentID, name: name, maxChunks: maxChunksPerDocument)
+            try Task.checkCancellation()
+            guard !chunks.isEmpty else {
+                throw CopilotError.message("No extractable text. Scanned PDFs need OCR before import.")
+            }
+            guard chunks.count <= maxChunksPerDocument else {
+                throw CopilotError.message(maxChunksMessage)
+            }
+            return chunks
+        }
+    }
+
+    func importDocument(
+        _ url: URL,
+        textEncoding: DocumentParser.TextEncodingChoice = .automatic,
+        provider: any EmbeddingProvider,
+        progress: (@Sendable (String, Double) async -> Void)? = nil
+    ) async throws -> KnowledgeDocument {
         let id = UUID().uuidString
+        let name = url.lastPathComponent
+        let chunks = try await Self.extractAndChunk(url, documentID: id, name: name, textEncoding: textEncoding)
+        try Task.checkCancellation()
         let folder = directory.appendingPathComponent("originals/\(id)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let local = folder.appendingPathComponent(url.lastPathComponent)
-        try FileManager.default.copyItem(at: url, to: local)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: local.path)
-        let document = KnowledgeDocument(id: id, name: url.lastPathComponent, importedAt: Date(), localPath: local.path,
+        let local = folder.appendingPathComponent(name)
+        try await Self.runOffActor {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            do {
+                try FileManager.default.copyItem(at: url, to: local)
+                try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: local.path)
+            } catch {
+                try? FileManager.default.removeItem(at: folder)
+                throw error
+            }
+        }
+        let document = KnowledgeDocument(id: id, name: name, importedAt: Date(), localPath: local.path,
                                          status: "Indexing", chunkCount: 0, embeddingModel: provider.model)
-        try saveDocument(document)
-        return try await index(document, sections: sections, provider: provider, progress: progress)
+        do {
+            try Task.checkCancellation()
+            try saveDocument(document)
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
+        return try await index(document, chunks: chunks, provider: provider, progress: progress)
     }
     func reindex(_ document: KnowledgeDocument, provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {
-        let sections = try DocumentParser.extract(URL(fileURLWithPath: document.localPath))
-        return try await index(document, sections: sections, provider: provider, progress: progress)
-    }
-    private func index(_ original: KnowledgeDocument, sections: [DocumentSection], provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {
-        var document = original
+        let localURL = URL(fileURLWithPath: document.localPath)
+        let chunks: [SourceChunk]
         do {
-            var chunks = DocumentChunker.chunk(sections, documentID: document.id, name: document.name)
-            guard chunks.count <= 4000 else { throw CopilotError.message("Document exceeds the V1 limit of 4,000 chunks; split it into smaller documents.") }
-            let documentID = document.id
-            await progress?(document.id, 0)
+            chunks = try await Self.extractAndChunk(localURL, documentID: document.id, name: document.name)
+        } catch {
+            if !(error is CancellationError) {
+                markFailedIfPresent(document, error: error)
+            }
+            throw error
+        }
+        return try await index(document, chunks: chunks, provider: provider, progress: progress)
+    }
+    private func index(_ original: KnowledgeDocument, chunks initialChunks: [SourceChunk], provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {
+        do {
+            var chunks = initialChunks
+            guard chunks.count <= Self.maxChunksPerDocument else { throw CopilotError.message(Self.maxChunksMessage) }
+            let documentID = original.id
+            await progress?(original.id, 0)
             for start in stride(from: 0, to: chunks.count, by: 24) {
                 try Task.checkCancellation()
                 let end = min(start + 24, chunks.count)
@@ -278,18 +363,23 @@ actor KnowledgeIndex {
             }
             try Task.checkCancellation()
             // A deletion while awaiting the network must not resurrect the document.
-            guard try documents().contains(where: { $0.id == document.id }) else { throw CancellationError() }
-            document.status = "Ready"; document.chunkCount = chunks.count; document.embeddingModel = provider.model; document.error = nil
-            try replaceChunks(chunks, document: document)
-            await progress?(document.id, 1)
-            return document
+            guard try documents().contains(where: { $0.id == original.id }) else { throw CancellationError() }
+            var committed = original
+            committed.status = "Ready"; committed.chunkCount = chunks.count; committed.embeddingModel = provider.model; committed.error = nil
+            try replaceChunks(chunks, document: committed)
+            await progress?(committed.id, 1)
+            return committed
         } catch {
-            if (try? documents().contains(where: { $0.id == document.id })) == true {
-                document.status = original.chunkCount > 0 ? "Ready (re-index failed)" : "Failed"
-                document.error = error.localizedDescription
-                try? saveDocument(document)
-            }
+            markFailedIfPresent(original, error: error)
             throw error
+        }
+    }
+    private func markFailedIfPresent(_ original: KnowledgeDocument, error: Error) {
+        if (try? documents().contains(where: { $0.id == original.id })) == true {
+            var failed = original
+            failed.status = original.chunkCount > 0 ? "Ready (re-index failed)" : "Failed"
+            failed.error = error.localizedDescription
+            try? saveDocument(failed)
         }
     }
 }

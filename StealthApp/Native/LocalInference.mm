@@ -9,7 +9,30 @@
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <sys/resource.h>
+#include <thread>
 #include <vector>
+
+static int asrThreadCount() {
+    const unsigned int hw = std::thread::hardware_concurrency();
+#if defined(__x86_64__)
+    // Leave CPU headroom on older Intel Macs so foreground video conferencing (e.g. Teams) is not starved.
+    (void)hw;
+    return 1;
+#else
+    return (hw > 0 && hw <= 4) ? 1 : 2;
+#endif
+}
+
+static int embeddingThreadCount() {
+    const unsigned int hw = std::thread::hardware_concurrency();
+#if defined(__x86_64__)
+    return hw >= 4 ? 2 : 1;
+#else
+    if (hw > 0 && hw <= 4) return 2;
+    return 4;
+#endif
+}
 
 static void reply(NSDictionary *value) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:value options:0 error:nil];
@@ -39,7 +62,7 @@ public:
         // Dynamic Zipformer terms need enough weight to retain competing spellings.
         // On the same audio, 3 recovers 启衡系统; widening the beam gave no further gain.
         config.hotwords_score = 3.0f;
-        config.model_config.num_threads = 2; config.model_config.provider = "cpu";
+        config.model_config.num_threads = asrThreadCount(); config.model_config.provider = "cpu";
         config.model_config.tokens = tokens.c_str();
         const auto joiner = root + "/joiner.int8.onnx", bpe = root + "/bpe.vocab";
         if (contextual) {
@@ -163,6 +186,7 @@ static constexpr bool kDefaultEmbeddingCPU = false;
 #endif
 
 class EmbeddingEngine {
+    static constexpr uint32_t kResidentCapacity = 1024;
     llama_model *model = nullptr;
     llama_context *context = nullptr;
     std::string modelPath;
@@ -173,6 +197,13 @@ class EmbeddingEngine {
         uint32_t size = 512;
         while (size < count) size *= 2;
         return size;
+    }
+    void shrinkIfOversized() {
+        if (context && capacity > kResidentCapacity) {
+            llama_free(context);
+            context = nullptr;
+            capacity = 0;
+        }
     }
     bool loadModel(bool cpu) {
         cpuOnly = cpu;
@@ -189,7 +220,8 @@ class EmbeddingEngine {
         // Reserve for the actual input, rather than an 8192-token attention graph.
         params.n_ctx = size; params.n_batch = size; params.n_ubatch = size;
         params.embeddings = true; params.pooling_type = LLAMA_POOLING_TYPE_CLS;
-        params.n_threads = 4; params.n_threads_batch = 4;
+        const int threads = embeddingThreadCount();
+        params.n_threads = threads; params.n_threads_batch = threads;
         if (cpuOnly) { params.offload_kqv = false; params.op_offload = false; }
         context = llama_init_from_model(model, params);
         if (context) capacity = size;
@@ -277,6 +309,10 @@ public:
             count = llama_tokenize(vocab, static_cast<const char *>(utf8.bytes), static_cast<int>(utf8.length), tokens.data(), static_cast<int>(tokens.size()), true, false);
         }
         if (count <= 0 || count > maxTokens) throw std::runtime_error("token_limit");
+        struct ShrinkGuard {
+            EmbeddingEngine &engine;
+            ~ShrinkGuard() { engine.shrinkIfOversized(); }
+        } shrinkGuard{*this};
         try {
             return runEmbedding(tokens.data(), count);
         } catch (const std::runtime_error &error) {
@@ -304,6 +340,10 @@ int main(int argc, char **argv) {
             std::unique_ptr<StreamingSpeechEngine> streamingSpeech;
             std::unique_ptr<EmbeddingEngine> embedding;
             const std::string mode(argv[1]), root(argv[2]);
+            // Run inference workers below foreground media priority so Teams/Zoom video decode/encode
+            // threads preempt local CPU inference on constrained Intel/low-core Macs.
+            const int niceValue = (mode == "embedding" || mode == "embedding-cpu") ? 12 : 10;
+            (void)setpriority(PRIO_PROCESS, 0, niceValue);
             if (mode == "paraformer") streamingSpeech = std::make_unique<StreamingSpeechEngine>(root);
             else if (mode == "zipformer") streamingSpeech = std::make_unique<StreamingSpeechEngine>(root, true);
             else if (mode == "embedding" || mode == "embedding-cpu")

@@ -23,13 +23,20 @@ import Combine
         guard !busy else { return }
         busy = true; failedLanguage = nil; message = "Downloading Apple speech language…"
         task = Task {
+            var wasCancelled = false
             do {
                 try await AppleSpeechSupport.install(language)
                 message = "Installed · offline ready"
-            } catch is CancellationError { message = "Apple speech download cancelled." }
+            } catch is CancellationError {
+                wasCancelled = true
+                message = "Apple speech download cancelled."
+            }
             catch { failedLanguage = language; message = "Apple speech download failed. Check the network and retry." }
-            busy = false; installed = await AppleSpeechSupport.installed(language)
-            checkedLanguage = language
+            busy = false
+            if !wasCancelled, !Task.isCancelled {
+                installed = await AppleSpeechSupport.installed(language)
+                checkedLanguage = language
+            }
             task = nil
         }
     }

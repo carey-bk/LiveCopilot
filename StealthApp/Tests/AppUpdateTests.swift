@@ -191,4 +191,20 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertFalse(current.hasUpdate, "The host build is lower but its public version is the same")
     }
 
+    @MainActor func testDismissInstallationResetsReadyToInstallAndNeverWedgesListening() {
+        let controller = AppUpdateController(mock: true, version: "2.9.0")
+        controller.recordAvailable(.init(version: ReleaseVersion("2.9.1")!, notes: "Stability", supportsInAppInstall: true))
+        controller.ready { _ in }
+        XCTAssertEqual(controller.phase, .readyToInstall)
+
+        controller.dismissInstallation()
+        XCTAssertFalse(controller.installationCommitted)
+        XCTAssertEqual(controller.phase, .available)
+
+        // Even if restartToInstall were called when no handler remains, it must never wedge installationCommitted.
+        controller.restartToInstall()
+        XCTAssertFalse(controller.installationCommitted)
+        XCTAssertNotEqual(controller.phase, .installing)
+    }
+
 }

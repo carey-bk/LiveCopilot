@@ -28,6 +28,7 @@ final class OverlayWindow: NSPanel {
     private var holdUntil: TimeInterval = 0
     private var awaitingFirstPointerEntry = false
     private var geometryTask: DispatchWorkItem?
+    private var shadowRefreshWork: DispatchWorkItem?
     private var screenObserver: NSObjectProtocol?
     private var transition = UUID()
     private var targetScreen: NSScreen?
@@ -98,27 +99,35 @@ final class OverlayWindow: NSPanel {
     }
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
-        // Cover an enlarged surface before AppKit paints its newly exposed edge.
-        refreshCaptureProtection(covering: CGSize(width: max(frame.width, frameRect.width),
-                                                  height: max(frame.height, frameRect.height)))
+        if excludesCapture {
+            // Cover an enlarged surface before AppKit paints its newly exposed edge.
+            refreshCaptureProtection(covering: CGSize(width: max(frame.width, frameRect.width),
+                                                      height: max(frame.height, frameRect.height)))
+        }
         super.setFrame(frameRect, display: flag)
-        refreshCaptureProtection()
-        refreshCaptureAfterGeometryCommit()
+        if excludesCapture {
+            refreshCaptureProtection()
+            refreshCaptureAfterGeometryCommit()
+        }
     }
 
     override func setFrame(_ frameRect: NSRect, display flag: Bool, animate: Bool) {
-        refreshCaptureProtection(covering: CGSize(width: max(frame.width, frameRect.width),
-                                                  height: max(frame.height, frameRect.height)))
+        if excludesCapture {
+            refreshCaptureProtection(covering: CGSize(width: max(frame.width, frameRect.width),
+                                                      height: max(frame.height, frameRect.height)))
+        }
         // Avoid an intermediate animation surface escaping the exclusion region.
         super.setFrame(frameRect, display: flag, animate: excludesCapture ? false : animate)
-        refreshCaptureProtection()
-        refreshCaptureAfterGeometryCommit()
+        if excludesCapture {
+            refreshCaptureProtection()
+            refreshCaptureAfterGeometryCommit()
+        }
     }
 
     // The server can still use the old bounds during setFrame. Reapply after
     // AppKit commits geometry, otherwise an enlarged edge can escape the region.
     private func refreshCaptureAfterGeometryCommit() {
-        guard captureProtectionReady else { return }
+        guard captureProtectionReady, excludesCapture else { return }
         captureGeometryRefresh?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.captureGeometryRefresh = nil
@@ -215,7 +224,21 @@ final class OverlayWindow: NSPanel {
         // obsolete height while streaming/revealing. Apply geometry atomically.
         setFrame(fitted, display: isVisible)
         contentView?.layoutSubtreeIfNeeded()
-        invalidateShadow()
+        scheduleShadowInvalidation()
+    }
+
+    /// Debounce shadow re-rasterization during streaming height growth so WindowServer does not
+    /// recompute alpha-mask shadows on every 120 ms resize tick over live video calls.
+    private func scheduleShadowInvalidation() {
+        guard hasShadow, isVisible else { return }
+        shadowRefreshWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.shadowRefreshWork = nil
+            if self.hasShadow && self.isVisible { self.invalidateShadow() }
+        }
+        shadowRefreshWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
 
     func userFinishedResize(vertical: Bool) {
@@ -305,6 +328,7 @@ final class OverlayWindow: NSPanel {
         captureGeometryRefresh?.cancel(); captureGeometryRefresh = nil
         edgeTimer?.invalidate(); edgeTimer = nil
         geometryTask?.cancel(); geometryTask = nil
+        shadowRefreshWork?.cancel(); shadowRefreshWork = nil
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver); self.screenObserver = nil }
     }
     override func close() { stopWatching(); super.close() }

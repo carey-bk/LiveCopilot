@@ -595,4 +595,156 @@ final class HybridLanguageTests: XCTestCase {
         }
         await app.shutdown()
     }
+
+    @MainActor func testTranslationCircuitBreakerOnAuthFailureAndRateLimitBackoff() async throws {
+        final class FailingTranslator: ReasoningProvider, @unchecked Sendable {
+            private let lock = NSLock()
+            private var _calls = 0
+            let status: Int
+            init(status: Int) { self.status = status }
+            var calls: Int { lock.withLock { _calls } }
+            func stream(_ request: AnswerRequest) -> AsyncThrowingStream<String, Error> {
+                lock.withLock { _calls += 1 }
+                let code = status
+                return AsyncThrowingStream { cont in
+                    cont.finish(throwing: ServiceHTTPFailure(status: code))
+                }
+            }
+        }
+
+        // 1. HTTP 401 opens circuit immediately: subsequent lines do not storm the API, and lastError is recorded.
+        let authFail = FailingTranslator(status: 401)
+        let store = TranscriptTranslationStore()
+        let line1 = TranscriptLine(speaker: .them, at: Date(), content: "First sentence.")
+        store.start(target: .simplified, provider: authFail, lines: [line1])
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(authFail.calls, 1)
+        XCTAssertTrue(store.failed)
+        XCTAssertTrue(store.lastError?.contains("401") == true)
+
+        let line2 = TranscriptLine(speaker: .them, at: Date(), content: "Second sentence.")
+        let line3 = TranscriptLine(speaker: .them, at: Date(), content: "Third sentence.")
+        store.update(lines: [line1, line2, line3])
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(authFail.calls, 1, "Permanent 401 auth failure must open circuit and stop firing requests")
+        store.stop()
+
+        // 2. HTTP 429 applies backoff instead of firing immediately on every subsequent utterance.
+        let rateLimitFail = FailingTranslator(status: 429)
+        store.rateLimitBackoffSeconds = 0.5
+        store.start(target: .simplified, provider: rateLimitFail, lines: [line1])
+        try await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(rateLimitFail.calls, 1)
+        XCTAssertTrue(store.lastError?.contains("429") == true)
+        store.update(lines: [line1, line2])
+        try await Task.sleep(nanoseconds: 180_000_000)
+        XCTAssertEqual(rateLimitFail.calls, 1, "429 backoff must prevent immediate retry storm on next line")
+        store.stop()
+    }
+
+    @MainActor func testSavingOrRemovingUnrelatedKeyPreservesLiveTranslationWhileOwnKeyStopsOrReplacesProvider() async throws {
+        let suite = "LiveCopilot-Translation-Key-Scope-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        final class KeyedTranslationProvider: ReasoningProvider, @unchecked Sendable {
+            let tag: String
+            private let lock = NSLock()
+            private var _requests: [AnswerRequest] = []
+            var requests: [AnswerRequest] { lock.withLock { _requests } }
+            init(tag: String) { self.tag = tag }
+            func stream(_ request: AnswerRequest) -> AsyncThrowingStream<String, Error> {
+                lock.withLock { _requests.append(request) }
+                let label = tag
+                return AsyncThrowingStream { cont in
+                    cont.yield("[\(label)] \(request.input)")
+                    cont.finish()
+                }
+            }
+        }
+
+        let app = AppCoordinator(
+            mock: true,
+            emitMockConversation: false,
+            mockDefaults: defaults,
+            credentialSaver: { _, _ in },
+            credentialRemover: { _ in }
+        )
+        // Translation uses separate OpenAI analysis key (.separateOpenAI), NOT speech OpenAI key (.live).
+        app.settings.listeningService = .openAI
+        app.settings.reasoningService = .separateOpenAI
+
+        var providers: [(key: String?, provider: KeyedTranslationProvider)] = []
+        app.testTranslationProviderFactory = { _, analysisKey in
+            let p = KeyedTranslationProvider(tag: analysisKey ?? "none")
+            providers.append((analysisKey, p))
+            return p
+        }
+
+        try await app.saveCredential("sk-live-speech", analysis: false)
+        try await app.saveCredential("sk-analysis-1", analysis: true)
+
+        app.transcript.commit("First line from remote", speaker: .them)
+        let line1 = try XCTUnwrap(app.transcript.lines.last)
+        app.setTranscriptTranslation(.simplified)
+        for _ in 0..<40 where app.translation.text(for: line1) == nil {
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        XCTAssertTrue(app.translation.enabled)
+        XCTAssertEqual(providers.count, 1)
+        let provider1 = providers[0].provider
+        XCTAssertEqual(app.translation.text(for: line1), "[sk-analysis-1] First line from remote")
+
+        // 1. Delete unrelated speech OpenAI key (.live): translation MUST stay active and keep existing translated lines!
+        try await app.removeCredential(analysis: false)
+        XCTAssertTrue(app.translation.enabled, "Deleting unrelated speech key must not stop live translation")
+        XCTAssertEqual(app.translation.text(for: line1), "[sk-analysis-1] First line from remote",
+                       "Deleting unrelated speech key must preserve existing translations")
+        XCTAssertEqual(providers.count, 1, "Unrelated key removal must not rebuild the translation provider")
+
+        // Saving an unrelated speech key also must not interrupt or rebuild translation.
+        try await app.saveCredential("sk-live-speech-2", analysis: false)
+        XCTAssertTrue(app.translation.enabled)
+        XCTAssertEqual(app.translation.text(for: line1), "[sk-analysis-1] First line from remote")
+        XCTAssertEqual(providers.count, 1)
+
+        // New transcript line continues translating on provider1.
+        app.transcript.commit("Second line still using analysis key", speaker: .them)
+        let line2 = try XCTUnwrap(app.transcript.lines.last)
+        app.translation.update(lines: app.transcript.lines)
+        for _ in 0..<40 where app.translation.text(for: line2) == nil {
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        XCTAssertEqual(app.translation.text(for: line2), "[sk-analysis-1] Second line still using analysis key")
+
+        // 2. Replace the analysis key that translation actually uses -> rebuilds with new provider; old provider never sends new content.
+        let provider1RequestsBeforeReplace = provider1.requests.count
+        try await app.saveCredential("sk-analysis-2", analysis: true)
+        XCTAssertEqual(providers.count, 2, "Replacing translation's own key must rebuild provider")
+        let provider2 = providers[1].provider
+        XCTAssertEqual(providers[1].key, "sk-analysis-2")
+
+        app.transcript.commit("Third line after key rotation", speaker: .them)
+        let line3 = try XCTUnwrap(app.transcript.lines.last)
+        app.translation.update(lines: app.transcript.lines)
+        for _ in 0..<40 where app.translation.text(for: line3) == nil {
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        XCTAssertEqual(provider1.requests.count, provider1RequestsBeforeReplace,
+                       "Old translation provider must never send new content after its key is replaced")
+        XCTAssertEqual(app.translation.text(for: line3), "[sk-analysis-2] Third line after key rotation")
+
+        // 3. Remove the analysis key that translation actually uses -> stops translation; old provider cannot send new content.
+        let provider2RequestsBeforeRemove = provider2.requests.count
+        try await app.removeCredential(analysis: true)
+        XCTAssertFalse(app.translation.enabled, "Deleting translation's own key must stop live translation")
+
+        app.transcript.commit("Fourth line after key deletion", speaker: .them)
+        app.translation.update(lines: app.transcript.lines)
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(provider2.requests.count, provider2RequestsBeforeRemove,
+                       "Stopped translation provider must not send any new content after key deletion")
+
+        await app.shutdown()
+    }
 }

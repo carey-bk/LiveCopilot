@@ -29,7 +29,8 @@ struct ConversationState {
 
     mutating func append(_ fragment: TranscriptFragment) -> Bool {
         guard fragment.endMS >= fragment.startMS else { return false }
-        if let index = fragments.firstIndex(where: { $0.id == fragment.id }) {
+        if seenEventIDs.contains(fragment.id),
+           let index = fragments.lastIndex(where: { $0.id == fragment.id }) {
             guard fragments[index].speaker == fragment.speaker, fragments[index].startMS == fragment.startMS,
                   fragment.endMS >= fragments[index].endMS, fragments[index].text != fragment.text else { return false }
             fragments[index] = fragment
@@ -37,9 +38,12 @@ struct ConversationState {
         }
         seenEventIDs.insert(fragment.id)
         fragments.append(fragment)
-        if fragments.count > 2400 {
-            fragments.removeFirst(fragments.count - 2400)
-            seenEventIDs = Set(fragments.map(\.id))
+        if fragments.count > 2600 {
+            let drop = fragments.count - 2400
+            for index in 0..<drop {
+                seenEventIDs.remove(fragments[index].id)
+            }
+            fragments.removeFirst(drop)
         }
         if fragment.speaker != .you { phase = .forming }
         return true
@@ -65,11 +69,17 @@ struct ConversationState {
             phase = .answered; return nil
         }
         let eligible = candidateFragments(speaker: speaker, now: now, force: force)
-        let eligibleIDs = Set(eligible.map(\.id))
-        // Include intervening speakers during deduplication so a repeated question
-        // after someone else's answer remains a separate turn.
-        let turns = fragments.filter { $0.speaker != speaker || eligibleIDs.contains($0.id) }
-        let captions = Self.withoutAdjacentRepeats(turns).filter { $0.speaker == speaker }
+        let captions: [TranscriptFragment]
+        if let firstEligible = eligible.first,
+           let startIndex = fragments.lastIndex(where: { $0.id == firstEligible.id }) {
+            let eligibleIDs = Set(eligible.map(\.id))
+            // Include intervening speakers during deduplication so a repeated question
+            // after someone else's answer remains a separate turn.
+            let turns = fragments[startIndex...].filter { $0.speaker != speaker || eligibleIDs.contains($0.id) }
+            captions = Self.withoutAdjacentRepeats(turns).filter { $0.speaker == speaker }
+        } else {
+            captions = []
+        }
         let question = String(captions.map(\.text).joined().suffix(2200)).trimmingCharacters(in: .whitespacesAndNewlines)
         // Even a one-character turn can invite a contextual response. Laya owns
         // that semantic decision; the input layer only rejects empty text.
@@ -86,7 +96,7 @@ struct ConversationState {
 
     private func candidateFragments(speaker: Speaker, now: Date, force: Bool) -> [TranscriptFragment] {
         var eligible = fragments.filter { $0.speaker == speaker }
-        if let id = lastQuestionFragmentID, let index = eligible.firstIndex(where: { $0.id == id }), index + 1 < eligible.count {
+        if let id = lastQuestionFragmentID, let index = eligible.lastIndex(where: { $0.id == id }), index + 1 < eligible.count {
             eligible = Array(eligible.suffix(from: index + 1))
         }
         // A completed answer does not disable turn boundaries. Otherwise an
@@ -110,7 +120,7 @@ struct ConversationState {
     /// duplicated into both fields. The worker applies the real 1,024-token budget.
     func layaContext(speaker: Speaker, now: Date, force: Bool = false) -> String {
         let currentIDs = Set(candidateFragments(speaker: speaker, now: now, force: force).map(\.id))
-        let boundary = lastQuestionFragmentID.flatMap { id in fragments.firstIndex { $0.id == id } }
+        let boundary = lastQuestionFragmentID.flatMap { id in fragments.lastIndex { $0.id == id } }
         struct Turn: Codable { let speaker: String; let text: String; let handled: Bool }
         struct Context: Codable { let currentSpeaker: String; var recentTurns: [Turn] }
         var context = Context(currentSpeaker: speaker.rawValue, recentTurns: [])
@@ -143,11 +153,13 @@ struct ConversationState {
     /// in analysis input, never fuzzy matches, short acknowledgements or speaker turns.
     private static func withoutAdjacentRepeats(_ input: [TranscriptFragment]) -> [TranscriptFragment] {
         var result: [TranscriptFragment] = []
+        var lastKey: String?
         for fragment in input {
             let key = captionKey(fragment.text)
             if key.count >= 5, let last = result.last, last.speaker == fragment.speaker,
-               captionKey(last.text) == key { continue }
+               lastKey == key { continue }
             result.append(fragment)
+            lastKey = key
         }
         return result
     }

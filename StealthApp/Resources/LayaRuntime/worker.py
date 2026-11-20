@@ -234,6 +234,11 @@ def main():
         os.setpgid(0, 0)
     except OSError:
         pass
+    # Run below foreground video conferencing priority so Teams/Zoom stay smooth.
+    try:
+        os.nice(10)
+    except OSError:
+        pass
     os.environ.update(HF_HUB_OFFLINE="1", HUGGINGFACE_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1",
                       HF_HUB_DISABLE_TELEMETRY="1", TOKENIZERS_PARALLELISM="false")
     for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
@@ -248,6 +253,14 @@ def main():
         receipt = verify_installation(installation)
         sys.path.insert(0, str(installation / "source"))
         import laya_mlx
+        try:
+            import mlx.core as mx
+            if hasattr(mx, "set_cache_limit"):
+                mx.set_cache_limit(256 * 1024 * 1024)
+            elif hasattr(mx, "metal") and hasattr(mx.metal, "set_cache_limit"):
+                mx.metal.set_cache_limit(256 * 1024 * 1024)
+        except Exception:
+            pass
         model = model_path(installation, Path(__file__).resolve().parent, receipt)
         agent = laya_mlx.load(model, dtype="float16")
         predict(agent, "The meeting starts at nine.", "")

@@ -20,6 +20,7 @@ enum CaptureDiagnostics {
     enum Failure: String, Codable {
         case unknown, embedding_context, inference_failed, timeout, runtime_missing, runtime_start
         case embedding_load, model_load_failed, process_ended
+        case queueTimeout = "queue_timeout"
         /// A started embedding worker rejected one input at this stage (never the input itself).
         case token_limit, text_size, embedding_decode, embedding_dimension, embedding_finite, embedding_zero
         /// Captured audio exceeded the bound while the speech model loaded, or after it was ready.
@@ -74,13 +75,23 @@ enum CaptureDiagnostics {
         guard ["com.livecopilot.app", "com.livecopilot.development"].contains(Bundle.main.bundleIdentifier ?? ""),
               environment["XCTestConfigurationFilePath"] == nil, environment["LIVECOPILOT_MOCK"] != "1",
               !ProcessInfo.processInfo.arguments.contains("--mock") else { return }
-        queue.sync {
+        let now = Date()
+        let uptime = ProcessInfo.processInfo.systemUptime
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let pid = ProcessInfo.processInfo.processIdentifier
+        queue.async {
             if stage == .listeningStart { captureID = UUID() }
-            let event = Event(time: Date(), stage: stage, code: code, launchID: launchID,
-                              captureID: captureID, build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
-                              pid: ProcessInfo.processInfo.processIdentifier, uptime: ProcessInfo.processInfo.systemUptime, details: details)
+            let event = Event(time: now, stage: stage, code: code, launchID: launchID,
+                              captureID: captureID, build: build,
+                              pid: pid, uptime: uptime, details: details)
             try? append(event, to: url)
         }
+    }
+    @discardableResult
+    static func flush(timeout: TimeInterval = 0.5) -> Bool {
+        let semaphore = DispatchSemaphore(value: 0)
+        queue.async { semaphore.signal() }
+        return semaphore.wait(timeout: .now() + max(0, timeout)) == .success
     }
     static func append(_ event: Event, to destination: URL) throws {
         var events = read(from: destination); events.append(event)
@@ -248,7 +259,10 @@ final class MainThreadWatchdog: @unchecked Sendable {
                     }
                     self.pendingSince = nil
                 }
-                if let (ms, state) = lateStall { self.onStall(ms, state) }
+                if let (ms, state) = lateStall {
+                    let callback = self.onStall
+                    self.queue.async { callback(ms, state) }
+                }
             }
         }
     }

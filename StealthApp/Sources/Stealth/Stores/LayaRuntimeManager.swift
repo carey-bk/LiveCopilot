@@ -283,15 +283,24 @@ enum LayaBootstrap {
         return executable
     }
     private static func matches(_ url: URL, digest: String) async -> Bool {
-        await Task.detached(priority: .utility) {
+        let hashTask = Task.detached(priority: .utility) {
             guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
             defer { try? handle.close() }
             var hash = SHA256()
             do {
-                while let data = try handle.read(upToCount: 1048576), !data.isEmpty { hash.update(data: data) }
+                while let data = try handle.read(upToCount: 1048576), !data.isEmpty {
+                    if Task.isCancelled { return false }
+                    hash.update(data: data)
+                }
             } catch { return false }
+            if Task.isCancelled { return false }
             return hash.finalize().map { String(format: "%02x", $0) }.joined() == digest
-        }.value
+        }
+        return await withTaskCancellationHandler {
+            await hashTask.value
+        } onCancel: {
+            hashTask.cancel()
+        }
     }
 }
 

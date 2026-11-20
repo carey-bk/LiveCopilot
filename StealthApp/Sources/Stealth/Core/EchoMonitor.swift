@@ -75,7 +75,7 @@ final class EchoMonitor: @unchecked Sendable {
     static let reverb = 0.4
     static let reverbDecayDBPerSecond: Float = 75
 
-    private struct Frame { let time: TimeInterval; let db: Float; var classified = false; var verdict: Verdict? }
+    private struct Frame { let sequence: UInt64; let time: TimeInterval; let db: Float; var classified = false; var verdict: Verdict? }
     private struct Track {
         var frames: [Frame] = []
         var sum = 0.0, count = 0
@@ -85,6 +85,8 @@ final class EchoMonitor: @unchecked Sendable {
     private var filter = (0.0, 0.0, 0.0, 0.0, 0.0)
 
     private let lock = NSLock()
+    private var sessionGeneration: UInt64 = 0
+    private var nextFrameSequence: UInt64 = 0
     private var frameSamples = 320
     private var system = Track(), mic = Track()
     private var counters = Counters()
@@ -96,6 +98,8 @@ final class EchoMonitor: @unchecked Sendable {
 
     func begin(sampleRate: Double) {
         lock.withLock {
+            sessionGeneration &+= 1
+            nextFrameSequence = 0
             frameSamples = max(1, Int(sampleRate * Self.frameSeconds))
             let w = 2 * Double.pi * min(Self.highPassHz, sampleRate / 4) / max(1, sampleRate)
             let alpha = sin(w) / (2 * 0.5.squareRoot()), c = cos(w), a0 = 1 + alpha
@@ -120,54 +124,95 @@ final class EchoMonitor: @unchecked Sendable {
         guard count > 0 else { return }
         let delay = Int(max(0, ProcessInfo.processInfo.systemUptime - time) * 1000)
         lock.withLock {
-            if source == .system { counters.systemDelayMSMax = max(counters.systemDelayMSMax, delay) }
-            else { counters.micDelayMSMax = max(counters.micDelayMSMax, delay) }
-            let rate = Double(frameSamples) / Self.frameSeconds
-            var track = source == .system ? system : mic
-            let (b0, b1, b2, a1, a2) = filter
-            data.withUnsafeBytes { raw in
-                let samples = raw.bindMemory(to: Int16.self)
-                for index in 0..<count {
-                    let input = Double(Int16(littleEndian: samples[index])) / 32768
-                    let value = b0 * input + b1 * track.x1 + b2 * track.x2 - a1 * track.y1 - a2 * track.y2
-                    track.x2 = track.x1; track.x1 = input; track.y2 = track.y1; track.y1 = value
-                    track.sum += value * value; track.count += 1
-                    guard track.count == frameSamples else { continue }
-                    let rms = (track.sum / Double(track.count)).squareRoot()
-                    let db = rms > 0 ? Float(max(-90, 20 * log10(rms))) : -90
-                    track.frames.append(Frame(time: time - Double(count - 1 - index) / rate, db: db))
-                    track.sum = 0; track.count = 0
-                }
+            if source == .system {
+                counters.systemDelayMSMax = max(counters.systemDelayMSMax, delay)
+                appendSamples(data, count: count, at: time, to: &system)
+            } else {
+                counters.micDelayMSMax = max(counters.micDelayMSMax, delay)
+                appendSamples(data, count: count, at: time, to: &mic)
             }
-            // About 8 s per source, enough for the longest assessed turn window.
-            if track.frames.count > 480 { track.frames.removeFirst(track.frames.count - 400) }
-            if source == .system { system = track } else { mic = track }
         }
+    }
+
+    private func appendSamples(_ data: Data, count: Int, at time: TimeInterval, to track: inout Track) {
+        let rate = Double(frameSamples) / Self.frameSeconds
+        let (b0, b1, b2, a1, a2) = filter
+        data.withUnsafeBytes { raw in
+            let samples = raw.bindMemory(to: Int16.self)
+            for index in 0..<count {
+                let input = Double(Int16(littleEndian: samples[index])) / 32768
+                let value = b0 * input + b1 * track.x1 + b2 * track.x2 - a1 * track.y1 - a2 * track.y2
+                track.x2 = track.x1; track.x1 = input; track.y2 = track.y1; track.y1 = value
+                track.sum += value * value; track.count += 1
+                guard track.count == frameSamples else { continue }
+                let rms = (track.sum / Double(track.count)).squareRoot()
+                let db = rms > 0 ? Float(max(-90, 20 * log10(rms))) : -90
+                nextFrameSequence &+= 1
+                track.frames.append(Frame(sequence: nextFrameSequence, time: time - Double(count - 1 - index) / rate, db: db))
+                track.sum = 0; track.count = 0
+            }
+        }
+        // About 8 s per source, enough for the longest assessed turn window.
+        if track.frames.count > 480 { track.frames.removeFirst(track.frames.count - 400) }
     }
 
     /// Microphone verdict durations for frames captured in `start...end`, judged only as far as
     /// the system reference has arrived (it is delivered later than the microphone).
     func assess(from start: TimeInterval, to requestedEnd: TimeInterval, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Assessment {
-        lock.withLock {
-            classify(now: now)
-            var result = Assessment()
-            let latest = system.frames.last?.time
-            let present = latest.map { now - $0 < 1 } ?? false
-            result.referenceAbsent = !present
-            result.echoPathKnown = path.map { now - $0.updatedAt < Self.pathLifetime } ?? false
-            let end = present ? min(requestedEnd, latest ?? requestedEnd) : requestedEnd
-            let frameMS = Int(Self.frameSeconds * 1000)
-            for frame in mic.frames where frame.time >= start && frame.time <= end {
-                switch frame.verdict {
-                case .echo: result.echoMS += frameMS
-                case .own: result.ownMS += frameMS
-                case .unclear: result.unclearMS += frameMS
-                case nil: break
+        // 1. Short lock: snapshot value-type state so real-time audio threads are never blocked
+        //    by the multi-lag correlation loops below.
+        var state = lock.withLock {
+            ClassifierState(
+                generation: sessionGeneration,
+                systemFrames: system.frames,
+                micFrames: mic.frames,
+                floorDB: floorDB,
+                path: path,
+                lagVotes: lagVotes,
+                gainVotes: gainVotes,
+                bestCorrelationPercent: counters.bestCorrelationPercent,
+                bestLagMS: counters.bestLagMS
+            )
+        }
+
+        // 2. Lock-free classification and assessment on pure value-type copies.
+        state.classify(now: now)
+        let result = state.assessment(from: start, to: requestedEnd, now: now)
+
+        // 3. Short lock: commit newly classified verdicts and learned path state if session is unchanged.
+        if state.didClassify {
+            lock.withLock {
+                guard sessionGeneration == state.generation else { return }
+                var snapIndex = 0
+                let snapCount = state.micFrames.count
+                for index in mic.frames.indices {
+                    let seq = mic.frames[index].sequence
+                    while snapIndex < snapCount && state.micFrames[snapIndex].sequence < seq {
+                        snapIndex += 1
+                    }
+                    guard snapIndex < snapCount else { break }
+                    if state.micFrames[snapIndex].sequence == seq,
+                       !mic.frames[index].classified,
+                       state.micFrames[snapIndex].classified {
+                        mic.frames[index].classified = true
+                        mic.frames[index].verdict = state.micFrames[snapIndex].verdict
+                    }
+                }
+                floorDB = state.floorDB
+                path = state.path
+                lagVotes = state.lagVotes
+                gainVotes = state.gainVotes
+                if state.bestCorrelationUpdated, let bestCorr = state.bestCorrelationPercent {
+                    let current = counters.bestCorrelationPercent ?? Int.min
+                    if bestCorr >= current {
+                        counters.bestCorrelationPercent = bestCorr
+                        counters.bestLagMS = state.bestLagMS
+                    }
                 }
             }
-            result.systemActive = system.frames.contains { $0.time >= start - 0.5 && $0.time <= end && $0.db > Self.systemActiveDB }
-            return result
         }
+
+        return result
     }
 
     func note(_ update: (inout Counters) -> Void) { lock.withLock { update(&counters) } }
@@ -179,114 +224,153 @@ final class EchoMonitor: @unchecked Sendable {
         }
     }
 
-    // MARK: - Classification (under lock)
+    // MARK: - Classification (lock-free value-type snapshot)
 
-    private func classify(now: TimeInterval) {
-        // A microphone frame is judged once the system frames it may be compared with have
-        // arrived (the reference stream can be delivered later), or after a second without them.
-        let covered = (system.frames.last?.time ?? -.infinity) + (Self.lags.first ?? 0) - Self.frameSeconds
-        let ready = max(covered, now - 1)
-        for index in mic.frames.indices where !mic.frames[index].classified && mic.frames[index].time <= ready {
-            let db = mic.frames[index].db
-            let floor = floorDB.map { db < $0 ? db : min($0 + 0.05, db) } ?? db
-            floorDB = floor
-            mic.frames[index].classified = true
-            // Speech-level microphone frames only; room noise and pauses carry no evidence.
-            guard db > max(-62, floor + 9) else { continue }
-            mic.frames[index].verdict = verdict(at: index)
-        }
-    }
+    /// Pure value-type snapshot used by `assess(from:to:now:)` so the compiler statically guarantees
+    /// no shared mutable state on `EchoMonitor` is touched outside `lock`.
+    private struct ClassifierState {
+        let generation: UInt64
+        let systemFrames: [Frame]
+        var micFrames: [Frame]
+        var floorDB: Float?
+        var path: Path?
+        var lagVotes: [Double]
+        var gainVotes: [Float]
+        var bestCorrelationPercent: Int?
+        var bestLagMS: Int?
+        var didClassify = false
+        var bestCorrelationUpdated = false
 
-    private func verdict(at index: Int) -> Verdict {
-        let frame = mic.frames[index]
-        let t = frame.time
-        // Far end silent at every plausible delay (reverberation included): nothing to echo.
-        guard systemPeak(from: t - (Self.lags.last ?? 0) - Self.reverb, to: t - (Self.lags.first ?? 0)) > Self.systemActiveDB else { return .own }
-        if index % 5 == 0 { learnPath(at: index) }
-        if let path, t - path.updatedAt < Self.pathLifetime {
-            // Energy the far end can explain at this delay, with a reverberation decay. Speech
-            // clearly louder than that is the user, including over the far end (double talk).
-            let excess = frame.db - (predictedEcho(at: t - path.lag) + path.gainDB)
-            if excess > Self.ownExcessDB { return .own }
-            return excess <= Self.echoExcessDB ? .echo : .unclear
+        mutating func classify(now: TimeInterval) {
+            // A microphone frame is judged once the system frames it may be compared with have
+            // arrived (the reference stream can be delivered later), or after a second without them.
+            let covered = (systemFrames.last?.time ?? -.infinity) + (EchoMonitor.lags.first ?? 0) - EchoMonitor.frameSeconds
+            let ready = max(covered, now - 1)
+            for index in micFrames.indices where !micFrames[index].classified && micFrames[index].time <= ready {
+                didClassify = true
+                let db = micFrames[index].db
+                let floor = floorDB.map { db < $0 ? db : min($0 + 0.05, db) } ?? db
+                floorDB = floor
+                micFrames[index].classified = true
+                // Speech-level microphone frames only; room noise and pauses carry no evidence.
+                guard db > max(-62, floor + 9) else { continue }
+                micFrames[index].verdict = verdict(at: index)
+            }
         }
-        // No echo path observed yet (for example headphones): only a strong contour match decides.
-        return bestCorrelation(at: index).value >= Self.fallbackEchoCorrelation ? .echo : .unclear
-    }
 
-    /// Learns the loudspeaker-to-microphone delay and coupling while the microphone clearly
-    /// follows the far end. Votes are bounded; the path expires when no echo is seen.
-    private func learnPath(at index: Int) {
-        let (lag, value) = bestCorrelation(at: index)
-        if value > Float(counters.bestCorrelationPercent ?? -100) / 100 {
-            counters.bestCorrelationPercent = Int((value * 100).rounded()); counters.bestLagMS = Int((lag * 1000).rounded())
+        func assessment(from start: TimeInterval, to requestedEnd: TimeInterval, now: TimeInterval) -> Assessment {
+            var result = Assessment()
+            let latest = systemFrames.last?.time
+            let present = latest.map { now - $0 < 1 } ?? false
+            result.referenceAbsent = !present
+            result.echoPathKnown = path.map { now - $0.updatedAt < EchoMonitor.pathLifetime } ?? false
+            let end = present ? min(requestedEnd, latest ?? requestedEnd) : requestedEnd
+            let frameMS = Int(EchoMonitor.frameSeconds * 1000)
+            for frame in micFrames where frame.time >= start && frame.time <= end {
+                switch frame.verdict {
+                case .echo: result.echoMS += frameMS
+                case .own: result.ownMS += frameMS
+                case .unclear: result.unclearMS += frameMS
+                case nil: break
+                }
+            }
+            result.systemActive = systemFrames.contains { $0.time >= start - 0.5 && $0.time <= end && $0.db > EchoMonitor.systemActiveDB }
+            return result
         }
-        guard value >= Self.pathCorrelation else { return }
-        let end = mic.frames[index].time
-        let window = mic.frames[...index].reversed().prefix { end - $0.time < Self.pathWindow }
-        let floor = max(-62, (floorDB ?? -90) + 9)
-        let gains = window.compactMap { frame -> Float? in
-            let reference = systemDB(at: frame.time - lag)
-            return frame.db > floor && reference > Self.systemActiveDB ? frame.db - reference : nil
-        }.sorted()
-        guard gains.count >= 10 else { return }
-        lagVotes = Array((lagVotes + [lag]).suffix(30))
-        gainVotes = Array((gainVotes + [gains[gains.count / 2]]).suffix(30))
-        // A path needs repeated matches at one delay (±20 ms), most of the recent ones; unrelated
-        // speech scatters its lags.
-        let buckets = lagVotes.map { Int(($0 * 50).rounded()) }
-        guard let mode = Set(buckets).max(by: { a, b in
-            buckets.filter { abs($0 - a) <= 1 }.count < buckets.filter { abs($0 - b) <= 1 }.count
-        }) else { return }
-        let agreeing = buckets.filter { abs($0 - mode) <= 1 }.count
-        guard agreeing >= Self.pathVotes, 2 * agreeing >= buckets.count else { return }
-        let sortedGains = gainVotes.sorted()
-        path = Path(lag: Double(mode) / 50, gainDB: sortedGains[sortedGains.count / 2], updatedAt: end)
-    }
 
-    private func bestCorrelation(at index: Int) -> (lag: Double, value: Float) {
-        let end = mic.frames[index].time
-        let window = Array(mic.frames[...index].reversed().prefix { end - $0.time < Self.pathWindow })
-        guard window.count >= 20 else { return (0, -1) }
-        let micDB = window.map(\.db)
-        var best: (lag: Double, value: Float) = (0, -1)
-        for lag in Self.lags {
-            let reference = window.map { systemDB(at: $0.time - lag) }
-            guard let peak = reference.max(), peak > Self.systemActiveDB else { continue }
-            let value = Self.correlation(micDB, reference)
-            if value > best.value { best = (lag, value) }
+        private mutating func verdict(at index: Int) -> Verdict {
+            let frame = micFrames[index]
+            let t = frame.time
+            // Far end silent at every plausible delay (reverberation included): nothing to echo.
+            guard systemPeak(from: t - (EchoMonitor.lags.last ?? 0) - EchoMonitor.reverb, to: t - (EchoMonitor.lags.first ?? 0)) > EchoMonitor.systemActiveDB else { return .own }
+            if index % 5 == 0 { learnPath(at: index) }
+            if let path, t - path.updatedAt < EchoMonitor.pathLifetime {
+                // Energy the far end can explain at this delay, with a reverberation decay. Speech
+                // clearly louder than that is the user, including over the far end (double talk).
+                let excess = frame.db - (predictedEcho(at: t - path.lag) + path.gainDB)
+                if excess > EchoMonitor.ownExcessDB { return .own }
+                return excess <= EchoMonitor.echoExcessDB ? .echo : .unclear
+            }
+            // No echo path observed yet (for example headphones): only a strong contour match decides.
+            return bestCorrelation(at: index).value >= EchoMonitor.fallbackEchoCorrelation ? .echo : .unclear
         }
-        return best
-    }
 
-    /// Far-end level that can still be heard at `time`, decaying like room reverberation.
-    private func predictedEcho(at time: TimeInterval) -> Float {
-        var best: Float = -90
-        var age = -0.04
-        while age <= Self.reverb {
-            best = max(best, systemDB(at: time - age) - Float(max(0, age)) * Self.reverbDecayDBPerSecond)
-            age += Self.frameSeconds
+        /// Learns the loudspeaker-to-microphone delay and coupling while the microphone clearly
+        /// follows the far end. Votes are bounded; the path expires when no echo is seen.
+        private mutating func learnPath(at index: Int) {
+            let (lag, value) = bestCorrelation(at: index)
+            if value > Float(bestCorrelationPercent ?? -100) / 100 {
+                bestCorrelationPercent = Int((value * 100).rounded())
+                bestLagMS = Int((lag * 1000).rounded())
+                bestCorrelationUpdated = true
+            }
+            guard value >= EchoMonitor.pathCorrelation else { return }
+            let end = micFrames[index].time
+            let window = micFrames[...index].reversed().prefix { end - $0.time < EchoMonitor.pathWindow }
+            let floor = max(-62, (floorDB ?? -90) + 9)
+            let gains = window.compactMap { frame -> Float? in
+                let reference = systemDB(at: frame.time - lag)
+                return frame.db > floor && reference > EchoMonitor.systemActiveDB ? frame.db - reference : nil
+            }.sorted()
+            guard gains.count >= 10 else { return }
+            lagVotes = Array((lagVotes + [lag]).suffix(30))
+            gainVotes = Array((gainVotes + [gains[gains.count / 2]]).suffix(30))
+            // A path needs repeated matches at one delay (±20 ms), most of the recent ones; unrelated
+            // speech scatters its lags.
+            let buckets = lagVotes.map { Int(($0 * 50).rounded()) }
+            guard let mode = Set(buckets).max(by: { a, b in
+                buckets.filter { abs($0 - a) <= 1 }.count < buckets.filter { abs($0 - b) <= 1 }.count
+            }) else { return }
+            let agreeing = buckets.filter { abs($0 - mode) <= 1 }.count
+            guard agreeing >= EchoMonitor.pathVotes, 2 * agreeing >= buckets.count else { return }
+            let sortedGains = gainVotes.sorted()
+            path = Path(lag: Double(mode) / 50, gainDB: sortedGains[sortedGains.count / 2], updatedAt: end)
         }
-        return best
-    }
 
-    private func systemPeak(from start: TimeInterval, to end: TimeInterval) -> Float {
-        system.frames.lazy.filter { $0.time >= start && $0.time <= end }.map(\.db).max() ?? -90
-    }
+        private func bestCorrelation(at index: Int) -> (lag: Double, value: Float) {
+            let end = micFrames[index].time
+            let window = Array(micFrames[...index].reversed().prefix { end - $0.time < EchoMonitor.pathWindow })
+            guard window.count >= 20 else { return (0, -1) }
+            let micDB = window.map(\.db)
+            var best: (lag: Double, value: Float) = (0, -1)
+            for lag in EchoMonitor.lags {
+                let reference = window.map { systemDB(at: $0.time - lag) }
+                guard let peak = reference.max(), peak > EchoMonitor.systemActiveDB else { continue }
+                let value = EchoMonitor.correlation(micDB, reference)
+                if value > best.value { best = (lag, value) }
+            }
+            return best
+        }
 
-    private func systemDB(at time: TimeInterval) -> Float {
-        let frames = system.frames
-        var low = 0, high = frames.count
-        while low < high {
-            let mid = (low + high) / 2
-            if frames[mid].time < time { low = mid + 1 } else { high = mid }
+        /// Far-end level that can still be heard at `time`, decaying like room reverberation.
+        private func predictedEcho(at time: TimeInterval) -> Float {
+            var best: Float = -90
+            var age = -0.04
+            while age <= EchoMonitor.reverb {
+                best = max(best, systemDB(at: time - age) - Float(max(0, age)) * EchoMonitor.reverbDecayDBPerSecond)
+                age += EchoMonitor.frameSeconds
+            }
+            return best
         }
-        var bestDB: Float = -90, bestDistance = Self.frameSeconds / 2 + 1e-6
-        for candidate in [low - 1, low] where frames.indices.contains(candidate) {
-            let distance = abs(frames[candidate].time - time)
-            if distance <= bestDistance { bestDistance = distance; bestDB = frames[candidate].db }
+
+        private func systemPeak(from start: TimeInterval, to end: TimeInterval) -> Float {
+            systemFrames.lazy.filter { $0.time >= start && $0.time <= end }.map(\.db).max() ?? -90
         }
-        return bestDB
+
+        private func systemDB(at time: TimeInterval) -> Float {
+            let frames = systemFrames
+            var low = 0, high = frames.count
+            while low < high {
+                let mid = (low + high) / 2
+                if frames[mid].time < time { low = mid + 1 } else { high = mid }
+            }
+            var bestDB: Float = -90, bestDistance = EchoMonitor.frameSeconds / 2 + 1e-6
+            for candidate in [low - 1, low] where frames.indices.contains(candidate) {
+                let distance = abs(frames[candidate].time - time)
+                if distance <= bestDistance { bestDistance = distance; bestDB = frames[candidate].db }
+            }
+            return bestDB
+        }
     }
 
     static func correlation(_ a: [Float], _ b: [Float]) -> Float {

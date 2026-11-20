@@ -133,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.updates.prepareForRelaunch = { [weak self] in
             guard let self else { return }
             await self.coordinator.shutdown()
-            self.coordinator.saveSession()
+            _ = await self.coordinator.saveSessionAsync()
             self.readyToTerminate = true
         }
         coordinator.updates.openManagement = { [weak self] in self?.openSettings(initialPage: .about) }
@@ -255,10 +255,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if readyToTerminate { return .terminateNow }
         guard !terminationInProgress else { return .terminateCancel }
         terminationInProgress = true
-        Task {
-            await coordinator.shutdown()
-            readyToTerminate = true
-            sender.terminate(nil)
+        let finishTermination: @MainActor () -> Void = { [weak self, weak sender] in
+            guard let self, !self.readyToTerminate else { return }
+            self.readyToTerminate = true
+            sender?.terminate(nil)
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.coordinator.shutdown()
+            finishTermination()
+        }
+        // Hard overall quit watchdog: never let a hung XPC/network/subsystem call ignore Cmd+Q forever.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard let self, !self.readyToTerminate else { return }
+            DebugLog.log("shutdown watchdog forcing termination after 8s")
+            finishTermination()
         }
         // Keep the normal event loop running while asynchronous Live close events
         // arrive. AppKit's terminateLater loop can starve MainActor cleanup tasks.
@@ -270,7 +282,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlay?.stopWatching()
         hotkeys.unregisterAll()
         coordinator.saveSession()
+        coordinator.sessions.flushSync(timeout: 1.5)
         CaptureDiagnostics.record(.cleanExit)
+        CaptureDiagnostics.flush(timeout: 0.5)
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

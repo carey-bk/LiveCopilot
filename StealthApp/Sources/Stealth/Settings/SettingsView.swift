@@ -485,7 +485,15 @@ struct SettingsView: View {
             Text(t("After changing the embedding model, re-index documents. Keyword retrieval remains available for older indexes.")).font(.caption).foregroundStyle(.secondary)
             Button(t("Open knowledge library")) { page = .knowledge }
         }
-        .task(id: coordinator.settings.selectedEmbeddingIdentity) { await coordinator.verifyEmbeddingIfNeeded() }
+        .task(id: coordinator.settings.selectedEmbeddingIdentity) {
+            if coordinator.settings.embeddingService == .openAI {
+                let model = coordinator.settings.embeddingModel.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !model.isEmpty else { return }
+                do { try await Task.sleep(nanoseconds: 700_000_000) } catch { return }
+                guard !Task.isCancelled else { return }
+            }
+            await coordinator.verifyEmbeddingIfNeeded()
+        }
         .onChange(of: coordinator.hasAPIKey) { _, available in
             if available { Task { await coordinator.verifyEmbeddingIfNeeded() } }
         }

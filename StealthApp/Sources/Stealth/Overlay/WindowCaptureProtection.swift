@@ -111,7 +111,10 @@ final class OverlayInputCaptureProtection {
     }
 
     func refresh() {
-        update(windows: NSApp.windows, protectInput: protectsEditing)
+        guard enabled || !saved.isEmpty else { return }
+        let active = protectsEditing
+        guard active || !saved.isEmpty else { return }
+        update(windows: NSApp.windows, protectInput: active)
     }
 
     fileprivate func willOrder(_ window: NSWindow) {

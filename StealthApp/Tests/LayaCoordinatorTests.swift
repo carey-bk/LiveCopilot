@@ -769,6 +769,328 @@ final class LayaCoordinatorTests: XCTestCase {
         await app.shutdown()
     }
 
+    func testEchoMonitorLockFreeAssessMatchesReferenceUnderConcurrentObserve() {
+        let rate = SyntheticTalk.rate
+        let base: TimeInterval = 100.0
+        let far = SyntheticTalk.speech(seed: 1, seconds: 6)
+        var mic = SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count)
+        let own = SyntheticTalk.speech(seed: 2, seconds: 2.0)
+        for i in own.indices { mic[Int(4.0 * rate) + i] += own[i] }
+
+        let step = Int(rate * 0.02)
+        let offsets = Array(stride(from: 0, to: far.count, by: step))
+        let systemChunks: [(Data, TimeInterval)] = offsets.map { start in
+            let end = min(start + step, far.count)
+            return (SyntheticTalk.pcm(far[start..<end]), base + Double(end) / rate)
+        }
+        let micChunks: [(Data, TimeInterval)] = offsets.map { start in
+            let end = min(start + step, far.count)
+            return (SyntheticTalk.pcm(mic[start..<end]), base + Double(end) / rate + 0.003)
+        }
+
+        // Single-threaded reference run.
+        let reference = EchoMonitor()
+        reference.begin(sampleRate: rate)
+        for i in systemChunks.indices {
+            reference.observe(systemChunks[i].0, source: .system, at: systemChunks[i].1)
+            reference.observe(micChunks[i].0, source: .mic, at: micChunks[i].1)
+        }
+        let refEcho = reference.assess(from: base, to: base + 3.8, now: base + 6.0)
+        let refOwn = reference.assess(from: base + 4.0, to: base + 6.0, now: base + 6.0)
+        let refSnapshot = reference.snapshot
+        XCTAssertEqual(refEcho.verdict, .echo)
+        XCTAssertEqual(refOwn.verdict, .own)
+        XCTAssertTrue(refEcho.echoPathKnown)
+        XCTAssertNotNil(refSnapshot.pathLagMS)
+
+        // Concurrent run: two background capture threads hammer observe(...) while the caller
+        // continuously runs lock-free assess(...). Passing now == base ensures frames are only
+        // classified once their system reference has arrived, matching the reference deterministically.
+        let concurrent = EchoMonitor()
+        concurrent.begin(sampleRate: rate)
+
+        final class AtomicState: @unchecked Sendable {
+            private let lock = NSLock()
+            private var done = false
+            private var maxObserveSec: TimeInterval = 0
+            func recordObserve(_ duration: TimeInterval) {
+                lock.lock()
+                if duration > maxObserveSec { maxObserveSec = duration }
+                lock.unlock()
+            }
+            func markDone() { lock.lock(); done = true; lock.unlock() }
+            var isDone: Bool { lock.lock(); defer { lock.unlock() }; return done }
+            var maxLatency: TimeInterval { lock.lock(); defer { lock.unlock() }; return maxObserveSec }
+        }
+
+        let state = AtomicState()
+        let group = DispatchGroup()
+
+        group.enter()
+        DispatchQueue.global(qos: .userInteractive).async {
+            for (data, at) in systemChunks {
+                let t0 = ProcessInfo.processInfo.systemUptime
+                concurrent.observe(data, source: .system, at: at)
+                state.recordObserve(ProcessInfo.processInfo.systemUptime - t0)
+                usleep(100)
+            }
+            group.leave()
+        }
+
+        group.enter()
+        DispatchQueue.global(qos: .userInteractive).async {
+            for (data, at) in micChunks {
+                let t0 = ProcessInfo.processInfo.systemUptime
+                concurrent.observe(data, source: .mic, at: at)
+                state.recordObserve(ProcessInfo.processInfo.systemUptime - t0)
+                usleep(100)
+            }
+            group.leave()
+        }
+
+        DispatchQueue.global(qos: .utility).async {
+            group.wait()
+            state.markDone()
+        }
+
+        var assessCalls = 0
+        while !state.isDone {
+            _ = concurrent.assess(from: base, to: base + 6.0, now: base)
+            assessCalls += 1
+        }
+        group.wait()
+
+        let concEcho = concurrent.assess(from: base, to: base + 3.8, now: base + 6.0)
+        let concOwn = concurrent.assess(from: base + 4.0, to: base + 6.0, now: base + 6.0)
+        let concSnapshot = concurrent.snapshot
+
+        XCTAssertGreaterThan(assessCalls, 0, "assess() must execute concurrently while observe() is active")
+        XCTAssertLessThan(state.maxLatency, 0.05, "observe() must not stall behind heavy correlation loops")
+        XCTAssertEqual(concEcho, refEcho, "Concurrent lock-free assess must match single-threaded echo verdict")
+        XCTAssertEqual(concOwn, refOwn, "Concurrent lock-free assess must match single-threaded own-speech verdict")
+        XCTAssertEqual(concSnapshot.pathLagMS, refSnapshot.pathLagMS)
+        XCTAssertEqual(concSnapshot.pathGainDB, refSnapshot.pathGainDB)
+        XCTAssertEqual(concSnapshot.bestCorrelationPercent, refSnapshot.bestCorrelationPercent)
+        XCTAssertEqual(concSnapshot.bestLagMS, refSnapshot.bestLagMS)
+    }
+
+    @MainActor func testAudioCaptureManagerBoundsStartAndRollbackTimeouts() async throws {
+        final class HangingHandle: AudioCaptureManager.StreamHandle, @unchecked Sendable {
+            let hangStart: Bool
+            let hangStop: Bool
+            init(hangStart: Bool, hangStop: Bool) {
+                self.hangStart = hangStart
+                self.hangStop = hangStop
+            }
+            func startCapture() async throws {
+                if hangStart {
+                    try await Task.sleep(nanoseconds: 30_000_000_000)
+                }
+            }
+            func stopCapture() async throws {
+                if hangStop {
+                    try await Task.sleep(nanoseconds: 30_000_000_000)
+                }
+            }
+        }
+
+        // 1. Hung StreamHandle.startCapture() times out cleanly and invalidates its gate.
+        let manager = AudioCaptureManager()
+        manager.startTimeoutSeconds = 0.12
+        manager.stopTimeoutSeconds = 0.12
+        var lateDeliver: (@Sendable (Data, TimeInterval) -> Void)?
+        var receivedFrames = 0
+        manager.onPCM16 = { _, _ in receivedFrames += 1 }
+        manager.testStreamFactory = { deliver in
+            lateDeliver = deliver
+            return HangingHandle(hangStart: true, hangStop: false)
+        }
+        let startBegin = ProcessInfo.processInfo.systemUptime
+        await manager.start()
+        let startElapsed = ProcessInfo.processInfo.systemUptime - startBegin
+        XCTAssertLessThan(startElapsed, 1.5, "Hung startCapture() must be bounded by startTimeoutSeconds")
+        XCTAssertFalse(manager.isCapturing)
+        XCTAssertEqual(manager.lastError, "System audio capture timed out while starting. Check Screen Recording permission or retry.")
+        lateDeliver?(Data(count: 640), ProcessInfo.processInfo.systemUptime)
+        XCTAssertEqual(receivedFrames, 0, "Timed-out start must invalidate its gate so late frames are dropped")
+
+        // 2. Rollback stopCapture() after stop() races with start() is bounded by stopTimeoutSeconds.
+        var releaseFactory: CheckedContinuation<Void, Never>?
+        manager.startTimeoutSeconds = 2.0
+        manager.stopTimeoutSeconds = 0.12
+        manager.testStreamFactory = { _ in
+            await withCheckedContinuation { cont in releaseFactory = cont }
+            return HangingHandle(hangStart: false, hangStop: true)
+        }
+        let racingStart = Task { await manager.start() }
+        for _ in 0..<40 where releaseFactory == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertNotNil(releaseFactory)
+        await manager.stop()
+        let rollbackBegin = ProcessInfo.processInfo.systemUptime
+        releaseFactory?.resume()
+        await racingStart.value
+        let rollbackElapsed = ProcessInfo.processInfo.systemUptime - rollbackBegin
+        XCTAssertLessThan(rollbackElapsed, 1.5, "Hung rollback stopCapture() must be bounded by stopTimeoutSeconds")
+        XCTAssertFalse(manager.isCapturing)
+    }
+
+    @MainActor func testAudioCaptureManagerStopsLateStartAfterTimeoutWithoutDisruptingNextSession() async throws {
+        final class CancellationIgnoringHandle: AudioCaptureManager.StreamHandle, @unchecked Sendable {
+            private let lock = NSLock()
+            private let blockStart: Bool
+            private var startContinuation: CheckedContinuation<Void, Never>?
+            private var startReleased = false
+            private var _stopCount = 0
+            let deliver: @Sendable (Data, TimeInterval) -> Void
+
+            init(blockStart: Bool, deliver: @escaping @Sendable (Data, TimeInterval) -> Void) {
+                self.blockStart = blockStart
+                self.deliver = deliver
+            }
+
+            var stopCount: Int {
+                lock.lock(); defer { lock.unlock() }
+                return _stopCount
+            }
+
+            func startCapture() async throws {
+                guard blockStart else { return }
+                // Deliberately ignores Task cancellation to mirror ScreenCaptureKit XPC startCapture().
+                await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                    lock.lock()
+                    if startReleased {
+                        lock.unlock()
+                        cont.resume()
+                    } else {
+                        startContinuation = cont
+                        lock.unlock()
+                    }
+                }
+            }
+
+            func releaseStart() {
+                lock.lock()
+                startReleased = true
+                let cont = startContinuation
+                startContinuation = nil
+                lock.unlock()
+                cont?.resume()
+            }
+
+            func stopCapture() async throws {
+                lock.lock()
+                _stopCount += 1
+                lock.unlock()
+            }
+        }
+
+        let sampleRate = 24_000.0
+        let sampleCount = Int(sampleRate * 0.2) // 0.2 s at 24 kHz mono PCM16
+        let silentFrame = Data(count: sampleCount * 2)
+        var loudSamples = [Int16](repeating: 0, count: sampleCount)
+        for i in 0..<sampleCount {
+            let phase = 2.0 * Double.pi * 1_000.0 * Double(i) / sampleRate
+            loudSamples[i] = Int16(16_000.0 * sin(phase)).littleEndian
+        }
+        let loudFrame = loudSamples.withUnsafeBytes { Data($0) }
+
+        let manager = AudioCaptureManager()
+        manager.configure(sampleRate: sampleRate)
+        manager.startTimeoutSeconds = 0.15
+        manager.stopTimeoutSeconds = 0.5
+
+        let flow = AudioFlowMonitor()
+        flow.begin(sampleRate: sampleRate)
+        let echo = EchoMonitor()
+        echo.begin(sampleRate: sampleRate)
+        manager.flow = flow
+        manager.echo = echo
+
+        let receivedLock = NSLock()
+        var received: [(Data, UUID)] = []
+        manager.onPCM16 = { data, epoch in
+            receivedLock.lock()
+            received.append((data, epoch))
+            receivedLock.unlock()
+        }
+        func receivedSnapshot() -> [(Data, UUID)] {
+            receivedLock.lock(); defer { receivedLock.unlock() }
+            return received
+        }
+
+        // 1. Start session A: startCapture() blocks ignoring cancellation and times out.
+        let epochA = UUID()
+        var handleA: CancellationIgnoringHandle?
+        manager.testStreamFactory = { deliver in
+            let handle = CancellationIgnoringHandle(blockStart: true, deliver: deliver)
+            handleA = handle
+            return handle
+        }
+        await manager.start(sessionID: epochA)
+        let unwrappedA = try XCTUnwrap(handleA)
+        XCTAssertFalse(manager.isCapturing)
+        XCTAssertTrue(manager.lastError?.lowercased().contains("timed out") == true,
+                      "Timed-out start must report a timeout error; got: \(String(describing: manager.lastError))")
+        XCTAssertEqual(unwrappedA.stopCount, 0)
+
+        // 2. Start session B with a healthy handle -> succeeds and delivers frame B with epochB.
+        let epochB = UUID()
+        var handleB: CancellationIgnoringHandle?
+        manager.testStreamFactory = { deliver in
+            let handle = CancellationIgnoringHandle(blockStart: false, deliver: deliver)
+            handleB = handle
+            return handle
+        }
+        await manager.start(sessionID: epochB)
+        let unwrappedB = try XCTUnwrap(handleB)
+        XCTAssertTrue(manager.isCapturing)
+        XCTAssertNil(manager.lastError)
+
+        let tB1 = ProcessInfo.processInfo.systemUptime
+        unwrappedB.deliver(silentFrame, tB1)
+        XCTAssertEqual(receivedSnapshot().map(\.1), [epochB])
+        XCTAssertEqual(flow.snapshot().audioSeconds, 0.2, accuracy: 0.01)
+        XCTAssertEqual(flow.snapshot().verdict, .digitalSilence)
+        XCTAssertFalse(echo.assess(from: tB1 - 0.5, to: tB1 + 0.1, now: tB1).systemActive)
+
+        // 3. Release handle A's startCapture() so A succeeds late after timeout.
+        unwrappedA.releaseStart()
+
+        // 4. Wait briefly for A's late cleanup task to run.
+        for _ in 0..<100 where unwrappedA.stopCount == 0 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        try await Task.sleep(nanoseconds: 20_000_000)
+
+        // 5. Verify A was stopped, late frames from A are dropped, and B remains completely intact.
+        XCTAssertEqual(unwrappedA.stopCount, 1, "Late startCapture() resolution after timeout must invoke stopCapture() on handle A")
+        XCTAssertEqual(unwrappedB.stopCount, 0, "Late cleanup of A must not stop active handle B")
+        XCTAssertTrue(manager.isCapturing)
+        XCTAssertNil(manager.lastError)
+
+        // Emit a loud, delayed frame from A: must never reach onPCM16, flow, or echo.
+        unwrappedA.deliver(loudFrame, tB1 - 0.6)
+        XCTAssertEqual(receivedSnapshot().map(\.1), [epochB], "Late frame from A must not reach onPCM16")
+        XCTAssertEqual(flow.snapshot().audioSeconds, 0.2, accuracy: 0.01, "Late frame from A must not reach flow monitor")
+        XCTAssertEqual(flow.snapshot().verdict, .digitalSilence, "Late loud frame from A must not affect flow peak/verdict")
+        XCTAssertLessThan(echo.snapshot.systemDelayMSMax, 300, "Late delayed frame from A must not reach echo monitor")
+        XCTAssertFalse(echo.assess(from: tB1 - 1.0, to: tB1 + 0.1, now: tB1).systemActive, "Late loud frame from A must not activate echo monitor")
+
+        // Deliver another frame from B -> still arrives cleanly with epochB and reaches flow & echo.
+        let tB2 = ProcessInfo.processInfo.systemUptime
+        unwrappedB.deliver(loudFrame, tB2)
+        XCTAssertEqual(receivedSnapshot().map(\.1), [epochB, epochB])
+        XCTAssertEqual(flow.snapshot().audioSeconds, 0.4, accuracy: 0.01)
+        XCTAssertEqual(flow.snapshot().verdict, .audioWithoutText)
+        XCTAssertTrue(echo.assess(from: tB1 - 1.0, to: tB2 + 0.1, now: tB2).systemActive)
+
+        // 6. Stop manager and verify B is stopped cleanly.
+        await manager.stop()
+        XCTAssertFalse(manager.isCapturing)
+        XCTAssertEqual(unwrappedB.stopCount, 1)
+        XCTAssertEqual(unwrappedA.stopCount, 1)
+    }
+
     @MainActor func testInterruptionReportsWhetherItRetiredAQuestionOrAJudgement() async {
         var events: [LayaGateEvent] = []
         var dispatched = 0

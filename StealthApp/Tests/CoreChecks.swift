@@ -1075,6 +1075,78 @@ enum CoreChecks {
             }
         }
         passed.append("Chat Completions truncated, empty, malformed and error streams fail safely")
+        try check("local model download status accepts HTTP 206 only on resumed transfers") {
+            try expect(LocalModelInstaller.isAcceptableDownloadStatus(200, resumed: false), "fresh HTTP 200 rejected")
+            try expect(LocalModelInstaller.isAcceptableDownloadStatus(200, resumed: true), "resumed HTTP 200 rejected")
+            try expect(LocalModelInstaller.isAcceptableDownloadStatus(206, resumed: true), "resumed HTTP 206 rejected")
+            try expect(!LocalModelInstaller.isAcceptableDownloadStatus(206, resumed: false), "fresh HTTP 206 accepted")
+            for status in [204, 404, 500] {
+                try expect(!LocalModelInstaller.isAcceptableDownloadStatus(status, resumed: false), "fresh HTTP \(status) accepted")
+                try expect(!LocalModelInstaller.isAcceptableDownloadStatus(status, resumed: true), "resumed HTTP \(status) accepted")
+            }
+        }
+        do {
+            let compatibleEndpoint = URL(string: "https://fixture.example/chat/completions")!
+            let compatibleEvents = [
+                #"data: {"error":null,"choices":[{"index":0,"delta":{"content":"Compatible "},"finish_reason":""}]}"#, "",
+                #"data: {"error":null,"choices":[{"index":0,"delta":{"content":"answer"},"finish_reason":"stop"}]}"#, "",
+                "data: [DONE]", ""
+            ]
+            let okProvider = ChatCompletionsProvider(key: "fixture", model: "fixture", endpoint: compatibleEndpoint,
+                                                     transport: FixtureTransport(body: Data(), status: 200, events: compatibleEvents))
+            var compatibleOutput = ""
+            for try await delta in okProvider.stream(answer) { compatibleOutput += delta }
+            try expect(compatibleOutput == "Compatible answer", "compatible null error / empty finish_reason chunk failed: \(compatibleOutput)")
+            let authErrorEvents = [#"data: {"error":{"message":"bad key","code":"invalid_api_key"}}"#, ""]
+            let authProvider = ChatCompletionsProvider(key: "fixture", model: "fixture", endpoint: compatibleEndpoint,
+                                                       transport: FixtureTransport(body: Data(), status: 200, events: authErrorEvents))
+            do {
+                for try await _ in authProvider.stream(answer) {}
+                throw CheckError(description: "non-null SSE error accepted")
+            } catch let error as ServiceHTTPFailure {
+                try expect(error.kind == .authentication && !error.localizedDescription.contains("bad key"), "SSE error classification or privacy lost")
+            }
+            let lengthEvents = [#"data: {"error":null,"choices":[{"index":0,"delta":{"content":"partial"},"finish_reason":"length"}]}"#, ""]
+            let lengthProvider = ChatCompletionsProvider(key: "fixture", model: "fixture", endpoint: compatibleEndpoint,
+                                                         transport: FixtureTransport(body: Data(), status: 200, events: lengthEvents))
+            do {
+                for try await _ in lengthProvider.stream(answer) {}
+                throw CheckError(description: "length finish_reason accepted")
+            } catch let error as CopilotError {
+                try expect(error.localizedDescription.contains("interrupted"), "unexpected length error: \(error.localizedDescription)")
+            }
+            passed.append("Chat Completions accepts null error and empty finish_reason while rejecting real errors and length stops")
+        }
+        try check("StreamingLines strips leading UTF-8 BOM only on the first SSE line") {
+            let bomWire = "\u{FEFF}data: first\n\ndata: \u{FEFF}second\n\n"
+            var framer = StreamingLines(), parser = ServerSentEvents(), payloads: [String] = []
+            for byte in bomWire.utf8 {
+                if let line = try framer.consume(byte), let payload = parser.consume(line) { payloads.append(payload) }
+            }
+            try expect(payloads == ["first", "\u{FEFF}second"], "BOM stripping corrupted SSE payloads: \(payloads)")
+        }
+        try check("HTTP 200 JSON error body detection preserves service error classification") {
+            let errorJSON = Data(#"{"error":{"message":"invalid key","type":"invalid_request_error","code":"invalid_api_key"}}"#.utf8)
+            do {
+                try OpenAIHTTP.checkJSONErrorBody(errorJSON)
+                throw CheckError(description: "HTTP 200 JSON error body accepted")
+            } catch let error as ServiceHTTPFailure {
+                try expect(error.kind == .authentication && !error.localizedDescription.contains("invalid key"), "JSON error body classification lost")
+            }
+            try OpenAIHTTP.checkJSONErrorBody(Data(#"{"error":null,"choices":[]}"#.utf8))
+            try OpenAIHTTP.checkJSONErrorBody(Data("data: {\"choices\":[]}\n\n".utf8))
+        }
+        passed.append(contentsOf: try await checkURLSessionTransport(answer: answer))
+        do {
+            for blankModel in ["", "   \n\t "] {
+                let recorder = RecordingTransport(events: [])
+                do {
+                    _ = try await OpenAIEmbeddingProvider(key: "test-only", model: blankModel, transport: recorder).embed(["hello"])
+                    throw CheckError(description: "blank embedding model accepted")
+                } catch is CopilotError { }
+            }
+            passed.append("embedding provider rejects empty or whitespace model before calling transport")
+        }
         return passed
     }
     private static func checkConcurrentKnowledge(root: URL) async throws {
@@ -1125,6 +1197,91 @@ enum CoreChecks {
         let final = try await results(readers[1])
         let unchanged = try await results(other)
         try expect(final == b && unchanged == isolated, "post-commit visibility or library isolation failed")
+    }
+
+    private static func checkURLSessionTransport(answer: AnswerRequest) async throws -> [String] {
+        var passed: [String] = []
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubHTTPProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+
+        func streamWithStub(status: Int, contentType: String, body: Data, chunkSize: Int = 4096,
+                            maxJSONBodyBytes: Int = OpenAIHTTP.maxJSONErrorBytes) async throws -> String {
+            let token = "stub-" + UUID().uuidString
+            StubHTTPProtocol.registry.set(.init(status: status, contentType: contentType, body: body, chunkSize: chunkSize), for: token)
+            defer { StubHTTPProtocol.registry.remove(for: token) }
+            let transport = URLSessionTransport(session: session, maxJSONBodyBytes: maxJSONBodyBytes)
+            let provider = OpenAIReasoningProvider(key: token, model: "gpt-6-sol", transport: transport)
+            var output = ""
+            for try await delta in provider.stream(answer) { output += delta }
+            return output
+        }
+
+        // Test 1: HTTP 200 JSON error bodies > 8 KiB (padding before and after error details) and > 8 KiB non-2xx
+        // preserve ServiceHTTPFailure classification through real URLSessionTransport.lines(for:).
+        let padding16K = String(repeating: "x", count: 16_384)
+        let authJSON = Data("{\"meta\":\"\(padding16K)\",\"error\":{\"message\":\"secret-auth-detail\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}".utf8)
+        do {
+            _ = try await streamWithStub(status: 200, contentType: "application/json; charset=utf-8", body: authJSON)
+            throw CheckError(description: ">8 KiB HTTP 200 auth JSON error accepted")
+        } catch let error as ServiceHTTPFailure {
+            try expect(error.kind == .authentication && !error.localizedDescription.contains("secret-auth-detail"),
+                       "expected .authentication for >8 KiB HTTP 200 JSON error, got \(error.kind): \(error.localizedDescription)")
+        }
+        let rateLimitJSON = Data("{\"error\":{\"message\":\"secret-rate-detail\",\"type\":\"rate_limit_exceeded\",\"details\":\"\(padding16K)\"}}".utf8)
+        do {
+            _ = try await streamWithStub(status: 200, contentType: "application/problem+json", body: rateLimitJSON)
+            throw CheckError(description: ">8 KiB HTTP 200 rate-limit JSON error accepted")
+        } catch let error as ServiceHTTPFailure {
+            try expect(error.kind == .rateLimit && !error.localizedDescription.contains("secret-rate-detail"),
+                       "expected .rateLimit for >8 KiB HTTP 200 +json error, got \(error.kind): \(error.localizedDescription)")
+        }
+        let billing429JSON = Data("{\"meta\":\"\(padding16K)\",\"error\":{\"message\":\"secret-billing-detail\",\"code\":\"insufficient_quota\"}}".utf8)
+        do {
+            _ = try await streamWithStub(status: 429, contentType: "application/json", body: billing429JSON)
+            throw CheckError(description: ">8 KiB HTTP 429 JSON error accepted")
+        } catch let error as ServiceHTTPFailure {
+            try expect(error.status == 429 && error.kind == .billing && !error.localizedDescription.contains("secret-billing-detail"),
+                       "expected HTTP 429 .billing for >8 KiB error body, got status=\(error.status) kind=\(error.kind)")
+        }
+        passed.append("URLSessionTransport preserves error classification for >8 KiB HTTP 200 and non-2xx JSON error bodies")
+
+        // Test 2: Oversized HTTP 200 JSON body stops at bounded cap and non-error JSON fails explicitly without falling through to SSE.
+        try expect(OpenAIHTTP.maxJSONErrorBytes == 262_144, "unexpected maxJSONErrorBytes default: \(OpenAIHTTP.maxJSONErrorBytes)")
+        let oversizedDefault = Data("{\"error\":{\"code\":\"invalid_api_key\",\"padding\":\"\(String(repeating: "y", count: OpenAIHTTP.maxJSONErrorBytes + 4096))\"}}".utf8)
+        do {
+            _ = try await streamWithStub(status: 200, contentType: "application/json", body: oversizedDefault, chunkSize: 4096)
+            throw CheckError(description: "oversized HTTP 200 JSON body accepted")
+        } catch let error as CopilotError {
+            try expect(error.localizedDescription.contains("oversized JSON error response"), "unexpected oversized JSON error: \(error.localizedDescription)")
+            try expect(!error.localizedDescription.contains("Reasoning stream ended without a complete answer"), "oversized JSON fell through to SSE")
+        }
+        let oversizedCustom = Data("{\"padding\":\"\(String(repeating: "z", count: 4096))\",\"error\":{\"code\":\"invalid_api_key\"}}".utf8)
+        do {
+            _ = try await streamWithStub(status: 200, contentType: "application/json", body: oversizedCustom, chunkSize: 512, maxJSONBodyBytes: 1024)
+            throw CheckError(description: "oversized HTTP 200 JSON body bypassed custom maxJSONBodyBytes")
+        } catch let error as CopilotError {
+            try expect(error.localizedDescription.contains("oversized JSON error response"), "unexpected custom-cap oversized JSON error: \(error.localizedDescription)")
+        }
+        for nonErrorBody in [Data(#"{"status":"ok","error":null}"#.utf8), Data("{malformed-json".utf8)] {
+            do {
+                _ = try await streamWithStub(status: 200, contentType: "application/json", body: nonErrorBody)
+                throw CheckError(description: "HTTP 200 non-error JSON response accepted")
+            } catch let error as CopilotError {
+                try expect(error.localizedDescription.contains("JSON instead of a reasoning stream"), "unexpected non-error JSON error: \(error.localizedDescription)")
+                try expect(!error.localizedDescription.contains("Reasoning stream ended without a complete answer"), "non-error JSON fell through to SSE")
+            }
+        }
+        passed.append("URLSessionTransport bounds oversized and non-error HTTP 200 JSON bodies without falling through to SSE")
+
+        // Test 3: Normal HTTP 200 text/event-stream SSE response streams cleanly through URLSessionTransport.
+        let sseWire = Data("event: response.output_text.delta\r\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"延迟 42 毫秒 🧪\"}\r\n\r\nevent: response.completed\r\ndata: {\"type\":\"response.completed\"}\r\n\r\n".utf8)
+        let streamedText = try await streamWithStub(status: 200, contentType: "text/event-stream; charset=utf-8", body: sseWire, chunkSize: 7)
+        try expect(streamedText == "延迟 42 毫秒 🧪", "normal SSE stream corrupted: \(streamedText)")
+        passed.append("URLSessionTransport streams normal HTTP 200 text/event-stream SSE responses cleanly")
+
+        return passed
     }
 
 }
@@ -1224,5 +1381,59 @@ enum SyntheticTalk {
             if start < system.count { monitor.observe(pcm(system[start..<min(end, system.count)]), source: .system, at: at) }
             if start < mic.count { monitor.observe(pcm(mic[start..<min(end, mic.count)]), source: .mic, at: at + 0.003) }
         }
+    }
+}
+
+private final class StubHTTPRegistry: @unchecked Sendable {
+    private let lock = NSLock()
+    private var responses: [String: StubHTTPProtocol.Response] = [:]
+    func set(_ response: StubHTTPProtocol.Response, for token: String) {
+        lock.withLock { responses[token] = response }
+    }
+    func remove(for token: String) {
+        lock.withLock { _ = responses.removeValue(forKey: token) }
+    }
+    func get(for token: String) -> StubHTTPProtocol.Response? {
+        lock.withLock { responses[token] }
+    }
+}
+
+private final class StubHTTPProtocol: URLProtocol {
+    struct Response: Sendable {
+        let status: Int
+        let contentType: String
+        let body: Data
+        let chunkSize: Int
+    }
+    static let registry = StubHTTPRegistry()
+    private let stopLock = NSLock()
+    private var stopped = false
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let auth = request.value(forHTTPHeaderField: "Authorization") ?? ""
+        let token = auth.hasPrefix("Bearer ") ? String(auth.dropFirst(7)) : auth
+        guard let stub = Self.registry.get(for: token),
+              let url = request.url,
+              let response = HTTPURLResponse(url: url, statusCode: stub.status, httpVersion: "HTTP/1.1",
+                                             headerFields: ["Content-Type": stub.contentType]) else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        let step = max(1, stub.chunkSize)
+        var offset = 0
+        while offset < stub.body.count {
+            if stopLock.withLock({ stopped }) { return }
+            let end = min(offset + step, stub.body.count)
+            client?.urlProtocol(self, didLoad: stub.body.subdata(in: offset..<end))
+            offset = end
+        }
+        if !stopLock.withLock({ stopped }) {
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+    override func stopLoading() {
+        stopLock.withLock { stopped = true }
     }
 }

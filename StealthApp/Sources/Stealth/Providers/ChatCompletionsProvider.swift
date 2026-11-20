@@ -59,7 +59,7 @@ struct ChatCompletionsProvider: ReasoningProvider {
                               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                             throw CopilotError.message("Malformed reasoning stream. Retry this question.")
                         }
-                        guard object["error"] == nil else {
+                        if let errorValue = object["error"], !(errorValue is NSNull) {
                             throw ServiceHTTPFailure(status: 0, data: data)
                         }
                         guard let choices = object["choices"] as? [[String: Any]] else {
@@ -78,7 +78,7 @@ struct ChatCompletionsProvider: ReasoningProvider {
                             if let delta = choice["delta"] as? [String: Any], let content = delta["content"] as? String, !content.isEmpty {
                                 hadText = true; continuation.yield(content)
                             }
-                            if let reason = choice["finish_reason"] as? String {
+                            if let reason = choice["finish_reason"] as? String, !reason.isEmpty {
                                 guard reason == "stop" else {
                                     throw CopilotError.message("The analysis answer was interrupted or exceeded its limit. Partial text is retained; retry.")
                                 }

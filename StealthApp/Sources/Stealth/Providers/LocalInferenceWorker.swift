@@ -21,9 +21,16 @@ struct LocalInputError: LocalizedError, Equatable {
 /// appear in command arguments, environment, diagnostics, temporary files or a listening socket.
 final class LocalInferenceWorker: @unchecked Sendable {
     private final class PendingCall {
-        let continuation: CheckedContinuation<[String: Any], Error>
+        let continuation: CheckedContinuation<CallOutcome, Never>
         var deadline: DispatchWorkItem?
-        init(continuation: CheckedContinuation<[String: Any], Error>) { self.continuation = continuation }
+        init(continuation: CheckedContinuation<CallOutcome, Never>) { self.continuation = continuation }
+    }
+    struct CallOutcome {
+        let response: [String: Any]?
+        let error: Error?
+        let failureCode: String?
+        static func success(_ response: [String: Any]) -> Self { .init(response: response, error: nil, failureCode: nil) }
+        static func failure(_ error: Error, code: String? = nil) -> Self { .init(response: nil, error: error, failureCode: code) }
     }
     private let queue = DispatchQueue(label: "com.livecopilot.local-inference", qos: .userInitiated)
     private let lock = NSLock()
@@ -39,6 +46,7 @@ final class LocalInferenceWorker: @unchecked Sendable {
     private var terminationInitiators: [Int32: CaptureDiagnostics.WorkerTerminationInitiator] = [:]
     private var cancelled = Set<UUID>()
     private var timedOut = Set<UUID>()
+    private var queueTimedOut = Set<UUID>()
     private var closed = false
     private var diagnosticCode = "unknown"
     /// Controllable test barrier invoked on the serial queue after `activeID` is set and before launching/checking the child process.
@@ -47,6 +55,9 @@ final class LocalInferenceWorker: @unchecked Sendable {
     private func recordFailure(_ code: String) {
         lock.lock(); diagnosticCode = code; lock.unlock()
         CaptureDiagnostics.record(.workerFailure, details: .init(workerMode: diagnosticMode, failure: CaptureDiagnostics.Failure(rawValue: code) ?? .unknown))
+    }
+    private func recordDiagnosticOnly(_ failure: CaptureDiagnostics.Failure) {
+        CaptureDiagnostics.record(.workerFailure, details: .init(workerMode: diagnosticMode, failure: failure))
     }
     private var diagnosticMode: String { ["embedding", "embedding-cpu", "asr", "streaming", "zipformer", "paraformer"].contains(arguments.first ?? "") ? arguments[0] : "other" }
 
@@ -63,10 +74,15 @@ final class LocalInferenceWorker: @unchecked Sendable {
     }
 
     func call(_ payload: [String: Any], timeout: TimeInterval = 90) async throws -> [String: Any] {
+        let outcome = await callWithOutcome(payload, timeout: timeout)
+        if let response = outcome.response { return response }
+        throw outcome.error ?? CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")
+    }
+    func callWithOutcome(_ payload: [String: Any], timeout: TimeInterval = 90) async -> CallOutcome {
         let id = UUID()
-        return try await withTaskCancellationHandler {
-            try Task.checkCancellation()
-            return try await withCheckedThrowingContinuation { continuation in
+        return await withTaskCancellationHandler {
+            if Task.isCancelled { return .failure(CancellationError()) }
+            return await withCheckedContinuation { continuation in
                 let pending = PendingCall(continuation: continuation)
                 let deadline = DispatchWorkItem { [weak self] in self?.interrupt(id, timeout: true) }
                 pending.deadline = deadline
@@ -74,7 +90,7 @@ final class LocalInferenceWorker: @unchecked Sendable {
                 if closed || cancelled.contains(id) {
                     cancelled.remove(id)
                     lock.unlock()
-                    continuation.resume(throwing: CancellationError())
+                    continuation.resume(returning: .failure(CancellationError()))
                     return
                 }
                 pendingCalls[id] = pending
@@ -84,24 +100,31 @@ final class LocalInferenceWorker: @unchecked Sendable {
                 queue.async { [self] in
                     lock.lock()
                     guard pendingCalls[id] != nil else {
-                        cancelled.remove(id); timedOut.remove(id)
+                        cancelled.remove(id); timedOut.remove(id); queueTimedOut.remove(id)
                         lock.unlock()
                         return
                     }
-                    let rejected = closed || cancelled.contains(id) || timedOut.contains(id)
+                    let rejectedByQueueTimeout = queueTimedOut.contains(id)
                     let rejectedByTimeout = timedOut.contains(id)
-                    if !rejected { activeID = id }
+                    let rejected = closed || cancelled.contains(id) || rejectedByTimeout || rejectedByQueueTimeout
+                    if !rejected {
+                        activeID = id
+                        diagnosticCode = "unknown"
+                    }
                     lock.unlock()
                     defer {
                         lock.lock()
-                        activeID = nil; cancelled.remove(id); timedOut.remove(id)
+                        if activeID == id { activeID = nil }
+                        cancelled.remove(id); timedOut.remove(id); queueTimedOut.remove(id)
                         let leftover = pendingCalls.removeValue(forKey: id)
                         leftover?.deadline?.cancel()
                         lock.unlock()
                     }
                     if rejected {
-                        if rejectedByTimeout {
-                            resumeCall(id, with: .failure(CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")), failureCodeOnResume: "timeout")
+                        if rejectedByQueueTimeout {
+                            resumeCall(id, with: .failure(CopilotError.message("Local model was busy and the queued request timed out. Retry shortly."), code: "queue_timeout"), diagnosticFailureOnly: .queueTimeout)
+                        } else if rejectedByTimeout {
+                            resumeCall(id, with: .failure(CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files."), code: "timeout"), failureCodeOnResume: "timeout")
                         } else {
                             resumeCall(id, with: .failure(CancellationError()))
                         }
@@ -117,10 +140,14 @@ final class LocalInferenceWorker: @unchecked Sendable {
                         guard bytes.count < 4 * 1024 * 1024 else { throw CopilotError.message("Local model input is too large.") }
                         bytes.append(10)
                         do { try input!.write(contentsOf: bytes) } catch {
-                            lock.lock(); if diagnosticCode != "timeout" { diagnosticCode = "process_ended" }; lock.unlock()
+                            lock.lock()
+                            if !timedOut.contains(id) && !cancelled.contains(id) && !closed {
+                                diagnosticCode = "process_ended"
+                            }
+                            lock.unlock()
                             throw CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")
                         }
-                        let response = try readMessage()
+                        let response = try readMessage(for: id)
                         guard response["id"] as? String == id.uuidString else { throw CopilotError.message("Local model returned an invalid response.") }
                         if let error = response["error"] {
                             let code = (error as? String).flatMap { LocalInputError.codes.contains($0) ? $0 : nil } ?? "inference_failed"
@@ -128,15 +155,17 @@ final class LocalInferenceWorker: @unchecked Sendable {
                             throw LocalInputError(code: code)
                         }
                         try checkActiveCallState(id)
+                        lock.lock(); diagnosticCode = "unknown"; lock.unlock()
                         resumeCall(id, with: .success(response))
                     } catch {
                         discardProcess()
-                        lock.lock(); let wasCancelled = cancelled.contains(id) || closed, expired = timedOut.contains(id); lock.unlock()
-                        let reportedFailure = expired ? "timeout" : (!wasCancelled && failureCode == "process_ended" ? "process_ended" : nil)
+                        lock.lock(); let wasCancelled = cancelled.contains(id) || closed, expired = timedOut.contains(id); let currentCode = diagnosticCode; lock.unlock()
+                        let reportedFailure = expired ? "timeout" : (!wasCancelled && currentCode == "process_ended" ? "process_ended" : nil)
+                        let outcomeCode = expired ? "timeout" : (wasCancelled ? nil : currentCode)
                         let resolvedError: Error = wasCancelled
                             ? CancellationError()
                             : (expired ? CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.") : error)
-                        resumeCall(id, with: .failure(resolvedError), failureCodeOnResume: reportedFailure)
+                        resumeCall(id, with: .failure(resolvedError, code: outcomeCode), failureCodeOnResume: reportedFailure)
                     }
                 }
             }
@@ -150,17 +179,15 @@ final class LocalInferenceWorker: @unchecked Sendable {
         if isCancelled { throw CancellationError() }
         if isTimedOut { throw CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.") }
     }
-    private func resumeCall(_ id: UUID, with result: Result<[String: Any], Error>, failureCodeOnResume: String? = nil) {
+    private func resumeCall(_ id: UUID, with outcome: CallOutcome, failureCodeOnResume: String? = nil, diagnosticFailureOnly: CaptureDiagnostics.Failure? = nil) {
         lock.lock()
         let pending = pendingCalls.removeValue(forKey: id)
         pending?.deadline?.cancel()
         lock.unlock()
         guard let pending else { return }
         if let failureCodeOnResume { recordFailure(failureCodeOnResume) }
-        switch result {
-        case .success(let value): pending.continuation.resume(returning: value)
-        case .failure(let error): pending.continuation.resume(throwing: error)
-        }
+        else if let diagnosticFailureOnly { recordDiagnosticOnly(diagnosticFailureOnly) }
+        pending.continuation.resume(returning: outcome)
     }
     private func terminateProcessLocked(initiator: CaptureDiagnostics.WorkerTerminationInitiator) {
         guard let process, process.isRunning else { return }
@@ -179,15 +206,26 @@ final class LocalInferenceWorker: @unchecked Sendable {
     }
     private func interrupt(_ id: UUID, timeout: Bool = false) {
         var immediatePending: PendingCall?
+        var immediateQueueTimeout = false
         lock.lock()
         if timeout {
             guard activeID == id || pendingCalls[id] != nil else { lock.unlock(); return }
-            timedOut.insert(id); diagnosticCode = "timeout"
-            if activeID == id, let process, process.isRunning {
-                terminateProcessLocked(initiator: .workerTimeout)
+            let isActive = (activeID == id)
+            if isActive {
+                timedOut.insert(id)
+                diagnosticCode = "timeout"
+                if let process, process.isRunning {
+                    terminateProcessLocked(initiator: .workerTimeout)
+                } else {
+                    // Active during cold start before any child process exists:
+                    // fail the caller immediately so cold-start races can never outlive the deadline.
+                    immediatePending = pendingCalls.removeValue(forKey: id)
+                    immediatePending?.deadline?.cancel()
+                }
             } else {
-                // Either queued, or active during cold start before any child process exists:
-                // fail the caller immediately so cold-start races can never outlive the deadline.
+                // Queued behind another request: do not clobber active diagnosticCode or terminate the healthy worker.
+                queueTimedOut.insert(id)
+                immediateQueueTimeout = true
                 immediatePending = pendingCalls.removeValue(forKey: id)
                 immediatePending?.deadline?.cancel()
             }
@@ -203,10 +241,15 @@ final class LocalInferenceWorker: @unchecked Sendable {
         lock.unlock()
         if let immediatePending {
             if timeout {
-                recordFailure("timeout")
-                immediatePending.continuation.resume(throwing: CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files."))
+                if immediateQueueTimeout {
+                    recordDiagnosticOnly(.queueTimeout)
+                    immediatePending.continuation.resume(returning: .failure(CopilotError.message("Local model was busy and the queued request timed out. Retry shortly."), code: "queue_timeout"))
+                } else {
+                    recordFailure("timeout")
+                    immediatePending.continuation.resume(returning: .failure(CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files."), code: "timeout"))
+                }
             } else {
-                immediatePending.continuation.resume(throwing: CancellationError())
+                immediatePending.continuation.resume(returning: .failure(CancellationError()))
             }
         }
     }
@@ -221,7 +264,7 @@ final class LocalInferenceWorker: @unchecked Sendable {
             pendingCalls.removeValue(forKey: id)
         }
         lock.unlock()
-        for pending in queuedToCancel { pending.continuation.resume(throwing: CancellationError()) }
+        for pending in queuedToCancel { pending.continuation.resume(returning: .failure(CancellationError())) }
     }
     private func ensureStarted(for id: UUID) throws {
         try checkActiveCallState(id)
@@ -248,6 +291,7 @@ final class LocalInferenceWorker: @unchecked Sendable {
                 ? CancellationError()
                 : CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")
         }
+        diagnosticCode = "unknown"
         process = child
         do { try child.run(); CaptureDiagnostics.record(.workerStart, details: .init(workerMode: mode, workerPID: child.processIdentifier)) } catch { process = nil; diagnosticCode = "runtime_start"; lock.unlock(); recordFailure("runtime_start"); throw CopilotError.message("Local runtime could not start. Reinstall the complete LiveCopilot app.") }
         lock.unlock()
@@ -256,7 +300,7 @@ final class LocalInferenceWorker: @unchecked Sendable {
         // the default signal action terminates the whole app without a crash report.
         let noSignal: Int32 = 1
         _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, noSignal)
-        let response = try readMessage()
+        let response = try readMessage(for: id)
         guard response["ready"] as? Bool == true else {
             let code = response["error"] as? String ?? "model_load_failed"
             recordFailure(["embedding_context", "embedding_load"].contains(code) ? code : "model_load_failed")
@@ -266,7 +310,7 @@ final class LocalInferenceWorker: @unchecked Sendable {
             throw CopilotError.message("Local model could not load. Model files, available memory or runtime compatibility may be responsible. Restart the app and retry; if it persists, contact support.")
         }
     }
-    private func readMessage() throws -> [String: Any] {
+    private func readMessage(for id: UUID) throws -> [String: Any] {
         while true {
             if let newline = buffer.firstIndex(of: 10) {
                 let line = Data(buffer[..<newline]); buffer.removeSubrange(...newline)
@@ -278,7 +322,11 @@ final class LocalInferenceWorker: @unchecked Sendable {
             let count = Darwin.read(output.fileDescriptor, &bytes, bytes.count)
             if count < 0 && errno == EINTR { continue }
             guard count > 0 else {
-                lock.lock(); if diagnosticCode != "timeout" { diagnosticCode = "process_ended" }; lock.unlock()
+                lock.lock()
+                if !timedOut.contains(id) && !cancelled.contains(id) && !closed {
+                    diagnosticCode = "process_ended"
+                }
+                lock.unlock()
                 throw CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")
             }
             buffer.append(contentsOf: bytes.prefix(count))
@@ -361,20 +409,48 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
             try Task.checkCancellation()
             let activeWorker = currentWorker()
             let response: [String: Any]
-            do {
-                response = try await activeWorker.call(["op": "embed", "text": text], timeout: timeout)
-            } catch is CancellationError {
-                readinessLock.withLock { prepared = false }
-                throw CancellationError()
-            } catch {
-                // If the GPU worker crashed out-of-process before in-process fallback could run,
-                // transparently switch to a CPU worker and retry this chunk once.
-                if activeWorker.failureCode == "process_ended",
+            let outcome = await activeWorker.callWithOutcome(["op": "embed", "text": text], timeout: timeout)
+            if let ok = outcome.response {
+                response = ok
+            } else if outcome.error is CancellationError {
+                // If another concurrent caller just failed over this GPU worker to CPU,
+                // closing the old worker cancels our queued/in-flight call even though our Task was not cancelled.
+                if !Task.isCancelled,
                    let fallbackWorker = switchToCPUIfNeeded(failingWorker: activeWorker) {
-                    do { response = try await fallbackWorker.call(["op": "embed", "text": text], timeout: timeout) }
-                    catch { readinessLock.withLock { prepared = false }; throw error }
+                    let retryOutcome = await fallbackWorker.callWithOutcome(["op": "embed", "text": text], timeout: timeout)
+                    if let ok = retryOutcome.response {
+                        response = ok
+                    } else {
+                        if retryOutcome.failureCode != "queue_timeout" {
+                            readinessLock.withLock { prepared = false }
+                        }
+                        throw retryOutcome.error ?? CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")
+                    }
                 } else {
                     readinessLock.withLock { prepared = false }
+                    throw CancellationError()
+                }
+            } else {
+                let error = outcome.error ?? CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")
+                // Only fail over to CPU on active execution faults (process crash or active inference timeout).
+                // A queue-wait timeout ("queue_timeout") means the worker was busy on a healthy request,
+                // so never kill the active GPU worker or reset `prepared`.
+                let code = outcome.failureCode ?? activeWorker.failureCode
+                if (code == "process_ended" || code == "timeout"),
+                   let fallbackWorker = switchToCPUIfNeeded(failingWorker: activeWorker) {
+                    let retryOutcome = await fallbackWorker.callWithOutcome(["op": "embed", "text": text], timeout: timeout)
+                    if let ok = retryOutcome.response {
+                        response = ok
+                    } else {
+                        if retryOutcome.failureCode != "queue_timeout" {
+                            readinessLock.withLock { prepared = false }
+                        }
+                        throw retryOutcome.error ?? CopilotError.message("Local model stopped unexpectedly or timed out. Retry after checking model files.")
+                    }
+                } else {
+                    if code != "queue_timeout" {
+                        readinessLock.withLock { prepared = false }
+                    }
                     throw error
                 }
             }

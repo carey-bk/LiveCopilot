@@ -120,9 +120,18 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     }
     func restartToInstall() {
         guard phase == .readyToInstall, blockingReason() == nil else { return }
-        installationCommitted = true; phase = .installing
-        if let postponedRelaunch { self.postponedRelaunch = nil; finishRelaunch(postponedRelaunch) }
-        else { let reply = installReply; installReply = nil; reply?(.install) }
+        if let postponedRelaunch {
+            installationCommitted = true; phase = .installing
+            self.postponedRelaunch = nil
+            finishRelaunch(postponedRelaunch)
+        } else if let reply = installReply {
+            installationCommitted = true; phase = .installing
+            installReply = nil
+            reply(.install)
+        } else {
+            installationCommitted = false
+            phase = hasUpdate ? .available : .idle
+        }
     }
     func cancelDownload() {
         cancellation?(); cancellation = nil; requestedInstall = nil
@@ -168,7 +177,9 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     }
     func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) { notFound(error as NSError) }
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
-        if (error as NSError).code == 1001 { return }
+        let ns = error as NSError
+        if ns.domain == SUSparkleErrorDomain && ns.code == 1001 { return }
+        DebugLog.log("updater.abort domain=\(ns.domain) code=\(ns.code)")
         requestedInstall = nil
         if manualCheck || [.downloading, .extracting, .installing].contains(phase) { fail("检查或更新失败，请检查网络后重试。") }
         else if phase == .checking { phase = hasUpdate ? .available : .idle }
@@ -217,9 +228,12 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
         receivedBytes += count; if expectedBytes > 0 { progress = min(1, Double(receivedBytes) / Double(expectedBytes)) }
     }
     fileprivate func extracting(_ value: Double? = nil) { cancellation = nil; phase = .extracting; progress = value }
-    fileprivate func dismissInstallation() {
+    func dismissInstallation() {
         cancellation = nil; installReply = nil; requestedInstall = nil; manualCheck = false; progress = nil
-        if [.checking, .downloading, .extracting].contains(phase) { phase = hasUpdate ? .available : .idle }
+        if [.checking, .downloading, .extracting, .readyToInstall, .installing].contains(phase) {
+            installationCommitted = false
+            phase = hasUpdate ? .available : .idle
+        }
     }
     fileprivate func notes(_ data: SPUDownloadData) {
         guard release != nil, let text = String(data: data.data, encoding: .utf8) else { return }

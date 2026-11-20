@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Official Live protocol, verified 2026-09-13. This intentionally contains no Realtime
 /// response.create/input_audio_buffer events. Live delegates; Responses synthesizes separately.
@@ -33,7 +34,7 @@ enum LiveProtocol {
     }
     static func connectionFailure(status: Int?, error: Error?) -> (message: String, retry: Bool) {
         switch status {
-        case 400, 401, 402, 403, 404, 429:
+        case 400, 401, 402, 403, 404, 422, 429:
             return (ServiceHTTPFailure(status: status!).localizedDescription, false)
         default:
             if let error = error as NSError?, error.domain == NSURLErrorDomain {
@@ -70,12 +71,15 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
     let scenario: ScenarioProfile
     let language: LiveSpeechLanguage
     private let key: String
+    private let log = Logger(subsystem: "com.livecopilot.app", category: "live")
     private var socket: URLSessionWebSocketTask?
     private var session: URLSession?
     private var receiveTask: Task<Void, Never>?
     private var senderTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
-    private var timeoutTask: Task<Void, Never>?
+    private var startupTimeoutTask: Task<Void, Never>?
+    private var closeTimeoutTask: Task<Void, Never>?
+    private var pingTask: Task<Void, Never>?
     private var queue: [String] = []
     private var queuedBytes = 0
     private var ready = false
@@ -84,7 +88,7 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
     private var retries = 0
     private var generation = UUID()
     private var context = ""
-    private var closeContinuation: CheckedContinuation<Void, Never>?
+    private var closeContinuations: [CheckedContinuation<Void, Never>] = []
 
     init(key: String, model: String, speaker: Speaker, scenario: ScenarioProfile, language: LiveSpeechLanguage) {
         self.key = key; self.model = model; self.speaker = speaker; self.scenario = scenario; self.language = language
@@ -109,11 +113,45 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
         self.socket = socket
         socket.resume()
         onEvent?(.status("\(speaker.rawValue): connecting to Live…"))
-        timeoutTask?.cancel()
-        timeoutTask = Task { [weak self] in
+        startupTimeoutTask?.cancel()
+        startupTimeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 20_000_000_000)
-            guard !Task.isCancelled, let self, self.generation == generation, !self.ready else { return }
+            guard !Task.isCancelled, let self, self.generation == generation, !self.ready, !self.closing else { return }
             self.failed("Live startup timed out. Check network and model access.")
+        }
+    }
+    private func startPingLoop(socket: URLSessionWebSocketTask, epoch: UUID) {
+        pingTask?.cancel()
+        pingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 25_000_000_000) } catch { return }
+                guard let self, self.generation == epoch, self.ready, !self.closing else { return }
+                let pongError: Error? = await withCheckedContinuation { cont in
+                    let lock = NSLock()
+                    var resumed = false
+                    func complete(_ err: Error?) {
+                        lock.lock()
+                        let should = !resumed
+                        resumed = true
+                        lock.unlock()
+                        if should { cont.resume(returning: err) }
+                    }
+                    let pingDeadline = Task {
+                        do { try await Task.sleep(nanoseconds: 10_000_000_000) } catch { return }
+                        complete(URLError(.timedOut))
+                    }
+                    socket.sendPing { error in
+                        pingDeadline.cancel()
+                        complete(error)
+                    }
+                }
+                guard !Task.isCancelled, self.generation == epoch, self.ready, !self.closing else { return }
+                if let pongError {
+                    self.log.error("live.ping_failed speaker=\(self.speaker.rawValue, privacy: .public) code=\((pongError as NSError).code)")
+                    self.transportFailed(socket, error: pongError)
+                    return
+                }
+            }
         }
     }
     private func opened(_ socket: URLSessionWebSocketTask) {
@@ -126,18 +164,7 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
                     guard let self, self.generation == epoch else { return }
                     let data: Data
                     switch message { case .string(let value): data = Data(value.utf8); case .data(let value): data = value; @unknown default: continue }
-                    guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                          let event = LiveProtocol.parse(obj, speaker: self.speaker) else { continue }
-                    switch event {
-                    case .ready: self.ready = true; self.timeoutTask?.cancel()
-                    case .transcript(let fragment):
-                        self.context = String((self.context + fragment.text).suffix(6000))
-                    case .closed:
-                        self.onEvent?(event); self.finishConnection(); return
-                    case .failed(let text): self.failed(text, retry: false); return
-                    default: break
-                    }
-                    self.onEvent?(event)
+                    if !self.handleIncomingJSONData(data, socket: socket, epoch: epoch) { return }
                 } catch {
                     guard let self, self.generation == epoch, !Task.isCancelled else { return }
                     if self.closing { self.onEvent?(.closed(finalized: false)); self.finishConnection() }
@@ -147,6 +174,43 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
             }
         }
         enqueue(LiveProtocol.start(model: model, speaker: speaker, scenario: scenario, language: language, context: context))
+    }
+
+    @discardableResult
+    internal func handleIncomingJSONData(_ data: Data, socket: URLSessionWebSocketTask? = nil, epoch: UUID? = nil) -> Bool {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let event = LiveProtocol.parse(obj, speaker: self.speaker) else { return true }
+        switch event {
+        case .ready:
+            guard !self.closing else { return true }
+            self.ready = true
+            self.retries = 0
+            self.startupTimeoutTask?.cancel()
+            self.startupTimeoutTask = nil
+            if let socket, let epoch {
+                self.startPingLoop(socket: socket, epoch: epoch)
+            }
+        case .transcript(let fragment):
+            self.context = String((self.context + fragment.text).suffix(6000))
+        case .closed:
+            self.onEvent?(event); self.finishConnection(); return false
+        case .failed(let text):
+            self.failed(text, retry: false); return false
+        default: break
+        }
+        self.onEvent?(event)
+        return true
+    }
+
+    /// Test-only hook to exercise `OpenAILiveProvider`'s real `session.started` / `session.closed`
+    /// handling without opening a network WebSocket.
+    internal var isActiveForTesting: Bool { active }
+    internal var isClosingForTesting: Bool { closing }
+    internal func activateWithoutSocketForTesting() {
+        active = true; closing = false; ready = false; retries = 0
+    }
+    internal func injectServerJSONForTesting(_ json: String) {
+        _ = handleIncomingJSONData(Data(json.utf8))
     }
     func sendAudio(_ data: Data) {
         guard ready, !closing, data.count % 2 == 0 else { return }
@@ -186,16 +250,23 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
     }
     private func transportFailed(_ task: URLSessionTask, error: Error?) {
         guard task === socket, active else { return }
-        let failure = LiveProtocol.connectionFailure(status: (task.response as? HTTPURLResponse)?.statusCode, error: error)
+        let status = (task.response as? HTTPURLResponse)?.statusCode
+        log.error("live.transport_failed speaker=\(self.speaker.rawValue, privacy: .public) status=\(status ?? -1) err=\((error as NSError?)?.code ?? 0)")
+        let failure = LiveProtocol.connectionFailure(status: status, error: error)
         failed(failure.message, retry: failure.retry)
     }
     private func failed(_ message: String, retry: Bool = true) {
         guard active else { return }
         if closing { onEvent?(.closed(finalized: false)); finishConnection(); return }
         cleanTransport()
-        onEvent?(.failed(message))
-        guard retry && retries < 3 else { active = false; return }
+        guard retry && retries < 3 else {
+            log.error("live.terminal_failed speaker=\(self.speaker.rawValue, privacy: .public) retry=\(retry) retries=\(self.retries)")
+            active = false
+            onEvent?(.failed(message))
+            return
+        }
         retries += 1
+        onEvent?(.status("\(message) Reconnecting (\(retries)/3)…"))
         let wait = UInt64(1 << (retries - 1)) * 1_000_000_000
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: wait)
@@ -204,28 +275,54 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
         }
     }
     func disconnect() async {
-        guard active, !closing else { return }
-        closing = true; reconnectTask?.cancel(); timeoutTask?.cancel()
+        guard active else { return }
+        if closing {
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    guard closing else { continuation.resume(); return }
+                    closeContinuations.append(continuation)
+                }
+            } onCancel: {
+                Task { @MainActor [weak self] in self?.finishConnection() }
+            }
+            return
+        }
+        closing = true; reconnectTask?.cancel(); startupTimeoutTask?.cancel(); pingTask?.cancel()
         guard ready else { finishConnection(); return }
-        await withCheckedContinuation { continuation in
-            closeContinuation = continuation
-            queue = []; queuedBytes = 0
-            enqueue(["type": "session.close", "event_id": UUID().uuidString])
-            timeoutTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
-                guard !Task.isCancelled, let self else { return }
-                self.onEvent?(.closed(finalized: false)); self.finishConnection()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                closeContinuations.append(continuation)
+                queue = []; queuedBytes = 0
+                enqueue(["type": "session.close", "event_id": UUID().uuidString])
+                closeTimeoutTask?.cancel()
+                closeTimeoutTask = Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 8_000_000_000)
+                    guard !Task.isCancelled, let self, self.closing else { return }
+                    self.onEvent?(.closed(finalized: false)); self.finishConnection()
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self, self.closing else { return }
+                self.onEvent?(.closed(finalized: false))
+                self.finishConnection()
             }
         }
     }
     private func finishConnection() {
         active = false; closing = false
         cleanTransport()
-        closeContinuation?.resume(); closeContinuation = nil
+        let waiters = closeContinuations
+        closeContinuations = []
+        for waiter in waiters { waiter.resume() }
     }
     private func cleanTransport() {
         generation = UUID(); ready = false
-        receiveTask?.cancel(); receiveTask = nil; senderTask?.cancel(); senderTask = nil; timeoutTask?.cancel()
+        receiveTask?.cancel(); receiveTask = nil
+        senderTask?.cancel(); senderTask = nil
+        startupTimeoutTask?.cancel(); startupTimeoutTask = nil
+        closeTimeoutTask?.cancel(); closeTimeoutTask = nil
+        pingTask?.cancel(); pingTask = nil
         queue = []; queuedBytes = 0
         socket?.cancel(with: .goingAway, reason: nil); socket = nil
         session?.invalidateAndCancel(); session = nil
@@ -235,6 +332,14 @@ final class OpenAILiveProvider: NSObject, LiveProvider {
 extension OpenAILiveProvider: URLSessionWebSocketDelegate {
     nonisolated func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         Task { @MainActor [weak self] in self?.opened(webSocketTask) }
+    }
+    nonisolated func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        Task { @MainActor [weak self] in
+            guard let self, webSocketTask === self.socket, self.active else { return }
+            self.log.info("live.ws_closed speaker=\(self.speaker.rawValue, privacy: .public) code=\(closeCode.rawValue)")
+            if self.closing { self.onEvent?(.closed(finalized: false)); self.finishConnection() }
+            else { self.transportFailed(webSocketTask, error: nil) }
+        }
     }
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         guard error != nil else { return }

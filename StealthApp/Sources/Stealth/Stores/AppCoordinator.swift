@@ -5,13 +5,29 @@ import Combine
 final class AppCoordinator: ObservableObject {
     let transcript = TranscriptStore()
     let translation = TranscriptTranslationStore()
+    private var translationCredentialReference: CredentialReference?
+    /// Test-only factory to observe which translation provider/credential is active during key changes.
+    internal var testTranslationProviderFactory: ((_ liveKey: String?, _ analysisKey: String?) throws -> any ReasoningProvider)?
     func setTranscriptTranslation(_ target: TranscriptTranslationStore.Language?) {
-        guard let target else { translation.stop(); return }
+        guard let target else {
+            translation.stop()
+            translationCredentialReference = nil
+            return
+        }
         do {
+            let credentialReference = try? settings.analysisCredentialReference()
             var translationSettings = settings
             let modes = AnalysisModelCatalog.models(for: settings.reasoningService).first { $0.id == settings.analysisModel }?.modes ?? []
             translationSettings.analysisThinking = modes.contains(.disabled) ? .disabled : (modes.contains(.low) ? .low : .modelDefault)
-            let provider: any ReasoningProvider = isMock ? (mockReasoning ?? MockReasoningProvider()) : try ReasoningProviderFactory.make(settings: translationSettings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
+            let provider: any ReasoningProvider
+            if let testTranslationProviderFactory {
+                provider = try testTranslationProviderFactory(cachedKey, cachedAnalysisKey)
+            } else if isMock {
+                provider = mockReasoning ?? MockReasoningProvider()
+            } else {
+                provider = try ReasoningProviderFactory.make(settings: translationSettings, liveKey: cachedKey, analysisKey: cachedAnalysisKey)
+            }
+            translationCredentialReference = credentialReference
             translation.start(target: target, provider: provider, lines: transcript.lines)
             translation.updatePreview(transcript.partialYou, speaker: .you)
             translation.updatePreview(transcript.partialThem, speaker: settings.mode == .inPerson ? .room : .them)
@@ -110,6 +126,8 @@ final class AppCoordinator: ObservableObject {
     private let mockReasoning: (any ReasoningProvider)?
     private let mockEmbedding: (any EmbeddingProvider)?
     private let credentialReader: (@Sendable (CredentialReference, Bool) async throws -> CredentialState)?
+    private let credentialSaver: (@Sendable (String, CredentialReference) async throws -> Void)?
+    private let credentialRemover: (@Sendable (CredentialReference) async throws -> Void)?
     private let emitMockConversation: Bool
     private lazy var layaGate: LayaTriggerController = {
         let gate = LayaTriggerController(predict: { [weak self] text, context in
@@ -187,6 +205,7 @@ final class AppCoordinator: ObservableObject {
     let mic = MicCaptureManager()
     private let systemFlow = AudioFlowMonitor(), micFlow = AudioFlowMonitor()
     var systemFlowSnapshot: AudioFlowMonitor.Snapshot { systemFlow.snapshot() }
+    var micFlowSnapshot: AudioFlowMonitor.Snapshot { micFlow.snapshot() }
     /// Test-only provider override to exercise the real capture → live provider → stop/restart lifecycle.
     var testLiveProviderFactory: ((Speaker) -> any LiveProvider)?
     /// Far-end reference for Remote mode: content-free energy frames of both sources.
@@ -223,8 +242,31 @@ final class AppCoordinator: ObservableObject {
     private var analysisCredentialRevision = UUID()
     private var analysisCredentialReference: CredentialReference?
     private var isShuttingDown = false
+    private var transitionDepth = 0
+    private var activeMicToggleRevision: UUID?
+    private var isTogglingMic: Bool { activeMicToggleRevision != nil }
+    private var micToggleRevision = UUID()
+    private var micToggleTask: Task<Void, Never>?
+    private var knowledgeTask: Task<Void, Never>?
+    private var knowledgeDeleteTasks: [UUID: Task<Void, Never>] = [:]
+    private var layaPartialTask: Task<Void, Never>?
+    private var pendingLayaPartial: (speaker: Speaker, partial: String)?
+    private var lastLayaPartialSubmissionAt: TimeInterval = 0
+    var layaPartialThrottleInterval: TimeInterval = 0.25
+    var shutdownSubsystemTimeoutSeconds: TimeInterval = 2.5
     private var startupCheckStarted = false
     private var startupCheckTask: Task<Void, Never>?
+    private struct PendingSessionSnapshot {
+        let id: UUID
+        let startedAt: Date
+        let endedAt: Date
+        let lines: [SessionLine]
+        let fragments: [TranscriptFragment]
+        let answers: [SessionAnswer]
+        let wasVoice: Bool
+    }
+    private var pendingFailedSession: PendingSessionSnapshot?
+    @Published private(set) var hasPendingUnsavedSession = false
     private var sessionStartedAt: Date?
     private var sessionWasVoice = false
     private var sessionAnswerIDs = Set<UUID>()
@@ -245,6 +287,7 @@ final class AppCoordinator: ObservableObject {
             if oldValue.reasoningService != settings.reasoningService || oldValue.analysisModel != settings.analysisModel ||
                 (try? oldValue.analysisCredentialReference()) != (try? settings.analysisCredentialReference()) {
                 translation.stop()
+                translationCredentialReference = nil
             }
             if oldValue.professionalTerms != settings.professionalTerms || oldValue.professionalTermsEnabled != settings.professionalTermsEnabled {
                 let terms = activeProfessionalTerms
@@ -263,11 +306,14 @@ final class AppCoordinator: ObservableObject {
             }
             if answerIsRunning && !settings.isEnabled(activeStore?.mode ?? suggestion.mode) { cancelAnswer() }
             if oldValue.requiresOpenAIKey != settings.requiresOpenAIKey {
-                if settings.requiresOpenAIKey { refreshKeyState() }
-                else {
+                if settings.requiresOpenAIKey {
+                    if !hasAPIKey || cachedKey == nil { refreshKeyState() }
+                } else if !settings.isOpenAIAnalysis {
                     credentialRevision = UUID(); isCheckingKey = false; cachedKey = nil; hasAPIKey = false; keyNeedsAuthorization = false
                     keyStatus = "OpenAI is not required by the selected local services."
                 }
+            } else if !oldValue.isOpenAIAnalysis && settings.isOpenAIAnalysis && !hasAPIKey && !isCheckingKey && !isMock {
+                refreshKeyState()
             }
             if oldValue.reasoningService != settings.reasoningService ||
                 (try? oldValue.analysisCredentialReference()) != (try? settings.analysisCredentialReference()) {
@@ -344,10 +390,15 @@ final class AppCoordinator: ObservableObject {
          mockReasoning: (any ReasoningProvider)? = nil,
          emitMockConversation: Bool = true, mockDefaults: UserDefaults? = nil,
          mockEmbedding: (any EmbeddingProvider)? = nil, mockKnowledgeDirectory: URL? = nil,
-         credentialReader: (@Sendable (CredentialReference, Bool) async throws -> CredentialState)? = nil) {
+         credentialReader: (@Sendable (CredentialReference, Bool) async throws -> CredentialState)? = nil,
+         credentialSaver: (@Sendable (String, CredentialReference) async throws -> Void)? = nil,
+         credentialRemover: (@Sendable (CredentialReference) async throws -> Void)? = nil,
+         sessionStoreRoot: URL? = nil, sessionAsyncIO: Bool? = nil) {
         isMock = mock
-        sessions = SessionStore(root: AppPaths.dataDirectory(mock: mock).appendingPathComponent("sessions", isDirectory: true))
+        sessions = SessionStore(root: sessionStoreRoot ?? AppPaths.dataDirectory(mock: mock).appendingPathComponent("sessions", isDirectory: true), asyncIO: sessionAsyncIO ?? !mock)
         self.credentialReader = mock ? credentialReader : nil
+        self.credentialSaver = mock ? credentialSaver : nil
+        self.credentialRemover = mock ? credentialRemover : nil
         updates = AppUpdateController(mock: mock)
         self.layaPredictor = mock ? layaPredictor : nil
         self.mockReasoning = mock ? mockReasoning : nil
@@ -381,7 +432,12 @@ final class AppCoordinator: ObservableObject {
                 self.systemLive?.sendAudio(data)
             }
         }
-        mic.onPCM16 = { [weak self] data in Task { @MainActor in self?.micLive?.sendAudio(data) } }
+        mic.onPCM16 = { [weak self] data, sessionID in
+            Task { @MainActor in
+                guard let self, self.liveEpoch == sessionID else { return }
+                self.micLive?.sendAudio(data)
+            }
+        }
         systemAudio.flow = systemFlow; mic.flow = micFlow
         systemAudio.echo = echo; mic.echo = echo
         systemAudio.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
@@ -395,17 +451,29 @@ final class AppCoordinator: ObservableObject {
             self.speakingSources.remove(.them)
             self.layaGate.reset()
             self.configureAutomaticTrigger(prepare: false)
-            if !self.mic.isCapturing { self.isRunning = false; self.invalidateAutomaticTrigger(); self.saveSession() }
+            if !self.mic.isCapturing {
+                self.isRunning = false
+                self.invalidateAutomaticTrigger()
+                Task { @MainActor [weak self] in _ = await self?.saveSessionAsync() }
+            }
         }.store(in: &cancellables)
         mic.$isCapturing.dropFirst().sink { [weak self] capturing in
-            guard let self, !capturing, self.isRunning, !self.isTransitioning else { return }
+            guard let self, !capturing, self.isRunning, !self.isTransitioning, !self.isTogglingMic else { return }
             let provider = self.micLive; self.micLive = nil
-            self.finishAudioFlow(self.settings.mode == .inPerson ? .room : .you, provider: provider)
+            let speaker: Speaker = self.settings.mode == .inPerson ? .room : .you
+            self.finishAudioFlow(speaker, provider: provider)
             Task { await provider?.disconnect() }
-            self.speakingSources.remove(self.settings.mode == .inPerson ? .room : .you)
-            self.layaGate.reset()
-            self.configureAutomaticTrigger(prepare: false)
-            if !self.systemAudio.isCapturing { self.isRunning = false; self.invalidateAutomaticTrigger(); self.saveSession() }
+            self.speakingSources.remove(speaker)
+            if speaker == .you { self.endOwnTurn() }
+            if self.settings.mode == .inPerson || !self.systemAudio.isCapturing {
+                self.layaGate.reset()
+                self.configureAutomaticTrigger(prepare: false)
+            }
+            if !self.systemAudio.isCapturing {
+                self.isRunning = false
+                self.invalidateAutomaticTrigger()
+                Task { @MainActor [weak self] in _ = await self?.saveSessionAsync() }
+            }
         }.store(in: &cancellables)
         sessions.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
         laya.$state.dropFirst().sink { [weak self] _ in
@@ -432,6 +500,7 @@ final class AppCoordinator: ObservableObject {
     private func invalidateAutomaticTrigger(releaseRuntime: Bool = true) {
         questions.clear(); syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
         questionTask?.cancel(); questionTask = nil; pendingAutomatic = nil
+        layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil; lastLayaPartialSubmissionAt = 0
         layaLastScore = nil
         layaGate.reset()
         if releaseRuntime { laya.stop() }
@@ -488,14 +557,46 @@ final class AppCoordinator: ObservableObject {
         configureAutomaticTrigger(prepare: false)
     }
     private func submitLaya(speaker: Speaker, partial: String? = nil) {
-        guard isRunning, settings.automaticSuggestions, usesLaya else { return }
+        guard isRunning, !isShuttingDown, settings.automaticSuggestions, usesLaya else { return }
         recordLaya(.inputReceived)
         guard isMock || (speaker == .them ? systemAudio.isCapturing : mic.isCapturing) else { recordLaya(.captureInactive); return }
-        if speaker == .you { layaGate.manualIntervention(); recordLaya(.ownTranscript); return }
+        if speaker == .you {
+            layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil
+            layaGate.manualIntervention(); recordLaya(.ownTranscript); return
+        }
         // Very short ASR previews are often noise or an unfinished syllable.
         // They must not retire a complete question while the pause timer runs.
         if let partial, partial.trimmingCharacters(in: .whitespacesAndNewlines).count < 3 { recordLaya(.shortPreview); return }
         guard layaPredictor != nil || laya.isReady else { recordLaya(laya.isBusy ? .loading : .unavailable); return }
+        if let partial {
+            let now = ProcessInfo.processInfo.systemUptime
+            let interval = max(0, layaPartialThrottleInterval)
+            if interval > 0, now - lastLayaPartialSubmissionAt < interval {
+                pendingLayaPartial = (speaker: speaker, partial: partial)
+                if layaPartialTask == nil {
+                    let wait = max(0.01, interval - (now - lastLayaPartialSubmissionAt))
+                    let epoch = liveEpoch
+                    layaPartialTask = Task { [weak self] in
+                        do { try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) } catch { return }
+                        guard let self, self.liveEpoch == epoch, self.isRunning, !self.isShuttingDown else { return }
+                        self.layaPartialTask = nil
+                        guard let latest = self.pendingLayaPartial else { return }
+                        self.pendingLayaPartial = nil
+                        self.lastLayaPartialSubmissionAt = ProcessInfo.processInfo.systemUptime
+                        self.submitLayaNow(speaker: latest.speaker, partial: latest.partial)
+                    }
+                }
+                return
+            }
+            layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil
+            lastLayaPartialSubmissionAt = now
+        } else {
+            layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil
+            lastLayaPartialSubmissionAt = 0
+        }
+        submitLayaNow(speaker: speaker, partial: partial)
+    }
+    private func submitLayaNow(speaker: Speaker, partial: String?) {
         // Use the same caption grouping as dispatch, without mutating conversation state.
         var snapshot = conversation
         if let partial {
@@ -629,20 +730,24 @@ final class AppCoordinator: ObservableObject {
         if analysis { analysisKeyCheckFeedback = nil } else { liveKeyCheckFeedback = nil }
     }
     func saveCredential(_ value: String, analysis: Bool) async throws {
-        guard !isMock else { return }
+        guard !isMock || credentialSaver != nil else { return }
         let reference = analysis ? try settings.analysisCredentialReference() : .live
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         clearCredentialCheckFeedback(analysis: analysis)
-        try await CredentialVault.shared.save(value, for: reference)
+        if let credentialSaver { try await credentialSaver(value, reference) }
+        else { try await CredentialVault.shared.save(value, for: reference) }
         answerCredentialRevision = UUID()
         if reference == .live {
             credentialRevision = UUID(); isCheckingKey = false
             cachedKey = value; hasAPIKey = true; keyNeedsAuthorization = false; keyStatus = "Saved in macOS Keychain."
             embeddingVerificationEpoch = UUID(); embeddingVerificationTask?.cancel(); embeddingVerificationTask = nil; embeddingVerification = .idle
-            if settings.embeddingService == .openAI { Task { await self.verifyEmbeddingIfNeeded() } }
+            if !isMock && settings.embeddingService == .openAI { Task { await self.verifyEmbeddingIfNeeded() } }
         } else if (try? settings.analysisCredentialReference()) == reference {
             analysisCredentialRevision = UUID(); isCheckingAnalysisKey = false
             cachedAnalysisKey = value; hasAnalysisKey = true; analysisKeyNeedsAuthorization = false; analysisKeyStatus = "Saved in macOS Keychain."
+        }
+        if translation.enabled, translationCredentialReference == reference {
+            setTranscriptTranslation(translation.target)
         }
     }
     var hasAnswerCredential: Bool { settings.reasoningService == .sharedOpenAI ? hasAPIKey : hasAnalysisKey }
@@ -752,12 +857,25 @@ final class AppCoordinator: ObservableObject {
         return provider.stream(request)
     }
     func removeCredential(analysis: Bool) async throws {
-        guard !isMock else { return }
+        guard !isMock || credentialRemover != nil else { return }
         let reference = analysis ? try settings.analysisCredentialReference() : .live
-        try await CredentialVault.shared.remove(reference)
+        if let credentialRemover { try await credentialRemover(reference) }
+        else { try await CredentialVault.shared.remove(reference) }
         answerCredentialRevision = UUID()
-        if reference == .live { embeddingVerificationEpoch = UUID(); embeddingVerificationTask?.cancel(); embeddingVerificationTask = nil; embeddingVerification = .idle; credentialRevision = UUID(); isCheckingKey = false; refreshKeyState() }
-        else if (try? settings.analysisCredentialReference()) == reference { refreshAnalysisKeyState() }
+        if reference == .live {
+            embeddingVerificationEpoch = UUID(); embeddingVerificationTask?.cancel(); embeddingVerificationTask = nil; embeddingVerification = .idle
+            credentialRevision = UUID(); isCheckingKey = false
+            cachedKey = nil; hasAPIKey = false
+            if !isMock { refreshKeyState() }
+        } else if (try? settings.analysisCredentialReference()) == reference {
+            analysisCredentialRevision = UUID(); isCheckingAnalysisKey = false
+            cachedAnalysisKey = nil; hasAnalysisKey = false
+            if !isMock { refreshAnalysisKeyState() }
+        }
+        if translation.enabled, translationCredentialReference == reference {
+            translation.stop()
+            translationCredentialReference = nil
+        }
     }
     private func runStartupCheckIfRequested(key: String) {
         let arguments = ProcessInfo.processInfo.arguments
@@ -830,17 +948,32 @@ final class AppCoordinator: ObservableObject {
             }
         }
     }
+    private func beginTransition() {
+        transitionDepth += 1
+        isTransitioning = true
+    }
+    private func endTransition() {
+        transitionDepth = max(0, transitionDepth - 1)
+        isTransitioning = transitionDepth > 0
+    }
     func start() async {
         guard !isRunning, !isTransitioning, !isShuttingDown, !updates.installationCommitted else { return }
-        isTransitioning = true; defer { isTransitioning = false }
+        beginTransition(); defer { endTransition() }
+        micToggleRevision = UUID()
+        activeMicToggleRevision = nil
+        micToggleTask?.cancel()
+        micToggleTask = nil
         if !isMock { LayaGateDiagnostics.begin() }
         recordLaya(.idle)
         if !isMock { CaptureDiagnostics.record(.listeningStart, details: .init(listeningService: settings.listeningService.rawValue, captureMode: settings.mode.rawValue, automatic: settings.automaticSuggestions)) }
         prepareLocalRetrieval()
         invalidateAutomaticTrigger(releaseRuntime: false)
         let epoch = UUID(); liveEpoch = epoch
-        saveSession()
-        guard sessionStartedAt == nil else { statusMessage = sessions.lastError ?? "Session history could not be saved."; return }
+        let saved = await saveSessionAsync()
+        guard saved, sessionStartedAt == nil, !hasPendingUnsavedSession else {
+            statusMessage = sessions.lastError ?? "Session history could not be saved. Check available disk space and permissions."
+            return
+        }
         translation.resetSession(); conversation.reset(); transcript.clear(); activeDelegations = []; speakingSources = []
         sessionStartedAt = Date(); sessionWasVoice = true; sessionAnswerIDs = []
         echo.begin(sampleRate: settings.listeningService.sampleRate)
@@ -866,6 +999,7 @@ final class AppCoordinator: ObservableObject {
             if testLiveProviderFactory == nil, settings.listeningService == .apple {
                 guard AppleSpeechSupport.available else { throw CopilotError.message("Apple speech requires macOS 26 and a supported Mac and language.") }
                 guard await AppleSpeechSupport.installed(settings.appleSpeechLanguage) else { throw CopilotError.message("Download the selected Apple speech language in Services first.") }
+                guard liveEpoch == epoch, !isShuttingDown else { sessionStartedAt = nil; return }
             }
             systemAudio.configure(sampleRate: settings.listeningService.sampleRate)
             mic.configure(sampleRate: settings.listeningService.sampleRate)
@@ -875,9 +1009,13 @@ final class AppCoordinator: ObservableObject {
             statusMessage = "Starting audio capture…"
             // Acquire permissions/capture first; never leave paid sockets open after a capture failure.
             if settings.mode == .remote { await systemAudio.start(sessionID: epoch) }
-            guard liveEpoch == epoch else { return }
-            if micEnabled || settings.mode == .inPerson { await mic.start() }
-            guard liveEpoch == epoch else { return }
+            guard liveEpoch == epoch, !isShuttingDown else {
+                await systemAudio.stop(); mic.stop(); sessionStartedAt = nil; return
+            }
+            if micEnabled || settings.mode == .inPerson { await mic.start(sessionID: epoch) }
+            guard liveEpoch == epoch, !isShuttingDown else {
+                await systemAudio.stop(); mic.stop(); sessionStartedAt = nil; return
+            }
             guard systemAudio.isCapturing || mic.isCapturing else {
                 statusMessage = mic.lastError ?? systemAudio.lastError ?? "No audio capture source available."
                 sessionStartedAt = nil; return
@@ -970,19 +1108,57 @@ final class AppCoordinator: ObservableObject {
             transcript.clearPartial(speaker)
             translation.updatePreview("", speaker: speaker)
             statusMessage = message
-            if settings.listeningService.isLocal, isRunning, !isTransitioning {
+            if isRunning, !isTransitioning {
                 Task { await stop(); statusMessage = message }
             }
         case .closed(let finalized):
-            if speechRuntime != .failed { speechRuntime = .idle }
-            if speaker == .you { endOwnTurn() }
-            speakingSources.remove(speaker)
-            layaGate.reset()
-            configureAutomaticTrigger(prepare: false)
-            transcript.clearPartial(speaker)
-            translation.updatePreview("", speaker: speaker)
             if !finalized, settings.listeningService.isLocal { incompleteLocalStop = true; DebugLog.log("local.close incomplete_flush") }
             else if !finalized { DebugLog.log("live.close final_usage_unconfirmed speaker=\(speaker.rawValue)") }
+            if speaker == .you { endOwnTurn() }
+            speakingSources.remove(speaker)
+            transcript.clearPartial(speaker)
+            translation.updatePreview("", speaker: speaker)
+            let isIntentionalMicMute = speaker == .you && settings.mode == .remote && (isTogglingMic || micLive == nil)
+            let attachedProvider: (any LiveProvider)? = (speaker == .them ? systemLive : micLive)
+            let isUnexpectedActiveClose = isRunning && !isTransitioning && !isIntentionalMicMute && attachedProvider != nil
+            if speaker == .you && settings.mode == .remote {
+                // Closing the microphone channel in Remote mode must not clear pending remote questions in Laya.
+                if speechRuntime != .failed && systemLive == nil { speechRuntime = .idle }
+                if isUnexpectedActiveClose {
+                    let closedProvider = micLive
+                    micLive = nil
+                    mic.stop(sessionID: epoch)
+                    finishAudioFlow(.you, provider: closedProvider)
+                    captureNotice = Self.captureNotice(mode: settings.mode, systemCapturing: systemAudio.isCapturing, micCapturing: mic.isCapturing)
+                    if systemLive == nil && !systemAudio.isCapturing {
+                        let closedMessage = "Speech session was closed by the service. Start listening again to reconnect."
+                        statusMessage = closedMessage
+                        Task { @MainActor [weak self] in
+                            guard let self, self.liveEpoch == epoch, self.isRunning else { return }
+                            await self.stop()
+                            self.statusMessage = closedMessage
+                        }
+                    } else {
+                        micEnabled = false
+                        statusMessage = "Microphone speech session was closed by the service. Remote audio continues; re-enable the microphone to reconnect."
+                    }
+                }
+            } else {
+                if speechRuntime != .failed { speechRuntime = .idle }
+                layaGate.reset()
+                configureAutomaticTrigger(prepare: false)
+                if isUnexpectedActiveClose {
+                    if speaker == .them { systemLive = nil } else { micLive = nil }
+                    finishAudioFlow(speaker, provider: attachedProvider)
+                    let closedMessage = "Speech session was closed by the service. Start listening again to reconnect."
+                    statusMessage = closedMessage
+                    Task { @MainActor [weak self] in
+                        guard let self, self.liveEpoch == epoch, self.isRunning else { return }
+                        await self.stop()
+                        self.statusMessage = closedMessage
+                    }
+                }
+            }
         }
     }
     private func applySpeechActivity(_ active: Bool, speaker: Speaker) {
@@ -1239,16 +1415,26 @@ final class AppCoordinator: ObservableObject {
         return await awaitBounded(task, seconds: seconds)
     }
     func shutdown() async {
+        // Flip shutdown first so no await window can re-enter start(), toggleMic(), onboarding verification, or indexing.
+        isShuttingDown = true
+        micToggleRevision = UUID()
+        activeMicToggleRevision = nil
+        micToggleTask?.cancel()
+        layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil
+        knowledgeTask?.cancel()
+        for task in knowledgeDeleteTasks.values { task.cancel() }
+        for task in namingTasks.values { task.cancel() }
+        namingTasks.removeAll(); namingGenerations.removeAll()
         speechVerificationTask?.cancel()
         if await awaitBounded(speechVerificationTask, seconds: 2), !isMock {
             CaptureDiagnostics.record(.shutdownStage, details: .init(lifecyclePhase: .verificationWait, timedOut: true))
         }
         translation.stop()
+        translationCredentialReference = nil
         embeddingVerificationTask?.cancel()
         if await awaitBounded(embeddingVerificationTask, seconds: 2), !isMock {
             CaptureDiagnostics.record(.shutdownStage, details: .init(lifecyclePhase: .verificationWait, timedOut: true))
         }
-        isShuttingDown = true
         retrievalPreparationTask?.cancel()
         if await awaitBounded(retrievalPreparationTask, seconds: 2.5), !isMock {
             CaptureDiagnostics.record(.shutdownStage, details: .init(lifecyclePhase: .retrievalWait, timedOut: true))
@@ -1256,17 +1442,31 @@ final class AppCoordinator: ObservableObject {
         cancelAnswer()
         startupCheckTask?.cancel()
         _ = await awaitBounded(startupCheckTask, seconds: 2)
+        _ = await awaitBounded(micToggleTask, seconds: min(1.5, shutdownSubsystemTimeoutSeconds))
+        micToggleTask = nil
         await stop(force: true)
         localEmbedding?.close(initiator: .shutdown); localEmbedding = nil
-        await localModels.shutdown()
-        await appleSpeech.shutdown()
-        await laya.shutdown()
+        let subsystemLimit = max(0.05, shutdownSubsystemTimeoutSeconds)
+        _ = await awaitBounded(knowledgeTask, seconds: subsystemLimit)
+        knowledgeTask = nil
+        let localModelsTask = Task<Void, Never> { @MainActor [weak self] in if let self { await self.localModels.shutdown() } }
+        _ = await awaitBounded(localModelsTask, seconds: subsystemLimit)
+        let appleSpeechTask = Task<Void, Never> { @MainActor [weak self] in if let self { await self.appleSpeech.shutdown() } }
+        _ = await awaitBounded(appleSpeechTask, seconds: subsystemLimit)
+        let layaTask = Task<Void, Never> { @MainActor [weak self] in if let self { await self.laya.shutdown() } }
+        _ = await awaitBounded(layaTask, seconds: subsystemLimit)
+        await sessions.flush(timeout: subsystemLimit)
         if !isMock { CaptureDiagnostics.record(.shutdownStage, details: .init(lifecyclePhase: .complete, timedOut: false)) }
     }
     func stop(force: Bool = false) async {
         guard force || !isTransitioning else { return }
         if !isMock { CaptureDiagnostics.record(.listeningStop) }
-        isTransitioning = true; defer { isTransitioning = false }
+        beginTransition(); defer { endTransition() }
+        micToggleRevision = UUID()
+        activeMicToggleRevision = nil
+        micToggleTask?.cancel()
+        micToggleTask = nil
+        layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil
         incompleteLocalStop = false
         isRunning = false
         invalidateAutomaticTrigger()
@@ -1283,9 +1483,15 @@ final class AppCoordinator: ObservableObject {
         // After the final flush, so finals produced by Stop are counted.
         for speaker in flowSources { finishAudioFlow(speaker, provider: speaker == .them ? a : b) }
         liveEpoch = UUID()
-        saveSession()
+        let saved = await saveSessionAsync()
         if !isMock { CaptureDiagnostics.record(.stopStage, details: .init(lifecyclePhase: .complete, timedOut: disconnectTimedOut)) }
-        statusMessage = incompleteLocalStop ? "Listening stopped. The final local speech segment could not be completed." : "Listening stopped — manual questions remain available"
+        if !saved {
+            statusMessage = sessions.lastError ?? "Session history could not be saved. Check available disk space and permissions."
+        } else if let draftWarning = sessions.lastDraftWarning {
+            statusMessage = draftWarning
+        } else {
+            statusMessage = incompleteLocalStop ? "Listening stopped. The final local speech segment could not be completed." : "Listening stopped — manual questions remain available"
+        }
     }
     /// Discard this session, including provider-side speech context and late buffered finals.
     /// Listening continues with fresh providers if it was active before the reset.
@@ -1293,12 +1499,24 @@ final class AppCoordinator: ObservableObject {
         guard !isTransitioning, !isShuttingDown else { return }
         let resume = isRunning
         // Finish and archive stable/final ASR before clearing the visible conversation.
-        if resume { await stop() } else { saveSession() }
-        guard sessionStartedAt == nil else {
+        let saved: Bool
+        if resume {
+            await stop()
+            saved = sessionStartedAt == nil && !hasPendingUnsavedSession
+        } else {
+            saved = await saveSessionAsync()
+        }
+        guard !isShuttingDown else { return }
+        guard saved, sessionStartedAt == nil, !hasPendingUnsavedSession else {
             statusMessage = sessions.lastError ?? "Session history could not be saved. Check available disk space and permissions."
             return
         }
-        isTransitioning = true
+        beginTransition()
+        defer { endTransition() }
+        micToggleRevision = UUID()
+        activeMicToggleRevision = nil
+        micToggleTask?.cancel()
+        micToggleTask = nil
         liveEpoch = UUID() // Invalidate old callbacks BEFORE disconnect can flush a final segment.
         invalidateAutomaticTrigger()
         cancelAnswer(); answerTask = nil
@@ -1314,11 +1532,12 @@ final class AppCoordinator: ObservableObject {
         statusMessage = "Ready — type a question or start listening"
         let a = systemLive, b = micLive; systemLive = nil; micLive = nil
         await systemAudio.stop(); mic.stop()
-        async let closeA: Void = a?.disconnect() ?? ()
-        async let closeB: Void = b?.disconnect() ?? ()
-        _ = await (closeA, closeB)
-        isTransitioning = false
-        if resume && !isShuttingDown { await start() }
+        _ = await disconnectProvidersBounded(a, b)
+        if resume && !isShuttingDown {
+            endTransition()
+            await start()
+            beginTransition()
+        }
     }
     private func archiveAnswer(_ record: AnswerRecord) -> SessionAnswer {
         let store = record.store
@@ -1331,16 +1550,76 @@ final class AppCoordinator: ObservableObject {
                                    page: chunk.page, ordinal: chunk.ordinal, excerpt: chunk.text)
         }, sourceFragmentID: record.sourceFragmentID)
     }
-    func saveSession() {
-        guard let started = sessionStartedAt else { return }
+    private func buildSessionSnapshot() -> PendingSessionSnapshot? {
+        if let pending = pendingFailedSession { return pending }
+        guard let started = sessionStartedAt else { return nil }
         let savedAnswers = answers.filter { sessionAnswerIDs.contains($0.id) }.map(archiveAnswer)
         let lines = transcript.archiveSnapshot(since: started)
-        if !lines.isEmpty || !savedAnswers.isEmpty {
-            guard let record = sessions.saveSnapshot(lines: lines, startedAt: started,
-                fragments: transcript.fragmentRevisions.filter { $0.receivedAt >= started }, answers: savedAnswers) else { return }
-            for answer in savedAnswers { archivedAnswerSessions[answer.id] = record.id }
-            if sessionWasVoice && !isMock && !record.namingInput.isEmpty { nameSession(record) }
+        guard !lines.isEmpty || !savedAnswers.isEmpty else { return nil }
+        let fragments = transcript.fragmentRevisions.filter { $0.receivedAt >= started }
+        return PendingSessionSnapshot(id: UUID(), startedAt: started, endedAt: Date(),
+                                      lines: lines, fragments: fragments, answers: savedAnswers, wasVoice: sessionWasVoice)
+    }
+
+    private func handleSessionSaveResult(_ result: SessionStore.SaveResult?, snapshot: PendingSessionSnapshot) -> Bool {
+        guard let result else {
+            pendingFailedSession = nil; hasPendingUnsavedSession = false
+            sessionStartedAt = nil; sessionWasVoice = false; sessionAnswerIDs = []
+            return true
         }
+        switch result.outcome {
+        case .saved, .savedWithoutDraft:
+            for answer in snapshot.answers { archivedAnswerSessions[answer.id] = result.record.id }
+            if snapshot.wasVoice && !isMock && !isShuttingDown && !result.record.namingInput.isEmpty {
+                nameSession(result.record)
+            }
+            pendingFailedSession = nil; hasPendingUnsavedSession = false
+            sessionStartedAt = nil; sessionWasVoice = false; sessionAnswerIDs = []
+            if let warning = result.outcome.draftWarning { statusMessage = warning }
+            return true
+        case .failed(let message):
+            pendingFailedSession = snapshot
+            hasPendingUnsavedSession = true
+            statusMessage = message
+            return false
+        }
+    }
+
+    /// Saves the active (or previously failed) session snapshot off the main thread and awaits
+    /// JSON durability before clearing in-memory session state. Returns `true` when empty or
+    /// JSON persisted (including when only the optional TXT draft failed).
+    @discardableResult
+    func saveSessionAsync() async -> Bool {
+        if let snapshot = buildSessionSnapshot() {
+            let result = await sessions.saveSnapshotConfirmed(
+                id: snapshot.id, lines: snapshot.lines, startedAt: snapshot.startedAt,
+                endedAt: snapshot.endedAt, fragments: snapshot.fragments, answers: snapshot.answers
+            )
+            return handleSessionSaveResult(result, snapshot: snapshot)
+        }
+        guard sessionStartedAt != nil else { return true }
+        pendingFailedSession = nil; hasPendingUnsavedSession = false
+        sessionStartedAt = nil; sessionWasVoice = false; sessionAnswerIDs = []
+        return true
+    }
+
+    @discardableResult
+    func retrySaveSession() async -> Bool {
+        await saveSessionAsync()
+    }
+
+    /// Synchronous save path reserved for `applicationWillTerminate` fallback.
+    func saveSession() {
+        if let snapshot = buildSessionSnapshot() {
+            let result = sessions.saveSnapshotSync(
+                id: snapshot.id, lines: snapshot.lines, startedAt: snapshot.startedAt,
+                endedAt: snapshot.endedAt, fragments: snapshot.fragments, answers: snapshot.answers
+            )
+            _ = handleSessionSaveResult(result, snapshot: snapshot)
+            return
+        }
+        guard sessionStartedAt != nil else { return }
+        pendingFailedSession = nil; hasPendingUnsavedSession = false
         sessionStartedAt = nil; sessionWasVoice = false; sessionAnswerIDs = []
     }
     func renameSession(_ id: UUID, title: String) {
@@ -1384,18 +1663,70 @@ final class AppCoordinator: ObservableObject {
         guard !isShuttingDown, !isTransitioning else { return }
         guard settings.mode == .remote else { statusMessage = "Room mode uses the microphone. Stop listening to disable it."; return }
         micEnabled.toggle()
-        guard isRunning, !isMock else { return }
+        guard isRunning, !isMock || testLiveProviderFactory != nil else { return }
+        let wantMic = micEnabled
         let epoch = liveEpoch
-        Task {
-            if micEnabled {
+        let revision = UUID()
+        micToggleRevision = revision
+        let previousToggle = micToggleTask
+        micToggleTask = Task { [weak self] in
+            // Serialize rapid Unmute -> Mute -> Unmute transitions so providers never overlap or leak.
+            await previousToggle?.value
+            guard let self else { return }
+            guard self.micToggleRevision == revision else { return }
+            self.activeMicToggleRevision = revision
+            defer {
+                if self.activeMicToggleRevision == revision {
+                    self.activeMicToggleRevision = nil
+                }
+                if self.micToggleRevision == revision {
+                    self.micToggleTask = nil
+                }
+            }
+            guard self.liveEpoch == epoch, self.isRunning, !self.isShuttingDown else {
+                self.mic.stop(sessionID: epoch)
+                return
+            }
+            if wantMic {
+                guard self.micEnabled else { return }
                 do {
-                    let key = settings.listeningService == .openAI ? try credential() : ""
-                    micFlow.begin(sampleRate: settings.listeningService.sampleRate); await mic.start()
-                    guard mic.isCapturing, liveEpoch == epoch, isRunning, !isShuttingDown, micEnabled else { return }
-                    micLive = makeLive(key: key, speaker: .you, epoch: liveEpoch); micLive?.connect(context: conversation.context())
-                    if !flowSources.contains(.you) { flowSources.append(.you) }
-                } catch { statusMessage = error.localizedDescription }
-            } else { mic.stop(); let previous = micLive; micLive = nil; await previous?.disconnect(); finishAudioFlow(.you, provider: previous) }
+                    let key = (self.testLiveProviderFactory == nil && self.settings.listeningService == .openAI) ? try self.credential() : ""
+                    self.micFlow.begin(sampleRate: self.settings.listeningService.sampleRate)
+                    await self.mic.start(sessionID: epoch)
+                    guard self.mic.isCapturing, self.liveEpoch == epoch, self.isRunning, !self.isShuttingDown,
+                          self.micEnabled, self.micToggleRevision == revision else {
+                        if !self.isRunning || self.isShuttingDown || !self.micEnabled || self.liveEpoch != epoch {
+                            self.mic.stop(sessionID: epoch)
+                        }
+                        return
+                    }
+                    let oldProvider = self.micLive
+                    self.micLive = nil
+                    if let oldProvider { await oldProvider.disconnect() }
+                    guard self.liveEpoch == epoch, self.isRunning, !self.isShuttingDown,
+                          self.micEnabled, self.micToggleRevision == revision else {
+                        if !self.isRunning || self.isShuttingDown || !self.micEnabled || self.liveEpoch != epoch {
+                            self.mic.stop(sessionID: epoch)
+                        }
+                        return
+                    }
+                    self.micLive = self.makeLive(key: key, speaker: .you, epoch: epoch)
+                    self.micLive?.connect(context: self.conversation.context())
+                    if !self.flowSources.contains(.you) { self.flowSources.append(.you) }
+                    self.captureNotice = Self.captureNotice(mode: self.settings.mode, systemCapturing: self.systemAudio.isCapturing, micCapturing: self.mic.isCapturing)
+                } catch { self.statusMessage = error.localizedDescription }
+            } else {
+                self.mic.stop(sessionID: epoch)
+                guard self.liveEpoch == epoch else { return }
+                self.speakingSources.remove(.you)
+                self.endOwnTurn()
+                let previous = self.micLive
+                self.micLive = nil
+                await previous?.disconnect()
+                guard self.liveEpoch == epoch else { return }
+                self.finishAudioFlow(.you, provider: previous)
+                self.captureNotice = Self.captureNotice(mode: self.settings.mode, systemCapturing: self.systemAudio.isCapturing, micCapturing: self.mic.isCapturing)
+            }
         }
     }
     func requestSuggestion(mode: SuggestionMode = .reply) {
@@ -1672,37 +2003,40 @@ final class AppCoordinator: ObservableObject {
         isIndexing = true
     }
     func importDocuments(_ urls: [URL]) {
-        guard !isIndexing, let knowledge else { return }
+        guard !isIndexing, !isShuttingDown, let knowledge else { return }
         let documents: [URL]
         do { documents = try DocumentImport.validate(urls) }
         catch { knowledgeMessage = error.localizedDescription; return }
         guard !documents.isEmpty else { return }
         beginIndexing(count: documents.count)
-        Task {
-            defer { isIndexing = false; indexingDocumentID = nil }
+        knowledgeTask = Task {
+            defer { isIndexing = false; indexingDocumentID = nil; knowledgeTask = nil }
             do {
                 if !isMock, settings.embeddingService == .openAI { _ = try credential() }
                 let provider = try embeddingProvider(requireReady: true)
                 for (offset, url) in documents.enumerated() {
+                    guard !isShuttingDown, !Task.isCancelled else { break }
                     knowledgeMessage = "Indexing \(url.lastPathComponent)…"
                     do { _ = try await knowledge.importDocument(url, provider: provider, progress: indexingCallback(offset: offset, count: documents.count)) }
                     catch { knowledgeMessage = error.localizedDescription; await refreshKnowledge(); return }
                     await refreshKnowledge()
                 }
+                guard !isShuttingDown, !Task.isCancelled else { return }
                 indexingSucceeded = true
                 knowledgeMessage = "Indexing complete. Retrieval is local."
             } catch { knowledgeMessage = error.localizedDescription }
         }
     }
     func reindex(_ document: KnowledgeDocument) {
-        guard !isIndexing, let knowledge else { return }
+        guard !isIndexing, !isShuttingDown, let knowledge else { return }
         beginIndexing(count: 1)
-        Task {
-            defer { isIndexing = false; indexingDocumentID = nil }
+        knowledgeTask = Task {
+            defer { isIndexing = false; indexingDocumentID = nil; knowledgeTask = nil }
             do {
                 knowledgeMessage = "Re-indexing \(document.name)…"
                 if !isMock, settings.embeddingService == .openAI { _ = try credential() }
                 _ = try await knowledge.reindex(document, provider: embeddingProvider(requireReady: true), progress: indexingCallback(offset: 0, count: 1))
+                guard !isShuttingDown, !Task.isCancelled else { return }
                 indexingSucceeded = true
                 knowledgeMessage = "Re-indexing complete."
             } catch { knowledgeMessage = error.localizedDescription }
@@ -1710,28 +2044,32 @@ final class AppCoordinator: ObservableObject {
         }
     }
     func deleteDocument(_ document: KnowledgeDocument) {
-        guard !isIndexing, let knowledge else { return }
-        Task {
+        guard !isIndexing, !isShuttingDown, let knowledge else { return }
+        let token = UUID()
+        knowledgeDeleteTasks[token] = Task {
+            defer { knowledgeDeleteTasks[token] = nil }
             do { try await knowledge.delete(document.id); knowledgeMessage = "Deleted local document and index." }
             catch { knowledgeMessage = error.localizedDescription }
             await refreshKnowledge()
         }
     }
     func reindexAll() {
-        guard !isIndexing, let knowledge else { return }
+        guard !isIndexing, !isShuttingDown, let knowledge else { return }
         let documents = knowledgeDocuments
         guard !documents.isEmpty else { return }
         beginIndexing(count: documents.count)
-        Task {
-            defer { isIndexing = false; indexingDocumentID = nil }
+        knowledgeTask = Task {
+            defer { isIndexing = false; indexingDocumentID = nil; knowledgeTask = nil }
             do {
                 if !isMock, settings.embeddingService == .openAI { _ = try credential() }
                 let provider = try embeddingProvider(requireReady: true)
                 for (offset, document) in documents.enumerated() {
+                    guard !isShuttingDown, !Task.isCancelled else { break }
                     knowledgeMessage = "Re-indexing \(document.name)…"
                     _ = try await knowledge.reindex(document, provider: provider, progress: indexingCallback(offset: offset, count: documents.count))
                     await refreshKnowledge()
                 }
+                guard !isShuttingDown, !Task.isCancelled else { return }
                 indexingSucceeded = true
                 knowledgeMessage = "Re-indexing complete."
             } catch { knowledgeMessage = error.localizedDescription }
