@@ -1,0 +1,584 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="LiveCopilot.App.SettingsWindow" x:Name="SettingsRoot" Style="{StaticResource {x:Type Window}}" Icon="Resources/AppIcon.png" Title="LiveCopilot — 设置" Width="980" Height="680" MinWidth="860" MinHeight="560" WindowStartupLocation="CenterOwner" AutomationProperties.AutomationId="SettingsWindow">
+  <Window.Resources>
+    <Style x:Key="SettingsCard" TargetType="Border" BasedOn="{StaticResource Card}">
+      <Setter Property="Padding" Value="12"/>
+      <Setter Property="Margin" Value="0,0,0,8"/>
+    </Style>
+    <Style x:Key="SettingsHint" TargetType="TextBlock" BasedOn="{StaticResource Hint}">
+      <Setter Property="Margin" Value="0,4,0,6"/>
+    </Style>
+    <Style x:Key="SettingsSectionTitle" TargetType="TextBlock" BasedOn="{StaticResource SectionTitle}">
+      <Setter Property="Margin" Value="0,6,0,6"/>
+    </Style>
+    <DataTemplate x:Key="ModelCardTemplate">
+      <Border Style="{StaticResource SettingsCard}" Padding="10,6" Margin="0,0,0,6">
+        <StackPanel>
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Status}" Margin="12,0,0,0" Foreground="{StaticResource SecondaryInk}"/>
+            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextWrapping="Wrap" AutomationProperties.AutomationId="{Binding AutomationId}" AutomationProperties.ItemStatus="{Binding Status}"/>
+          </DockPanel>
+          <ProgressBar Value="{Binding Progress, Mode=OneWay}" IsIndeterminate="{Binding IsVerifying}" Minimum="0" Maximum="100" Height="5" Margin="0,4,0,0"/>
+          <DockPanel Margin="0,4,0,0">
+            <WrapPanel DockPanel.Dock="Right">
+              <WrapPanel.Resources>
+                <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                  <Setter Property="Padding" Value="9,2"/>
+                  <Setter Property="Margin" Value="4,0,0,0"/>
+                </Style>
+              </WrapPanel.Resources>
+              <Button Content="{Binding DownloadLabel}" IsEnabled="{Binding CanDownload}" Click="DownloadModel" AutomationProperties.AutomationId="{Binding DownloadId}"/>
+              <Button Content="取消" IsEnabled="{Binding CanCancel}" Click="CancelModel"/>
+              <Button Content="校验" IsEnabled="{Binding CanVerify}" Click="VerifyModel"/>
+              <Button Content="删除" IsEnabled="{Binding CanDelete}" Click="DeleteModel"/>
+            </WrapPanel>
+            <TextBlock Text="{Binding Transfer}" VerticalAlignment="Center" Foreground="{StaticResource SecondaryInk}"/>
+          </DockPanel>
+          <TextBlock Text="{Binding Hint}" Foreground="{StaticResource SecondaryInk}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+    <DataTemplate x:Key="CredentialTemplate">
+      <StackPanel Margin="0,12,0,4" IsEnabled="{Binding CanEdit}">
+        <TextBlock Text="{Binding Label}" FontWeight="SemiBold"/>
+        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,4"/>
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Content="清除密钥" Command="{Binding ClearCommand}"/>
+          <PasswordBox AutomationProperties.AutomationId="{Binding Label}" Loaded="CredentialLoaded" PasswordChanged="CredentialChanged" Padding="7" Margin="0,0,10,0" ToolTip="输入新密钥；点击页面底部保存后生效。不会回填已存密钥。"/>
+        </DockPanel>
+      </StackPanel>
+    </DataTemplate>
+  </Window.Resources>
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="190"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+    <Border Grid.RowSpan="2" Background="{StaticResource Sidebar}">
+      <TextBlock Text="{Binding ShortVersion, Mode=OneWay}" ToolTip="{Binding DisplayVersion}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="18" VerticalAlignment="Bottom" Foreground="{StaticResource SecondaryInk}" FontSize="12"/>
+    </Border>
+  <TabControl x:Name="Pages" Grid.Row="0" Grid.ColumnSpan="2" TabStripPlacement="Left" Background="Transparent" BorderThickness="0" ItemContainerStyle="{StaticResource NavigationTab}">
+    <TabControl.Template>
+      <ControlTemplate TargetType="TabControl">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="190"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="16,32,8,24">
+                <Image Source="Resources/AppIcon.png" Width="24" Height="24" Margin="0,0,6,0"/>
+                <TextBlock Style="{StaticResource Brand}" FontSize="19"/>
+              </StackPanel>
+              <StackPanel IsItemsHost="True"/>
+            </DockPanel>
+          <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Column="1" Margin="24,20,18,0" ContentSource="SelectedContent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+        </Grid>
+      </ControlTemplate>
+    </TabControl.Template>
+    <TabItem AutomationProperties.AutomationId="GeneralPage">
+      <TabItem.Header>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE713;" FontSize="18" Width="28"/>
+          <TextBlock Text="通用" FontSize="16"/>
+        </StackPanel>
+      </TabItem.Header>
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="通用" Style="{StaticResource PageTitle}"/>
+        <ScrollViewer AutomationProperties.AutomationId="GeneralScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="0,0,10,12" IsEnabled="{Binding CanEdit}">
+            <Border Style="{StaticResource SettingsCard}">
+              <StackPanel>
+                <DockPanel>
+                  <Button DockPanel.Dock="Right" Content="悬浮窗操作提示" Click="OpenOperationGuide" AutomationProperties.AutomationId="OpenOperationGuide"/>
+                  <Button DockPanel.Dock="Right" Content="打开引导" ToolTip="保存当前设置并打开六步引导" Click="OpenOnboarding" AutomationProperties.AutomationId="OpenOnboarding"/>
+                  <TextBlock Text="新用户引导" FontSize="16" FontWeight="SemiBold"/>
+                </DockPanel>
+                <TextBlock Text="查看语言、模型、服务和权限，保留已有配置。" Style="{StaticResource SettingsHint}"/>
+              </StackPanel>
+            </Border>
+            <StackPanel Orientation="Horizontal" Margin="0,14,0,10"><TextBlock Text="&#xE790;" FontFamily="{StaticResource IconFont}" FontSize="18" Width="28" VerticalAlignment="Center"/><TextBlock Text="语言与外观" FontSize="16" FontWeight="SemiBold"/></StackPanel>
+            <Border Style="{StaticResource SettingsCard}">
+              <StackPanel>
+                <DockPanel Margin="0,0,0,6">
+                  <TextBlock Text="界面语言" Width="130" VerticalAlignment="Center"/>
+                  <ComboBox ItemsSource="{Binding Languages}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Language, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0"/>
+                </DockPanel>
+                <TextBlock Text="界面语言偏好将保存；当前 Windows 文案为简体中文。回答语言在悬浮窗中单独设置。" Style="{StaticResource SettingsHint}"/>
+                <TextBlock Text="悬浮窗底色"/>
+                <ListBox ItemsSource="{Binding Backgrounds}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Background, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" ItemContainerStyle="{StaticResource SegmentChoice}" BorderThickness="0" Background="Transparent" HorizontalAlignment="Left" Margin="0,8" AutomationProperties.AutomationId="BackgroundSegments">
+                  <ListBox.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate></ListBox.ItemsPanel>
+                </ListBox>
+                <TextBlock Text="Windows 当前使用对应浅色底色，尚未启用系统玻璃材质。" Style="{StaticResource SettingsHint}"/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource SettingsCard}">
+              <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition/>
+                    <ColumnDefinition/>
+                  </Grid.ColumnDefinitions>
+                  <StackPanel Margin="0,0,14,0">
+                    <TextBlock Text="流式识别区字号"/>
+                    <Slider Minimum="11" Maximum="28" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding TranscriptFontSize}"/>
+                    <TextBlock Text="{Binding TranscriptFontSizeText, StringFormat={}{0} pt}" Style="{StaticResource SettingsHint}"/>
+                    <TextBlock Text="你在这个项目中具体负责什么？" FontSize="{Binding TranscriptFontSize}"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Text="回答区字号"/>
+                    <Slider Minimum="11" Maximum="28" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding AnswerFontSize}"/>
+                    <TextBlock Text="{Binding AnswerFontSizeText, StringFormat={}{0} pt}" Style="{StaticResource SettingsHint}"/>
+                    <TextBlock Text="我会先说明目标，再介绍具体的方法。" FontSize="{Binding AnswerFontSize}"/>
+                  </StackPanel>
+              </Grid>
+            </Border>
+            <StackPanel Orientation="Horizontal" Margin="0,14,0,10"><TextBlock Text="&#xE737;" FontFamily="{StaticResource IconFont}" FontSize="18" Width="28" VerticalAlignment="Center"/><TextBlock Text="悬浮窗" FontSize="16" FontWeight="SemiBold"/></StackPanel>
+            <Border Style="{StaticResource SettingsCard}">
+              <StackPanel>
+                <CheckBox AutomationProperties.AutomationId="OverlayAutoHeight" Content="回答区自动伸缩" IsChecked="{Binding OverlayAutoHeight}"/>
+                <TextBlock Text="窗口随回答内容伸缩，长会话独立滚动。关闭后可手动调整大小。" Style="{StaticResource SettingsHint}"/>
+                <Separator/>
+                <CheckBox AutomationProperties.AutomationId="OverlayCaptureProtection" Content="在会议共享与录制中隐藏悬浮窗" IsChecked="{Binding ExcludeOverlayFromCapture}"/>
+                <TextBlock Text="悬浮窗在本机保持可见。捕获保护效果取决于 Windows 版本和共享软件；设置与引导仍会出现在共享画面中。" Style="{StaticResource SettingsHint}"/>
+              </StackPanel>
+            </Border>
+            <StackPanel Orientation="Horizontal" Margin="0,14,0,10"><TextBlock Text="&#xE8A4;" FontFamily="{StaticResource IconFont}" FontSize="18" Width="28" VerticalAlignment="Center"/><TextBlock Text="回答与工具" FontSize="16" FontWeight="SemiBold"/></StackPanel>
+            <Border Style="{StaticResource SettingsCard}">
+              <StackPanel>
+                <TextBlock Text="回答语言"/>
+                <ComboBox ItemsSource="{Binding AnswerLanguages}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding AnswerLanguage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                <TextBlock Text="使用场景"/>
+                <ComboBox ItemsSource="{Binding Scenarios}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Scenario, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                <CheckBox Content="双语回答" IsChecked="{Binding BilingualAnswers}"/>
+                <CheckBox Content="启用总结" IsChecked="{Binding RecapEnabled}"/>
+                <CheckBox Content="启用追问" IsChecked="{Binding FollowUpEnabled}"/>
+                <TextBlock Text="附加回答指令（最多 4000 个 UTF-16 单元）"/>
+                <TextBox Text="{Binding AdditionalAnswerInstructions, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" VerticalScrollBarVisibility="Auto"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </TabItem>
+    <TabItem AutomationProperties.AutomationId="ServicesPage">
+      <TabItem.Header>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE7B8;" FontSize="18" Width="28"/>
+          <TextBlock Text="服务" FontSize="16"/>
+        </StackPanel>
+      </TabItem.Header>
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="服务" Style="{StaticResource PageTitle}"/>
+        <TabControl x:Name="ServiceTabs" BorderThickness="0" Background="Transparent" Foreground="{StaticResource Ink}" FontSize="14" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" ItemContainerStyle="{StaticResource SegmentTab}">
+          <TabControl.Template>
+            <ControlTemplate TargetType="TabControl">
+              <Grid>
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                <DockPanel Margin="0,0,10,12">
+                  <TextBlock Text="服务用途" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                  <UniformGrid IsItemsHost="True" Rows="1"/>
+                </DockPanel>
+                <ContentPresenter x:Name="PART_SelectedContentHost" Grid.Row="1" ContentSource="SelectedContent" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" TextElement.Foreground="{StaticResource Ink}"/>
+              </Grid>
+            </ControlTemplate>
+          </TabControl.Template>
+          <TabItem Header="语音识别" AutomationProperties.AutomationId="SpeechServiceTab">
+            <ScrollViewer AutomationProperties.AutomationId="SpeechServiceScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel Margin="0,0,10,12" IsEnabled="{Binding CanEdit}">
+                <Border Style="{StaticResource SettingsCard}">
+                  <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="126"/></Grid.ColumnDefinitions>
+                      <TextBlock Text="当前引擎" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                      <ComboBox Grid.Column="1" Margin="0,0,16,0" AutomationProperties.AutomationId="ListeningServiceChoice" ItemsSource="{Binding ListeningServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ListeningService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                      <ComboBox.ItemContainerStyle>
+                        <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+                          <Setter Property="IsEnabled" Value="{Binding IsAvailable}"/>
+                        </Style>
+                      </ComboBox.ItemContainerStyle>
+                    </ComboBox>
+                      <TextBlock Grid.Column="2" Text="识别语言" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                      <ComboBox Grid.Column="3" Margin="0" ItemsSource="{Binding SpeechLanguages}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding LiveSpeechLanguage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                    </Grid>
+                    <TextBlock AutomationProperties.AutomationId="ListeningServiceHint" Text="{Binding ListeningHint}" Style="{StaticResource SettingsHint}"/>
+                    <TextBlock AutomationProperties.AutomationId="OpenAILivePrice" Text="{Binding LivePrice}" Style="{StaticResource SettingsHint}" Visibility="{Binding IsOpenAIListening, Converter={StaticResource Visible}}"/>
+                    <ItemsControl ItemsSource="{Binding SpeechChips}" Margin="0,4,0,0" Visibility="{Binding IsLocalListening, Converter={StaticResource Visible}}">
+                      <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate><DataTemplate><Border Style="{StaticResource Chip}"><TextBlock Text="{Binding}" FontSize="13"/></Border></DataTemplate></ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <WrapPanel Margin="0,4,0,0" Visibility="{Binding IsOpenAIListening, Converter={StaticResource Visible}}">
+                      <Border Style="{StaticResource Chip}"><TextBlock AutomationProperties.AutomationId="OpenAILiveCloudTag" Text="云端" FontSize="13"/></Border>
+                      <Border Style="{StaticResource Chip}"><TextBlock AutomationProperties.AutomationId="OpenAILiveMultilingualTag" Text="多语言" FontSize="13"/></Border>
+                      <Border Style="{StaticResource Chip}"><TextBlock AutomationProperties.AutomationId="OpenAILiveUsageTag" Text="按量计费" FontSize="13"/></Border>
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource SettingsCard}" Visibility="{Binding IsOpenAIListening, Converter={StaticResource Visible}}">
+                  <StackPanel>
+                    <TextBlock AutomationProperties.AutomationId="OpenAILiveCard" Text="OpenAI 云端 · GPT-Live-1" FontWeight="SemiBold"/>
+                    <CheckBox AutomationProperties.AutomationId="OpenAILiveAutomatic" Content="智能判断提问是否完整，自动生成回答" IsChecked="{Binding AutomaticSuggestions}"/>
+                    <TextBlock AutomationProperties.AutomationId="OpenAILiveLanguageHint" Text="语言选项仅影响识别偏好，不限制实际识别语言。" Style="{StaticResource SettingsHint}"/>
+                    <TextBlock AutomationProperties.AutomationId="OpenAILiveKeyHint" Text="使用“分析与回答 → API Key”中的共享 OpenAI 密钥。保存设置后，点击悬浮窗“开始聆听”连接云端。" Style="{StaticResource SettingsHint}"/>
+                  </StackPanel>
+                </Border>
+                <StackPanel Visibility="{Binding IsLocalListening, Converter={StaticResource Visible}}">
+                <TextBlock Text="模型连接与下载管理" Style="{StaticResource SettingsSectionTitle}"/>
+                <ContentControl Content="{Binding ZipformerModel, ElementName=SettingsRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
+                <ContentControl Content="{Binding ParaformerModel, ElementName=SettingsRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
+                <TextBlock Text="本地模型使用 CPU，无需 GPU 运行库。模型操作立即执行；关闭设置会取消操作并保留下载数据，删除会清理下载缓存。" Style="{StaticResource SettingsHint}"/>
+                </StackPanel>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+          <TabItem Header="实时回答触发" AutomationProperties.AutomationId="TriggerServiceTab">
+            <ScrollViewer AutomationProperties.AutomationId="TriggerServiceScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel Margin="0,0,10,12" IsEnabled="{Binding CanEdit}">
+                <Border Style="{StaticResource SettingsCard}">
+                  <StackPanel>
+                    <DockPanel>
+                      <TextBlock DockPanel.Dock="Right" Text="即将推出" Foreground="{StaticResource SecondaryInk}"/>
+                      <TextBlock Text="Jev Mode" FontWeight="SemiBold" FontSize="16"/>
+                    </DockPanel>
+                    <StackPanel IsEnabled="False">
+                      <CheckBox Content="实时回答触发" IsChecked="{Binding AutomaticSuggestions}"/>
+                      <DockPanel>
+                        <TextBlock Text="触发灵敏度" Width="130" VerticalAlignment="Center"/>
+                        <Slider Minimum="0" Maximum="1" Value="{Binding LayaThreshold}"/>
+                      </DockPanel>
+                    </StackPanel>
+                    <TextBlock Text="OpenAI 云端由 GPT-Live-1 判断完整提问，在语音识别页开启自动回答；本地语音的 Jev / Laya 仍即将推出。" Style="{StaticResource SettingsHint}"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource SettingsCard}">
+                  <StackPanel>
+                    <TextBlock Text="Laya 本地模型" Style="{StaticResource SettingsSectionTitle}"/>
+                    <TextBlock Text="即将推出 · Windows 暂未提供 Laya 运行时。" Style="{StaticResource SettingsHint}"/>
+                    <Button Content="下载模型 · 即将推出" IsEnabled="False" HorizontalAlignment="Left"/>
+                  </StackPanel>
+                </Border>
+                <Border Style="{StaticResource SettingsCard}">
+                  <StackPanel>
+                    <TextBlock Text="连续提问策略" Style="{StaticResource SettingsSectionTitle}"/>
+                    <StackPanel IsEnabled="{Binding IsOpenAIListening}">
+                      <DockPanel Margin="0,0,0,6">
+                        <TextBlock Text="连续提问处理" Width="130" VerticalAlignment="Center"/>
+                        <ComboBox AutomationProperties.AutomationId="ContinuousQuestionPolicyChoice" ItemsSource="{Binding QuestionPolicies}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ContinuousQuestionPolicy, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0"/>
+                      </DockPanel>
+                    </StackPanel>
+                    <TextBlock Text="适用于 OpenAI 云端自动回答；本地语音触发即将推出。" Style="{StaticResource SettingsHint}"/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+          <TabItem Header="知识库模型" AutomationProperties.AutomationId="KnowledgeServiceTab">
+            <ScrollViewer AutomationProperties.AutomationId="KnowledgeServiceScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel Margin="0,0,10,12" IsEnabled="{Binding CanEdit}">
+                <Border Style="{StaticResource SettingsCard}">
+                  <StackPanel>
+                    <DockPanel Margin="0,0,0,6">
+                      <TextBlock Text="索引服务" Width="130" VerticalAlignment="Center"/>
+                      <ComboBox ItemsSource="{Binding EmbeddingServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding EmbeddingService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0"/>
+                    </DockPanel>
+                    <TextBlock Text="OpenAI 会发送文档分块；本地索引在此电脑运行。" Style="{StaticResource SettingsHint}"/>
+                  </StackPanel>
+                </Border>
+                <ContentControl Content="{Binding EmbeddingModelCard, ElementName=SettingsRoot}" ContentTemplate="{StaticResource ModelCardTemplate}"/>
+                <TextBlock Text="本地模型使用 CPU，无需 GPU 运行库。模型操作立即执行；关闭设置会取消操作并保留下载数据，删除会清理下载缓存。" Style="{StaticResource SettingsHint}"/>
+                <DockPanel Margin="0,0,0,6">
+                  <TextBlock Text="OpenAI 模型（本地固定 BGE-M3）" Width="260" VerticalAlignment="Center"/>
+                  <TextBox Text="{Binding EmbeddingModel, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}" Margin="0"/>
+                </DockPanel>
+                <TextBlock Text="{Binding EmbeddingHint}" Style="{StaticResource SettingsHint}"/>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+          <TabItem Header="分析与回答" AutomationProperties.AutomationId="AnalysisServiceTab">
+            <ScrollViewer AutomationProperties.AutomationId="AnalysisServiceScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+              <StackPanel Margin="0,0,10,12" IsEnabled="{Binding CanEdit}">
+                <TextBlock Text="选择你的回答服务" Style="{StaticResource SettingsSectionTitle}"/>
+                <Border Style="{StaticResource SettingsCard}">
+                  <StackPanel>
+                    <DockPanel Margin="0,0,0,6">
+                      <TextBlock Text="推理服务" Width="200" VerticalAlignment="Center"/>
+                      <ComboBox ItemsSource="{Binding ReasoningServices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding ReasoningService, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0"/>
+                    </DockPanel>
+                    <StackPanel Visibility="{Binding IsCatalogService, Converter={StaticResource Visible}}">
+                      <DockPanel Margin="0,0,0,6">
+                        <TextBlock Text="推理模型" Width="200" VerticalAlignment="Center"/>
+                        <ComboBox ItemsSource="{Binding Models}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding AnalysisModel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0"/>
+                      </DockPanel>
+                    </StackPanel>
+                    <DockPanel Margin="0,0,0,6">
+                      <TextBlock Text="推理强度" Width="200" VerticalAlignment="Center"/>
+                      <ComboBox ItemsSource="{Binding ThinkingModes}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding AnalysisThinking, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0"/>
+                    </DockPanel>
+                    <StackPanel Visibility="{Binding IsCompatible, Converter={StaticResource Visible}}">
+                      <DockPanel Margin="0,0,0,6">
+                        <TextBlock Text="兼容接口 BaseURL（必须为 HTTPS）" Width="200" VerticalAlignment="Center"/>
+                        <TextBox Text="{Binding CompatibleBaseURL, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}" Margin="0"/>
+                      </DockPanel>
+                      <DockPanel Margin="0,0,0,6">
+                        <TextBlock Text="兼容接口 Path" Width="200" VerticalAlignment="Center"/>
+                        <TextBox Text="{Binding CompatiblePath, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}" Margin="0"/>
+                      </DockPanel>
+                      <DockPanel Margin="0,0,0,6">
+                        <TextBlock Text="兼容接口 Model" Width="200" VerticalAlignment="Center"/>
+                        <TextBox Text="{Binding CompatibleModel, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}" Margin="0"/>
+                      </DockPanel>
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+                <TextBlock Text="API Key" Style="{StaticResource SettingsSectionTitle}"/>
+                <Border Style="{StaticResource SettingsCard}">
+                  <StackPanel>
+                    <TextBlock Text="密钥只存入 Windows 凭据管理器。输入框仅用于替换；保存或取消后清空。清除密钥同样在保存后生效。" Style="{StaticResource SettingsHint}"/>
+                    <ContentControl Content="{Binding OpenAICredential}" ContentTemplate="{StaticResource CredentialTemplate}"/>
+                    <ContentControl Content="{Binding SeparateOpenAICredential}" ContentTemplate="{StaticResource CredentialTemplate}"/>
+                    <ContentControl Content="{Binding DeepSeekCredential}" ContentTemplate="{StaticResource CredentialTemplate}"/>
+                    <ContentControl Content="{Binding CompatibleCredential}" ContentTemplate="{StaticResource CredentialTemplate}" Visibility="{Binding IsCompatible, Converter={StaticResource Visible}}"/>
+                    <ContentControl Content="{Binding PresetCredential}" ContentTemplate="{StaticResource CredentialTemplate}" Visibility="{Binding IsPreset, Converter={StaticResource Visible}}"/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+        </TabControl>
+      </DockPanel>
+    </TabItem>
+    <TabItem AutomationProperties.AutomationId="KnowledgePage" x:Name="KnowledgePage">
+      <TabItem.Header>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE8F1;" FontSize="18" Width="28"/>
+          <TextBlock Text="知识库" FontSize="16"/>
+        </StackPanel>
+      </TabItem.Header>
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="知识库" Style="{StaticResource PageTitle}"/>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="0,0,10,12" IsEnabled="{Binding CanEdit}">
+            <Border Style="{StaticResource SettingsCard}">
+              <StackPanel>
+                <DockPanel Margin="0,0,0,6">
+                  <TextBlock Text="回答模式" Width="200" VerticalAlignment="Center"/>
+                  <ComboBox ItemsSource="{Binding KnowledgeModes}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding KnowledgeMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0"/>
+                </DockPanel>
+                <DockPanel Margin="0,0,0,6">
+                  <TextBlock Text="检索数量（3–8）" Width="200" VerticalAlignment="Center"/>
+                  <TextBox Text="{Binding RetrievalCountText, UpdateSourceTrigger=PropertyChanged, ValidatesOnNotifyDataErrors=True}" Margin="0"/>
+                </DockPanel>
+                <TextBlock Text="{Binding SelectedEmbeddingIdentity}" Style="{StaticResource SettingsHint}"/>
+              </StackPanel>
+            </Border>
+            <TextBlock Text="{Binding KnowledgeRebuildHint}" Foreground="{StaticResource ErrorInk}" Style="{StaticResource OptionalText}"/>
+            <TextBlock Text="先保存设置，再操作文档。导入、删除和重建会立即执行，不随取消设置撤销。" Style="{StaticResource SettingsHint}"/>
+            <WrapPanel x:Name="KnowledgeActionsPanel" Margin="0,8">
+              <Button Content="导入文档" Click="ImportDocuments"/>
+              <Button Content="重新索引" Click="ReindexDocument"/>
+              <Button Content="删除" Click="DeleteDocument"/>
+            </WrapPanel>
+            <ListView x:Name="DocumentsList" Height="140" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+              <ListView.View>
+                <GridView>
+                  <GridViewColumn Header="名称" Width="150" DisplayMemberBinding="{Binding Name}"/>
+                  <GridViewColumn Header="状态" Width="150" DisplayMemberBinding="{Binding StatusLabel}"/>
+                  <GridViewColumn Header="分块数" Width="65" DisplayMemberBinding="{Binding ChunkCount}"/>
+                  <GridViewColumn Header="嵌入模型" Width="230" DisplayMemberBinding="{Binding EmbeddingModel}"/>
+                </GridView>
+              </ListView.View>
+            </ListView>
+            <ProgressBar x:Name="KnowledgeProgress" Minimum="0" Maximum="100" Height="6" Margin="0,8,0,0"/>
+            <TextBlock x:Name="KnowledgeMessageText" Style="{StaticResource OptionalText}" Margin="0,6,0,0"/>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </TabItem>
+    <TabItem AutomationProperties.AutomationId="HistoryPage">
+      <TabItem.Header>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE81C;" FontSize="18" Width="28"/>
+          <TextBlock Text="历史记录" FontSize="16"/>
+        </StackPanel>
+      </TabItem.Header>
+      <Grid DataContext="{Binding History, ElementName=SettingsRoot}" Loaded="HistoryLoaded" AutomationProperties.AutomationId="HistoryContent">
+        <Grid.Resources>
+          <Style x:Key="HistoryText" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0,6,0,0"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled"/>
+          </Style>
+        </Grid.Resources>
+        <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid Visibility="{Binding ShowList, Converter={StaticResource Visible}}" AutomationProperties.AutomationId="HistoryListPage">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+              <Button Content="刷新" Command="{Binding RefreshCommand}" AutomationProperties.AutomationId="HistoryRefresh"/>
+              <Button Content="清空全部…" Command="{Binding ClearCommand}" AutomationProperties.AutomationId="HistoryClearAll"/>
+            </StackPanel>
+            <TextBlock Text="历史记录" Style="{StaticResource PageTitle}" AutomationProperties.AutomationId="HistoryTitle"/>
+          </DockPanel>
+          <DockPanel Grid.Row="1" Margin="0,4,0,8">
+            <TextBlock Text="搜索会话" VerticalAlignment="Center" Margin="0,0,12,0" AutomationProperties.AutomationId="HistorySearchLabel"/>
+            <TextBox Text="{Binding Query, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.AutomationId="HistorySearch" AutomationProperties.Name="搜索标题、转写、问答和引用" ToolTip="搜索标题、转写、问题、回答和引用内容"/>
+          </DockPanel>
+          <DockPanel Grid.Row="2" Margin="0,0,0,8">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+              <Button Content="查看会话" Command="{Binding OpenCommand}" AutomationProperties.AutomationId="HistoryOpen"/>
+              <Button Content="删除…" Command="{Binding DeleteCommand}" AutomationProperties.AutomationId="HistoryDelete"/>
+              <Button Content="导出 Markdown" Command="{Binding ExportMarkdownCommand}" AutomationProperties.AutomationId="HistoryExportMarkdown"/>
+              <Button Content="导出文本" Command="{Binding ExportTextCommand}" AutomationProperties.AutomationId="HistoryExportText"/>
+            </StackPanel>
+            <TextBlock Text="{Binding CountLabel}" VerticalAlignment="Center" Foreground="{StaticResource SecondaryInk}" AutomationProperties.AutomationId="HistoryCount"/>
+          </DockPanel>
+          <Grid Grid.Row="3">
+            <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding Selected, Mode=TwoWay}" BorderThickness="0" Padding="0" Background="Transparent" MaxHeight="320" VerticalAlignment="Top"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.ScrollUnit="Item"
+                     AutomationProperties.AutomationId="HistoryList" AutomationProperties.Name="会话历史，按时间倒序">
+              <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                  <Setter Property="Height" Value="80"/><Setter Property="Padding" Value="10,8"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                  <Setter Property="AutomationProperties.AutomationId" Value="{Binding AutomationId}"/>
+                  <Setter Property="AutomationProperties.Name" Value="{Binding Title}"/>
+                </Style>
+              </ListBox.ItemContainerStyle>
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <StackPanel>
+                    <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" AutomationProperties.AutomationId="{Binding TitleId}"/>
+                    <TextBlock Text="{Binding Metadata}" Foreground="{StaticResource SecondaryInk}" Margin="0,8,0,0" TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="{Binding MetadataId}"/>
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Text="{Binding EmptyMessage}" Visibility="{Binding IsEmpty, Converter={StaticResource Visible}}" TextWrapping="Wrap" Margin="16,24" Foreground="{StaticResource SecondaryInk}" AutomationProperties.AutomationId="HistoryEmpty"/>
+          </Grid>
+        </Grid>
+        <Grid Visibility="{Binding ShowDetail, Converter={StaticResource Visible}}" AutomationProperties.AutomationId="HistoryDetailPage">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <DockPanel Margin="0,0,0,10">
+            <Button DockPanel.Dock="Left" Content="← 返回列表" Command="{Binding BackCommand}" AutomationProperties.AutomationId="HistoryBack"/>
+            <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+              <Button Content="删除…" Command="{Binding DeleteCommand}" AutomationProperties.AutomationId="HistoryDetailDelete"/>
+              <Button Content="导出 Markdown" Command="{Binding ExportMarkdownCommand}" AutomationProperties.AutomationId="HistoryDetailExportMarkdown"/>
+              <Button Content="导出文本" Command="{Binding ExportTextCommand}" AutomationProperties.AutomationId="HistoryDetailExportText"/>
+            </StackPanel>
+          </DockPanel>
+          <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <TextBlock Text="{Binding Selected.Title}" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Selected.Title}" AutomationProperties.AutomationId="HistoryDetailTitle"/>
+            <TextBlock Text="{Binding Selected.Metadata}" Foreground="{StaticResource SecondaryInk}" Margin="0,6,0,0" AutomationProperties.AutomationId="HistoryDetailMetadata"/>
+            <TextBlock Text="{Binding AnswerNotice}" Foreground="{StaticResource SecondaryInk}" TextWrapping="Wrap" AutomationProperties.AutomationId="HistoryAnswerNotice"/>
+          </StackPanel>
+          <ListBox Grid.Row="2" ItemsSource="{Binding Timeline}" BorderThickness="0" Padding="0" Background="Transparent" HorizontalContentAlignment="Stretch"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.ScrollUnit="Pixel"
+                   AutomationProperties.AutomationId="HistoryTimeline" AutomationProperties.Name="会话转写、问答和引用">
+            <ListBox.ItemContainerStyle>
+              <Style TargetType="ListBoxItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Padding" Value="0"/>
+                <Setter Property="AutomationProperties.AutomationId" Value="{Binding AutomationId}"/>
+              </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Border Style="{StaticResource SettingsCard}" Margin="0,0,8,8">
+                  <StackPanel>
+                    <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" Foreground="{StaticResource SecondaryInk}" AutomationProperties.AutomationId="{Binding HeadingId}"/>
+                    <TextBox Text="{Binding Content, Mode=OneWay}" Style="{StaticResource HistoryText}" AutomationProperties.AutomationId="{Binding ContentId}"/>
+                    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Foreground="{StaticResource SecondaryInk}" FontSize="12" AutomationProperties.AutomationId="{Binding StatusId}"/>
+                    <TextBox Text="{Binding Sources, Mode=OneWay}" Style="{StaticResource HistoryText}" Visibility="{Binding HasSources, Converter={StaticResource Visible}}" AutomationProperties.AutomationId="{Binding SourcesId}" AutomationProperties.Name="知识库来源与引用"/>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+        <StackPanel Grid.Row="1" Margin="0,8,0,6">
+          <TextBlock Text="{Binding LoadNotice}" TextWrapping="Wrap" Foreground="{StaticResource SecondaryInk}" AutomationProperties.AutomationId="HistoryLoadNotice"/>
+          <TextBlock Text="{Binding Status}" TextWrapping="Wrap" AutomationProperties.AutomationId="HistoryStatus"/>
+        </StackPanel>
+      </Grid>
+    </TabItem>
+    <TabItem AutomationProperties.AutomationId="ShortcutsPage">
+      <TabItem.Header>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE765;" FontSize="18" Width="28"/>
+          <TextBlock Text="快捷键" FontSize="16"/>
+        </StackPanel>
+      </TabItem.Header>
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="快捷键" Style="{StaticResource PageTitle}"/>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="0,0,10,12" IsEnabled="{Binding CanEdit}">
+            <TextBlock Text="点击重新录制后按组合键；Esc 取消录制。录制期间暂停全局快捷键。Windows 保留组合与重复绑定会被拒绝。" Style="{StaticResource SettingsHint}"/>
+            <ItemsControl ItemsSource="{Binding Shortcuts}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <WrapPanel Margin="0,0,0,12">
+                      <TextBlock Text="{Binding Label}" FontWeight="SemiBold" Width="110" VerticalAlignment="Center"/>
+                      <TextBlock Text="{Binding Display}" Width="170" VerticalAlignment="Center"/>
+                      <Button Content="重新录制" Click="RecordShortcut"/>
+                      <Button Content="恢复默认" Command="{Binding ResetCommand}"/>
+                  </WrapPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock x:Name="RecordingText" Style="{StaticResource OptionalText}" Margin="0,4,0,10"/>
+            <TextBlock Text="{Binding ShortcutError}" Style="{StaticResource OptionalText}" Foreground="{StaticResource ErrorInk}" Margin="0,4,0,10"/>
+            <Button Content="全部恢复默认" Command="{Binding ResetShortcutsCommand}" HorizontalAlignment="Left"/>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </TabItem>
+    <TabItem AutomationProperties.AutomationId="AboutPage">
+      <TabItem.Header>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock FontFamily="{StaticResource IconFont}" Text="&#xE946;" FontSize="18" Width="28"/>
+          <TextBlock Text="关于" FontSize="16"/>
+        </StackPanel>
+      </TabItem.Header>
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="关于" Style="{StaticResource PageTitle}"/>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="0,0,10,12" IsEnabled="{Binding CanEdit}">
+            <Border Style="{StaticResource SettingsCard}">
+              <StackPanel>
+                <TextBlock Style="{StaticResource Brand}"/>
+                <TextBlock Text="实时看懂对话，获得有依据、可以说出口的回答建议。" Style="{StaticResource SettingsHint}"/>
+                <TextBlock Text="{Binding DisplayVersion, StringFormat=版本：{0}}" Margin="0,6"/>
+                <TextBlock Text="{Binding ProjectUrl}" TextWrapping="Wrap" Margin="0,4"/>
+                <Button Content="打开项目主页" Click="OpenProject" HorizontalAlignment="Left"/>
+                <TextBlock Text="{Binding UnsignedNotice}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                <TextBlock Text="{Binding RuntimeNotice}" Style="{StaticResource SettingsHint}" Margin="0,6,0,0"/>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource SettingsCard}">
+              <StackPanel>
+                <CheckBox Content="允许检查应用更新（默认关闭）" IsChecked="{Binding CheckForUpdates}"/>
+                <TextBlock Text="{Binding UpdateNotice}" Style="{StaticResource SettingsHint}"/>
+                <Button Content="检查更新" Click="CheckUpdates" HorizontalAlignment="Left"/>
+                <TextBlock x:Name="UpdateStatusText" Style="{StaticResource OptionalText}" Foreground="{StaticResource SecondaryInk}" FontSize="13" Margin="0,4,0,6"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </DockPanel>
+    </TabItem>
+  </TabControl>
+    <!-- Keep actions in the window's UIA tree; TabControlAutomationPeer omits template chrome. -->
+    <StackPanel Grid.Row="1" Grid.Column="1" Margin="24,10,28,12">
+      <TextBlock Text="{Binding ValidationSummary}" Style="{StaticResource OptionalText}" Foreground="{StaticResource ErrorInk}"/>
+      <TextBlock Text="{Binding Status}" Style="{StaticResource OptionalText}" Foreground="{StaticResource SecondaryInk}"/>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button Content="保存" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButton}" MinWidth="80" AutomationProperties.AutomationId="SaveSettings"/>
+        <Button Content="取消" Command="{Binding CancelCommand}" MinWidth="80" AutomationProperties.AutomationId="CancelSettings"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

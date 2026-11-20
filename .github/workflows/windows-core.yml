@@ -1,0 +1,278 @@
+name: Windows Core CI
+on:
+  push:
+    paths: ['Windows/**', '.github/workflows/windows-core.yml']
+  pull_request:
+    paths: ['Windows/**', '.github/workflows/windows-core.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  DOTNET_EnableWindowsTargeting: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+defaults:
+  run:
+    shell: pwsh
+jobs:
+  core-tests:
+    name: Core build and tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, matching pages.yml
+        with:
+          persist-credentials: false
+      - name: Check Windows sources
+        id: sources
+        run: |
+          if (Test-Path -LiteralPath 'Windows/LiveCopilot.Windows.sln' -PathType Leaf) {
+            'present=true' >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host 'Windows 端口源码尚未合并到本分支'
+            'present=false' >> $env:GITHUB_OUTPUT
+          }
+      - name: Set up .NET 8
+        if: steps.sources.outputs.present == 'true'
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet-8
+        with:
+          dotnet-version: '8.0.x'
+      - name: Locate Core projects in the solution
+        if: steps.sources.outputs.present == 'true'
+        run: |
+          $projects = dotnet sln 'Windows/LiveCopilot.Windows.sln' list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $required = @{
+            CORE_PROJECT = 'LiveCopilot.Core.csproj'
+            TEST_PROJECT = 'LiveCopilot.Core.Tests.csproj'
+          }
+          foreach ($entry in $required.GetEnumerator()) {
+            $paths = @($projects | Where-Object {
+              [System.IO.Path]::GetFileName($_.Trim()) -eq $entry.Value
+            })
+            if ($paths.Count -ne 1) {
+              throw "Expected exactly one $($entry.Value) in the Windows solution."
+            }
+            $project = Join-Path 'Windows' $paths[0].Trim()
+            if (-not (Test-Path -LiteralPath $project -PathType Leaf)) {
+              throw "Project file does not exist: $project"
+            }
+            "$($entry.Key)=$project" >> $env:GITHUB_ENV
+          }
+      # Restore/build individual projects so App failures cannot affect Core.
+      - name: Restore Core NuGet dependencies
+        if: steps.sources.outputs.present == 'true'
+        run: |
+          dotnet restore "$env:CORE_PROJECT"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet restore "$env:TEST_PROJECT"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Core and Core.Tests
+        if: steps.sources.outputs.present == 'true'
+        run: |
+          dotnet build "$env:CORE_PROJECT" --configuration Release --framework net8.0 --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build "$env:TEST_PROJECT" --configuration Release --framework net8.0 --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run Core tests
+        if: steps.sources.outputs.present == 'true'
+        run: dotnet test "$env:TEST_PROJECT" --configuration Release --framework net8.0 --no-build --no-restore
+
+  local-inference-tests:
+    name: LocalInference build and tests
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      LIVECOPILOT_INFERENCE_CPU: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, matching pages.yml
+        with:
+          persist-credentials: false
+      - name: Check Windows sources
+        id: sources
+        run: |
+          if (Test-Path -LiteralPath 'Windows/LiveCopilot.Windows.sln' -PathType Leaf) {
+            'present=true' >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host 'Windows 端口源码尚未合并到本分支'
+            'present=false' >> $env:GITHUB_OUTPUT
+          }
+      - name: Set up .NET 8
+        if: steps.sources.outputs.present == 'true'
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet-8
+        with:
+          dotnet-version: '8.0.x'
+      - name: Locate LocalInference projects in the solution
+        id: projects
+        if: steps.sources.outputs.present == 'true'
+        run: |
+          $projects = dotnet sln 'Windows/LiveCopilot.Windows.sln' list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $testName = 'LiveCopilot.LocalInference.Tests.csproj'
+          $testPaths = @($projects | Where-Object {
+            [System.IO.Path]::GetFileName($_.Trim()) -eq $testName
+          })
+          if ($testPaths.Count -eq 0) {
+            Write-Host '解决方案尚未包含 LocalInference 测试项目，跳过测试'
+            'present=false' >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          if ($testPaths.Count -ne 1) {
+            throw "Expected exactly one $testName in the Windows solution."
+          }
+          $testProject = Join-Path 'Windows' $testPaths[0].Trim()
+          if (-not (Test-Path -LiteralPath $testProject -PathType Leaf)) {
+            Write-Host "LocalInference 测试项目文件尚不存在，跳过测试：$testProject"
+            'present=false' >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $paths = @($projects | Where-Object {
+            [System.IO.Path]::GetFileName($_.Trim()) -eq 'LiveCopilot.LocalInference.csproj'
+          })
+          if ($paths.Count -ne 1) {
+            throw 'Expected exactly one LiveCopilot.LocalInference.csproj in the Windows solution.'
+          }
+          $project = Join-Path 'Windows' $paths[0].Trim()
+          if (-not (Test-Path -LiteralPath $project -PathType Leaf)) {
+            throw "Project file does not exist: $project"
+          }
+          "INFERENCE_PROJECT=$project" >> $env:GITHUB_ENV
+          "TEST_PROJECT=$testProject" >> $env:GITHUB_ENV
+          'present=true' >> $env:GITHUB_OUTPUT
+      # Keep native dependencies isolated from Core/App; use each project's target frameworks.
+      - name: Restore LocalInference NuGet dependencies
+        if: steps.projects.outputs.present == 'true'
+        run: |
+          dotnet restore "$env:INFERENCE_PROJECT"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet restore "$env:TEST_PROJECT"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build LocalInference and LocalInference.Tests
+        if: steps.projects.outputs.present == 'true'
+        run: |
+          dotnet build "$env:INFERENCE_PROJECT" --configuration Release --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build "$env:TEST_PROJECT" --configuration Release --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # No model downloads: the test suite handles skips when real models are absent.
+      - name: Run LocalInference tests
+        if: steps.projects.outputs.present == 'true'
+        run: |
+          dotnet test "$env:TEST_PROJECT" --configuration Release --no-build --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  platform-tests:
+    name: Platform build and tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, matching pages.yml
+        with:
+          persist-credentials: false
+      - name: Check Windows sources
+        id: sources
+        run: |
+          if (Test-Path -LiteralPath 'Windows/LiveCopilot.Windows.sln' -PathType Leaf) {
+            'present=true' >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host 'Windows 端口源码尚未合并到本分支'
+            'present=false' >> $env:GITHUB_OUTPUT
+          }
+      - name: Set up .NET 8
+        if: steps.sources.outputs.present == 'true'
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet-8
+        with:
+          dotnet-version: '8.0.x'
+      - name: Locate Platform test project in the solution
+        id: projects
+        if: steps.sources.outputs.present == 'true'
+        run: |
+          $projects = dotnet sln 'Windows/LiveCopilot.Windows.sln' list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $testName = 'LiveCopilot.Platform.Tests.csproj'
+          $paths = @($projects | Where-Object {
+            [System.IO.Path]::GetFileName($_.Trim()) -eq $testName
+          })
+          if ($paths.Count -eq 0) {
+            Write-Host '解决方案尚未包含 Platform 测试项目，跳过测试'
+            'present=false' >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          if ($paths.Count -ne 1) {
+            throw "Expected exactly one $testName in the Windows solution."
+          }
+          $testProject = Join-Path 'Windows' $paths[0].Trim()
+          if (-not (Test-Path -LiteralPath $testProject -PathType Leaf)) {
+            Write-Host "Platform 测试项目文件尚不存在，跳过测试：$testProject"
+            'present=false' >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          "TEST_PROJECT=$testProject" >> $env:GITHUB_ENV
+          'present=true' >> $env:GITHUB_OUTPUT
+      # Restore/build project references, including Platform, without building App.
+      - name: Restore Platform test NuGet dependencies
+        if: steps.projects.outputs.present == 'true'
+        run: |
+          dotnet restore "$env:TEST_PROJECT"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Platform tests and project references
+        if: steps.projects.outputs.present == 'true'
+        run: |
+          dotnet build "$env:TEST_PROJECT" --configuration Release --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # Run logic tests too; only the tests themselves may skip unavailable hardware/session cases.
+      - name: Run Platform tests
+        if: steps.projects.outputs.present == 'true'
+        run: |
+          dotnet test "$env:TEST_PROJECT" --configuration Release --no-build --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  app-build:
+    name: Optional WPF App build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, matching pages.yml
+        with:
+          persist-credentials: false
+      - name: Check Windows sources
+        id: sources
+        run: |
+          if (Test-Path -LiteralPath 'Windows/LiveCopilot.Windows.sln' -PathType Leaf) {
+            'present=true' >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host 'Windows 端口源码尚未合并到本分支'
+            'present=false' >> $env:GITHUB_OUTPUT
+          }
+      - name: Set up .NET 8
+        if: steps.sources.outputs.present == 'true'
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet-8
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore and build WPF App
+        if: steps.sources.outputs.present == 'true'
+        run: |
+          $projects = dotnet sln 'Windows/LiveCopilot.Windows.sln' list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $paths = @($projects | Where-Object {
+            [System.IO.Path]::GetFileName($_.Trim()) -eq 'LiveCopilot.App.csproj'
+          })
+          if ($paths.Count -ne 1) {
+            throw 'Expected exactly one LiveCopilot.App.csproj in the Windows solution.'
+          }
+          $appProject = Join-Path 'Windows' $paths[0].Trim()
+          if (-not (Test-Path -LiteralPath $appProject -PathType Leaf)) {
+            throw "Project file does not exist: $appProject"
+          }
+          dotnet restore "$appProject"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build "$appProject" --configuration Release --framework net8.0-windows --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
