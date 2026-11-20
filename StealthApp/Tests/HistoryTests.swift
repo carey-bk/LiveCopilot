@@ -395,3 +395,40 @@ final class AnswerEmphasisTests: XCTestCase {
         XCTAssertEqual(AnswerEmphasis.plainText("[S1] 97.8%"), "[S1] 97.8%")
     }
 }
+
+extension HistoryTests {
+    @MainActor func testManualFollowUpAfterArchiveFailureSurvivesReset() async throws {
+        let dir = try directory()
+        let app = AppCoordinator(mock: true, mockReasoning: TitleProvider(value: "Recovered answer"), emitMockConversation: false, sessionStoreRoot: dir, sessionAsyncIO: true)
+        app.settings.automaticSuggestions = false
+        await app.start()
+        app.transcript.commit("Existing transcript", speaker: .them)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path) }
+        await app.stop()
+        XCTAssertTrue(app.hasPendingUnsavedSession)
+        app.askText("Follow-up after stop")
+        for _ in 0..<200 where app.answerIsRunning { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertTrue(app.answers.contains { $0.store.question == "Follow-up after stop" && $0.store.text.contains("Recovered answer") })
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        await app.resetConversation()
+        XCTAssertFalse(app.hasPendingUnsavedSession)
+        let history = SessionStore(root: dir).sessions
+        XCTAssertEqual(history.count, 1)
+        XCTAssertEqual(history.flatMap { $0.answers ?? [] }.map(\.question), ["Follow-up after stop"])
+    }
+
+    @MainActor func testOverlappingIdleResetsArchiveOnce() async throws {
+        let dir = try directory()
+        let app = AppCoordinator(mock: true, mockReasoning: TitleProvider(value: "Answer"), emitMockConversation: false, sessionStoreRoot: dir, sessionAsyncIO: true)
+        app.askText("One manual session")
+        for _ in 0..<200 where app.answerIsRunning { try await Task.sleep(nanoseconds: 10_000_000) }
+        app.sessions.testDraftWriter = { _, _ in Thread.sleep(forTimeInterval: 0.2) }
+        let first = Task { await app.resetConversation() }
+        for _ in 0..<100 where !app.sessions.isSaving { try await Task.sleep(nanoseconds: 1_000_000) }
+        XCTAssertTrue(app.sessions.isSaving)
+        await app.resetConversation()
+        await first.value
+        XCTAssertEqual(SessionStore(root: dir).sessions.count, 1)
+    }
+}

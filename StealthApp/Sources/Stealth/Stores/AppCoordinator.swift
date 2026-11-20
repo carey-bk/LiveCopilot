@@ -265,7 +265,8 @@ final class AppCoordinator: ObservableObject {
         let answers: [SessionAnswer]
         let wasVoice: Bool
     }
-    private var pendingFailedSession: PendingSessionSnapshot?
+    private var sessionArchiveID = UUID()
+    private var sessionSaveTask: Task<Bool, Never>?
     @Published private(set) var hasPendingUnsavedSession = false
     private var sessionStartedAt: Date?
     private var sessionWasVoice = false
@@ -970,6 +971,7 @@ final class AppCoordinator: ObservableObject {
         invalidateAutomaticTrigger(releaseRuntime: false)
         let epoch = UUID(); liveEpoch = epoch
         let saved = await saveSessionAsync()
+        guard liveEpoch == epoch, !isShuttingDown else { return }
         guard saved, sessionStartedAt == nil, !hasPendingUnsavedSession else {
             statusMessage = sessions.lastError ?? "Session history could not be saved. Check available disk space and permissions."
             return
@@ -1497,11 +1499,13 @@ final class AppCoordinator: ObservableObject {
     /// Listening continues with fresh providers if it was active before the reset.
     func resetConversation() async {
         guard !isTransitioning, !isShuttingDown else { return }
+        beginTransition()
+        defer { endTransition() }
         let resume = isRunning
         // Finish and archive stable/final ASR before clearing the visible conversation.
         let saved: Bool
         if resume {
-            await stop()
+            await stop(force: true)
             saved = sessionStartedAt == nil && !hasPendingUnsavedSession
         } else {
             saved = await saveSessionAsync()
@@ -1511,8 +1515,6 @@ final class AppCoordinator: ObservableObject {
             statusMessage = sessions.lastError ?? "Session history could not be saved. Check available disk space and permissions."
             return
         }
-        beginTransition()
-        defer { endTransition() }
         micToggleRevision = UUID()
         activeMicToggleRevision = nil
         micToggleTask?.cancel()
@@ -1551,19 +1553,18 @@ final class AppCoordinator: ObservableObject {
         }, sourceFragmentID: record.sourceFragmentID)
     }
     private func buildSessionSnapshot() -> PendingSessionSnapshot? {
-        if let pending = pendingFailedSession { return pending }
         guard let started = sessionStartedAt else { return nil }
         let savedAnswers = answers.filter { sessionAnswerIDs.contains($0.id) }.map(archiveAnswer)
         let lines = transcript.archiveSnapshot(since: started)
         guard !lines.isEmpty || !savedAnswers.isEmpty else { return nil }
         let fragments = transcript.fragmentRevisions.filter { $0.receivedAt >= started }
-        return PendingSessionSnapshot(id: UUID(), startedAt: started, endedAt: Date(),
+        return PendingSessionSnapshot(id: sessionArchiveID, startedAt: started, endedAt: Date(),
                                       lines: lines, fragments: fragments, answers: savedAnswers, wasVoice: sessionWasVoice)
     }
 
     private func handleSessionSaveResult(_ result: SessionStore.SaveResult?, snapshot: PendingSessionSnapshot) -> Bool {
         guard let result else {
-            pendingFailedSession = nil; hasPendingUnsavedSession = false
+            sessionArchiveID = UUID(); hasPendingUnsavedSession = false
             sessionStartedAt = nil; sessionWasVoice = false; sessionAnswerIDs = []
             return true
         }
@@ -1573,12 +1574,11 @@ final class AppCoordinator: ObservableObject {
             if snapshot.wasVoice && !isMock && !isShuttingDown && !result.record.namingInput.isEmpty {
                 nameSession(result.record)
             }
-            pendingFailedSession = nil; hasPendingUnsavedSession = false
+            sessionArchiveID = UUID(); hasPendingUnsavedSession = false
             sessionStartedAt = nil; sessionWasVoice = false; sessionAnswerIDs = []
             if let warning = result.outcome.draftWarning { statusMessage = warning }
             return true
         case .failed(let message):
-            pendingFailedSession = snapshot
             hasPendingUnsavedSession = true
             statusMessage = message
             return false
@@ -1590,17 +1590,34 @@ final class AppCoordinator: ObservableObject {
     /// JSON persisted (including when only the optional TXT draft failed).
     @discardableResult
     func saveSessionAsync() async -> Bool {
-        if let snapshot = buildSessionSnapshot() {
-            let result = await sessions.saveSnapshotConfirmed(
-                id: snapshot.id, lines: snapshot.lines, startedAt: snapshot.startedAt,
-                endedAt: snapshot.endedAt, fragments: snapshot.fragments, answers: snapshot.answers
-            )
-            return handleSessionSaveResult(result, snapshot: snapshot)
+        if let sessionSaveTask { return await sessionSaveTask.value }
+        guard var snapshot = buildSessionSnapshot() else {
+            sessionStartedAt = nil; sessionWasVoice = false; sessionAnswerIDs = []
+            return true
         }
-        guard sessionStartedAt != nil else { return true }
-        pendingFailedSession = nil; hasPendingUnsavedSession = false
-        sessionStartedAt = nil; sessionWasVoice = false; sessionAnswerIDs = []
-        return true
+        let task = Task { @MainActor in
+            defer { sessionSaveTask = nil }
+            while true {
+                let result = await sessions.saveSnapshotConfirmed(
+                    id: snapshot.id, lines: snapshot.lines, startedAt: snapshot.startedAt,
+                    endedAt: snapshot.endedAt, fragments: snapshot.fragments, answers: snapshot.answers
+                )
+                guard sessionArchiveID == snapshot.id else { return true }
+                // An answer can finish while the archive is being written. Persist its
+                // latest state under the same ID before clearing the live conversation.
+                if let result, case .failed = result.outcome {
+                    return handleSessionSaveResult(result, snapshot: snapshot)
+                }
+                if let latest = buildSessionSnapshot(),
+                   latest.answers != snapshot.answers || latest.lines != snapshot.lines || latest.fragments != snapshot.fragments {
+                    snapshot = latest
+                    continue
+                }
+                return handleSessionSaveResult(result, snapshot: snapshot)
+            }
+        }
+        sessionSaveTask = task
+        return await task.value
     }
 
     @discardableResult
@@ -1619,7 +1636,7 @@ final class AppCoordinator: ObservableObject {
             return
         }
         guard sessionStartedAt != nil else { return }
-        pendingFailedSession = nil; hasPendingUnsavedSession = false
+        sessionArchiveID = UUID(); hasPendingUnsavedSession = false
         sessionStartedAt = nil; sessionWasVoice = false; sessionAnswerIDs = []
     }
     func renameSession(_ id: UUID, title: String) {
