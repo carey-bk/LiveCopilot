@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ $# != 2 ]]; then
-  echo 'Usage: test-model-health.sh <verified-bge-model-directory> <native-worker>' >&2
+  echo 'Usage: test-model-health.sh <verified-arctic-model-directory> <native-worker>' >&2
   exit 2
 fi
 mkdir -p build/tests

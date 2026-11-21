@@ -295,6 +295,7 @@ final class AppCoordinator: ObservableObject {
                 (systemLive as? LocalLiveProvider)?.updateTerms(terms, displayTerms: settings.professionalTermsEnabled ? settings.professionalTerms : [])
                 (micLive as? LocalLiveProvider)?.updateTerms(terms, displayTerms: settings.professionalTermsEnabled ? settings.professionalTerms : [])
             }
+            if oldValue.layaThreshold != settings.layaThreshold { laya.updateThreshold(settings.layaThreshold) }
             if oldValue.automaticSuggestions != settings.automaticSuggestions ||
                 oldValue.scenario != settings.scenario ||
                 oldValue.mode != settings.mode || oldValue.listeningService != settings.listeningService {
@@ -412,6 +413,7 @@ final class AppCoordinator: ObservableObject {
         onboarding = OnboardingStore(defaults: settingsDefaults, dataDirectory: AppPaths.dataDirectory(mock: mock))
         hotkeys = HotkeyStore(defaults: settingsDefaults)
         settings = AppSettings.load(defaults: settingsDefaults)
+        laya.updateThreshold(settings.layaThreshold)
         if onboarding.isNewInstall && (!mock || preview) {
             settings.listeningService = .zipformer
             settings.embeddingService = .local
@@ -484,7 +486,7 @@ final class AppCoordinator: ObservableObject {
         localModels.$installed.dropFirst().sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.prepareLocalRetrieval() }
         }.store(in: &cancellables)
-        Task { await refreshKnowledge() }
+        Task { await refreshKnowledge(); startIndexMigration() }
     }
     /// One automatic warmup attempt per coordinator lifetime; failures require an explicit retry.
     /// Installation already proceeds directly to worker.prepare() inside LayaRuntimeManager.
@@ -921,7 +923,7 @@ final class AppCoordinator: ObservableObject {
     private func embeddingProvider(requireReady: Bool = false) throws -> any EmbeddingProvider {
         if isMock { return mockEmbedding ?? MockEmbeddingProvider() }
         if settings.embeddingService == .local {
-            if requireReady, !LocalModelKind.embedding.isInstalled(in: localModels.root) { throw CopilotError.message("Download the local embedding model in Services first.") }
+            if requireReady, !LocalModelKind.embedding.isInstalled(in: localModels.root) { throw CopilotError.message("Bundled Arctic model is missing or damaged.") }
             if localEmbedding == nil { localEmbedding = LocalEmbeddingProvider(directory: LocalModelKind.embedding.location(in: localModels.root)) }
             return localEmbedding!
         }
@@ -1992,6 +1994,39 @@ final class AppCoordinator: ObservableObject {
             self.layaGate.retryPending()
         }
     }
+    private func startIndexMigration() {
+        let includeRemote = settings.embeddingService == .local
+        guard !isMock, !isIndexing, !isShuttingDown, let knowledge,
+              knowledgeDocuments.contains(where: { $0.embeddingModel != LocalModelKind.embeddingIdentity && (includeRemote || $0.embeddingModel.hasPrefix("local:")) }) else { return }
+        isIndexing = true
+        knowledgeTask = Task {
+            defer { isIndexing = false; knowledgeTask = nil }
+            let provider = LocalEmbeddingProvider(directory: LocalModelKind.embedding.location(in: localModels.root))
+            defer { provider.close() }
+            do {
+                let pending = try await knowledge.migrateToArctic(provider: provider, includeRemote: includeRemote)
+                knowledgeMessage = pending.isEmpty ? "Arctic index migration complete." : "Original file or retry required: " + pending.joined(separator: ", ")
+            } catch { knowledgeMessage = error.localizedDescription }
+            await refreshKnowledge()
+        }
+    }
+
+    func cleanRetiredModels() {
+        guard !isIndexing, !isShuttingDown, let knowledge else { return }
+        guard LocalModelKind.embedding.isInstalled(in: localModels.root), laya.isInstalled else {
+            knowledgeMessage = "Verify the bundled models before cleaning legacy files."
+            return
+        }
+        isIndexing = true
+        knowledgeTask = Task {
+            defer { isIndexing = false; knowledgeTask = nil }
+            do {
+                let removed = try await knowledge.removeRetiredModels(models: localModels.root, laya: laya.root, includeRemote: settings.embeddingService == .local)
+                knowledgeMessage = "Removed legacy model directories: " + String(removed)
+            } catch { knowledgeMessage = error.localizedDescription }
+        }
+    }
+
     func refreshKnowledge() async {
         guard let knowledge else { return }
         do { knowledgeDocuments = try await knowledge.documents(); prepareLocalRetrieval() }

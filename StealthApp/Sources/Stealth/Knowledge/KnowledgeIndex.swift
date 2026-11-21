@@ -223,7 +223,7 @@ actor KnowledgeIndex {
         if let vector {
             // Absolute relevance is separate from RRF rank. A top-ranked unrelated
             // item is still unrelated. These conservative floors are not probabilities.
-            let floor = model == LocalModelKind.embeddingIdentity ? 0.38 : 0.30
+            let floor = model == LocalModelKind.embeddingIdentity ? LocalModelKind.retrievalFloor : 0.30
             if denseCacheBytes == 0 {
                 semantic = try allChunks().filter { $0.embeddingModel == model && $0.vector.count == vector.count }
                     .map { chunk -> (SourceChunk, Double) in
@@ -251,7 +251,9 @@ actor KnowledgeIndex {
                 for hit in best { similarities[hit.chunk.id] = hit.score }
             }
         }
-        return VectorMath.fuse(lexical: lex, semantic: semantic, limit: limit).map {
+        let fusedLexical = vector != nil && model == LocalModelKind.embeddingIdentity
+            ? lex.filter { (similarities[$0.id] ?? 0) >= 0.24 } : lex
+        return VectorMath.fuse(lexical: fusedLexical, semantic: semantic, limit: limit).map {
             var source = $0
             source.semanticSimilarity = similarities[source.id]
             source.lexicalCoverage = coverage(source.chunk)
@@ -331,6 +333,56 @@ actor KnowledgeIndex {
         }
         return try await index(document, chunks: chunks, provider: provider, progress: progress)
     }
+    /// Only migrate local indexes when the user has explicitly selected a cloud provider.
+    func migrateToArctic(provider: any EmbeddingProvider, includeRemote: Bool) async throws -> [String] {
+        guard provider.model == LocalModelKind.embeddingIdentity else { throw CopilotError.message("Arctic is not available.") }
+        var pending = [String]()
+        let originals = directory.appendingPathComponent("originals").standardizedFileURL.resolvingSymlinksInPath()
+        for doc in try documents() where doc.embeddingModel != provider.model && (includeRemote || doc.embeddingModel.hasPrefix("local:")) {
+            try Task.checkCancellation()
+            let local = originals.appendingPathComponent(doc.id).appendingPathComponent(doc.name).standardizedFileURL.resolvingSymlinksInPath()
+            guard !doc.id.contains("/"), doc.id != "..", doc.id != ".",
+                  local.deletingLastPathComponent().path == originals.appendingPathComponent(doc.id).path,
+                  FileManager.default.isReadableFile(atPath: local.path) else { pending.append(doc.name); continue }
+            do {
+                let chunks = try await Self.extractAndChunk(local, documentID: doc.id, name: doc.name)
+                _ = try await index(doc, chunks: chunks, provider: provider, progress: nil, migration: true)
+            } catch is CancellationError { throw CancellationError() }
+            catch { pending.append(doc.name) }
+        }
+        return pending
+    }
+
+    func removeRetiredModels(models: URL, laya: URL, includeRemote: Bool = false) throws -> Int {
+        guard try !documents().contains(where: { (includeRemote || $0.embeddingModel.hasPrefix("local:")) && $0.embeddingModel != LocalModelKind.embeddingIdentity }) else {
+            throw CopilotError.message("Some local documents still need their original files or an index rebuild. Legacy files have been kept.")
+        }
+        let fm = FileManager.default
+        for root in [models, laya] where fm.fileExists(atPath: root.path) {
+            guard try root.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else {
+                throw CopilotError.message("Unexpected legacy root. Files have been kept.")
+            }
+        }
+        let base = laya.resolvingSymlinksInPath()
+        let current = base.appendingPathComponent("current").resolvingSymlinksInPath()
+        var paths = [models.resolvingSymlinksInPath().appendingPathComponent("bge-m3-q8-v1")]
+        if current.path == base.appendingPathComponent("current").path ||
+           current.deletingLastPathComponent().path == base.appendingPathComponent("installs").path {
+            paths.append(current.appendingPathComponent("venv"))
+        }
+        var count = 0
+        for path in paths where fm.fileExists(atPath: path.path) {
+            // Do not follow a redirected parent or recycle an unrelated target.
+            guard path.resolvingSymlinksInPath().path == path.path,
+                  (try path.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true else {
+                throw CopilotError.message("Unexpected legacy model path. Files have been kept.")
+            }
+            try fm.removeItem(at: path)
+            count += 1
+        }
+        return count
+    }
+
     func reindex(_ document: KnowledgeDocument, provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {
         let localURL = URL(fileURLWithPath: document.localPath)
         let chunks: [SourceChunk]
@@ -344,7 +396,7 @@ actor KnowledgeIndex {
         }
         return try await index(document, chunks: chunks, provider: provider, progress: progress)
     }
-    private func index(_ original: KnowledgeDocument, chunks initialChunks: [SourceChunk], provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {
+    private func index(_ original: KnowledgeDocument, chunks initialChunks: [SourceChunk], provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil, migration: Bool = false) async throws -> KnowledgeDocument {
         do {
             var chunks = initialChunks
             guard chunks.count <= Self.maxChunksPerDocument else { throw CopilotError.message(Self.maxChunksMessage) }
@@ -363,14 +415,14 @@ actor KnowledgeIndex {
             }
             try Task.checkCancellation()
             // A deletion while awaiting the network must not resurrect the document.
-            guard try documents().contains(where: { $0.id == original.id }) else { throw CancellationError() }
+            guard try documents().contains(where: { $0.id == original.id && (!migration || $0 == original) }) else { throw CancellationError() }
             var committed = original
             committed.status = "Ready"; committed.chunkCount = chunks.count; committed.embeddingModel = provider.model; committed.error = nil
             try replaceChunks(chunks, document: committed)
             await progress?(committed.id, 1)
             return committed
         } catch {
-            markFailedIfPresent(original, error: error)
+            if !migration { markFailedIfPresent(original, error: error) }
             throw error
         }
     }

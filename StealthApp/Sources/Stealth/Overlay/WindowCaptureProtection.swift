@@ -16,6 +16,9 @@ final class WindowCaptureProtection {
         let setRegion: (Int, CGRect?) -> Int32
 
         static func system() -> Backend? {
+            #if MAS_OFFLINE
+            return nil
+            #else
             typealias Connection = @convention(c) () -> UInt32
             typealias Create = @convention(c) (CGRect) -> Unmanaged<CFTypeRef>?
             typealias Apply = @convention(c) (UInt32, Int, CFTypeRef?) -> Int32
@@ -31,6 +34,7 @@ final class WindowCaptureProtection {
                 guard let region = create(rect)?.takeRetainedValue() else { return CGError.failure.rawValue }
                 return withExtendedLifetime(region) { apply(connection(), windowID, region) }
             }
+            #endif
         }
     }
 

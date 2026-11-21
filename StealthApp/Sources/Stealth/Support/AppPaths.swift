@@ -8,6 +8,9 @@ enum AppPaths {
         isMock && (isPreviewBundle || ProcessInfo.processInfo.arguments.contains("--onboarding-preview") || ProcessInfo.processInfo.environment["LIVECOPILOT_ONBOARDING_PREVIEW"] == "1")
     }
     static func dataDirectory(mock: Bool = isMock) -> URL {
+        if mock, let path = ProcessInfo.processInfo.environment["LIVECOPILOT_TEST_LAYA_ROOT"], path.hasPrefix("/") {
+            return URL(fileURLWithPath: path).appendingPathComponent("mock-data")
+        }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         if mock && isOnboardingPreview {
             return base.appendingPathComponent("LiveCopilot/OnboardingPreview", isDirectory: true)

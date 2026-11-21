@@ -134,8 +134,8 @@ import AVFoundation
             let started = Date()
             let vectors = try await provider.embed(["方法B的延迟是多少？", "Method B has a measured latency of 42 milliseconds.", "The kitchen serves fresh bread and coffee."])
             let relevant = VectorMath.cosine(vectors[0], vectors[1]), unrelated = VectorMath.cosine(vectors[0], vectors[2])
-            guard vectors.allSatisfy({ $0.count == 1024 }), relevant > unrelated + 0.1 else { throw CopilotError.message("Local cross-language embedding acceptance failed.") }
-            print("PASS BGE-M3 cross-language retrieval; relevant=\(relevant), unrelated=\(unrelated), total_ms=\(Int(Date().timeIntervalSince(started)*1000))")
+            guard vectors.allSatisfy({ $0.count == LocalModelKind.embeddingDimensions }), relevant > unrelated + 0.1 else { throw CopilotError.message("Local cross-language embedding acceptance failed.") }
+            print("PASS Arctic INT8 cross-language retrieval; relevant=\(relevant), unrelated=\(unrelated), total_ms=\(Int(Date().timeIntervalSince(started)*1000))")
             let corpus = fixtures.appendingPathComponent("synthetic-benchmark.txt")
             try "Synthetic benchmark: Method B has a measured latency of 42 milliseconds. The sample size is 128.".write(to: corpus, atomically: true, encoding: .utf8)
             let indexPath = fixtures.appendingPathComponent("knowledge-" + UUID().uuidString)

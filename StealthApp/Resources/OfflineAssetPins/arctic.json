@@ -1,0 +1,14 @@
+{
+  "ms-model_int8.onnx": {
+    "url": "https://modelscope.cn/models/Snowflake/snowflake-arctic-embed-m-v2.0/resolve/afc6f9e569142b8b7670fac0a055701d694a3887/onnx/model_int8.onnx",
+    "bytes": 310916060,
+    "sha256": "03d923bb1850ebdccb068e2f3abd8aa43fe81c50d07d037ef103fe3d0fb78e3b",
+    "zlib_bytes": 201821014
+  },
+  "tokenizer.json": {
+    "url": "https://huggingface.co/Snowflake/snowflake-arctic-embed-m-v2.0/resolve/95c2741480856aa9666782eb4afe11959938017f/tokenizer.json",
+    "bytes": 17083009,
+    "sha256": "f1cc44ad7faaeec47241864835473fd5403f2da94673f3f764a77ebcb0a803ec",
+    "zlib_bytes": 4007020
+  }
+}

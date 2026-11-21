@@ -177,9 +177,7 @@ enum CoreChecks {
         }
         try check("GitHub and ModelScope routes are reachable without a proxy") {
             // A pinned mirror wins over the generic host rewrite: ModelScope serves this file byte-for-byte.
-            let bgeWithoutDistribution = LocalModelInstaller.candidateURLs(.bge, distributionBase: nil)
-            try expect(bgeWithoutDistribution.map(\.host) == ["modelscope.cn", "hf-mirror.com", "huggingface.co"], "wrong BGE route order")
-            try expect(bgeWithoutDistribution[0].absoluteString.hasSuffix("/models/gpustack/bge-m3-GGUF/resolve/master/bge-m3-Q8_0.gguf"), "wrong ModelScope path")
+            try expect(LocalModelKind.embedding.isBundled && LocalModelKind.embedding.downloads.isEmpty, "Arctic must ship in the app")
             // GitHub release assets must never stand alone: the origin stalled at ~13 KB/s.
             let vad = LocalModelInstaller.candidateURLs(.vad, distributionBase: nil)
             try expect(vad.map(\.host) == ["gh-proxy.com", "hk.gh-proxy.com", "ghproxy.net", "github.com"], "wrong VAD route order")
@@ -201,7 +199,7 @@ enum CoreChecks {
         try FileManager.default.createDirectory(at: localFixture, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: localFixture) }
         try check("local model readiness rejects partial missing and size-mismatched installs") {
-            let kind = LocalModelKind.embedding, folder = kind.location(in: localFixture)
+            let kind = LocalModelKind.streamingSpeech, folder = kind.location(in: localFixture)
             try expect(!kind.isInstalled(in: localFixture), "missing install accepted")
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try Data([1, 2, 3]).write(to: folder.appendingPathComponent(kind.files[0]))
@@ -210,22 +208,22 @@ enum CoreChecks {
             try expect(!kind.isInstalled(in: localFixture), "truncated payload accepted")
         }
         do {
-            try await LocalModelInstaller.install(.embedding, root: localFixture, downloader: { _, destination in try Data("corrupt download".utf8).write(to: destination) })
+            try await LocalModelInstaller.install(.streamingSpeech, root: localFixture, downloader: { _, destination in try Data("corrupt download".utf8).write(to: destination) })
             throw CheckError(description: "corrupt model committed")
         } catch is CopilotError {
-            let original = try Data(contentsOf: LocalModelKind.embedding.location(in: localFixture).appendingPathComponent("bge-m3-Q8_0.gguf"))
+            let original = try Data(contentsOf: LocalModelKind.streamingSpeech.location(in: localFixture).appendingPathComponent("encoder.int8.onnx"))
             try expect(original == Data([1, 2, 3]), "previous model destroyed")
             passed.append("bad download checksum preserves the previous local model")
         }
         do {
-            try await LocalModelInstaller.install(.embedding, root: localFixture, downloader: { _, _ in throw CancellationError() })
+            try await LocalModelInstaller.install(.streamingSpeech, root: localFixture, downloader: { _, _ in throw CancellationError() })
             throw CheckError(description: "cancelled download committed")
         } catch is CancellationError { passed.append("local download cancellation cleans staging without changing installed data") }
         try check("failed local model replacement rolls back atomically") {
-            let target = LocalModelKind.embedding.location(in: localFixture)
+            let target = LocalModelKind.streamingSpeech.location(in: localFixture)
             do { try LocalModelInstaller.commit(localFixture.appendingPathComponent("absent"), to: target); throw CheckError(description: "missing payload accepted") }
             catch is CheckError { throw CheckError(description: "missing payload accepted") }
-            catch { try expect(FileManager.default.fileExists(atPath: target.appendingPathComponent("bge-m3-Q8_0.gguf").path), "failed replacement lost previous data") }
+            catch { try expect(FileManager.default.fileExists(atPath: target.appendingPathComponent("encoder.int8.onnx").path), "failed replacement lost previous data") }
         }
         let fake = localFixture.appendingPathComponent("fake-worker")
         try "#!/bin/sh\nprintf '%s\\n' '{\"ready\":true}'\nwhile IFS= read -r row; do printf '%s\\n' \"$row\"; done\n".write(to: fake, atomically: true, encoding: .utf8)
@@ -395,7 +393,7 @@ enum CoreChecks {
             mode = sys.argv[1]
             with open(\(String(reflecting: modeLog.path)), "a") as f: f.write(mode + "\\n")
             sys.stdout.write('{"ready":true}\\n'); sys.stdout.flush()
-            vec = [1.0] + [0.0] * 1023
+            vec = [1.0] + [0.0] * 767
             for line in sys.stdin:
                 req = json.loads(line)
                 if req.get("text") == "oom":
@@ -408,13 +406,9 @@ enum CoreChecks {
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fallbackWorker.path)
             let provider = LocalEmbeddingProvider(directory: localFixture, executable: fallbackWorker)
             let vectors = try await provider.embed(["ok-1", "crash-gpu", "ok-2"])
-            try expect(vectors.count == 3 && vectors.allSatisfy { $0.count == 1024 && $0[0] == 1.0 }, "embedding CPU fallback did not produce valid vectors")
+            try expect(vectors.count == 3 && vectors.allSatisfy { $0.count == 768 && $0[0] == 1.0 }, "embedding CPU fallback did not produce valid vectors")
             let modes = try String(contentsOf: modeLog, encoding: .utf8).split(separator: "\n").map(String.init)
-            #if arch(x86_64)
-            try expect(modes == ["embedding-cpu"], "x86_64 should start directly on embedding-cpu, got \(modes)")
-            #else
-            try expect(modes == ["embedding", "embedding-cpu"], "expected single GPU→CPU fallback and sticky CPU worker, got \(modes)")
-            #endif
+            try expect(modes == ["embedding-cpu"], "Arctic must start directly on CPU")
             provider.close(initiator: .selfCheck)
             let oomLog = localFixture.appendingPathComponent("embedding-oom-modes.log")
             let oomWorker = localFixture.appendingPathComponent("embedding-oom-worker")
@@ -500,7 +494,7 @@ enum CoreChecks {
             #!/usr/bin/env python3
             import json, sys, time
             sys.stdout.write('{"ready":true}\\n'); sys.stdout.flush()
-            vec = [1.0] + [0.0] * 1023
+            vec = [1.0] + [0.0] * 767
             for line in sys.stdin:
                 req = json.loads(line)
                 time.sleep(0.35)
@@ -521,7 +515,7 @@ enum CoreChecks {
             let progressRecorder = ProgressRecorder()
             let indexed = try await provider.embed(["slow-doc-chunk"], progress: { count in await progressRecorder.record(count) })
             let progressUpdates = await progressRecorder.values
-            try expect(indexed.count == 1 && indexed[0].count == 1024 && progressUpdates == [1], "indexing path did not succeed under indexingTimeout")
+            try expect(indexed.count == 1 && indexed[0].count == 768 && progressUpdates == [1], "indexing path did not succeed under indexingTimeout")
             provider.close(initiator: .selfCheck)
             passed.append("local embedding provider separates 240s indexing timeout from 90s query timeout")
         }

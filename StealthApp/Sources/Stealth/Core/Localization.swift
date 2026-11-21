@@ -114,7 +114,7 @@ enum L10n {
         "Knowledge service": "知识库服务",
         "Listening provider": "语音识别服务",
         "Embedding provider": "向量服务",
-        "Local · BGE-M3": "本地 · BGE-M3",
+        "Local · \(LocalModelKind.embeddingName)": "本地 · \(LocalModelKind.embeddingName)",
         "OpenAI · GPT-Live": "OpenAI · GPT-Live",
         "Automatic suggestions use conservative local question rules. Pauses alone do not trigger analysis; use the shortcut for missed questions.": "自动建议使用保守的本地问题判断规则，不会仅因停顿就触发分析；漏判时可用快捷键请求建议。",
         "OpenAI Embeddings": "OpenAI 向量服务",

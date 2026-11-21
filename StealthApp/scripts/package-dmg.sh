@@ -35,18 +35,19 @@ RELEASE_COMMIT="$(git rev-parse HEAD)"
 [[ -n "$APP_PATH" && -n "$APP_SOURCE_REF" && -n "$SIGN_IDENTITY" && "$SIGN_IDENTITY" != '-' ]] || { usage >&2; exit 1; }
 APP_SOURCE_REF="$(git rev-parse --verify "$APP_SOURCE_REF^{commit}")"
 git diff --quiet "$APP_SOURCE_REF" "$RELEASE_COMMIT" -- \
-  StealthApp/Sources StealthApp/Resources StealthApp/Native StealthApp/scripts/build-local-runtime.sh StealthApp/scripts/prepare-sparkle.sh StealthApp/scripts/build.sh StealthApp/scripts/prepare-response-model.py StealthApp/project.yml StealthApp/Version.xcconfig || {
+  StealthApp/Sources StealthApp/Resources StealthApp/Native StealthApp/scripts/build-local-runtime.sh StealthApp/scripts/stage-offline-runtime.py StealthApp/scripts/prepare-sparkle.sh StealthApp/scripts/build.sh StealthApp/scripts/prepare-response-model.py StealthApp/project.yml StealthApp/Version.xcconfig || {
   echo "App inputs changed since --app-source-ref. Build a new app instead." >&2; exit 1;
 }
-python3 StealthApp/scripts/prepare-response-model.py --distribution-only --resource-dir "$APP_PATH/Contents/Resources/LayaRuntime"
+test -f "$APP_PATH/Contents/Resources/OfflineModels/laya/receipt.json"
 python3 StealthApp/scripts/release-version.py --check-app "$APP_PATH"
 python3 StealthApp/scripts/sign-distribution.py "$APP_PATH" --verify-only
+python3 StealthApp/scripts/verify-bundled-weights.py "$APP_PATH"
 xcrun stapler validate "$APP_PATH"
 spctl --assess --type execute --verbose=2 "$APP_PATH"
 [[ -f "$APP_PATH/Contents/Info.plist" ]] || { echo "App bundle not found." >&2; exit 1; }
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
-STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/livecopilot-dmg.XXXXXX")"
+STAGE_DIR="$(mktemp -d -t livecopilot-dmg)"
 VERIFY_MOUNT=""
 cleanup() {
   if [[ -n "$VERIFY_MOUNT" ]]; then hdiutil detach "$VERIFY_MOUNT" >/dev/null || return; fi
@@ -110,6 +111,7 @@ VERIFY_MOUNT="$STAGE_DIR/verify-volume"
 mkdir "$VERIFY_MOUNT"
 hdiutil attach -readonly -nobrowse -mountpoint "$VERIFY_MOUNT" "$DMG_PATH" >/dev/null
 python3 StealthApp/scripts/sign-distribution.py "$VERIFY_MOUNT/LiveCopilot.app" --verify-only
+python3 StealthApp/scripts/verify-bundled-weights.py "$VERIFY_MOUNT/LiveCopilot.app"
 xcrun stapler validate "$VERIFY_MOUNT/LiveCopilot.app"
 cmp "$STAGED_APP/Contents/MacOS/LiveCopilot" "$VERIFY_MOUNT/LiveCopilot.app/Contents/MacOS/LiveCopilot"
 hdiutil detach "$VERIFY_MOUNT" >/dev/null

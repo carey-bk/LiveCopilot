@@ -29,7 +29,6 @@ local_sizes = {
     'paraformer-decoder.int8.onnx': 71664561,
     'paraformer-tokens.txt': 75756,
     'silero_vad.onnx': 643854,
-    'bge-m3-Q8_0.gguf': 634553760,
 }
 pattern = re.compile(r'static let (\w+) = Self\(\s*url: URL\(string: (.*?)\)!,\s*sha256: "([a-f0-9]{64})",\s*name: "([^"]+)"', re.S)
 for name, raw, digest, filename in pattern.findall(swift):

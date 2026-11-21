@@ -447,7 +447,7 @@ struct SettingsView: View {
                 Divider()
                 Picker(b("Knowledge index model", "知识库索引模型"), selection: $coordinator.settings.embeddingService) {
                     ForEach(EmbeddingService.allCases) { service in
-                        Text(service == .local ? b("BGE-M3 (local, recommended)", "BGE-M3（本地，推荐）") : b("OpenAI index model (remote)", "OpenAI 索引模型（远程）")).tag(service)
+                        Text(service == .local ? b("\(LocalModelKind.embeddingName) (local, recommended)", "\(LocalModelKind.embeddingName)（本地，推荐）") : b("OpenAI index model (remote)", "OpenAI 索引模型（远程）")).tag(service)
                     }
                 }.disabled(coordinator.isIndexing || coordinator.answerIsRunning).accessibilityIdentifier("embedding-provider")
                 Text(b("Converts documents and questions to vectors to find related passages. This model does not generate answers.", "将文档和问题转换为向量，以便检索相关片段。此模型不负责生成回答。"))
@@ -466,9 +466,9 @@ struct SettingsView: View {
             } else {
                 Text(t("Extracted document text and retrieval queries are sent to OpenAI Embeddings using the shared OpenAI credential.")).font(.callout).foregroundStyle(.secondary)
                 if !coordinator.hasAPIKey {
-                    Text(b("No OpenAI key configured for remote indexing. Use local BGE-M3 to index without a key. Your answer model configuration is separate.", "远程索引尚未配置 OpenAI Key。可切回本地 BGE-M3 免密钥建立索引。回答模型在「分析与回答」中单独配置。")).font(.callout)
+                    Text(b("No OpenAI key configured for remote indexing. Use local \(LocalModelKind.embeddingName) to index without a key. Your answer model configuration is separate.", "远程索引尚未配置 OpenAI Key。可切回本地 \(LocalModelKind.embeddingName) 免密钥建立索引。回答模型在「分析与回答」中单独配置。")).font(.callout)
                 } else if case .failed = coordinator.embeddingVerification {
-                    Text(b("Remote indexing failed. You can switch to local BGE-M3. This check only tests knowledge indexing.", "远程索引连接失败，可切回本地 BGE-M3。本次检查仅针对知识库索引，不代表回答服务连接失败。")).font(.callout)
+                    Text(b("Remote indexing failed. You can switch to local \(LocalModelKind.embeddingName). This check only tests knowledge indexing.", "远程索引连接失败，可切回本地 \(LocalModelKind.embeddingName)。本次检查仅针对知识库索引，不代表回答服务连接失败。")).font(.callout)
                 }
                 CredentialEditor(coordinator: coordinator, analysis: false, embeddingLayout: true)
             }
@@ -649,6 +649,7 @@ struct SettingsView: View {
             if coordinator.knowledgeDocuments.contains(where: { $0.embeddingModel != coordinator.settings.selectedEmbeddingIdentity }) {
                 HStack {
                     Text(t("Some documents use a different embedding model. Re-index them to restore semantic retrieval.")).font(.caption).foregroundStyle(.orange)
+                    Button(b("Clean up retired BGE and Python files", "清理旧 BGE 和 Python 环境")) { coordinator.cleanRetiredModels() }.disabled(coordinator.isIndexing)
                     Button(t("Re-index all")) { coordinator.reindexAll() }.disabled(coordinator.isIndexing)
                 }
             }
@@ -779,7 +780,7 @@ private struct LocalModelCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(kind == .embedding ? (ServiceGuide.text("BGE-M3 local index model", "BGE-M3 本地索引模型", language)) : kind.title).font(.headline)
+                    Text(kind == .embedding ? (ServiceGuide.text("\(LocalModelKind.embeddingName) local index model", "\(LocalModelKind.embeddingName) 本地索引模型", language)) : kind.title).font(.headline)
                     Text(t("Download size") + " · " + kind.downloadSize).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -800,17 +801,21 @@ private struct LocalModelCard: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 HStack(spacing: 10) {
+                    if !kind.isBundled {
                     Button(t(manager.installed.contains(kind) ? "Download again" : "Download model")) { copiedDiagnostics = false; manager.install(kind) }
                         .disabled(locked || manager.downloading != nil).accessibilityIdentifier("download-" + kind.rawValue)
+                    }
                     if manager.installed.contains(kind) {
                         Button(ServiceGuide.text("Run self-check", "运行自检", language)) { copiedDiagnostics = false; manager.runSelfCheck(kind) }
                             .disabled(locked || manager.downloading != nil).accessibilityIdentifier("selfcheck-" + kind.rawValue)
+                        if !kind.isBundled {
                         Button(ServiceGuide.text("Delete local model…", "删除本地模型…", language), role: .destructive) { confirmRemoval = true }
                             .foregroundStyle(.red)
                             .disabled(locked || manager.downloading != nil)
                             .confirmationDialog(ServiceGuide.text("Delete this local model?", "删除此本地模型？", language), isPresented: $confirmRemoval) {
                                 Button(ServiceGuide.text("Delete", "删除", language), role: .destructive, action: remove)
                             } message: { Text(ServiceGuide.text("Download again to use it. Knowledge documents, indexes and settings are retained.", "下次使用需要重新下载。知识库文档、索引和设置均保留。", language)) }
+                        }
                     }
                 }
                 if manager.downloading == nil, manager.messageKind == kind, !manager.message.isEmpty { Text(t(manager.message)).font(.caption).foregroundStyle(.secondary) }
@@ -1135,6 +1140,7 @@ enum JevSensitivity: Int, CaseIterable {
 private struct JevSettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var laya: LayaRuntimeManager
+    @State private var confirmLegacyCleanup = false
     @State private var confirmRemoval = false
     @State private var testText = ""
     @State private var result: LayaDiagnosticResult?
@@ -1157,10 +1163,13 @@ private struct JevSettingsView: View {
     private var stateColor: Color { laya.state == .failed ? .red : (laya.isReady ? .green : .secondary) }
     private var stateIcon: String { laya.state == .failed ? "exclamationmark.circle" : (laya.isReady ? "checkmark.circle.fill" : "cpu") }
     private var sensitivity: JevSensitivity { .nearest(to: coordinator.settings.layaThreshold) }
+    private var sensitivityLevels: [JevSensitivity] {
+        return [.low, .medium, .high]
+    }
     private var sensitivityBinding: Binding<Double> {
-        Binding(get: { Double(sensitivity.rawValue) }, set: { value in
-            guard value.isFinite, let level = JevSensitivity(rawValue: Int(value.rounded())) else { return }
-            coordinator.settings.layaThreshold = level.threshold
+        Binding(get: { Double(sensitivityLevels.firstIndex(of: sensitivity) ?? 1) }, set: { value in
+            guard value.isFinite, sensitivityLevels.indices.contains(Int(value.rounded())) else { return }
+            coordinator.settings.layaThreshold = sensitivityLevels[Int(value.rounded())].threshold
         })
     }
     private var modelActionTitle: String {
@@ -1184,7 +1193,7 @@ private struct JevSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             JevModeCard(isOn: $coordinator.settings.automaticSuggestions, language: coordinator.settings.language,
                         identifier: "jev-enabled", details: {
-                Label("Laya · " + stateTitle, systemImage: stateIcon)
+                Label(laya.engineTitle + " · " + stateTitle, systemImage: stateIcon)
                     .font(.caption).foregroundStyle(stateColor).accessibilityIdentifier("laya-runtime-status")
                 if coordinator.settings.listeningService == .openAI {
                     Text(b("GPT-Live-1 handles triggering; Laya sensitivity applies to local speech engines.", "当前由 GPT-Live-1 触发；Laya 灵敏度用于本地语音引擎。"))
@@ -1200,7 +1209,7 @@ private struct JevSettingsView: View {
                         .disabled(coordinator.isTestingLaya || coordinator.settings.layaThreshold == JevSensitivity.medium.threshold)
                         .accessibilityIdentifier("laya-reset-threshold")
                 }
-                Slider(value: sensitivityBinding, in: 0...4, step: 1)
+                Slider(value: sensitivityBinding, in: 0...Double(sensitivityLevels.count - 1), step: 1)
                     .disabled(coordinator.isTestingLaya).accessibilityLabel(b("Trigger sensitivity", "触发灵敏度"))
                     .accessibilityValue(sensitivity.title(coordinator.settings.language)).accessibilityIdentifier("laya-threshold")
                 HStack {
@@ -1214,7 +1223,7 @@ private struct JevSettingsView: View {
                 HStack {
                     Text(b("Local model management", "本地模型管理")).font(.headline)
                     Spacer()
-                    Label("Laya · " + stateTitle, systemImage: stateIcon).font(.caption).foregroundStyle(stateColor)
+                    Label(laya.engineTitle + " · " + stateTitle, systemImage: stateIcon).font(.caption).foregroundStyle(stateColor)
                         .accessibilityIdentifier("laya-install-status")
                 }
                 HStack(spacing: 8) {
@@ -1226,12 +1235,6 @@ private struct JevSettingsView: View {
                         Button(b("Cancel", "取消")) { coordinator.cancelLayaRuntime() }.accessibilityIdentifier("cancel-laya")
                     }
                     Spacer()
-                    Button(b("Delete…", "删除…"), role: .destructive) { confirmRemoval = true }
-                        .foregroundStyle(.red).disabled(laya.isBusy || locked || laya.state == .notInstalled || laya.state == .unsupported)
-                        .accessibilityIdentifier("remove-laya")
-                        .confirmationDialog(b("Delete Laya model, runtime and download cache?", "删除 Laya 模型、运行环境和下载缓存？"), isPresented: $confirmRemoval) {
-                            Button(b("Delete", "删除"), role: .destructive) { if !locked { laya.removeDownloadedFiles() } }
-                        } message: { Text(b("You will need to download again. Settings and knowledge documents are retained.", "下次使用需要重新下载；保留设置与知识库资料。")) }
                 }
                 if laya.isBusy {
                     if let value = laya.transferProgress ?? laya.progress { ProgressView(value: value) }

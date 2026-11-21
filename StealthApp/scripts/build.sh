@@ -1,9 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-python3 scripts/prepare-response-model.py --distribution-only
 bash scripts/prepare-sparkle.sh
-./scripts/build-local-runtime.sh
 if ! xcodebuild -version >/dev/null 2>&1; then
   echo "Install/open full Xcode and select it with xcode-select before building." >&2; exit 1
 fi
@@ -12,4 +10,7 @@ if [[ -z "$XCODEGEN_BIN" && -x "$HOME/.local/bin/xcodegen" ]]; then XCODEGEN_BIN
 if [[ -z "$XCODEGEN_BIN" ]]; then echo "Install XcodeGen: brew install xcodegen (or set XCODEGEN_BIN)." >&2; exit 1; fi
 "$XCODEGEN_BIN" generate
 xcodebuild -project LiveCopilot.xcodeproj -scheme LiveCopilot -configuration Release \
-  -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+  -destination generic/platform=macOS -derivedDataPath "${LC_DERIVED_DATA:-build}" ONLY_ACTIVE_ARCH=NO build
+app="${LC_DERIVED_DATA:-build}/Build/Products/Release/LiveCopilot.app"
+codesign --force --sign - --options runtime --entitlements Resources/LiveCopilot.entitlements "$app"
+codesign --verify --strict --deep "$app"

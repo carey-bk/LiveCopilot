@@ -31,13 +31,6 @@
       "size": 643854
     },
     {
-      "key": "local/bge-m3-Q8_0.gguf",
-      "source": "https://huggingface.co/gpustack/bge-m3-GGUF/resolve/2d48f1737679ad900d5c26c5aad5410e9c70fdca/bge-m3-Q8_0.gguf",
-      "sha256": "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167",
-      "license": "MIT",
-      "size": 634553760
-    },
-    {
       "key": "laya/python/81a359f1cfadd4da11766534c5913791cea55f26e1bb902cacd2a531bb1e4b2b.tar.gz",
       "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14%2B20260901-aarch64-apple-darwin-install_only_stripped.tar.gz",
       "sha256": "81a359f1cfadd4da11766534c5913791cea55f26e1bb902cacd2a531bb1e4b2b",

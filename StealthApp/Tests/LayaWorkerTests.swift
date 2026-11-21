@@ -3,81 +3,73 @@ import Foundation
 @testable import LiveCopilot
 
 final class LayaWorkerTests: XCTestCase {
-    func testPinnedInitialDownloadSizeAndIncompleteManifest() throws {
-        let pins = try XCTUnwrap(LayaDownloadSize.load())
-        XCTAssertEqual(pins.totalBytes, 766_807_229)
-        let complete = Data(#"{"python":{"size":10},"source":{"size":20},"wheels":[{"size":30}],"model":[{"size":40},{"size":50}]}"#.utf8)
-        XCTAssertEqual(try JSONDecoder().decode(LayaDownloadSize.self, from: complete).totalBytes, 150)
-        let missing = Data(#"{"python":{"size":10},"source":{"size":20},"wheels":[{}],"model":[{"size":40}]}"#.utf8)
-        XCTAssertThrowsError(try JSONDecoder().decode(LayaDownloadSize.self, from: missing))
-        let invalid = LayaDownloadSize(python: .init(size: 10), source: .init(size: 20), wheels: [.init(size: 0)], model: [.init(size: 40)])
-        XCTAssertNil(invalid.totalBytes)
-    }
-
-    @MainActor func testReadyStateTracksUnexpectedWorkerExitAndIntentionalStop() async throws {
-        #if arch(arm64)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("laya-state-" + UUID().uuidString)
+    @MainActor func testBundledCoreMLSelectionIgnoresLegacyPreferences() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let current = root.appendingPathComponent("current"), resources = root.appendingPathComponent("resources")
-        let required = ["source/laya_mlx/agent.py", "model/model.safetensors", "model/rl_agent_config.json", "model/encoder/config.json", "model/tokenizer/tokenizer.json"]
-        var hashes: [String: String] = [:]
-        for name in required {
-            let file = current.appendingPathComponent(name)
-            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try Data("fixture".utf8).write(to: file); hashes[name] = String(repeating: "a", count: 64)
-        }
-        try FileManager.default.createDirectory(at: current.appendingPathComponent("venv/bin"), withIntermediateDirectories: true)
-        try FileManager.default.createSymbolicLink(at: current.appendingPathComponent("venv/bin/python3"), withDestinationURL: URL(fileURLWithPath: "/usr/bin/python3"))
-        try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
-        try JSONSerialization.data(withJSONObject: ["id": "fixture"]).write(to: resources.appendingPathComponent("pins.json"))
-        try JSONSerialization.data(withJSONObject: ["schema": 1, "pin_id": "fixture", "files": hashes]).write(to: current.appendingPathComponent("receipt.json"))
-        try Data((ready + "time.sleep(0.3)\nos._exit(7)\n").utf8).write(to: resources.appendingPathComponent("worker.py"))
-        let manager = LayaRuntimeManager(root: root, resources: resources)
-        XCTAssertEqual(manager.state, .installed)
-        manager.prepareInstalledOnce(enabled: false)
-        XCTAssertEqual(manager.state, .installed)
-        manager.prepareInstalledOnce(enabled: true)
-        XCTAssertEqual(manager.state, .loading)
-        manager.prepareInstalledOnce(enabled: true)
-        XCTAssertEqual(manager.diagnosticEvents.filter { $0.contains("load_and_verify_started") }.count, 1)
-        try await manager.prepareAndWait()
-        XCTAssertEqual(manager.state, .ready)
-        try await Task.sleep(nanoseconds: 700_000_000)
-        XCTAssertEqual(manager.state, .failed)
-        manager.prepareInstalledOnce(enabled: true)
-        XCTAssertEqual(manager.state, .failed, "No automatic retry loop after failure")
-        try await manager.prepareAndWait()
-        manager.stop()
-        try await Task.sleep(nanoseconds: 400_000_000)
-        XCTAssertEqual(manager.state, .installed, "Intentional stop must not become a crash")
-        manager.prepareInstalledOnce(enabled: true)
-        XCTAssertEqual(manager.state, .installed, "Returning to setup must not undo an intentional stop")
-        manager.checkModel()
-        XCTAssertEqual(manager.state, .loading)
-        manager.cancel()
-        XCTAssertEqual(manager.state, .installed)
-        try await Task.sleep(nanoseconds: 400_000_000)
-        XCTAssertEqual(manager.state, .installed, "Cancelled check must not publish a stale ready or failed state")
+        let manager = LayaRuntimeManager(root: root, preference: .e8)
+        XCTAssertEqual(manager.backend, .w8)
+        XCTAssertTrue(manager.isInstalled)
+        XCTAssertEqual(manager.engineTitle, "Core ML · W8")
         try await manager.prepareAndWait()
         XCTAssertTrue(manager.isReady)
-        manager.removeDownloadedFiles()
-        XCTAssertEqual(manager.state, .notInstalled)
-        XCTAssertFalse(manager.isInstalled)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
-        XCTAssertFalse(manager.diagnosticEvents.isEmpty, "Removing the diagnostics UI must not remove runtime logs")
-        #endif
+        manager.stop()
+        XCTAssertTrue(manager.isInstalled)
     }
 
-    func testBootstrapAcceptsPinnedPythonWithNumericSize() throws {
-        let digest = String(repeating: "a", count: 64)
-        let data = try JSONSerialization.data(withJSONObject: ["python": [
-            "url": "https://example.com/python.tar.gz", "sha256": digest, "size": 24_981_445
-        ]])
-        let pin = try LayaBootstrap.pythonPin(from: data)
-        XCTAssertEqual(pin.url.absoluteString, "https://example.com/python.tar.gz")
-        XCTAssertEqual(pin.digest, digest)
-        let resources = try XCTUnwrap(Bundle.main.resourceURL).appendingPathComponent("LayaRuntime/pins.json")
-        XCTAssertEqual(try LayaBootstrap.downloadFileTotal(from: Data(contentsOf: resources)), 30)
+    func testNativeTimeoutAndCancellationReapStoppedProcess() async throws {
+        let resources = try XCTUnwrap(Bundle.main.resourceURL)
+        let directory = resources.appendingPathComponent("OfflineModels/laya")
+        let worker = LayaWorker(native: directory, resources: resources.appendingPathComponent("LayaRuntime"), precision: "w8")
+        defer { worker.stop() }
+        for cancel in [false, true] {
+            try await worker.prepare()
+            let ps = Process(), output = Pipe()
+            ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+            ps.arguments = ["-axo", "pid=,ppid=,command="]
+            ps.standardOutput = output
+            try ps.run()
+            let listing = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            ps.waitUntilExit()
+            let children = listing.split(separator: "\n").compactMap { row -> pid_t? in
+                let fields = row.split(separator: " ", maxSplits: 2)
+                guard fields.count == 3, Int32(fields[1]) == getpid(),
+                      fields[2].contains("/livecopilot-laya "), fields[2].contains(directory.path)
+                else { return nil }
+                return Int32(fields[0])
+            }
+            XCTAssertEqual(children.count, 1)
+            let pid = try XCTUnwrap(children.first)
+            XCTAssertEqual(getpgid(pid), pid)
+            XCTAssertEqual(kill(pid, SIGSTOP), 0)
+            let pending = Task { try await worker.predict(text: "Synthetic?", context: "", timeout: cancel ? 10 : 0.2) }
+            if cancel {
+                try await Task.sleep(nanoseconds: 50_000_000)
+                pending.cancel()
+            }
+            do { _ = try await pending.value; XCTFail("Unexpected score") }
+            catch is CancellationError { XCTAssertTrue(cancel) }
+            catch LayaRuntimeError.timedOut { XCTAssertFalse(cancel) }
+            for _ in 0..<100 where kill(pid, 0) == 0 { try await Task.sleep(nanoseconds: 10_000_000) }
+            XCTAssertEqual(kill(pid, 0), -1)
+            XCTAssertEqual(errno, ESRCH)
+        }
+    }
+
+    func testNativeHelperRejectsCorruptWeightsBeforeReady() async throws {
+        let resources = try XCTUnwrap(Bundle.main.resourceURL).appendingPathComponent("LayaRuntime")
+        let pins = try LayaNativeAssets.pins(resources, .w8)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for name in pins.files.keys {
+            let target = root.appendingPathComponent(name)
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("damaged".utf8).write(to: target)
+        }
+        try FileManager.default.copyItem(at: resources.appendingPathComponent("native-w8.json"), to: root.appendingPathComponent("receipt.json"))
+        let worker = LayaWorker(native: root, resources: resources, precision: "w8")
+        defer { worker.stop() }
+        do { try await worker.prepare(); XCTFail("Unexpected ready") }
+        catch LayaRuntimeError.unavailable {}
     }
 
     func testInstallerFileCountTelemetryAndValidation() async throws {
@@ -135,7 +127,9 @@ final class LayaWorkerTests: XCTestCase {
         catch { XCTAssertTrue(error is LayaRuntimeError) }
     }
     func testInvalidScoresAndMismatchedIDsAreRejected() async throws {
-        for response in ["{'id':r['id'],'score':True,'input_tokens':10}",
+        for response in ["{'id':r['id'],'score':float('nan'),'input_tokens':10}",
+                         "{'id':r['id'],'score':float('inf'),'input_tokens':10}",
+                         "{'id':r['id'],'score':True,'input_tokens':10}",
                          "{'id':r['id'],'score':1.5,'input_tokens':10}",
                          "{'id':r['id'],'score':0.9,'input_tokens':2048}",
                          "{'id':'wrong','score':0.9,'input_tokens':10}"] {

@@ -264,25 +264,15 @@ final class NativeTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let models = root.appendingPathComponent("Models")
-        for kind in LocalModelKind.allCases {
-            let dir = kind.location(in: models)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try Data("fixture".utf8).write(to: dir.appendingPathComponent("model"))
-        }
+        let removable = LocalModelKind.streamingSpeech.location(in: models)
+        try FileManager.default.createDirectory(at: removable, withIntermediateDirectories: true)
         let knowledge = root.appendingPathComponent("knowledge")
         try Data("retain".utf8).write(to: knowledge)
         let manager = LocalModelManager(root: models)
         manager.remove(.embedding)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: LocalModelKind.embedding.location(in: models).path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: LocalModelKind.streamingSpeech.location(in: models).path))
-        let layaRoot = root.appendingPathComponent("Laya")
-        for folder in ["downloads", "bootstrap", "installs"] {
-            try FileManager.default.createDirectory(at: layaRoot.appendingPathComponent(folder), withIntermediateDirectories: true)
-        }
-        let laya = LayaRuntimeManager(root: layaRoot)
-        laya.removeDownloadedFiles()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: layaRoot.path))
-        XCTAssertEqual(laya.state, .notInstalled)
+        XCTAssertTrue(LocalModelKind.embedding.isInstalled(in: models))
+        manager.remove(.streamingSpeech)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: removable.path))
         XCTAssertEqual(try Data(contentsOf: knowledge), Data("retain".utf8))
     }
 
@@ -1118,13 +1108,6 @@ final class EmbeddingConnectionTests: XCTestCase {
 }
 
 final class KnowledgeVerificationTests: XCTestCase {
-    private func fixture(_ root: URL) throws {
-        let directory = LocalModelKind.embedding.location(in: root)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let data = Data("fixture".utf8)
-        try data.write(to: directory.appendingPathComponent("bge-m3-Q8_0.gguf"))
-        try JSONEncoder().encode(["bge-m3-Q8_0.gguf": data.count]).write(to: directory.appendingPathComponent("installed.json"))
-    }
     @MainActor func testDownloadDoesNotBecomeReadyUntilInferenceCompletes() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1132,13 +1115,13 @@ final class KnowledgeVerificationTests: XCTestCase {
         let manager = LocalModelManager(root: root, embeddingVerifier: { _ in
             calls += 1
             try await Task.sleep(nanoseconds: 100_000_000)
-        }, installation: { _, root in try self.fixture(root) })
-        manager.install(.embedding)
+        })
+        let verification = Task { await manager.verifyEmbedding() }
         for _ in 0..<100 where !manager.embeddingVerification.isChecking { try await Task.sleep(nanoseconds: 1_000_000) }
         XCTAssertTrue(manager.installed.contains(.embedding))
         XCTAssertEqual(manager.embeddingVerification, .checking)
         XCTAssertFalse(manager.embeddingVerification.isReady)
-        for _ in 0..<200 where manager.downloading != nil { try await Task.sleep(nanoseconds: 2_000_000) }
+        await verification.value
         XCTAssertTrue(manager.embeddingVerification.isReady)
         XCTAssertEqual(calls, 1)
         await manager.shutdown()
@@ -1146,7 +1129,6 @@ final class KnowledgeVerificationTests: XCTestCase {
     @MainActor func testFailedValidationPreservesFilesAndRetriesWithoutDownload() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        try fixture(root)
         var attempts = 0
         let manager = LocalModelManager(root: root, embeddingVerifier: { _ in
             attempts += 1
@@ -1160,13 +1142,12 @@ final class KnowledgeVerificationTests: XCTestCase {
         XCTAssertTrue(manager.embeddingVerification.isReady)
         XCTAssertEqual(attempts, 2)
         manager.remove(.embedding)
-        XCTAssertEqual(manager.embeddingVerification, .idle)
-        XCTAssertFalse(manager.installed.contains(.embedding))
+        XCTAssertTrue(manager.embeddingVerification.isReady)
+        XCTAssertTrue(manager.installed.contains(.embedding))
     }
     @MainActor func testCancelVerificationNeverMarksReady() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        try fixture(root)
         let manager = LocalModelManager(root: root, embeddingVerifier: { _ in try await Task.sleep(nanoseconds: 5_000_000_000) })
         let task = Task { await manager.verifyEmbedding() }
         for _ in 0..<100 where !manager.embeddingVerification.isChecking { try await Task.sleep(nanoseconds: 1_000_000) }

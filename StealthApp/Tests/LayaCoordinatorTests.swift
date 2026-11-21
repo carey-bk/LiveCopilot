@@ -432,7 +432,7 @@ final class LayaCoordinatorTests: XCTestCase {
         for level in levels {
             var settings = AppSettings(); settings.layaThreshold = level.threshold
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
-            XCTAssertEqual(JevSensitivity.nearest(to: restored.layaThreshold), level)
+            XCTAssertEqual(restored.layaThreshold, [0.50, 0.80, 0.95].contains(level.threshold) ? level.threshold : 0.80)
         }
         XCTAssertFalse(LayaTriggerDecision.evaluate(score: 0.7, threshold: JevSensitivity.low.threshold).shouldTrigger)
         XCTAssertTrue(LayaTriggerDecision.evaluate(score: 0.7, threshold: JevSensitivity.high.threshold).shouldTrigger)
@@ -1322,31 +1322,10 @@ final class LayaCoordinatorTests: XCTestCase {
         guard ProcessInfo.processInfo.environment["LIVECOPILOT_TEST_REAL_LAYA"] == "1" else {
             throw XCTSkip("Opt-in real local model test; no paid provider is used")
         }
-        let environment = ProcessInfo.processInfo.environment
-        if let path = environment["LIVECOPILOT_TEST_LAYA_ROOT"], path.hasPrefix("/") {
-            guard let resources = environment["LIVECOPILOT_TEST_LAYA_RESOURCES"], resources.hasPrefix("/") else {
-                throw LayaRuntimeError.unavailable
-            }
-            let runtime = LayaRuntimeManager(root: URL(fileURLWithPath: path),
-                                            resources: URL(fileURLWithPath: resources))
-            guard runtime.isInstalled else { throw LayaRuntimeError.unavailable }
-            try await runtime.prepareAndWait()
-            let data = try Data(contentsOf: URL(fileURLWithPath: path).appendingPathComponent("current/receipt.json"))
-            let receipt = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-            print("JEV_REAL_MODEL_PIN_ID=\(receipt["pin_id"] ?? "unknown")")
-            print("JEV_REAL_CHECKPOINT_ID=\(runtime.checkpointID ?? "unknown")")
-            return runtime
-        }
-        let support = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/LiveCopilot")
-        let development = support.appendingPathComponent("Development/Laya")
-        // Opt-in smoke check may read the installed runtime when there is no
-        // development copy. prepareAndWait only loads it; never install/download.
-        let root = FileManager.default.fileExists(atPath: development.appendingPathComponent("current").path)
-            ? development : support.appendingPathComponent("Laya")
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let runtime = LayaRuntimeManager(root: root)
-        guard runtime.isInstalled else { throw XCTSkip("No verified local Laya installation") }
         try await runtime.prepareAndWait()
+        XCTAssertEqual(runtime.engineTitle, "Core ML · W8")
         return runtime
     }
     @MainActor func testInstalledLayaEndToEndWithMockReasoning() async throws {

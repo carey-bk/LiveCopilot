@@ -62,6 +62,7 @@ final class LocalModelManager: ObservableObject {
         if installed.contains(kind) { installNext() } else { install(kind) }
     }
     func install(_ kind: LocalModelKind) {
+        if kind.isBundled { return }
         guard task == nil, verificationTask == nil else { return }
         if kind == .embedding { embeddingVerification = .idle }
         failures[kind] = nil; health[kind] = nil
@@ -114,6 +115,7 @@ final class LocalModelManager: ObservableObject {
         }
     }
     func remove(_ kind: LocalModelKind) {
+        if kind.isBundled { return }
         guard task == nil, verificationTask == nil else { return }
         messageKind = kind
         do {

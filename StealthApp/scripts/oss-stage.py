@@ -75,12 +75,6 @@ def stage(item, root):
         print('READY', item['key'], flush=True)
         return
     output.parent.mkdir(parents=True, exist_ok=True)
-    if item['key'] == 'local/bge-m3-Q8_0.gguf':
-        installed = Path.home() / 'Library/Application Support/LiveCopilot/Models/bge-m3-q8-v1/bge-m3-Q8_0.gguf'
-        if installed.is_file() and digest(installed) == item['sha256']:
-            shutil.copyfile(installed, output)
-            print('READY', item['key'], '(copied verified local model)', flush=True)
-            return
     partials = root / 'partials'; partials.mkdir(parents=True, exist_ok=True)
     for index, url in enumerate(sources(item['source'])):
         part = partials / (item['sha256'] + '-' + str(index) + '.part')

@@ -79,7 +79,7 @@ enum LocalModelInstaller {
             progress(1, item.name + " · verified")
             return
         }
-        let addresses = candidateURLs(item)
+        let addresses = candidateURLs(item, distributionBase: item.availableOnDistribution ? ModelDistribution.baseURL : nil)
         for (index, address) in addresses.enumerated() {
             try Task.checkCancellation()
             let host = address.host ?? ""
@@ -137,6 +137,7 @@ enum LocalModelInstaller {
                         status: @escaping @Sendable (String) -> Void = { _ in }) async throws {
         let fm = FileManager.default
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        if kind.isBundled { throw CopilotError.message("This model ships inside the application.") }
         let stage = root.appendingPathComponent(".install-" + UUID().uuidString)
         try fm.createDirectory(at: stage, withIntermediateDirectories: false)
         defer { try? fm.removeItem(at: stage) }

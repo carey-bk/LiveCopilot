@@ -62,7 +62,7 @@ final class LocalInferenceWorker: @unchecked Sendable {
     private var diagnosticMode: String { ["embedding", "embedding-cpu", "asr", "streaming", "zipformer", "paraformer"].contains(arguments.first ?? "") ? arguments[0] : "other" }
 
     init(mode: String, modelDirectory: URL, executable: URL? = nil, sigkillGraceSeconds: TimeInterval = 1.5) {
-        self.executable = executable ?? Bundle.main.resourceURL!.appendingPathComponent("LocalRuntime/livecopilot-inference")
+        self.executable = executable ?? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/livecopilot-inference")
         self.sigkillGraceSeconds = max(0.05, sigkillGraceSeconds)
         arguments = [mode, modelDirectory.path]
     }
@@ -361,13 +361,8 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
         self.executable = executable
         self.queryTimeout = queryTimeout
         self.indexingTimeout = indexingTimeout
-        #if arch(x86_64)
         self.cpuFallbackActive = true
         self.worker = .init(mode: "embedding-cpu", modelDirectory: directory, executable: executable)
-        #else
-        self.cpuFallbackActive = false
-        self.worker = .init(mode: "embedding", modelDirectory: directory, executable: executable)
-        #endif
     }
     private func currentWorker() -> LocalInferenceWorker {
         workerLock.withLock { worker }
@@ -395,21 +390,21 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
         _ = try await embed(["warmup"])
     }
     func embed(_ texts: [String]) async throws -> [[Float]] {
-        try await embed(texts, timeout: queryTimeout, progress: { _ in })
+        try await embed(texts, role: "query", timeout: queryTimeout, progress: { _ in })
     }
     /// Document indexing. A worker running on CPU (Intel default or GPU-to-CPU fallback) needs more
     /// time per full-length passage than Metal, so allow longer per-chunk timeout than live queries.
     func embed(_ texts: [String], progress: @Sendable (Int) async -> Void) async throws -> [[Float]] {
-        try await embed(texts, timeout: indexingTimeout, progress: progress)
+        try await embed(texts, role: "document", timeout: indexingTimeout, progress: progress)
     }
-    private func embed(_ texts: [String], timeout: TimeInterval, progress: @Sendable (Int) async -> Void) async throws -> [[Float]] {
+    private func embed(_ texts: [String], role: String, timeout: TimeInterval, progress: @Sendable (Int) async -> Void) async throws -> [[Float]] {
         var vectors: [[Float]] = []
         // One text per IPC request lets a new interactive query run between import chunks.
         for text in texts {
             try Task.checkCancellation()
             let activeWorker = currentWorker()
             let response: [String: Any]
-            let outcome = await activeWorker.callWithOutcome(["op": "embed", "text": text], timeout: timeout)
+            let outcome = await activeWorker.callWithOutcome(["op": "embed", "text": text, "role": role], timeout: timeout)
             if let ok = outcome.response {
                 response = ok
             } else if outcome.error is CancellationError {
@@ -417,7 +412,7 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
                 // closing the old worker cancels our queued/in-flight call even though our Task was not cancelled.
                 if !Task.isCancelled,
                    let fallbackWorker = switchToCPUIfNeeded(failingWorker: activeWorker) {
-                    let retryOutcome = await fallbackWorker.callWithOutcome(["op": "embed", "text": text], timeout: timeout)
+                    let retryOutcome = await fallbackWorker.callWithOutcome(["op": "embed", "text": text, "role": role], timeout: timeout)
                     if let ok = retryOutcome.response {
                         response = ok
                     } else {
@@ -438,7 +433,7 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
                 let code = outcome.failureCode ?? activeWorker.failureCode
                 if (code == "process_ended" || code == "timeout"),
                    let fallbackWorker = switchToCPUIfNeeded(failingWorker: activeWorker) {
-                    let retryOutcome = await fallbackWorker.callWithOutcome(["op": "embed", "text": text], timeout: timeout)
+                    let retryOutcome = await fallbackWorker.callWithOutcome(["op": "embed", "text": text, "role": role], timeout: timeout)
                     if let ok = retryOutcome.response {
                         response = ok
                     } else {
@@ -454,7 +449,7 @@ final class LocalEmbeddingProvider: LocalEmbeddingPreparing, @unchecked Sendable
                     throw error
                 }
             }
-            guard let numbers = response["vector"] as? [NSNumber], numbers.count == 1024 else {
+            guard let numbers = response["vector"] as? [NSNumber], numbers.count == LocalModelKind.embeddingDimensions else {
                 throw CopilotError.message("Local model returned an invalid response.")
             }
             let vector = numbers.map(\.floatValue)

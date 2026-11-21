@@ -91,6 +91,7 @@ struct OnboardingSetupSnapshot {
         let i = inventory
         var entries: [Capability] = [], downloads: [Resource] = []
         func addLocal(_ kind: LocalModelKind, name: String) {
+            guard !kind.isBundled else { return }
             guard !i.installed.contains(kind) else { return }
             let sizes = kind.downloads.compactMap(\.knownByteCount)
             downloads.append(.init(kind: .local(kind), name: name,
@@ -132,17 +133,15 @@ struct OnboardingSetupSnapshot {
         entries.append(.init(id: .speech, model: speechName, status: state.prefersTyping ? .notNeeded : speechStatus, enabled: !state.prefersTyping))
         let knowledgeStatus = settings.embeddingService == .local
             ? i.localStatus(.embedding, runtime: i.knowledgeRuntime) : (i.cloudKeyConfigured ? .verify : .configure)
-        entries.append(.init(id: .knowledge, model: settings.embeddingService == .local ? "BGE-M3" : "OpenAI Embeddings",
+        entries.append(.init(id: .knowledge, model: settings.embeddingService == .local ? "\(LocalModelKind.embeddingName)" : "OpenAI Embeddings",
                              status: state.wantsKnowledge ? knowledgeStatus : .off, enabled: state.wantsKnowledge))
-        if state.wantsKnowledge && settings.embeddingService == .local { addLocal(.embedding, name: "BGE-M3") }
+        if state.wantsKnowledge && settings.embeddingService == .local { addLocal(.embedding, name: "\(LocalModelKind.embeddingName)") }
         let usesLocalJev = settings.listeningService.isLocal
         let jevEnabled = !state.prefersTyping && settings.automaticSuggestions
         var jevStatus: OnboardingCapabilityStatus = usesLocalJev ? .laya(i.layaState) : speechStatus
         if usesLocalJev && i.layaState == .failed { jevStatus = i.layaInstalled ? .loadFailed : .downloadFailed }
         entries.append(.init(id: .proactive, model: usesLocalJev ? "Laya · Jev Mode" : "GPT-Live · Jev Mode", status: jevEnabled ? jevStatus : (settings.automaticSuggestions ? .notNeeded : .off), enabled: jevEnabled))
-        if jevEnabled && usesLocalJev && i.layaState != .unsupported && !i.layaInstalled {
-            downloads.append(.init(kind: .laya, name: ServiceGuide.text("Laya + runtime", "Laya 与运行环境", settings.language), bytes: i.layaDownloadBytes, status: jevStatus))
-        }
+
         let selectedLocalKinds = downloads.compactMap { resource -> LocalModelKind? in
             if case .local(let kind) = resource.kind { return kind }; return nil
         }

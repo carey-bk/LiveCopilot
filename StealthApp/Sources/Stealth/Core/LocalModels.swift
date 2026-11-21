@@ -36,31 +36,38 @@ enum ListeningService: String, Codable, CaseIterable, Identifiable {
 enum EmbeddingService: String, Codable, CaseIterable, Identifiable {
     case openAI, local
     var id: String { rawValue }
-    var label: String { self == .local ? "Local · BGE-M3" : "OpenAI Embeddings" }
+    var label: String { self == .local ? "Local · \(LocalModelKind.embeddingName)" : "OpenAI Embeddings" }
 }
 
 enum LocalModelKind: String, CaseIterable, Identifiable, Sendable {
     case streamingSpeech, embedding, terminologySpeech
     var id: String { rawValue }
+    var isBundled: Bool {
+        #if MAS_OFFLINE
+        return self == .embedding || self == .terminologySpeech
+        #else
+        return self == .embedding
+        #endif
+    }
     var title: String {
         switch self {
         case .streamingSpeech: return "Paraformer-zh-streaming + Silero VAD"
         case .terminologySpeech: return "Zipformer + Silero VAD"
-        case .embedding: return "BGE-M3 · Q8"
+        case .embedding: return "Arctic · INT8"
         }
     }
     var directory: String {
         switch self {
         case .streamingSpeech: return "paraformer-streaming-zh-en-int8-v1"
         case .terminologySpeech: return "zipformer-streaming-zh-en-hotwords-v1"
-        case .embedding: return "bge-m3-q8-v1"
+        case .embedding: return "arctic-m-v2-int8"
         }
     }
     var downloadSize: String {
         switch self {
         case .streamingSpeech: return "238 MB"
         case .terminologySpeech: return "200 MB"
-        case .embedding: return "635 MB"
+        case .embedding: return "328 MB · bundled"
         }
     }
     /// Known object sizes from the pinned distribution manifest. Estimates only;
@@ -68,26 +75,32 @@ enum LocalModelKind: String, CaseIterable, Identifiable, Sendable {
     var estimatedDownloadBytes: Int64 {
         switch self {
         case .streamingSpeech: return 165_462_184 + 71_664_561 + 75_756 + 643_854
-        case .embedding: return 634_553_760
+        case .embedding: return 0
         case .terminologySpeech: return 181_895_032 + 13_876_452 + 3_228_404 + 56_317 + 12_564 + 643_854
         }
     }
     var downloads: [ModelDownload] {
         switch self {
         case .streamingSpeech: return [.paraformerEncoder, .paraformerDecoder, .paraformerTokens, .vad]
-        case .embedding: return [.bge]
+        case .embedding: return []
         case .terminologySpeech: return [.zipEncoder, .zipDecoder, .zipJoiner, .zipTokens, .zipBPE, .vad]
         }
     }
-    static let embeddingIdentity = "local:bge-m3:q8_0:950f4a8e5e19:cls:l2:v1"
+        static let embeddingIdentity = "local:arctic-m-v2:int8:03d923bb1850:tok-f1cc44ad7faa:cls:l2:768:v1"
+    static let embeddingDimensions = 768
+    static let retrievalFloor = 0.32
+    static let embeddingName = "Arctic"
     var files: [String] {
         switch self {
         case .streamingSpeech: return ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt", "silero_vad.onnx"]
-        case .embedding: return ["bge-m3-Q8_0.gguf"]
+        case .embedding: return ["ms-model_int8.onnx", "tokenizer.json"]
         case .terminologySpeech: return ["encoder.int8.onnx", "decoder.onnx", "joiner.int8.onnx", "tokens.txt", "bpe.vocab", "silero_vad.onnx"]
         }
     }
-    func location(in root: URL) -> URL { root.appendingPathComponent(directory, isDirectory: true) }
+    func location(in root: URL) -> URL {
+        if isBundled { return Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/OfflineModels/" + directory) }
+        return root.appendingPathComponent(directory, isDirectory: true)
+    }
     func isInstalled(in root: URL) -> Bool {
         let directory = location(in: root)
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("installed.json")),
@@ -143,10 +156,6 @@ struct ModelDownload: Sendable {
     static let zipTokens = zip("tokens.txt", installed: "tokens.txt", hash: "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3")
     // Tiny vocabulary is also bundled, so mainland installs need no overseas request for it.
     static let zipBPE = zip("bpe.vocab", installed: "bpe.vocab", hash: "d0b642f3a2eacd5fadefdeff9e0e1358cab729647cbb7fe58cf738e1f7407029", modelScope: false)
-    static let bge = Self(
-        url: URL(string: "https://huggingface.co/gpustack/bge-m3-GGUF/resolve/2d48f1737679ad900d5c26c5aad5410e9c70fdca/bge-m3-Q8_0.gguf")!,
-        sha256: "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167", name: "bge-m3-Q8_0.gguf",
-        mirrors: [URL(string: "https://modelscope.cn/models/gpustack/bge-m3-GGUF/resolve/master/bge-m3-Q8_0.gguf")!])
     /// Exact object lengths in docs/oss-model-manifest.json, keyed by the pinned SHA-256.
     /// A new payload without a matching manifest entry deliberately has unknown size.
     var knownByteCount: Int64? {
@@ -158,11 +167,11 @@ struct ModelDownload: Sendable {
         case "f3cca9f77bb9d93c8fcbfb63ae617b6b1ee96818df3aa3b151c40658fe38594f": return 71_664_561
         case "59aba8873a2ed1e122c25fee421e25f283b63290efbde85c1f01a853d83cb6e6": return 75_756
         case "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6": return 643_854
-        case "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167": return 634_553_760
         default: return nil
         }
     }
-    func verify(_ file: URL) throws {
+    func verify(_ file: URL) throws { try Self.verify(file, sha256: sha256) }
+    static func verify(_ file: URL, sha256: String) throws {
         let handle = try FileHandle(forReadingFrom: file)
         defer { try? handle.close() }
         var hash = SHA256()

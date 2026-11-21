@@ -182,7 +182,7 @@ final class OnboardingTests: XCTestCase {
                 XCTAssertEqual(OnboardingRecommendation.current(app).wantsKnowledge, needsKnowledge)
                 let setup = OnboardingSetupSnapshot(app)
                 XCTAssertEqual(setup[.knowledge].enabled, needsKnowledge)
-                XCTAssertEqual(setup.resources.contains { $0.kind == .local(.embedding) }, needsKnowledge)
+                XCTAssertFalse(setup.resources.contains { $0.kind == .local(.embedding) })
                 let saved = OnboardingState.load(defaults: defaults, hasExistingData: false)
                 XCTAssertEqual(saved.knowledgeRequested, needsKnowledge)
                 XCTAssertEqual(saved.wantsKnowledge, needsKnowledge)
@@ -258,12 +258,9 @@ final class OnboardingTests: XCTestCase {
         var state = OnboardingState(); state.wantsKnowledge = true
         var inventory = OnboardingSetupInventory()
         var setup = OnboardingSetupSnapshot(settings: settings, state: state, inventory: inventory)
-        XCTAssertEqual(setup.resources.map(\.kind), [.local(.streamingSpeech), .local(.embedding), .laya])
-        XCTAssertEqual(setup.knownBytes, 1_639_207_344)
+        XCTAssertEqual(setup.resources.map(\.kind), [.local(.streamingSpeech)])
+        XCTAssertEqual(setup.knownBytes, LocalModelKind.streamingSpeech.estimatedDownloadBytes)
         XCTAssertEqual(setup.unknownSizeCount, 0)
-        XCTAssertEqual(setup.resources.last?.bytes, 766_807_229, "Include Python, wheels, source and model assets from bundled pins")
-        inventory.layaDownloadBytes = nil
-        XCTAssertEqual(OnboardingSetupSnapshot(settings: settings, state: state, inventory: inventory).unknownSizeCount, 1, "Missing manifests must not invent a size")
         inventory.downloading = .streamingSpeech; inventory.queued = [.embedding]
         inventory.layaState = .installing
         setup = .init(settings: settings, state: state, inventory: inventory)
@@ -543,24 +540,17 @@ final class OnboardingTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         var started: [LocalModelKind] = []
-        let completed = expectation(description: "second model installed")
-        let finished = expectation(description: "download and verification finished")
-        let manager = LocalModelManager(root: root, embeddingVerifier: { _ in }) { kind, location in
+        let finished = expectation(description: "failed download completed")
+        let manager = LocalModelManager(root: root) { kind, _ in
             started.append(kind)
-            if kind == .streamingSpeech { throw CopilotError.message("fixture transfer failed") }
-            try Self.writeInstalled(kind, root: location)
+            throw CopilotError.message("fixture transfer failed")
         }
-        let subscription = manager.$installed.filter { $0.contains(.embedding) }.prefix(1).sink { _ in completed.fulfill() }
-        let done = manager.$downloading.dropFirst().filter { $0 == nil && manager.embeddingVerification.isReady }.prefix(1).sink { _ in finished.fulfill() }
+        let sub = manager.$failures.filter { $0[.streamingSpeech] != nil }.prefix(1).sink { _ in finished.fulfill() }
         manager.enqueue([.streamingSpeech, .embedding, .embedding])
-        await fulfillment(of: [completed, finished], timeout: 5)
-        XCTAssertEqual(started, [.streamingSpeech, .embedding])
-        XCTAssertEqual(manager.failures[.streamingSpeech], "fixture transfer failed")
-        await manager.shutdown()
-        manager.enqueue([.embedding])
-        XCTAssertNil(manager.downloading)
-        XCTAssertTrue(manager.queued.isEmpty)
-        subscription.cancel(); done.cancel(); await manager.shutdown()
+        await fulfillment(of: [finished], timeout: 5)
+        XCTAssertEqual(started, [.streamingSpeech])
+        XCTAssertTrue(manager.installed.contains(.embedding))
+        sub.cancel(); await manager.shutdown()
     }
     @MainActor func testCancelDropsQueuedDownloadsAndKeepsExistingFiles() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -633,6 +623,7 @@ final class OnboardingTests: XCTestCase {
         await coordinator.shutdown()
     }
     private static func writeInstalled(_ kind: LocalModelKind, root: URL) throws {
+        guard !kind.isBundled else { return }
         let location = kind.location(in: root)
         try FileManager.default.createDirectory(at: location, withIntermediateDirectories: true)
         var sizes: [String: Int64] = [:]

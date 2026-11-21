@@ -69,10 +69,12 @@ final class LayaWorker: @unchecked Sendable {
          file: (@Sendable (Int, Int) -> Void)? = nil, status: (@Sendable (String, Double?) -> Void)? = nil) {
         self.executable = executable; self.arguments = arguments; self.status = status; self.transfer = transfer; self.file = file
     }
-    convenience init(installation: URL, resources: URL, onExit: (@Sendable () -> Void)? = nil) {
-        self.init(executable: installation.appendingPathComponent("venv/bin/python3"),
-                  arguments: ["-I", "-B", resources.appendingPathComponent("worker.py").path,
-                              "--installation", installation.path])
+    private var expectedPrecision: String?
+    convenience init(native directory: URL, resources: URL, precision: String, onExit: (@Sendable () -> Void)? = nil) {
+        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/livecopilot-laya")
+        self.init(executable: helper,
+                  arguments: [directory.path, resources.path, precision])
+        self.expectedPrecision = precision
         self.onExit = onExit
     }
     deinit { killOwnedProcess(); try? input?.close(); try? output?.close() }
@@ -212,6 +214,11 @@ final class LayaWorker: @unchecked Sendable {
             }
             guard let flag = response["ready"] as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID(),
                   flag.boolValue, response["protocol"] as? Int == 1 else { throw LayaRuntimeError.unavailable }
+            if let expectedPrecision {
+                let expectedBackend = "coreml"
+                guard response["backend"] as? String == expectedBackend, response["precision"] as? String == expectedPrecision
+                else { throw LayaRuntimeError.invalidResponse }
+            }
             ready = true; return
         }
         throw LayaRuntimeError.invalidResponse

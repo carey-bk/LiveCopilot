@@ -4,6 +4,9 @@
 Never exports keys, changes their ACLs, or installs the application.
 """
 import argparse
+import hashlib
+import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 import plistlib
@@ -16,7 +19,13 @@ _spec.loader.exec_module(_version)
 
 
 def run(*args):
-    return subprocess.run(args, check=True, capture_output=True, text=True)
+    for attempt in range(3):
+        result = subprocess.run(args, capture_output=True, text=True)
+        if result.returncode == 0:
+            return result
+        if '--timestamp' not in args or 'timestamp' not in result.stderr.lower() or attempt == 2:
+            raise RuntimeError(result.stderr.strip() or f"Command failed: {args[0]}")
+        time.sleep(2 ** attempt)
 
 
 def metadata(path, arch):
@@ -26,6 +35,10 @@ def metadata(path, arch):
 
 def verify(app, require_universal=True):
     run('/usr/bin/codesign', '--verify', '--deep', '--strict', str(app))
+    for helper in ("livecopilot-laya","livecopilot-inference"):
+        assert (app/"Contents/Helpers"/helper).is_file()
+    for required in ("OfflineModels/arctic-m-v2-int8/ms-model_int8.onnx","OfflineModels/laya/receipt.json"):
+        assert (app/"Contents/Resources"/required).is_file()
     main = metadata(app, 'arm64')
     team = next(line.removeprefix('TeamIdentifier=') for line in main.splitlines() if line.startswith('TeamIdentifier='))
     assert team and team != 'not set', 'Missing signing team'
@@ -93,12 +106,10 @@ def main():
     run('/usr/bin/ditto', '--noextattr', '--norsrc', str(source), str(target))
     info['CFBundleVersion'] = datetime.now(timezone.utc).strftime('%Y%m%d.%H%M%S')
     (target / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
-    runtime = target / 'Contents/Resources/LocalRuntime'
     flags = ('--force', '--sign', args.identity, '--options', 'runtime', '--timestamp')
     # Sign from the inside out. Never use --deep to sign or disable library validation.
-    for name in ('libonnxruntime.dylib', 'libsherpa-onnx-c-api.dylib', 'llama.framework', 'livecopilot-inference'):
-        print(f'Signing {name}', flush=True)
-        run('/usr/bin/codesign', *flags, str(runtime / name))
+    for name in ("Frameworks/libonnxruntime.dylib","Frameworks/libsherpa-onnx-c-api.dylib","Helpers/livecopilot-laya","Helpers/livecopilot-inference"):
+        run('/usr/bin/codesign', *flags, str(target/"Contents"/name))
     sparkle = target / 'Contents/Frameworks/Sparkle.framework'
     if sparkle.exists():
         version = sparkle / 'Versions/B'

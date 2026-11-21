@@ -116,7 +116,7 @@ final class IndexingProgressTests: XCTestCase {
         print(json.dumps({"ready": True}), flush=True)
         for line in sys.stdin:
             request = json.loads(line)
-            print(json.dumps({"id": request["id"], "vector": [1.0] * 1024}), flush=True)
+            print(json.dumps({"id": request["id"], "vector": [1.0] * 768}), flush=True)
         """.write(to: worker, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: worker.path)
         let provider = LocalEmbeddingProvider(directory: root, executable: worker)

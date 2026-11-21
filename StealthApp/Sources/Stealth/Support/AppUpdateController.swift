@@ -1,5 +1,32 @@
 import AppKit
 import Combine
+#if MAS_OFFLINE
+@MainActor
+final class AppUpdateController: ObservableObject {
+    enum Phase { case idle, checking, upToDate, available, downloading, extracting, readyToInstall, installing, failed }
+    let phase = Phase.idle
+    let enabled = false, canCheck = false, isWorking = false, installationCommitted = false
+    let showsBanner = false, canInstall = false, automaticChecks = false, hasUpdate = false
+    let statusText = "更新由 Mac App Store 提供", message = "", managementRequest = UUID()
+    let currentDisplay = AppInfo.version
+    let latestVersion: ReleaseVersion? = nil, release: UpdateRelease? = nil
+    let progress: Double? = nil, lastCheck: Date? = nil
+    var blockingReason: () -> String? = { nil }
+    var prepareForRelaunch: (() async -> Void)?
+    var openManagement: (() -> Void)?
+    init(mock: Bool) {}
+    func start() {}
+    func viewUpdate() {}
+    func checkForUpdates() {}
+    func setAutomaticChecks(_ enabled: Bool) {}
+    func remindLater() {}
+    func downloadUpdate() {}
+    func restartToInstall() {}
+    func cancelDownload() {}
+    func activityDidChange() {}
+    func retryDeferredCheck() {}
+}
+#else
 import Sparkle
 
 /// One state owner for the settings window, menu bar and embedded update controls.
@@ -270,3 +297,5 @@ private final class AppUpdateDriver: NSObject, SPUUserDriver {
     func dismissUpdateInstallation() { owner?.dismissInstallation() }
     func showUpdateInFocus() { owner?.viewUpdate() }
 }
+
+#endif

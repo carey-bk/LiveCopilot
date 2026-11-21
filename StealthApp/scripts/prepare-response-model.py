@@ -129,6 +129,14 @@ def main():
             raise ValueError('Release model identity mismatch')
         if pins.get('runtime_id') != json.loads((root / 'response-model.json').read_text())['runtime_pin_id']:
             raise ValueError('Release runtime compatibility mismatch')
+        for precision in ("fp16", "e8"):
+            filename = "native-" + precision + ".json"
+            native = json.loads((root / filename).read_bytes())
+            if (native != json.loads((RESOURCE / filename).read_bytes())
+                    or native["schema"] != 2 or native["backend"] != "mlx-swift"
+                    or native["precision"] != precision or native["source_sha256"] != expected["model.safetensors"]["sha256"]
+                    or native["files"]["model.safetensors"] != (native["source_sha256"] if precision == "fp16" else "a8b8b0c122a1fe2d6082c5268a205c393a1d063c141bdaa6f6a9d08c4f45f3d2")):
+                raise ValueError("Native model distribution receipt mismatch")
         if sum(p.stat().st_size for p in root.rglob('*') if p.is_file()) > 2 * 1024 * 1024:
             raise ValueError('Unexpected large files in packaged Laya resources')
     elif args.verify_only:

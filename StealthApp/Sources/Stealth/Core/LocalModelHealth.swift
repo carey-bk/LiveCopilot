@@ -75,6 +75,10 @@ enum LocalModelSelfCheck {
                 if let verifyFiles {
                     try verifyFiles(kind, directory)
                 } else {
+                    if kind == .embedding {
+                        try ModelDownload.verify(directory.appendingPathComponent("ms-model_int8.onnx"), sha256: "03d923bb1850ebdccb068e2f3abd8aa43fe81c50d07d037ef103fe3d0fb78e3b")
+                        try ModelDownload.verify(directory.appendingPathComponent("tokenizer.json"), sha256: "f1cc44ad7faaeec47241864835473fd5403f2da94673f3f764a77ebcb0a803ec")
+                    }
                     for file in kind.downloads {
                         try Task.checkCancellation()
                         try file.verify(directory.appendingPathComponent(file.installedName ?? file.name))
@@ -96,8 +100,8 @@ enum LocalModelSelfCheck {
                 let worker = LocalInferenceWorker(mode: mode, modelDirectory: directory, executable: executable)
                 defer { worker.close(initiator: .selfCheck) }
                 do {
-                    let response = try await worker.call(["op": "embed", "text": "Local model self-check. 本地模型自检。"])
-                    guard let vector = response["vector"] as? [NSNumber], vector.count == 1024,
+                    let response = try await worker.call(["op": "embed", "role": "query", "text": "Local model self-check. 本地模型自检。"])
+                    guard let vector = response["vector"] as? [NSNumber], vector.count == LocalModelKind.embeddingDimensions,
                           vector.allSatisfy({ $0.doubleValue.isFinite }),
                           abs(vector.reduce(0) { $0 + $1.doubleValue * $1.doubleValue } - 1) < 0.01 else {
                         return result(.inference, "passed", "invalid_vector")
@@ -110,14 +114,7 @@ enum LocalModelSelfCheck {
                     return result(stage(for: code), "passed", code)
                 }
             }
-            let primary = try await checkEmbedding(mode: "embedding")
-            #if !arch(x86_64)
-            if primary.stage == .interrupted && (primary.runtimeCode == "process_ended" || primary.runtimeCode == "timeout") {
-                try Task.checkCancellation()
-                return try await checkEmbedding(mode: "embedding-cpu")
-            }
-            #endif
-            return primary
+            return try await checkEmbedding(mode: "embedding-cpu")
         }
         let worker = LocalInferenceWorker(mode: kind == .terminologySpeech ? "zipformer" : "paraformer", modelDirectory: directory, executable: executable)
         defer { worker.close(initiator: .selfCheck) }

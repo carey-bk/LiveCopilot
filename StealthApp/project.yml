@@ -21,6 +21,10 @@ targets:
   LiveCopilot:
     type: application
     platform: macOS
+    postBuildScripts:
+      - name: Embed signed offline models and native helpers
+        basedOnDependencyAnalysis: false
+        script: 'bash "$SRCROOT/scripts/build-local-runtime.sh" "$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH"'
     dependencies:
       - framework: build/SparkleTools/Sparkle.framework
         embed: true
@@ -37,18 +41,13 @@ targets:
       - path: Resources/ProviderLogos
         type: folder
         buildPhase: resources
-      - path: Resources/LocalRuntime
-        type: folder
-        buildPhase: resources
-      - path: Resources/LayaRuntime
-        type: folder
-        buildPhase: resources
       - path: Resources/AnalysisConfigurations.json
         buildPhase: resources
       - path: Resources/ThirdPartyNotices.txt
         buildPhase: resources
     settings:
       base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) LAYA_NATIVE_ONLY"
         PRODUCT_BUNDLE_IDENTIFIER: com.livecopilot.app
         INFOPLIST_FILE: Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: Resources/LiveCopilot.entitlements
@@ -110,6 +109,8 @@ schemes:
         LIVECOPILOT_LATENCY_COMPARISON: "$(LIVECOPILOT_LATENCY_COMPARISON)"
         LIVECOPILOT_PIPELINE_BENCHMARK: "$(LIVECOPILOT_PIPELINE_BENCHMARK)"
         LIVECOPILOT_TEST_REAL_LAYA: "$(LIVECOPILOT_TEST_REAL_LAYA)"
+        LIVECOPILOT_TEST_LAYA_NETWORK: "$(LIVECOPILOT_TEST_LAYA_NETWORK)"
+        LIVECOPILOT_TEST_LAYA_PRECISION: "$(LIVECOPILOT_TEST_LAYA_PRECISION)"
         LIVECOPILOT_TEST_LAYA_ROOT: "$(LIVECOPILOT_TEST_LAYA_ROOT)"
         LIVECOPILOT_TEST_LAYA_RESOURCES: "$(LIVECOPILOT_TEST_LAYA_RESOURCES)"
       targets:

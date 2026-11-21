@@ -93,7 +93,7 @@ struct OnboardingModelsView: View {
             capabilityCard(.knowledge, title: b("Knowledge retrieval", "知识库检索"), icon: "books.vertical", status: setup[.knowledge].status) {
                 Text(setup[.knowledge].model + " · " + (store.state.wantsKnowledge ? b("Enabled", "已启用") : b("Not enabled", "未启用")))
                 if store.state.wantsKnowledge && coordinator.settings.embeddingService == .local {
-                    Text(b("Recommended · indexes documents locally, free of API charges and keys.", "推荐本地 BGE-M3：为文档建索引、检索相关片段，免费且无需 API Key。")).font(.caption)
+                    Text(b("Recommended · indexes documents locally, free of API charges and keys.", "推荐本地 \(LocalModelKind.embeddingName)：为文档建索引、检索相关片段，免费且无需 API Key。")).font(.caption)
                 }
             }
             capabilityCard(.jev, title: "Jev Mode", icon: "bolt", status: setup[.proactive].status) {
@@ -266,7 +266,7 @@ struct OnboardingModelsView: View {
             note(b("The index finds relevant passages in your documents. Configure the answer model in Analysis & answers.", "索引模型用来从文档中找到相关片段。生成回答的模型请在「分析与回答」中配置。"))
             if store.state.wantsKnowledge {
                 Picker(b("Knowledge index model", "知识库索引模型"), selection: $coordinator.settings.embeddingService) {
-                    Text(b("BGE-M3 (local, recommended)", "BGE-M3（本地，推荐）")).tag(EmbeddingService.local)
+                    Text(b("\(LocalModelKind.embeddingName) (local, recommended)", "\(LocalModelKind.embeddingName)（本地，推荐）")).tag(EmbeddingService.local)
                     Text(b("OpenAI index model (remote)", "OpenAI 索引模型（远程）")).tag(EmbeddingService.openAI)
                 }.disabled(!editable)
                 if coordinator.settings.embeddingService == .local {

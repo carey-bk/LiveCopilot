@@ -112,7 +112,7 @@ struct AppSettings: Codable, Equatable {
         additionalAnswerInstructions = String((try c.decodeIfPresent(String.self, forKey: .additionalAnswerInstructions) ?? "").prefix(4000))
         continuousQuestionPolicy = try c.decodeIfPresent(ContinuousQuestionPolicy.self, forKey: .continuousQuestionPolicy) ?? .smart
         let threshold = try c.decodeIfPresent(Double.self, forKey: .layaThreshold) ?? layaThreshold
-        layaThreshold = threshold.isFinite ? min(0.99, max(0.5, threshold)) : 0.8
+        layaThreshold = [0.5, 0.8, 0.95].contains(threshold) ? threshold : 0.8
         recapEnabled = try c.decodeIfPresent(Bool.self, forKey: .recapEnabled) ?? recapEnabled
         followUpEnabled = try c.decodeIfPresent(Bool.self, forKey: .followUpEnabled) ?? followUpEnabled
         includeConversation = try c.decodeIfPresent(Bool.self, forKey: .includeConversation) ?? includeConversation
