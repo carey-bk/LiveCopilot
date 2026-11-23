@@ -630,6 +630,13 @@ final class AppCoordinator: ObservableObject {
         guard isMock else { return }
         receive(event, speaker: speaker, epoch: liveEpoch)
     }
+    #if DEBUG
+    /// Screenshot fixtures only (`UIFixture`); real notices come from capture state.
+    func applyFixtureCaptureNotice(_ notice: String?) {
+        guard isMock else { return }
+        captureNotice = notice
+    }
+    #endif
     @discardableResult func updateHotkey(_ combo: HotkeyCombo, for mode: SuggestionMode) -> Bool {
         guard hotkeys.set(combo, for: mode) else { return false }
         onHotkeysChanged?(); return true

@@ -101,7 +101,11 @@ private struct MenuContent: View {
 /// Owns the overlay window, hotkeys, and settings window.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    #if DEBUG
+    let coordinator = AppCoordinator(mockReasoning: UIFixture.reasoning)
+    #else
     let coordinator = AppCoordinator()
+    #endif
     private let hotkeys = HotkeyManager()
     private var overlay: OverlayWindow?
     private var settingsWindow: NSWindow?
@@ -210,6 +214,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppPaths.isOnboardingPreview {
             openOnboarding()
         }
+        #if DEBUG
+        if coordinator.isMock {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await UIFixture.apply(to: self.coordinator,
+                                      openSettings: { self.openSettings(initialPage: $0) },
+                                      openHistory: { self.openHistory() })
+            }
+        }
+        #endif
     }
 
     private func applyPreferences(_ settings: AppSettings) {
