@@ -28,7 +28,7 @@ struct DetailedDiagnosticView: View {
                     Text(b("No matching crash report found. You can still export the event history and reproduction steps.", "未找到相关崩溃报告，仍可导出事件记录和复现步骤。")).font(.callout)
                 }
                 Text(scan.status).font(.caption).foregroundStyle(.secondary)
-                ScrollView {
+                LCScrollView {
                     VStack(alignment: .leading) {
                         ForEach(scan.crashes) { crash in
                             Toggle("\(crash.id) · \(crash.date.formatted())", isOn: Binding(get: { selected.contains(crash.id) }, set: { if $0 { selected.insert(crash.id) } else { selected.remove(crash.id) } }))

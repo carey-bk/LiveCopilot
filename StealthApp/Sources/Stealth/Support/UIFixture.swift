@@ -85,6 +85,16 @@ enum UIFixture {
             let name = "\(prefix)--\(kind)".replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "_")
             try? bitmap.representation(using: .png, properties: [:])?.write(to: folder.appendingPathComponent(name + ".png"))
         }
+        if flag("--ui-dump-scrollers") {
+            // Scrollers are not rendered by cacheDisplay; record their style instead (0 legacy, 1 overlay).
+            func scrollViews(_ view: NSView) -> [NSScrollView] {
+                ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrollViews)
+            }
+            let lines = NSApp.windows.filter(\.isVisible).flatMap { window in
+                (window.contentView.map(scrollViews) ?? []).map { "\(window.title.isEmpty ? "overlay" : window.title)\t\(type(of: $0))\tstyle=\($0.scrollerStyle.rawValue)\tsystem=\(NSScroller.preferredScrollerStyle.rawValue)" }
+            }
+            try? lines.joined(separator: "\n").write(to: folder.appendingPathComponent(prefix + "--scrollers.txt"), atomically: true, encoding: .utf8)
+        }
         if flag("--ui-snapshot-quit") { exit(0) }
     }
 

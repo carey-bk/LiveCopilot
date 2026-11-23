@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 extension SettingsView {
     var knowledge: some View {
-        ScrollView {
+        LCScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if !knowledgeConfigured {
                     HStack(spacing: 12) {

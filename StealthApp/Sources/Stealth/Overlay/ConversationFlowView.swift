@@ -60,7 +60,7 @@ struct ConversationFlowView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ZStack(alignment: .bottomTrailing) {
-                ScrollView {
+                LCScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
                         if coordinator.answers.isEmpty {
                             Text(b("Ask above, or start listening to receive suggestions.", "在上方输入问题，或开始监听以获取回答。"))

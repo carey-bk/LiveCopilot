@@ -129,7 +129,7 @@ struct OnboardingModelsView: View {
                 guard !Task.isCancelled else { return }
                 OnboardingRecommendation.applyInitialIfNeeded(coordinator)
             }
-            coordinator.prepareOnboardingLayaIfNeeded()
+            coordinator.prepareInstalledLayaIfNeeded()
             verifyInstalledSpeechIfNeeded()
         }
         .task(id: store.state.wantsKnowledge && coordinator.settings.embeddingService == .local && models.downloading == nil) {

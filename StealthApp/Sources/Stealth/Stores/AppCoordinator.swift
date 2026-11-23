@@ -300,8 +300,9 @@ final class AppCoordinator: ObservableObject {
                 oldValue.scenario != settings.scenario ||
                 oldValue.mode != settings.mode || oldValue.listeningService != settings.listeningService {
                 questions.clear(); queueWake?.cancel(); queuedQuestionCount = 0
-                // Configuration changes while idle must not cancel model installation or warmup.
-                invalidateAutomaticTrigger(releaseRuntime: isRunning && (!settings.automaticSuggestions || !settings.listeningService.isLocal))
+                // Release a loaded Laya once nothing selects it. Configuration changes while idle
+                // must not cancel model installation or warmup, so only a finished load is released.
+                invalidateAutomaticTrigger(releaseRuntime: !layaSelected && (isRunning || laya.isReady))
                 configureAutomaticTrigger()
             } else if oldValue.layaThreshold != settings.layaThreshold {
                 configureAutomaticTrigger(prepare: false)
@@ -456,7 +457,7 @@ final class AppCoordinator: ObservableObject {
             self.configureAutomaticTrigger(prepare: false)
             if !self.mic.isCapturing {
                 self.isRunning = false
-                self.invalidateAutomaticTrigger()
+                self.invalidateAutomaticTrigger(releaseRuntime: !self.layaSelected)
                 Task { @MainActor [weak self] in _ = await self?.saveSessionAsync() }
             }
         }.store(in: &cancellables)
@@ -474,7 +475,7 @@ final class AppCoordinator: ObservableObject {
             }
             if !self.systemAudio.isCapturing {
                 self.isRunning = false
-                self.invalidateAutomaticTrigger()
+                self.invalidateAutomaticTrigger(releaseRuntime: !self.layaSelected)
                 Task { @MainActor [weak self] in _ = await self?.saveSessionAsync() }
             }
         }.store(in: &cancellables)
@@ -488,9 +489,11 @@ final class AppCoordinator: ObservableObject {
         }.store(in: &cancellables)
         Task { await refreshKnowledge(); startIndexMigration() }
     }
-    /// One automatic warmup attempt per coordinator lifetime; failures require an explicit retry.
-    /// Installation already proceeds directly to worker.prepare() inside LayaRuntimeManager.
-    func prepareOnboardingLayaIfNeeded() {
+    /// Loads an installed Laya at launch or on the onboarding model step, so the first question of a
+    /// session is not missed during warmup. One automatic attempt per coordinator lifetime; failures
+    /// require an explicit retry. Never downloads. Installation already proceeds directly to
+    /// worker.prepare() inside LayaRuntimeManager.
+    func prepareInstalledLayaIfNeeded() {
         guard !isMock, !isShuttingDown, !isRunning, !isTransitioning,
               settings.automaticSuggestions, settings.listeningService.isLocal,
               !onboarding.state.prefersTyping,
@@ -500,6 +503,9 @@ final class AppCoordinator: ObservableObject {
 
     /// Local transcribers use Laya; GPT-Live-1 owns its client delegation decisions.
     private var usesLaya: Bool { settings.listeningService.isLocal }
+    /// Laya stays loaded between sessions while this holds (about 1 GB resident), and is released
+    /// as soon as automatic suggestions or the local transcriber are turned off.
+    private var layaSelected: Bool { settings.automaticSuggestions && usesLaya }
     private func invalidateAutomaticTrigger(releaseRuntime: Bool = true) {
         questions.clear(); syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
         questionTask?.cancel(); questionTask = nil; pendingAutomatic = nil
@@ -1480,7 +1486,7 @@ final class AppCoordinator: ObservableObject {
         layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil
         incompleteLocalStop = false
         isRunning = false
-        invalidateAutomaticTrigger()
+        invalidateAutomaticTrigger(releaseRuntime: !layaSelected)
         speakingSources = []
         questionTask?.cancel(); pendingAutomatic = nil; mockTask?.cancel(); audioCheckTask?.cancel()
         endOwnTurn(); captureNotice = nil
@@ -1529,7 +1535,7 @@ final class AppCoordinator: ObservableObject {
         micToggleTask?.cancel()
         micToggleTask = nil
         liveEpoch = UUID() // Invalidate old callbacks BEFORE disconnect can flush a final segment.
-        invalidateAutomaticTrigger()
+        invalidateAutomaticTrigger(releaseRuntime: !layaSelected)
         cancelAnswer(); answerTask = nil
         questionTask?.cancel(); questionTask = nil; pendingAutomatic = nil
         mockTask?.cancel(); mockTask = nil

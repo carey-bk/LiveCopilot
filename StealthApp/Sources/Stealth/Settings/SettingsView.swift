@@ -41,14 +41,14 @@ struct SettingsView: View {
                 UpdateBanner(updates: updates, language: coordinator.settings.language, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
                 LCPageHeader(breadcrumb: ["LiveCopilot", groupTitle(page.group)], title: pageTitle(page), subtitle: pageSubtitle(page))
                 switch page {
-                case .overview: ScrollView { overview }
-                case .general: ScrollView { general }
-                case .modesAndScenarios: ScrollView { modesAndScenarios }
-                case .services: ScrollView { services }
+                case .overview: LCScrollView { overview }
+                case .general: LCScrollView { general }
+                case .modesAndScenarios: LCScrollView { modesAndScenarios }
+                case .services: LCScrollView { services }
                 case .knowledge: knowledge
                 case .history: HistoryView(coordinator: coordinator).lcCard(padding: 0).clipShape(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
-                case .shortcuts: ScrollView { shortcuts }
-                case .about: ScrollView { about }
+                case .shortcuts: LCScrollView { shortcuts }
+                case .about: LCScrollView { about }
                 }
             }.padding(.horizontal, 28).padding(.top, 24).padding(.bottom, page == .history ? 20 : 0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

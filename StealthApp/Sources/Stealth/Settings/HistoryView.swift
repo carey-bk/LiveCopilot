@@ -80,7 +80,7 @@ struct HistoryBrowser: View {
                 if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary).help(b("Clear search", "清除搜索")) }
             }.padding(8).lcWell().padding(10)
             Divider()
-            ScrollView {
+            LCScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(0..<3) { index in
                         let records = filtered.filter { group($0) == index }
@@ -250,7 +250,7 @@ private struct HistoryTimeline: View {
     }
     var body: some View {
         let events = session.timeline
-        ScrollView {
+        LCScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 if (session.answers ?? []).isEmpty {
                     Label(session.isLegacy ? b("This older record contains transcripts only.", "这条旧记录仅保存了语音转写，没有 AI 回答。") : b("No AI answers in this session.", "本次会话没有生成 AI 回答。"), systemImage: "info.circle")

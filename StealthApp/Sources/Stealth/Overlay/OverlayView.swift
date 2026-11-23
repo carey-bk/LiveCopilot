@@ -357,7 +357,7 @@ struct OverlayView: View {
     private var transcriptView: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 2) {
-                ScrollView {
+                LCScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         if !transcript.hasContent {
                             Text(t("Conversation appears here when listening.")).font(.system(size: transcriptSize)).foregroundStyle(.secondary)

@@ -291,3 +291,44 @@ struct LCSidebarGroupLabel: View {
             .foregroundStyle(.tertiary).padding(.horizontal, 10).padding(.top, 6)
     }
 }
+
+// MARK: - Scrolling
+
+/// Vertical ScrollView with thin, auto-hiding overlay scrollers. With a mouse attached macOS
+/// otherwise switches every window to wide, always-visible legacy scrollers with a track.
+struct LCScrollView<Content: View>: View {
+    var axes: Axis.Set = .vertical
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        ScrollView(axes) { content().background(OverlayScrollerProbe()) }
+    }
+}
+
+/// Finds the enclosing NSScrollView and keeps it on the overlay scroller style, including after
+/// the system preference changes when a mouse is connected or removed.
+private struct OverlayScrollerProbe: NSViewRepresentable {
+    func makeNSView(context: Context) -> Probe { Probe() }
+    func updateNSView(_ view: Probe, context: Context) { view.apply() }
+
+    final class Probe: NSView {
+        private var observer: NSObjectProtocol?
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+            guard observer == nil, window != nil else { return }
+            observer = NotificationCenter.default.addObserver(
+                forName: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                // NSScrollView applies the new system style in its own observer; apply ours after it.
+                DispatchQueue.main.async { self?.apply() }
+            }
+        }
+        func apply() {
+            guard let scrollView = enclosingScrollView, scrollView.scrollerStyle != .overlay else { return }
+            scrollView.scrollerStyle = .overlay
+            scrollView.autohidesScrollers = true
+        }
+        deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
+    }
+}

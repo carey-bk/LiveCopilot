@@ -35,7 +35,7 @@ struct OnboardingReadyView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ScrollView {
+            LCScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Text(b("Readiness", "准备情况")).font(.headline)
                     readiness

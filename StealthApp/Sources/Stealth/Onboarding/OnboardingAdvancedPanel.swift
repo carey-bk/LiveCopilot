@@ -12,7 +12,7 @@ struct OnboardingAdvancedPanel<Content: View>: View {
         VStack(alignment: .leading, spacing: 16) {
             Label(title, systemImage: icon).font(.system(size: 16, weight: .semibold))
             Divider()
-            ScrollView {
+            LCScrollView {
                 VStack(alignment: .leading, spacing: 16) { content() }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(2)
             }.frame(height: 340)

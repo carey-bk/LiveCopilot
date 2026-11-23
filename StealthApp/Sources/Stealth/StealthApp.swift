@@ -159,6 +159,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         coordinator.updates.start()
+        // With onboarding pending, its model step loads Laya instead.
+        if !coordinator.onboarding.state.shouldPresent { coordinator.prepareInstalledLayaIfNeeded() }
         if AppPaths.isOnboardingPreview && ProcessInfo.processInfo.arguments.contains("--onboarding-dark") {
             NSApp.appearance = NSAppearance(named: .darkAqua)
         }
