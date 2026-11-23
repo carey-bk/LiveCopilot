@@ -6,6 +6,17 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>LiveCopilot</title>
         <item>
+            <title>2.10.0</title>
+            <pubDate>Tue, 24 Nov 2026 00:53:20 +0800</pubDate>
+            <link>https://carey-bk.github.io/LiveCopilot/</link>
+            <sparkle:version>20261123.154357</sparkle:version>
+            <sparkle:shortVersionString>2.10.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<h2>中文</h2><ul><li>全新界面。设置改为分组侧栏和面包屑页眉，并新增「概览」页，集中显示监听状态、语音识别、回答模型、知识库和权限是否就绪，以及最近会话。知识库改为卡片与文档列表，每份资料都有状态标签；历史记录新增会话时长、提问数、回答数统计和活动分布条。</li><li>悬浮窗更紧凑：胶囊式「监听 / 停止」按钮、彩色状态点（出错时变红）、快捷操作标签和新的提问输入条，对方说话人用粉色区分。</li><li>设置、历史和新手引导支持深色模式；长页面使用细滚动条，不滚动时自动隐藏。Jev Mode 统一使用品牌字体。</li><li>修复冷启动或闲置一段时间后点击「监听」时界面卡顿（彩虹圈）的问题。启动音频期间按钮显示进度圈。</li><li>知识库检索使用内置的 Arctic 本地模型，Jev Mode 使用内置的 Laya 模型，均无需另行下载。使用旧模型建立的资料索引需要在知识库中重新建立。</li><li>Laya 验证通过后会记住状态；监听时自动加载，空闲 10 分钟后释放以节省内存。新安装默认使用 Apple 本地语音识别。</li><li>关于页新增 GitHub 项目入口。</li></ul><h2>English</h2><ul><li>Redesigned interface. Settings now use a grouped sidebar with breadcrumb headers and a new Overview page showing listening status, readiness of speech recognition, the answer model, knowledge and permissions, plus recent sessions. The knowledge library uses cards and a document list with a status for every file. History adds session duration, question and answer counts and an activity strip.</li><li>A more compact overlay: a capsule Listen/Stop button, a colored status dot that turns red on errors, quick-action chips and a new question bar. The far-end speaker is shown in pink.</li><li>Settings, history and onboarding follow dark mode. Long pages use thin scroll bars that hide when idle. Jev Mode always appears in the brand typeface.</li><li>Fixed the app freezing (spinning cursor) when listening started after launch or a period of inactivity. The button shows a progress ring while audio starts.</li><li>Knowledge retrieval uses the bundled local Arctic model and Jev Mode uses the bundled Laya model, with no separate download. Documents indexed with an earlier model need to be re-indexed in Knowledge.</li><li>Laya remembers a successful verification, loads when listening starts and is released after 10 idle minutes to save memory. New installations default to Apple on-device speech recognition.</li><li>About adds a link to the GitHub project.</li></ul>
+]]></description>
+            <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.10.0/LiveCopilot-2.10.0-macOS-universal.dmg" length="537509485" type="application/octet-stream" sparkle:edSignature="B0LOf1UdWbaNzoPWciWSQOVUGuBbGI6ku2lwdY6WF94Qya+1B3oR48sgCa0aWJFVRxWaoYZJNKr+p5Qn+3gwCQ=="/>
+        </item>
+        <item>
             <title>2.9.2</title>
             <pubDate>Fri, 20 Nov 2026 12:57:40 +0800</pubDate>
             <link>https://carey-bk.github.io/LiveCopilot/</link>
@@ -38,6 +49,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: PC3jBmv8zt/kkAQvwqCLfPzWZjVIdpu2XWCY92wHhcInxpPxnmHTgaIc2ZSQ9h768G5Y8QrH5I0l1eLRV5MpAA==
-length: 6684
+edSignature: DKPEcxBYNro4sqJAFopFfM4P6KVLZM1+Khh7MS8AppsG7FnFcQQ6EP7OFg73HNEwHbK8S0TAYG4cDBj7tOfyDw==
+length: 10135
 -->

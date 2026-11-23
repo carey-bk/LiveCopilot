@@ -1,7 +1,7 @@
 {
-  "version": "2.9.2",
-  "github_url": "https://github.com/carey-bk/LiveCopilot/releases/download/v2.9.2/LiveCopilot-2.9.2-macOS-universal.dmg",
-  "sha256": "e95d22202adf7983118694a020d54a0a6d1a0eeb162f89ed39ddc825a6204713",
-  "size": 39376188,
-  "mirror_url": "https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.2/LiveCopilot-2.9.2-macOS-universal.dmg"
+  "version": "2.10.0",
+  "github_url": "https://github.com/carey-bk/LiveCopilot/releases/download/v2.10.0/LiveCopilot-2.10.0-macOS-universal.dmg",
+  "sha256": "3d5394b7b65d13714f281d6bd22e3d3d243975b58dd64becdc29d186e3675653",
+  "size": 537509485,
+  "mirror_url": "https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.10.0/LiveCopilot-2.10.0-macOS-universal.dmg"
 }
