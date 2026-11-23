@@ -33,7 +33,7 @@ struct AnalysisMetrics: View {
                 } else { Text(b("No reference data", "暂无参考数据")) }
                 Spacer(minLength: 0)
                 Button(b("Sources & pricing details", "数据与计费说明")) { showDetails = true }
-                    .buttonStyle(.plain).foregroundStyle(Color.accentColor)
+                    .buttonStyle(.plain).foregroundStyle(LC.accent)
                     .popover(isPresented: $showDetails, arrowEdge: .bottom) { details.padding(18).frame(width: 390) }
                     .accessibilityIdentifier("analysis-reference-details")
             }.font(.system(size: 10)).foregroundStyle(.secondary)
@@ -42,7 +42,7 @@ struct AnalysisMetrics: View {
             if settings.analysisModel == "kimi-k2.6", settings.analysisThinking == .enabled, let seconds = sample?.firstAnswerSeconds {
                 Text(b("Historical AA workload: first visible answer ≈ \(String(format: "%.2f", seconds)) s with thinking on; a benchmark reference, not a guaranteed wait.",
                        "AA 历史测试中，开启思考的首个可见回答约 \(String(format: "%.2f", seconds)) 秒；仅代表该测试口径，不是固定等待时间。"))
-                    .font(.system(size: 11)).foregroundStyle(Color.orange).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 11)).foregroundStyle(LC.warning).fixedSize(horizontal: false, vertical: true)
             }
         }.accessibilityIdentifier("analysis-performance")
     }
@@ -158,8 +158,7 @@ struct AnalysisPerformanceCard: View {
     let settings: AppSettings
     var onboarding = false
     var body: some View {
-        AnalysisMetrics(settings: settings).padding(12)
-            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+        AnalysisMetrics(settings: settings).padding(12).lcWell(radius: LC.Radius.control + 2)
     }
 }
 

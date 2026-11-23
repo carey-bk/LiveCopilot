@@ -17,7 +17,7 @@ struct UpdateSettingsView: View {
                 Text(language.interfaceText("最新版本：") + (updates.latestVersion?.display ?? (updates.phase == .upToDate ? updates.currentDisplay : language.interfaceText("待检查"))))
                     .foregroundStyle(.secondary)
             }.font(.callout)
-            Text(language.interfaceText(updates.statusText)).font(.callout).foregroundStyle(updates.phase == .failed ? Color.red : Color.primary)
+            Text(language.interfaceText(updates.statusText)).font(.callout).foregroundStyle(updates.phase == .failed ? LC.danger : Color.primary)
                 .accessibilityIdentifier("update-status")
             if !updates.message.isEmpty && updates.phase != .failed { Text(language.interfaceText(updates.message)).font(.caption).foregroundStyle(.secondary) }
             if [.checking, .downloading, .extracting, .installing].contains(updates.phase) {
@@ -50,8 +50,7 @@ struct UpdateSettingsView: View {
                 Text(language.interfaceText("上次检查：") + date.formatted(.dateTime.locale(language.locale).year().month().day().hour().minute()))
                     .font(.caption).foregroundStyle(.secondary)
             }
-        }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+        }.lcCard()
             .accessibilityIdentifier("software-update-management")
     }
 }
@@ -63,7 +62,7 @@ struct UpdateBanner: View {
     var body: some View {
         if !isBusy && updates.showsBanner, let release = updates.release {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "arrow.down.circle.fill").font(.title2).foregroundStyle(.blue)
+                Image(systemName: "arrow.down.circle.fill").font(.title2).foregroundStyle(LC.accent)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(language.interfaceText("发现新版本 \(release.display)")).font(.system(size: 14, weight: .semibold))
                     Text(release.notes).font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -72,8 +71,7 @@ struct UpdateBanner: View {
                     Button(language.interfaceText("查看更新")) { updates.viewUpdate() }.buttonStyle(.borderedProminent)
                     Button(language.interfaceText("稍后提醒")) { updates.remindLater() }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
                 }
-            }.padding(14).background(Color.blue.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.blue.opacity(0.18)))
+            }.lcCallout(.accent)
                 .accessibilityIdentifier("update-banner")
         }
     }
@@ -93,7 +91,7 @@ struct CheckForUpdatesButton: View {
         } label: {
             if updates.hasUpdate {
                 Label { Text(updates.phase == .readyToInstall ? language.interfaceText("重启并更新") : language.interfaceText("下载新版本")) } icon: {
-                    Image(systemName: "arrow.down.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.blue)
+                    Image(systemName: "arrow.down.circle.fill").symbolRenderingMode(.palette).foregroundStyle(LC.accent)
                 }
             } else { Text(language.interfaceText("检查更新…")) }
         }.disabled(!updates.enabled).accessibilityIdentifier("menu-update-entry")

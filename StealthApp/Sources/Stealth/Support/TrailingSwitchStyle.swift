@@ -53,6 +53,6 @@ struct JevModeCard<Details: View>: View {
             }
         }
         .padding(12)
-        .background(isOn ? Color.blue.opacity(0.07) : Color.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        .background(isOn ? LC.accent.opacity(0.07) : Color.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
     }
 }

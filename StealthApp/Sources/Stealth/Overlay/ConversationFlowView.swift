@@ -204,8 +204,8 @@ struct AnswerMessageView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                if let warning = store.warning { Text(t(warning)).font(.caption).foregroundStyle(.orange) }
-                if let error = store.error { Text(t(error)).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                if let warning = store.warning { Text(t(warning)).font(.caption).foregroundStyle(LC.warning) }
+                if let error = store.error { Text(t(error)).font(.caption).foregroundStyle(LC.danger).textSelection(.enabled) }
                 if !store.citedSources.isEmpty {
                     DisclosureGroup(t("Sources")) {
                         VStack(alignment: .leading, spacing: 10) {

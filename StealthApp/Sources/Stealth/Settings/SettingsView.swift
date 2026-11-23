@@ -41,17 +41,7 @@ struct SettingsView: View {
                 VStack(spacing: 5) {
                     ForEach(SettingsPage.allCases) { item in
                         Button { page = item } label: {
-                            Label {
-                                Text(t(item.rawValue))
-                            } icon: {
-                                Image(systemName: item.icon)
-                                    .font(.system(size: 14, weight: .regular))
-                                    .frame(width: 18)
-                            }
-                                .font(.system(size: 14, weight: page == item ? .semibold : .regular))
-                                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 11)
-                                .background(page == item ? Color.accentColor.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 8))
-                                .contentShape(Rectangle())
+                            LCSidebarItem(title: t(item.rawValue), systemImage: item.icon, selected: page == item)
                         }.buttonStyle(.plain).accessibilityIdentifier("settings-" + item.id)
                     }
                 }.padding(.horizontal, 10)
@@ -74,6 +64,7 @@ struct SettingsView: View {
                 case .about: ScrollView { about }
                 }
             }.padding(page == .history ? 16 : 26).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(LC.canvas)
         }
         .frame(minWidth: 820, idealWidth: 860, minHeight: 610, idealHeight: 680)
         .background { WindowBackgroundView(style: .white).ignoresSafeArea() }
@@ -120,7 +111,7 @@ struct SettingsView: View {
                             .padding(.trailing, 8)
                             .accessibilityHidden(true)
                     }
-                    .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 11))
+                    .background(LC.surface, in: RoundedRectangle(cornerRadius: 11))
                     .overlay {
                         RoundedRectangle(cornerRadius: 11).strokeBorder(
                             LinearGradient(colors: [
@@ -211,7 +202,7 @@ struct SettingsView: View {
                     case .failed:
                         Label(b("Capture protection is unavailable on this system. The floating window may be recorded.",
                                 "当前系统未能启用录制保护，悬浮窗可能被录入。"), systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.orange)
+                            .font(.caption).foregroundStyle(LC.warning)
                     default: EmptyView()
                     }
                 }
@@ -334,8 +325,7 @@ struct SettingsView: View {
                 }
                 HStack(spacing: 8) {
                     ForEach(liveEngineTags, id: \.self) { label in
-                        Text(label).font(.caption).padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Color.primary.opacity(0.05), in: Capsule())
+                        LCPill(text: label)
                     }
                 }
                 if coordinator.settings.listeningService == .apple {
@@ -359,7 +349,7 @@ struct SettingsView: View {
                             Spacer()
                             Label(L10n.text(coordinator.appleSpeech.message, language: coordinator.settings.language),
                                   systemImage: coordinator.appleSpeech.installed ? "checkmark.circle.fill" : "arrow.down.circle")
-                                .font(.caption).foregroundStyle(coordinator.appleSpeech.installed ? Color.green : Color.secondary)
+                                .font(.caption).foregroundStyle(coordinator.appleSpeech.installed ? LC.success : Color.secondary)
                         }
                         HStack(spacing: 12) {
                             Button(b("Download / Retry", "下载/重试")) { coordinator.appleSpeech.install(coordinator.settings.appleSpeechLanguage) }
@@ -419,8 +409,7 @@ struct SettingsView: View {
                 }
                 TextEditor(text: $professionalTermsDraft)
                     .font(.body).frame(height: 120).scrollContentBackground(.hidden)
-                    .padding(8).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.1)))
+                    .padding(8).lcWell()
                     .accessibilityLabel(b("One professional term per line", "每行一个专业术语"))
                 Text(b("One term per line. Chinese, English, mixed-language terms and phrases with spaces are supported. Blank and duplicate entries are removed when saved.", "每行一个术语，支持中文、英文、中英混合及含空格的词组。保存时自动忽略空行和重复项。"))
                     .font(.caption).foregroundStyle(.secondary)
@@ -444,7 +433,7 @@ struct SettingsView: View {
             HStack(spacing: 8) {
                 Text(title).font(.headline)
                 if beta {
-                    Capsule().fill(Color.blue)
+                    Capsule().fill(LC.accent)
                         .overlay {
                             Text("Beta").font(.custom(AppBrandTitle.fontName, size: 11))
                                 .foregroundStyle(Color.white)
@@ -455,8 +444,7 @@ struct SettingsView: View {
                 }
             }
             content()
-        }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+        }.lcCard()
     }
     private var liveEngineSummary: String {
         switch coordinator.settings.listeningService {
@@ -550,8 +538,7 @@ struct SettingsView: View {
                     Divider()
                     Text(b("Additional answer instructions", "个性化额外提示词")).font(.headline)
                     TextEditor(text: Binding(get: { answerInstructionsDraft }, set: { answerInstructionsDraft = String($0.prefix(4000)) }))
-                        .font(.body).frame(height: 100).padding(6)
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.secondary.opacity(0.25)))
+                        .font(.body).frame(height: 100).scrollContentBackground(.hidden).padding(6).lcWell()
                         .accessibilityLabel(b("Additional answer instructions", "个性化额外提示词"))
                         .accessibilityIdentifier("additional-answer-instructions")
                     HStack {
@@ -626,8 +613,7 @@ struct SettingsView: View {
                 }.foregroundStyle(.secondary)
                 Text(b("Published list prices are a reference, not a bill. Provider updates, taxes and account discounts may change the amount.", "公布价格供参考，不是账单估算；厂商调价、税费和账户优惠可能影响实际费用。")).font(.caption2).foregroundStyle(.secondary)
             }
-        }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        }.lcCallout(.accent)
     }
     private func fontSizeControl(_ title: String, value: Binding<Double>, identifier: String, preview: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -662,7 +648,7 @@ struct SettingsView: View {
                         .font(.callout).foregroundStyle(.secondary)
                     Spacer(minLength: 8)
                     Button(b("Configure", "去配置")) { serviceRole = ServiceRole.knowledgeIndexing.rawValue; page = .services }
-                }.padding(14).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+                }.lcCallout(.accent)
             }
             knowledgeContent
                 .disabled(!knowledgeConfigured)
@@ -684,7 +670,7 @@ struct SettingsView: View {
                    : "PDF, Markdown, TXT and DOCX · original copies remain local. Indexing sends extracted text to OpenAI.")).font(.caption).foregroundStyle(.secondary)
             if coordinator.knowledgeDocuments.contains(where: { $0.embeddingModel != coordinator.settings.selectedEmbeddingIdentity }) {
                 HStack {
-                    Text(t("Some documents use a different embedding model. Re-index them to restore semantic retrieval.")).font(.caption).foregroundStyle(.orange)
+                    Text(t("Some documents use a different embedding model. Re-index them to restore semantic retrieval.")).font(.caption).foregroundStyle(LC.warning)
                     Button(b("Clean up retired BGE and Python files", "清理旧 BGE 和 Python 环境")) { coordinator.cleanRetiredModels() }.disabled(coordinator.isIndexing)
                     Button(t("Re-index all")) { coordinator.reindexAll() }.disabled(coordinator.isIndexing)
                 }
@@ -698,7 +684,7 @@ struct SettingsView: View {
             }
             if coordinator.indexingSucceeded {
                 Label(b("Index established", "索引已建立"), systemImage: "checkmark.square.fill")
-                    .foregroundStyle(.green).accessibilityIdentifier("knowledge-index-complete")
+                    .foregroundStyle(LC.success).accessibilityIdentifier("knowledge-index-complete")
             }
             if !coordinator.knowledgeMessage.isEmpty { Text(t(coordinator.knowledgeMessage)).font(.caption).textSelection(.enabled) }
             if coordinator.settings.embeddingService == .local {
@@ -719,10 +705,10 @@ struct SettingsView: View {
                             }
                         } else if document.status == "Ready" {
                             Label(b("Index established", "索引已建立"), systemImage: "checkmark.square.fill")
-                                .font(.caption).foregroundStyle(.green)
+                                .font(.caption).foregroundStyle(LC.success)
                         } else { Text(t(document.status)).font(.caption).foregroundStyle(.secondary) }
                         Text("\(document.chunkCount) \(t("chunks")) · \(document.embeddingModel)").font(.caption).foregroundStyle(.secondary)
-                        if let error = document.error { Text(t(error)).font(.caption).foregroundStyle(.red) }
+                        if let error = document.error { Text(t(error)).font(.caption).foregroundStyle(LC.danger) }
                         HStack {
                             Button(t("Re-index")) { coordinator.reindex(document) }
                             Button(t("Show local copy")) { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: document.localPath)]) }
@@ -731,7 +717,8 @@ struct SettingsView: View {
                         }.buttonStyle(.borderless).disabled(coordinator.isIndexing)
                     }.padding(.vertical, 5).accessibilityElement(children: .contain)
                 }
-            }.listStyle(.inset).clipShape(RoundedRectangle(cornerRadius: 8))
+            }.listStyle(.inset).clipShape(RoundedRectangle(cornerRadius: LC.Radius.control, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: LC.Radius.control, style: .continuous).strokeBorder(LC.hairline))
             if coordinator.knowledgeDocuments.isEmpty { Text(t("Import a document to ground answers in your own evidence.")).foregroundStyle(.secondary) }
         }
     }
@@ -770,7 +757,7 @@ struct SettingsView: View {
             }
             if shortcutConflict {
                 Text(b("This shortcut is already assigned to another action. Choose a different combination.", "这个快捷键已用于其他操作，请选择其他组合。"))
-                    .font(.caption).foregroundStyle(.red).accessibilityIdentifier("shortcut-conflict")
+                    .font(.caption).foregroundStyle(LC.danger).accessibilityIdentifier("shortcut-conflict")
             }
             Text(b("Click a shortcut and press a new key combination. Escape cancels; Reset restores its default.", "点击快捷键后按下新的组合键，按 Esc 取消；点击“重置”恢复默认。"))
                 .font(.caption).foregroundStyle(.secondary)
@@ -822,7 +809,7 @@ private struct LocalModelCard: View {
                 Spacer()
                 Label(statusTitle, systemImage: manager.health[kind]?.ready == true ? "checkmark.circle.fill"
                       : manager.queued.contains(kind) ? "clock" : "arrow.down.circle")
-                    .font(.caption).foregroundStyle(manager.health[kind]?.ready == true ? .green : .secondary)
+                    .font(.caption).foregroundStyle(manager.health[kind]?.ready == true ? LC.success : Color.secondary)
             }
             Text(ServiceGuide.text("Automatically tries available download sources. Progress is for the current file.", "自动尝试可用下载线路；进度显示当前文件的下载比例。", language))
                 .font(.caption).foregroundStyle(.secondary)
@@ -846,7 +833,7 @@ private struct LocalModelCard: View {
                             .disabled(locked || manager.downloading != nil).accessibilityIdentifier("selfcheck-" + kind.rawValue)
                         if !kind.isBundled {
                         Button(ServiceGuide.text("Delete local model…", "删除本地模型…", language), role: .destructive) { confirmRemoval = true }
-                            .foregroundStyle(.red)
+                            .foregroundStyle(LC.danger)
                             .disabled(locked || manager.downloading != nil)
                             .confirmationDialog(ServiceGuide.text("Delete this local model?", "删除此本地模型？", language), isPresented: $confirmRemoval) {
                                 Button(ServiceGuide.text("Delete", "删除", language), role: .destructive, action: remove)
@@ -863,12 +850,12 @@ private struct LocalModelCard: View {
                         copiedDiagnostics = NSPasteboard.general.setString(report.diagnostic(kind: kind), forType: .string)
                     }.fixedSize().accessibilityIdentifier("copy-diagnostics-" + kind.rawValue)
                     Text(language.interfaceText(report.advice(english: !language.usesChinese)))
-                        .font(.caption).foregroundStyle(report.ready ? Color.secondary : Color.orange)
+                        .font(.caption).foregroundStyle(report.ready ? Color.secondary : LC.warning)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("selfcheck-result-" + kind.rawValue)
                 }
             }
-        }.padding(16).background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+        }.lcCard()
             .onAppear { manager.refresh() }
     }
     private var statusTitle: String {
@@ -896,7 +883,7 @@ private struct CredentialStatus: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: available ? "checkmark.shield.fill" : "key.horizontal")
-                .font(.title2).foregroundStyle((embedding ? coordinator.embeddingVerification.isReady : available) ? Color.green : .secondary)
+                .font(.title2).foregroundStyle((embedding ? coordinator.embeddingVerification.isReady : available) ? LC.success : .secondary)
             VStack(alignment: .leading, spacing: 5) {
                 Text(t(embedding ? (coordinator.embeddingVerification.isReady ? "Verified · ready" : available ? "API key saved · verification required" : "API key not configured") : coordinator.isMock ? "Mock credential" : checking ? "Checking Keychain…" : available ? "API key configured" : needsAuthorization ? "API key saved · authorization needed" : "API key not configured")).font(.headline)
                 if available && !coordinator.isMock {
@@ -1026,7 +1013,7 @@ struct CredentialEditor: View {
                     }
                     if hasConnectionTest {
                         Button(ServiceGuide.text(effectiveFailure == nil ? "Test connection" : "Retry test", effectiveFailure == nil ? "测试连接" : "重新测试", coordinator.settings.language)) { testConnection() }
-                            .buttonStyle(.borderedProminent).tint(.blue)
+                            .buttonStyle(.borderedProminent).tint(LC.accent)
                             .disabled(!available || saving || checking || connectionBusy || coordinator.isRunning || coordinator.isTransitioning || (analysisLayout && coordinator.settings.analysisModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) || (coordinator.isMock && !analysisLayout))
                             .accessibilityIdentifier(onboarding ? "onboarding-test-connection" : "credential-test-connection")
                         if connectionBusy {
@@ -1054,7 +1041,7 @@ struct CredentialEditor: View {
                 }
                 if let checkFeedback, !connectionVerified {
                     Label(checkFeedback.message(coordinator.settings.language), systemImage: checkFeedback.symbol)
-                        .font(.caption).foregroundStyle(checkFeedback == .found ? Color.green : .secondary)
+                        .font(.caption).foregroundStyle(checkFeedback == .found ? LC.success : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("credential-check-result")
                 }
@@ -1065,7 +1052,7 @@ struct CredentialEditor: View {
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if onboarding && analysisLayout && connectionVerified && !coordinator.isMock {
                     Label(ServiceGuide.text("Answer service ready. You can continue.", "回答服务已就绪，可以继续。", coordinator.settings.language), systemImage: "checkmark.circle.fill")
-                        .font(.caption).foregroundStyle(.green)
+                        .font(.caption).foregroundStyle(LC.success)
                 }
                 if analysisLayout {
                     Text(ServiceGuide.text("Testing sends one short example question, without your conversation or documents, and may incur API charges.", "测试仅发送一条简短示例问题，不附带对话或资料，可能产生 API 费用。", coordinator.settings.language))
@@ -1120,7 +1107,8 @@ struct SettingsSection<Content: View, Heading: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             heading.font(.headline)
             content.frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+                .background(LC.surface, in: RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous).strokeBorder(LC.hairline))
         }.accessibilityElement(children: .contain)
     }
 }
@@ -1134,7 +1122,7 @@ struct CredentialCheckResultView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 if feedback == .checking { ProgressView().controlSize(.small) }
-                else { Image(systemName: feedback.symbol).foregroundStyle(feedback == .found ? Color.green : Color.accentColor) }
+                else { Image(systemName: feedback.symbol).foregroundStyle(feedback == .found ? LC.success : LC.accent) }
                 Text(feedback.title(language)).font(.headline)
             }
             Text(feedback.message(language)).font(.system(size: 12))
@@ -1196,7 +1184,7 @@ private struct JevSettingsView: View {
         case .failed: return b("Load / runtime failed", "加载或运行失败")
         }
     }
-    private var stateColor: Color { laya.state == .failed ? .red : (laya.isReady ? .green : .secondary) }
+    private var stateColor: Color { laya.state == .failed ? LC.danger : (laya.isReady ? LC.success : Color.secondary) }
     private var stateIcon: String { laya.state == .failed ? "exclamationmark.circle" : (laya.isReady ? "checkmark.circle.fill" : "cpu") }
     private var sensitivity: JevSensitivity { .nearest(to: coordinator.settings.layaThreshold) }
     private var sensitivityLevels: [JevSensitivity] {
@@ -1238,7 +1226,7 @@ private struct JevSettingsView: View {
                 Divider().padding(.vertical, 2)
                 HStack(spacing: 8) {
                     Text(b("Trigger sensitivity", "触发灵敏度")).font(.subheadline.weight(.medium))
-                    Text(sensitivity.title(coordinator.settings.language)).font(.subheadline.weight(.semibold)).foregroundStyle(Color.accentColor)
+                    Text(sensitivity.title(coordinator.settings.language)).font(.subheadline.weight(.semibold)).foregroundStyle(LC.accent)
                         .accessibilityIdentifier("laya-sensitivity-level")
                     Spacer()
                     Button(b("Restore recommended", "恢复推荐值")) { coordinator.settings.layaThreshold = JevSensitivity.medium.threshold }
@@ -1279,7 +1267,7 @@ private struct JevSettingsView: View {
                 }
                 if laya.state == .failed {
                     Text(b("Retry the model; manual answers remain available.", "请重试模型；仍可手动生成回答。"))
-                        .font(.caption).foregroundStyle(.red)
+                        .font(.caption).foregroundStyle(LC.danger)
                 }
                 if coordinator.isRunning || coordinator.isTransitioning {
                     Text(b("Stop listening to manage the model.", "停止监听后可管理模型。")).font(.caption).foregroundStyle(.secondary)
@@ -1303,7 +1291,7 @@ private struct JevSettingsView: View {
                             if let result {
                                 Label(result.decision.shouldTrigger ? b("Would trigger", "建议触发") : b("Keep waiting", "继续等待"),
                                       systemImage: result.decision.shouldTrigger ? "checkmark.circle.fill" : "clock")
-                                    .foregroundStyle(result.decision.shouldTrigger ? Color.green : Color.secondary)
+                                    .foregroundStyle(result.decision.shouldTrigger ? LC.success : Color.secondary)
                             }
                         }
                         if let result {
@@ -1314,7 +1302,7 @@ private struct JevSettingsView: View {
                             }
                             Text(reason(result.decision)).font(.caption).foregroundStyle(.secondary)
                         }
-                        if !testError.isEmpty { Text(testError).font(.caption).foregroundStyle(.red) }
+                        if !testError.isEmpty { Text(testError).font(.caption).foregroundStyle(LC.danger) }
                         Text(b("Local test only; no paid API call. Timing excludes audio, transcription, waiting and answer generation.", "仅测试本地判断，不调用付费 API。耗时不含收音、转写、静音等待与回答生成。"))
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(.top, 8)
@@ -1342,8 +1330,6 @@ private struct JevSettingsView: View {
         }
     }
     private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8, content: content).padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+        VStack(alignment: .leading, spacing: 8, content: content).lcCard(padding: 14)
     }
 }

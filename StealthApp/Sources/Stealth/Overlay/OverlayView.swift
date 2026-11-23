@@ -94,10 +94,10 @@ struct OverlayView: View {
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
         }
         .background { WindowBackgroundView(style: coordinator.settings.background, isOverlay: true) }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: LC.Radius.panel))
         .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
         .environment(\.locale, coordinator.settings.language.locale)
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.primary.opacity(0.12)))
+        .overlay(RoundedRectangle(cornerRadius: LC.Radius.panel).strokeBorder(.primary.opacity(0.12)))
         .overlay(alignment: .bottomTrailing) { resizeHandle }
         .onChange(of: coordinator.conversationGeneration) { _, _ in
             query = ""; followTranscript = true
@@ -144,7 +144,7 @@ struct OverlayView: View {
                 }
         }
         if translation.enabled && translation.failed {
-            Text(b("Translation failed. Reopen Translation to retry; original text is retained.", "翻译失败，请重新开启翻译重试；原文已保留。")).font(.caption2).foregroundStyle(.orange)
+            Text(b("Translation failed. Reopen Translation to retry; original text is retained.", "翻译失败，请重新开启翻译重试；原文已保留。")).font(.caption2).foregroundStyle(LC.warning)
         }
         transcriptView
         Divider()
@@ -155,7 +155,7 @@ struct OverlayView: View {
             Text(t(coordinator.statusMessage)).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
             if coordinator.isRunning, let notice = coordinator.captureNotice {
                 Label(t(notice), systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption).foregroundStyle(.orange).lineLimit(3)
+                    .font(.caption).foregroundStyle(LC.warning).lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("capture-notice")
             }
@@ -276,13 +276,13 @@ struct OverlayView: View {
         HStack {
             HStack {
                 AppBrandTitle(iconSize: 22)
-                if coordinator.isMock && demonstrationAnswer == nil { Text(t("MOCK")).font(.caption2.bold()).foregroundStyle(.orange) }
+                if coordinator.isMock && demonstrationAnswer == nil { Text(t("MOCK")).font(.caption2.bold()).foregroundStyle(LC.warning) }
                 Spacer(minLength: 0)
             }.overlay { OverlayDragRegion() }
                 .help(b("Turn off automatic docking to drag this header anywhere.", "关闭自动贴边后，可拖动这里自由移动窗口。"))
             Button { Task { await coordinator.toggle() } } label: {
                 Image(systemName: coordinator.isRunning ? "stop.circle.fill" : "play.circle.fill")
-                    .foregroundStyle(coordinator.isRunning ? Color.red : .green)
+                    .foregroundStyle(coordinator.isRunning ? LC.danger : .green)
             }.disabled(coordinator.isTransitioning).help(t(coordinator.isRunning ? "Stop listening" : "Start listening"))
                 .accessibilityIdentifier("overlay-toggle-listening")
                 .onboardingHighlight(onboarding.visibleTip == .start && !onboarding.state.prefersTyping)
@@ -296,7 +296,7 @@ struct OverlayView: View {
                 .onboardingHighlight(onboarding.visibleTip == .captureExclusion)
             Button { coordinator.settings.overlayEdgeHide.toggle() } label: {
                 Image(systemName: coordinator.settings.overlayEdgeHide ? "pin" : "pin.fill")
-                    .foregroundStyle(coordinator.settings.overlayEdgeHide ? Color.secondary : .blue)
+                    .foregroundStyle(coordinator.settings.overlayEdgeHide ? Color.secondary : LC.accent)
             }.help(coordinator.settings.overlayEdgeHide
                    ? b("Turn off automatic docking · drag freely", "关闭自动贴边 · 自由拖动")
                    : b("Turn on automatic docking", "开启自动贴边"))
@@ -353,7 +353,7 @@ struct OverlayView: View {
             transcriptTextRow(source, label: t(speaker.rawValue), color: speaker == .you ? .blue : .green,
                               textColor: partial ? .secondary : .primary, selectable: !partial)
             if let translated {
-                transcriptTextRow(translated, label: b("Tr.", "译"), color: .blue, textColor: .blue, selectable: !partial)
+                transcriptTextRow(translated, label: b("Tr.", "译"), color: LC.accent, textColor: LC.accent, selectable: !partial)
             }
         }
     }
@@ -403,7 +403,7 @@ private struct OverlaySwitchStyle: ToggleStyle {
             HStack(spacing: 8) {
                 configuration.label
                 Capsule()
-                    .fill(configuration.isOn ? Color.blue : Color.primary.opacity(0.18))
+                    .fill(configuration.isOn ? LC.accent : Color.primary.opacity(0.18))
                     .overlay(alignment: configuration.isOn ? .trailing : .leading) {
                         Circle().fill(.white)
                             .shadow(color: .black.opacity(0.18), radius: 1, y: 1)

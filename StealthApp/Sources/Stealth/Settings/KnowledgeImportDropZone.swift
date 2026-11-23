@@ -24,10 +24,10 @@ struct KnowledgeImportDropZone: View {
                 Text("PDF · Markdown · TXT · DOCX").font(.caption).foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, minHeight: 124).padding(12)
-            .foregroundStyle(Color.blue)
-            .background(Color.blue.opacity(isTargeted && !busy ? 0.14 : 0.045), in: RoundedRectangle(cornerRadius: 14))
+            .foregroundStyle(LC.accent)
+            .background(LC.accent.opacity(isTargeted && !busy ? 0.14 : 0.045), in: RoundedRectangle(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(Color.blue.opacity(busy ? 0.3 : isTargeted ? 1 : 0.6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])))
+                .strokeBorder(LC.accent.opacity(busy ? 0.3 : isTargeted ? 1 : 0.6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])))
             .contentShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain).disabled(busy)

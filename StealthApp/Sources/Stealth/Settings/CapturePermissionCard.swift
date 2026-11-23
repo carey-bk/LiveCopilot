@@ -11,7 +11,7 @@ struct CapturePermissionCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Label(b("System audio permission", "系统音频权限"), systemImage: "lock.shield").font(.headline)
             Text(granted ? b("Current app has screen/system-audio access.", "当前应用已有录屏与系统录音权限。") : b("The current app needs screen/system-audio access for Remote Meeting. In-Person mode only needs the microphone.", "远程会议需要为当前应用授予录屏与系统录音权限；现场模式仅需麦克风。"))
-                .font(.callout).foregroundStyle(granted ? .green : .secondary)
+                .font(.callout).foregroundStyle(granted ? LC.success : Color.secondary)
             if !granted {
                 Button(b("Request permission for this app", "为当前应用请求权限")) { granted = CGRequestScreenCaptureAccess() }
             }

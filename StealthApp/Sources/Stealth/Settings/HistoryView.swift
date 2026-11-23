@@ -46,7 +46,7 @@ struct HistoryBrowser: View {
             }
         }
         .frame(minWidth: 540, minHeight: 360)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(LC.surface)
         .onAppear { reconcileSelection() }
         .onChange(of: query) { _, _ in reconcileSelection() }
         .onChange(of: filtered.map(\.id)) { _, _ in reconcileSelection() }
@@ -79,7 +79,7 @@ struct HistoryBrowser: View {
                 TextField(b("Search conversations", "搜索会话内容"), text: $query)
                     .textFieldStyle(.plain).accessibilityIdentifier("history-search")
                 if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary).help(b("Clear search", "清除搜索")) }
-            }.padding(8).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7)).padding(10)
+            }.padding(8).lcWell().padding(10)
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
@@ -97,7 +97,13 @@ struct HistoryBrowser: View {
                                         Text("\(session.durationLabel) · \(session.messageCount) " + b("messages", "条消息"))
                                             .font(.caption2).foregroundStyle(.secondary)
                                     }.frame(maxWidth: .infinity, alignment: .leading).padding(9)
-                                        .background(selectedID == session.id ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                                        .background {
+                                            if selectedID == session.id {
+                                                RoundedRectangle(cornerRadius: LC.Radius.control, style: .continuous).fill(LC.surface)
+                                                    .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
+                                                    .overlay(RoundedRectangle(cornerRadius: LC.Radius.control, style: .continuous).strokeBorder(LC.hairline))
+                                            }
+                                        }
                                         .contentShape(Rectangle())
                                 }.buttonStyle(.plain).accessibilityIdentifier("history-session-" + session.id.uuidString)
                                     .contextMenu {
@@ -116,7 +122,7 @@ struct HistoryBrowser: View {
                 }.padding(.horizontal, 7).padding(.bottom, 12)
             }
             Text("\(filtered.count) " + b("sessions", "条会话")).font(.caption2).foregroundStyle(.secondary).padding(8)
-        }.frame(width: 172).background(Color(nsColor: .controlBackgroundColor))
+        }.frame(width: 172).background(LC.canvas)
     }
     private func detail(_ session: SessionRecord) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -137,8 +143,8 @@ struct HistoryBrowser: View {
                 Text(HistoryFormat.date(session.startedAt, english: english, language: language) + " – " + HistoryFormat.date(session.endedAt, english: english, language: language) + " · \(session.durationLabel) · \(session.messageCount) " + b("messages", "条消息"))
                     .font(.caption).foregroundStyle(.secondary)
                 if session.namingState == "pending" { Text(b("Naming this session…", "正在生成会话名称…")).font(.caption2).foregroundStyle(.secondary) }
-                if session.namingState == "failed" { Text(b("Could not generate a title. Your previous title is kept. Check the analysis service and try again from the context menu.", "自动命名失败，已保留原名称。请检查分析服务，再从右键菜单重试。")).font(.caption).foregroundStyle(.orange) }
-                if let error = exportError ?? sessions.lastError { Text(error).font(.caption).foregroundStyle(.red) }
+                if session.namingState == "failed" { Text(b("Could not generate a title. Your previous title is kept. Check the analysis service and try again from the context menu.", "自动命名失败，已保留原名称。请检查分析服务，再从右键菜单重试。")).font(.caption).foregroundStyle(LC.warning) }
+                if let error = exportError ?? sessions.lastError { Text(error).font(.caption).foregroundStyle(LC.danger) }
             }.padding(18)
             Divider()
             HistoryTimeline(session: session, english: english, language: language,
@@ -200,7 +206,7 @@ private struct HistoryMessage: View {
     let english: Bool
     let language: AppLanguage
     private func b(_ en: String, _ zh: String) -> String { english ? en : language.interfaceText(zh) }
-    private var color: Color { event.kind == .room ? .green : event.kind == .nearby ? .blue : .secondary }
+    private var color: Color { event.kind == .room ? LC.success : event.kind == .nearby ? LC.accent : Color.secondary }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -225,8 +231,8 @@ private struct HistoryMessage: View {
                     if event.content.isEmpty || answer.state != "completed" {
                         Text(status(answer.state)).font(.caption).foregroundStyle(.secondary)
                     }
-                    if let warning = answer.warning { Text(warning).font(.caption).foregroundStyle(.orange) }
-                    if let error = answer.error { Text(error).font(.caption).foregroundStyle(.red) }
+                    if let warning = answer.warning { Text(warning).font(.caption).foregroundStyle(LC.warning) }
+                    if let error = answer.error { Text(error).font(.caption).foregroundStyle(LC.danger) }
                     if !answer.sources.isEmpty {
                         DisclosureGroup(b("Knowledge sources & citations (\(answer.sources.count))", "知识库来源与引用（\(answer.sources.count)）")) {
                             VStack(alignment: .leading, spacing: 10) {
@@ -243,8 +249,8 @@ private struct HistoryMessage: View {
                     .textSelection(.enabled).lineSpacing(4).frame(maxWidth: .infinity, alignment: .leading)
             }
         }.padding(event.kind == .answer || event.kind == .question ? 12 : 0)
-            .background(event.kind == .answer ? Color.primary.opacity(0.025) : event.kind == .question ? Color.accentColor.opacity(0.045) : .clear, in: RoundedRectangle(cornerRadius: 9))
-            .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(event.kind == .answer ? Color.primary.opacity(0.07) : .clear))
+            .background(event.kind == .answer ? LC.well : event.kind == .question ? LC.accent.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous).strokeBorder(event.kind == .answer ? LC.hairline : .clear))
             .contextMenu { Button(b("Copy message", "复制这条消息")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(event.exported(markdown: false, english: english), forType: .string) } }
     }
     private func markdown(_ value: String) -> some View { Text(.init(value)).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }

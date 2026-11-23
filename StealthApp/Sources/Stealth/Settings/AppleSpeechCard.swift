@@ -24,9 +24,9 @@ struct AppleSpeechCard: View {
                 Spacer(minLength: 0)
                 Label(manager.installed && !manager.busy ? b("Ready · available offline", "已就绪 · 离线可用") : L10n.text(manager.message, language: interfaceLanguage),
                       systemImage: manager.installed && !manager.busy ? "checkmark.circle" : "arrow.down.circle")
-                    .font(.callout).foregroundStyle(manager.installed && !manager.busy ? .green : .secondary)
+                    .font(.callout).foregroundStyle(manager.installed && !manager.busy ? LC.success : Color.secondary)
                     .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(manager.installed && !manager.busy ? Color.green.opacity(0.1) : Color.secondary.opacity(0.08), in: Capsule())
+                    .background(manager.installed && !manager.busy ? LC.success.opacity(0.1) : Color.secondary.opacity(0.08), in: Capsule())
             }
             Label(b("Only the selected language is recognized; automatic Chinese/English switching is not supported. Use Zipformer for mixed-language speech.", "当前仅识别所选语言，不支持自动切换中英文。混合语言场景建议使用 Zipformer。"), systemImage: "info.circle")
                 .font(.callout).foregroundStyle(.secondary)
@@ -42,7 +42,7 @@ struct AppleSpeechCard: View {
                 }
                 Button(b("Check again", "重新检测")) { Task { await manager.refresh(language) } }.disabled(manager.busy)
             }
-        }.padding(16).background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+        }.lcCard()
             .task(id: language) { await manager.refresh(language) }
     }
 }
