@@ -9,6 +9,7 @@ final class AppUpdateController: ObservableObject {
     let showsBanner = false, canInstall = false, automaticChecks = false, hasUpdate = false
     let statusText = "更新由 Mac App Store 提供", message = "", managementRequest = UUID()
     let currentDisplay = AppInfo.version
+    let currentVersion = ReleaseVersion(AppInfo.version)
     let latestVersion: ReleaseVersion? = nil, release: UpdateRelease? = nil
     let progress: Double? = nil, lastCheck: Date? = nil
     var blockingReason: () -> String? = { nil }

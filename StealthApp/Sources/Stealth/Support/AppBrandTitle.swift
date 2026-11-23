@@ -5,7 +5,7 @@ struct AppBrandTitle: View {
     var iconSize: CGFloat = 24
     var titleSize: CGFloat = 15
     static let fontName = "AvenirNext-HeavyItalic"
-    private static let icon: NSImage = {
+    static let icon: NSImage = {
         guard let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
               let image = NSImage(contentsOf: url) else { return NSApp.applicationIconImage }
         return image

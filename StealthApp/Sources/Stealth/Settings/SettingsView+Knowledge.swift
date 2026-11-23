@@ -3,6 +3,9 @@ import AVFoundation
 import UniformTypeIdentifiers
 
 extension SettingsView {
+    /// The finished-import block is hidden once collapsed, unless indexing restarts or failed.
+    var importStatusHidden: Bool { importStatusCollapsed && !coordinator.isIndexing && coordinator.indexingSucceeded }
+
     var knowledge: some View {
         LCScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -35,21 +38,37 @@ extension SettingsView {
                                             guard knowledgeConfigured else { return }; coordinator.importDocuments(urls)
                                         },
                                         reportError: { coordinator.knowledgeMessage = $0 })
-                if coordinator.indexingDocumentCount > 0 {
-                    IndexingProgressView(progress: coordinator.indexingProgress,
-                                         label: b("Documents completed: ", "已完成文档：") + "\(coordinator.indexingCompletedDocumentCount) / \(coordinator.indexingDocumentCount)")
-                        .accessibilityIdentifier("knowledge-index-progress")
-                }
-                HStack(spacing: 8) {
-                    if coordinator.indexingSucceeded {
-                        LCPill(text: b("Index established", "索引已建立"), tone: .success, systemImage: "checkmark")
-                            .accessibilityIdentifier("knowledge-index-complete")
+                if !importStatusHidden {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if coordinator.indexingDocumentCount > 0 {
+                            IndexingProgressView(progress: coordinator.indexingProgress,
+                                                 label: b("Documents completed: ", "已完成文档：") + "\(coordinator.indexingCompletedDocumentCount) / \(coordinator.indexingDocumentCount)")
+                                .accessibilityIdentifier("knowledge-index-progress")
+                        }
+                        HStack(spacing: 8) {
+                            if coordinator.indexingSucceeded {
+                                LCPill(text: b("Index established", "索引已建立"), tone: .success, systemImage: "checkmark")
+                                    .accessibilityIdentifier("knowledge-index-complete")
+                            }
+                            if !coordinator.knowledgeMessage.isEmpty {
+                                Text(t(coordinator.knowledgeMessage)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                        }
                     }
-                    if !coordinator.knowledgeMessage.isEmpty {
-                        Text(t(coordinator.knowledgeMessage)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }.lcCard()
+            .lcAnimation(LC.Motion.standard, value: importStatusHidden)
+            .task(id: coordinator.indexingFinishedAt) {
+                // A successful run's progress and status fold away 5 s after it ends; failures stay.
+                guard let finished = coordinator.indexingFinishedAt, coordinator.indexingSucceeded else {
+                    importStatusCollapsed = false; return
+                }
+                let remaining = 5 - Date().timeIntervalSince(finished)
+                if remaining > 0 { try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) }
+                guard !Task.isCancelled, coordinator.indexingFinishedAt == finished else { return }
+                importStatusCollapsed = true
+            }
 
             if coordinator.knowledgeDocuments.contains(where: { $0.embeddingModel != coordinator.settings.selectedEmbeddingIdentity }) {
                 VStack(alignment: .leading, spacing: 10) {

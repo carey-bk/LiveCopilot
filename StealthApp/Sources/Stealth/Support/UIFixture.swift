@@ -44,6 +44,7 @@ enum UIFixture {
         switch state {
         case "listening":
             await listen(coordinator, automatic: false)
+            coordinator.levels.applyFixture(you: 0.55, them: 0.8)
         case "streaming", "answered":
             coordinator.settings.automaticSuggestions = true
             await listen(coordinator, automatic: true)
@@ -57,6 +58,11 @@ enum UIFixture {
             await coordinator.start()
             try? await Task.sleep(nanoseconds: 400_000_000)
             coordinator.receiveMockEvent(.failed("Download the selected speech model and VAD in Services first."), speaker: .them)
+        case "starting":
+            // Holds the listen button in its start-up state, as during a cold audio-device start.
+            coordinator.settings.mode = .remote
+            coordinator.isTransitioning = true
+            coordinator.statusMessage = "Starting audio capture…"
         case "notice":
             await listen(coordinator, automatic: false)
             coordinator.applyFixtureCaptureNotice(AppCoordinator.systemAudioMissingNotice)
@@ -69,6 +75,7 @@ enum UIFixture {
             openSettings(page)
         }
         if flag("--ui-open-history") { openHistory() }
+        if flag("--ui-gallery") { DesignGallery.open() }
         if let folder = value("--ui-snapshot") {
             await snapshot(into: URL(fileURLWithPath: folder), coordinator: coordinator)
         }
