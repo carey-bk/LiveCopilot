@@ -5,12 +5,12 @@ import UniformTypeIdentifiers
 extension SettingsView {
     var services: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Picker(t("Service role"), selection: $serviceRole) {
-                Text(b("Speech recognition", "语音识别")).tag(ServiceRole.speechRecognition.rawValue)
-                Text(b("Answer triggers", "实时回答触发")).tag(ServiceRole.answerTriggers.rawValue)
-                Text(b("Knowledge indexing", "知识库索引")).tag(ServiceRole.knowledgeIndexing.rawValue)
-                Text(b("Analysis & answers", "分析与回答")).tag(ServiceRole.analysisAndAnswers.rawValue)
-            }.pickerStyle(.segmented).accessibilityIdentifier("service-role")
+            LCSegmented(title: t("Service role"), selection: $serviceRole, items: [
+                (ServiceRole.speechRecognition.rawValue, b("Speech recognition", "语音识别")),
+                (ServiceRole.answerTriggers.rawValue, b("Answer triggers", "实时回答触发")),
+                (ServiceRole.knowledgeIndexing.rawValue, b("Knowledge indexing", "知识库索引")),
+                (ServiceRole.analysisAndAnswers.rawValue, b("Analysis & answers", "分析与回答"))
+            ]).accessibilityIdentifier("service-role")
             switch ServiceRole(rawValue: serviceRole) ?? .speechRecognition {
             case .answerTriggers: automaticTriggerSettings
             case .knowledgeIndexing: embeddingService
@@ -151,17 +151,8 @@ extension SettingsView {
     func liveSection<Content: View>(_ title: String, beta: Bool = false, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Text(title).font(.headline)
-                if beta {
-                    Capsule().fill(LC.accent)
-                        .overlay {
-                            Text("Beta").font(.custom(AppBrandTitle.fontName, size: 11))
-                                .foregroundStyle(Color.white)
-                        }
-                        .compositingGroup()
-                        .frame(width: 40, height: 18)
-                        .accessibilityLabel("Beta")
-                }
+                Text(title).font(LC.Typo.headline)
+                if beta { LCPill(text: "Beta", tone: .accent) }
             }
             content()
         }.lcCard()

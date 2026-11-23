@@ -39,7 +39,7 @@ private struct LiveCopilotMenuBar: Scene {
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: coordinator.isRunning ? "waveform" : "waveform.slash")
-                if updates.hasUpdate { Image(systemName: "circle.fill").symbolRenderingMode(.palette).font(.system(size: 6)).foregroundStyle(.blue) }
+                if updates.hasUpdate { Image(systemName: "circle.fill").symbolRenderingMode(.palette).font(.system(size: 6)).foregroundStyle(LC.accent) }
             }.accessibilityLabel(updates.hasUpdate ? "LiveCopilot，有可用更新" : "LiveCopilot")
         }
         .commands {
@@ -64,36 +64,57 @@ private struct MenuContent: View {
     let toggleOverlay: () -> Void
 
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
+    private func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
+    /// One status line: listening state, and Jev Mode readiness when it applies.
+    private var stateLine: String {
+        var parts = [coordinator.isTransitioning ? b("Starting…", "正在启动…")
+                     : coordinator.isRunning ? b("● Listening", "● 正在监听") : b("○ Not listening", "○ 未在监听")]
+        if coordinator.settings.automaticSuggestions && coordinator.settings.listeningService.isLocal {
+            parts.append("Jev Mode " + (coordinator.laya.displayState == .ready ? b("ready", "已就绪") : b("not ready", "未就绪")))
+        }
+        return parts.joined(separator: " · ")
+    }
     var body: some View {
+        Text(stateLine)
         Text(t(coordinator.statusMessage))
             .font(.caption)
 
-        Button(t(coordinator.isRunning ? "Stop Listening" : "Start Listening")) {
+        Divider()
+
+        Button {
             Task { await coordinator.toggle() }
+        } label: {
+            Label(t(coordinator.isRunning ? "Stop Listening" : "Start Listening"), systemImage: coordinator.isRunning ? "stop.circle" : "play.circle")
         }
         .disabled(coordinator.isTransitioning)
 
-        Button("\(t(SuggestionMode.reply.label)) (\(hotkeys.combo(for: .reply).display))") {
+        Button {
             coordinator.requestSuggestion(mode: .reply)
+        } label: {
+            Label("\(t(SuggestionMode.reply.label)) (\(hotkeys.combo(for: .reply).display))", systemImage: "text.bubble")
         }
         .disabled(coordinator.transcript.lines.isEmpty)
 
-        Button(t(coordinator.micEnabled ? "Mute Mic (You)" : "Unmute Mic (You)")) {
+        Button {
             coordinator.toggleMic()
+        } label: {
+            Label(t(coordinator.micEnabled ? "Mute Mic (You)" : "Unmute Mic (You)"), systemImage: coordinator.micEnabled ? "mic.slash" : "mic")
         }
 
-        Button(t("Show / Hide Overlay") + " (\(hotkeys.toggleOverlay.display))") { toggleOverlay() }
+        Button { toggleOverlay() } label: {
+            Label(t("Show / Hide Overlay") + " (\(hotkeys.toggleOverlay.display))", systemImage: "macwindow")
+        }
 
         Divider()
 
-        Button(t("History…")) { openHistory() }
-        Button(t("Settings…")) { openSettings() }
+        Button { openHistory() } label: { Label(t("History…"), systemImage: "clock.arrow.circlepath") }
+        Button { openSettings() } label: { Label(t("Settings…"), systemImage: "gearshape") }
         CheckForUpdatesButton(updates: coordinator.updates, language: coordinator.settings.language)
-        Button(t("Quit LiveCopilot")) { NSApp.terminate(nil) }
 
         Divider()
 
-        Text(AppInfo.display)
+        Button { NSApp.terminate(nil) } label: { Label(t("Quit LiveCopilot"), systemImage: "power") }
+        Text("LiveCopilot " + AppInfo.display)
             .font(.caption2)
     }
 }
@@ -234,7 +255,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if window is OverlayWindow {
                 applyAppearance(to: window, background: settings.background)
             } else {
-                applyAdaptiveAppearance(to: window)
+                applyAdaptiveAppearance(to: window, translucent: window === settingsWindow)
             }
             if !(window is OverlayWindow) { window.sharingType = .readOnly }
         }
@@ -249,10 +270,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Settings, History and onboarding follow the system appearance on the design-system canvas.
-    private func applyAdaptiveAppearance(to window: NSWindow) {
+    /// Translucent windows let the settings sidebar's material show the desktop; the content pane
+    /// draws its own opaque canvas.
+    private func applyAdaptiveAppearance(to window: NSWindow, translucent: Bool = false) {
         window.appearance = nil
-        window.isOpaque = true
-        window.backgroundColor = LC.canvasNSColor
+        window.isOpaque = !translucent
+        window.backgroundColor = translucent ? .clear : LC.canvasNSColor
     }
 
     private func applyAppearance(to window: NSWindow, background: AppBackground) {
@@ -341,7 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = NSWindow(contentViewController: hosting)
         window.title = L10n.text("LiveCopilot Settings", language: coordinator.settings.language)
         window.sharingType = .readOnly
-        applyAdaptiveAppearance(to: window)
+        applyAdaptiveAppearance(to: window, translucent: true)
         window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true

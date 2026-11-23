@@ -7,10 +7,10 @@ extension SettingsView {
         VStack(alignment: .leading, spacing: 16) {
             sessionCard
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
-                speechTile
-                answerTile
-                knowledgeTile
-                permissionsTile
+                speechTile.lcHoverable(radius: LC.Radius.card, lift: true)
+                answerTile.lcHoverable(radius: LC.Radius.card, lift: true)
+                knowledgeTile.lcHoverable(radius: LC.Radius.card, lift: true)
+                permissionsTile.lcHoverable(radius: LC.Radius.card, lift: true)
             }
             recentSessions
         }
@@ -132,6 +132,20 @@ extension SettingsView {
         VStack(alignment: .leading, spacing: 10) {
             LCSectionHeader(title: b("Recent sessions", "最近会话"), systemImage: "clock.arrow.circlepath") {
                 if !recent.isEmpty { overviewLink(b("All history", "全部记录")) { page = .history } }
+            }
+            if coordinator.sessions.sessions.count >= 2 {
+                // Real durations of the latest sessions, oldest first.
+                let trend = Array(coordinator.sessions.sessions.prefix(14).reversed())
+                let minutes = Int((trend.reduce(0) { $0 + $1.duration } / 60).rounded())
+                HStack(alignment: .bottom, spacing: 12) {
+                    LCSparkBars(values: trend.map(\.duration))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(minutes)").font(LC.Typo.headline.monospacedDigit()) + Text(b(" min", " 分钟")).font(LC.Typo.caption).foregroundColor(.secondary)
+                        Text(b("across the last \(trend.count) sessions", "最近 \(trend.count) 场会话")).font(LC.Typo.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .padding(.bottom, 2)
             }
             if recent.isEmpty {
                 Text(b("Sessions appear here after you listen or ask a question.", "开始监听或提问后，会话会出现在这里。"))

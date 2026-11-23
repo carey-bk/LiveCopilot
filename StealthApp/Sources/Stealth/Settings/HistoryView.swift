@@ -22,6 +22,7 @@ struct HistoryBrowser: View {
     @State private var titleDraft = ""
     @State private var query = ""
     @State private var selectedID: UUID?
+    @Namespace private var selectionNamespace
     @State private var pendingDelete: SessionRecord?
     @State private var exportError: String?
     @State private var copied = false
@@ -78,7 +79,9 @@ struct HistoryBrowser: View {
                 TextField(b("Search conversations", "搜索会话内容"), text: $query)
                     .textFieldStyle(.plain).accessibilityIdentifier("history-search")
                 if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary).help(b("Clear search", "清除搜索")) }
-            }.padding(8).lcWell().padding(10)
+            }.padding(.horizontal, 10).frame(height: 30)
+                .background(LC.fill, in: Capsule())
+                .padding(10)
             Divider()
             LCScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
@@ -99,11 +102,13 @@ struct HistoryBrowser: View {
                                         .background {
                                             if selectedID == session.id {
                                                 RoundedRectangle(cornerRadius: LC.Radius.control, style: .continuous).fill(LC.surface)
-                                                    .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
+                                                    .shadow(color: .black.opacity(0.07), radius: 3, y: 1)
                                                     .overlay(RoundedRectangle(cornerRadius: LC.Radius.control, style: .continuous).strokeBorder(LC.hairline))
+                                                    .matchedGeometryEffect(id: "history-selection", in: selectionNamespace)
                                             }
                                         }
                                         .contentShape(Rectangle())
+                                        .lcHoverable(radius: LC.Radius.control)
                                 }.buttonStyle(.plain).accessibilityIdentifier("history-session-" + session.id.uuidString)
                                     .contextMenu {
                                         Button(b("Rename…", "重命名…")) { titleDraft = session.title; pendingRename = session }
@@ -119,6 +124,7 @@ struct HistoryBrowser: View {
                         }
                     }
                 }.padding(.horizontal, 7).padding(.bottom, 12)
+                .lcAnimation(LC.Motion.standard, value: selectedID)
             }
             Text("\(filtered.count) " + b("sessions", "条会话")).font(.caption2).foregroundStyle(.secondary).padding(8)
         }.frame(width: 196).background(LC.canvas)
@@ -166,11 +172,8 @@ struct HistoryBrowser: View {
     }
     private func copy(_ text: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
     private func empty(icon: String, title: String, text: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 30, weight: .light)).foregroundStyle(.tertiary)
-            Text(title).font(.headline)
-            Text(text).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 290)
-        }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+        LCEmptyState(systemImage: icon, title: title, message: text)
+            .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

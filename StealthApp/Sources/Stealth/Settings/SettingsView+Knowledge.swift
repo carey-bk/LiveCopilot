@@ -107,7 +107,9 @@ extension SettingsView {
                             systemImage: "doc.text") { EmptyView() }
                 .padding(.bottom, 12)
             if documents.isEmpty {
-                Text(t("Import a document to ground answers in your own evidence.")).font(.callout).foregroundStyle(.secondary)
+                LCEmptyState(systemImage: "books.vertical", title: b("No documents yet", "还没有资料"),
+                             message: t("Import a document to ground answers in your own evidence."))
+                    .frame(maxWidth: .infinity).padding(.vertical, 18)
             } else {
                 ForEach(Array(documents.enumerated()), id: \.element.id) { index, document in
                     if index > 0 { Divider() }
@@ -120,7 +122,7 @@ extension SettingsView {
     private func documentRow(_ document: KnowledgeDocument) -> some View {
         let indexing = coordinator.isIndexing && coordinator.indexingDocumentID == document.id
         let stale = document.embeddingModel != coordinator.settings.selectedEmbeddingIdentity
-        return HStack(alignment: .center, spacing: 12) {
+        return LCHoverReader { hovering in HStack(alignment: .center, spacing: 12) {
             LCIconTile(systemImage: Self.documentSymbol(document.name), tone: .accent, size: 30)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
@@ -140,7 +142,8 @@ extension SettingsView {
                 if let error = document.error { Text(t(error)).font(.caption).foregroundStyle(LC.danger).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 8)
-            HStack(spacing: 12) {
+            // Row actions appear on hover so the list reads as a calm table; they stay accessible.
+            HStack(spacing: 4) {
                 Button { coordinator.reindex(document) } label: { Image(systemName: "arrow.clockwise") }
                     .help(t("Re-index")).accessibilityLabel(t("Re-index"))
                 Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: document.localPath)]) } label: { Image(systemName: "folder") }
@@ -148,10 +151,16 @@ extension SettingsView {
                 Button(role: .destructive) { coordinator.deleteDocument(document) } label: { Image(systemName: "trash").foregroundStyle(LC.danger) }
                     .help(t("Delete")).accessibilityLabel(t("Delete"))
             }
-            .buttonStyle(.borderless).controlSize(.large).disabled(coordinator.isIndexing)
+            .buttonStyle(LCIconButtonStyle(size: 28)).foregroundStyle(.secondary).disabled(coordinator.isIndexing)
+            .opacity(hovering || document.error != nil ? 1 : 0)
+            .lcAnimation(LC.Motion.quick, value: hovering)
         }
-        .padding(.vertical, 10)
-        .accessibilityElement(children: .contain)
+        .padding(.vertical, 10).padding(.horizontal, 8)
+        .background {
+            if hovering { RoundedRectangle(cornerRadius: LC.Radius.control, style: .continuous).fill(LC.fillSubtle) }
+        }
+        .padding(.horizontal, -8)
+        .accessibilityElement(children: .contain) }
     }
 
     static func documentSymbol(_ name: String) -> String {

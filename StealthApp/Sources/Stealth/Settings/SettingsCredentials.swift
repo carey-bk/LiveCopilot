@@ -318,10 +318,9 @@ struct SettingsSection<Content: View, Heading: View>: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            heading.font(.headline)
+            heading.font(LC.Typo.callout.weight(.semibold)).foregroundStyle(.secondary).padding(.leading, 4)
             content.frame(maxWidth: .infinity, alignment: .leading)
-                .background(LC.surface, in: RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous).strokeBorder(LC.hairline))
+                .lcSurface()
         }.accessibilityElement(children: .contain)
     }
 }

@@ -419,6 +419,8 @@ struct LCStatTile<Footer: View>: View {
                 if let badge { LCPill(text: badge.text, tone: badge.tone) }
             }
             Text(value).font(.system(size: 22, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                .contentTransition(.numericText())
+                .lcAnimation(LC.Motion.standard, value: value)
             if let detail {
                 Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
@@ -456,12 +458,14 @@ struct LCDotMeter: View {
     }
 }
 
-/// Sidebar row label; the selected row floats as a card.
+/// Sidebar row label; the selected row floats as a card. With a namespace, the selection card
+/// slides between rows instead of jumping.
 struct LCSidebarItem: View {
     let title: String
     let systemImage: String
     let selected: Bool
     var badge: String?
+    var selection: Namespace.ID?
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: systemImage)
@@ -475,13 +479,15 @@ struct LCSidebarItem: View {
         .padding(.horizontal, 10).frame(height: 32)
         .background {
             if selected {
-                RoundedRectangle(cornerRadius: LC.Radius.control, style: .continuous)
+                let card = RoundedRectangle(cornerRadius: LC.Radius.control, style: .continuous)
                     .fill(LC.surface)
-                    .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
+                    .shadow(color: .black.opacity(0.07), radius: 3, y: 1)
                     .overlay(RoundedRectangle(cornerRadius: LC.Radius.control, style: .continuous).strokeBorder(LC.hairline))
+                if let selection { card.matchedGeometryEffect(id: "sidebar-selection", in: selection) } else { card }
             }
         }
         .contentShape(Rectangle())
+        .lcHoverable(radius: LC.Radius.control)
     }
 }
 
@@ -620,5 +626,120 @@ struct LCLevelBars: View {
         .frame(height: 12)
         .lcAnimation(.easeOut(duration: 0.12), value: level)
         .accessibilityHidden(true)
+    }
+}
+
+
+/// AppKit material behind SwiftUI content (sidebar vibrancy). Follows Reduce Transparency itself.
+struct LCVisualEffect: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .sidebar
+    var blending: NSVisualEffectView.BlendingMode = .behindWindow
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material; view.blendingMode = blending; view.state = .followsWindowActiveState
+        return view
+    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        view.material = material; view.blendingMode = blending
+    }
+}
+
+/// Capsule segmented control with a sliding thumb. Exposed to accessibility as a segmented Picker.
+struct LCSegmented<Value: Hashable>: View {
+    let title: String
+    @Binding var selection: Value
+    let items: [(value: Value, label: String)]
+    @Namespace private var thumb
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(items, id: \.value) { item in
+                let selected = item.value == selection
+                Button { selection = item.value } label: {
+                    Text(item.label).font(LC.Typo.callout.weight(selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? Color.primary : Color.secondary)
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                        .padding(.horizontal, 12).frame(maxWidth: .infinity).frame(height: 28)
+                        .background {
+                            if selected {
+                                Capsule().fill(LC.surface)
+                                    .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
+                                    .matchedGeometryEffect(id: "thumb", in: thumb)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(LC.fill, in: Capsule())
+        .lcAnimation(LC.Motion.standard, value: selection)
+        .accessibilityRepresentation {
+            Picker(title, selection: $selection) {
+                ForEach(items, id: \.value) { Text($0.label).tag($0.value) }
+            }.pickerStyle(.segmented)
+        }
+    }
+}
+
+
+/// Small bar chart of real values (most recent last), scaled to the largest value.
+struct LCSparkBars: View {
+    let values: [Double]
+    var tone: LC.Tone = .accent
+    var height: CGFloat = 28
+    var body: some View {
+        let top = max(values.max() ?? 0, 1)
+        HStack(alignment: .bottom, spacing: 3) {
+            ForEach(Array(values.enumerated()), id: \.offset) { index, value in
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(index == values.count - 1 ? tone.color : tone.color.opacity(0.35))
+                    .frame(width: 5, height: max(3, height * CGFloat(value / top)))
+            }
+        }
+        .frame(height: height, alignment: .bottom)
+        .accessibilityHidden(true)
+    }
+}
+
+
+/// Passes the pointer-hover state to its content (rows that reveal actions on hover).
+struct LCHoverReader<Content: View>: View {
+    @ViewBuilder var content: (Bool) -> Content
+    @State private var hovering = false
+    @Environment(\.lcForcedHover) private var forced
+    var body: some View {
+        content(hovering || forced).onHover { hovering = $0 }
+    }
+}
+
+/// Empty state: a symbol on a soft brand halo, a title and one line of guidance.
+struct LCEmptyState: View {
+    let systemImage: String
+    let title: String
+    var message: String?
+    var compact = false
+    var body: some View {
+        let size: CGFloat = compact ? 30 : 56
+        let layout = compact ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 12))
+        layout {
+            ZStack {
+                Circle().fill(LinearGradient(colors: [LC.accent.opacity(0.14), LC.accentPink.opacity(0.10)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                Image(systemName: systemImage).font(.system(size: size * 0.42, weight: .medium))
+                    .foregroundStyle(LinearGradient(colors: [LC.accent, LC.accentPink], startPoint: .topLeading, endPoint: .bottomTrailing))
+            }
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+            VStack(alignment: compact ? .leading : .center, spacing: 4) {
+                Text(title).font(compact ? LC.Typo.callout.weight(.semibold) : LC.Typo.headline)
+                if let message {
+                    Text(message).font(compact ? LC.Typo.caption : LC.Typo.callout).foregroundStyle(.secondary)
+                        .multilineTextAlignment(compact ? .leading : .center)
+                        .frame(maxWidth: compact ? .infinity : 300, alignment: compact ? .leading : .center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

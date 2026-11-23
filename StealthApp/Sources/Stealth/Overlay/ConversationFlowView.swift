@@ -63,8 +63,10 @@ struct ConversationFlowView: View {
                 LCScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
                         if coordinator.answers.isEmpty {
-                            Text(b("Ask above, or start listening to receive suggestions.", "在上方输入问题，或开始监听以获取回答。"))
-                                .font(.callout).foregroundStyle(.secondary).padding(.vertical, 8)
+                            LCEmptyState(systemImage: "sparkles", title: b("Answers appear here", "回答会出现在这里"),
+                                         message: b("Ask above, or start listening to receive suggestions.", "在上方输入问题，或开始监听以获取回答。"),
+                                         compact: true)
+                                .padding(.vertical, 8)
                         }
                         ForEach(coordinator.answers) { record in
                             AnswerMessageView(record: record, store: record.store, language: coordinator.settings.language, fontSize: fontSize)

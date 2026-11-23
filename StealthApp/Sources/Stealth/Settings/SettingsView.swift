@@ -21,6 +21,7 @@ struct SettingsView: View {
     /// Set 5 s after a successful import; hides the finished progress bar and status line.
     @State var importStatusCollapsed = false
     @State var page = SettingsPage.overview
+    @Namespace var sidebarSelection
     @State var serviceRole = 0
     @State var baseURL = ""
     @State var apiPath = ""
@@ -38,6 +39,7 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
+                .background { LCVisualEffect(material: .sidebar).ignoresSafeArea() }
             Rectangle().fill(LC.hairline).frame(width: 1).ignoresSafeArea(edges: .top)
             VStack(alignment: .leading, spacing: 18) {
                 UpdateBanner(updates: updates, language: coordinator.settings.language, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
@@ -54,9 +56,9 @@ struct SettingsView: View {
                 }
             }.padding(.horizontal, 28).padding(.top, 24).padding(.bottom, page == .history ? 20 : 0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background { LC.canvas.ignoresSafeArea() }
         }
         .frame(minWidth: 860, idealWidth: 920, minHeight: 620, idealHeight: 700)
-        .background { LC.canvas.ignoresSafeArea() }
         .toggleStyle(TrailingSwitchStyle())
         .environment(\.locale, coordinator.settings.language.locale)
         .onAppear { loadCustomDraft(); answerInstructionsDraft = coordinator.settings.additionalAnswerInstructions }
@@ -82,12 +84,14 @@ struct SettingsView: View {
                         ForEach(SettingsPage.allCases.filter { $0.group == group }) { item in
                             Button { page = item } label: {
                                 LCSidebarItem(title: pageTitle(item), systemImage: item.icon, selected: page == item,
-                                              badge: item == .knowledge && !coordinator.knowledgeDocuments.isEmpty ? "\(coordinator.knowledgeDocuments.count)" : nil)
+                                              badge: item == .knowledge && !coordinator.knowledgeDocuments.isEmpty ? "\(coordinator.knowledgeDocuments.count)" : nil,
+                                              selection: sidebarSelection)
                             }.buttonStyle(.plain).accessibilityIdentifier("settings-" + item.id)
                         }
                     }
                 }
             }.padding(.horizontal, 10)
+            .lcAnimation(LC.Motion.standard, value: page)
             Spacer()
             HStack(spacing: 8) {
                 LCStatusDot(tone: coordinator.isRunning ? .success : .neutral, pulsing: coordinator.isRunning)
@@ -95,6 +99,18 @@ struct SettingsView: View {
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }.padding(18)
         }.frame(width: 208)
+        // Up and down arrows move between pages once the sidebar has keyboard focus.
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.upArrow) { step(-1) }
+        .onKeyPress(.downArrow) { step(1) }
+    }
+
+    private func step(_ offset: Int) -> KeyPress.Result {
+        let pages = SettingsPage.allCases
+        guard let index = pages.firstIndex(of: page), pages.indices.contains(index + offset) else { return .ignored }
+        page = pages[index + offset]
+        return .handled
     }
 
     func pageTitle(_ page: SettingsPage) -> String { page == .overview ? b("Overview", "概览") : t(page.rawValue) }
