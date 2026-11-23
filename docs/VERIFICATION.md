@@ -8,6 +8,15 @@ The latest exact results are maintained in `IMPLEMENTATION_PLAN.md`. Distinguish
 
 ## Deterministic checks (no API calls)
 
+### 2026-11-23 — 2.10.0 interface refresh, Laya lifecycle and microphone start
+
+- `ui/refresh` (`f49fa91`…`742cd86`) on top of `cdde07d`: 96 deterministic core checks passed; full XCTest 318 tests, 23 skipped, 0 failures on `742cd86`. `testColdStartCancelPreventsLaunchAndStuckReadyTimesOut` (embedding worker) failed intermittently on intermediate commits and also on unchanged `cdde07d`; it is timing-sensitive, not caused by these changes.
+- UI states were captured from the Debug build in mock mode with `--ui-fixture` / `--ui-snapshot` (self-rendered, no Screen Recording permission). Behind-window blur is not captured by that method, so glass/frosted blur, docking/hover, translation popover and the menu-bar menu were not verified from screenshots.
+- Microphone freeze: real-session diagnostics on build 20261123.143147 and earlier showed 4–5 s from microphone permission to input format on cold starts with a recorded `mainThreadStall`, versus about 70 ms warm. After moving engine work off the main actor, the owner confirmed on the installed build 20261123.152911 that cold-start listening no longer freezes. Cold start still takes several seconds (system audio about 2 s plus microphone setup); the listen buttons show a spinner.
+- Laya: mock run with a 4 s idle timeout confirmed load (about 7 s), retention after Stop, release after the idle period, and `displayState == ready` from the saved verification. The installed build verified and saved the checkpoint on first launch.
+- Scrollers: with a mouse attached (system preference legacy), every app NSScrollView reported the overlay scroller style at runtime. Rendered appearance is the owner's visual check.
+- Installed locally as Developer ID-signed Release 2.10.0 / 20261123.152911 (not notarized; same designated requirement, screen permission retained). Nothing published.
+
 ### 2026-09-16 — installed 1.3.0 capture and GUI acceptance
 
 The last stale ScreenCapture requirement was traced to the Debug app's code hash, not the installed binary. Debug now has a distinct bundle ID. 19 native tests and 3 installer tests passed; same-ID development artifacts were unregistered and the unchanged installed app re-registered. After authorization, local browser synthetic Chinese audio appeared as Them through Apple speech, and microphone speech appeared as You. Stop/restart succeeded without another recording prompt. Long-content screenshots preserved header, footer and rounded corners. Apple service and DeepSeek price/key-status UI were inspected. Installed build/hash remain unchanged. See [detailed evidence and limits](V1_3_0_UPDATE.md#2026-09-16-permission-root-cause-and-installed-acceptance).

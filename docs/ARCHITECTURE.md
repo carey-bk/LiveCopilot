@@ -84,6 +84,16 @@ Evidence has per-request `[S1]` IDs tied to local chunk metadata. Prompts distin
 
 Credentials stay outside Codable settings. Existing Live identity is preserved. Separate OpenAI and DeepSeek identities cannot fall back to the Live key. Compatible and Qwen/GLM/Kimi preset credentials are additionally scoped to their canonical endpoint. Changing a selected service invalidates the cached analysis credential; revision IDs discard delayed reads from a previous selection. Requests snapshot the selected provider and credential before streaming. Missing OpenAI embeddings can degrade to lexical retrieval while a separately configured analysis provider remains usable.
 
+### 2.10 interface, Laya lifecycle and microphone start
+
+`Support/DesignSystem.swift` holds the `LC` tokens (light/dark colors, radii, spacing) and shared components (cards, pills, status dot, stat tile, dot meter, sidebar rows, `LCScrollView`, `LCSpinner`). Settings, history and onboarding windows follow the system appearance; only the overlay keeps the selected glass/frosted/white background, and `WindowBackgroundView`'s lightweight Intel/Reduce Transparency surface is unchanged. `LCScrollView` keeps its NSScrollView on thin overlay scrollers even when a mouse makes macOS prefer legacy scrollers. `JevBrand` sets every "Jev Mode" in the wordmark face.
+
+Laya loads when listening starts with automatic suggestions on a local transcriber, stays loaded across sessions, and is released after `layaIdleReleaseSeconds` (10 minutes) without listening or testing, or at once when automatic suggestions or local transcription are turned off. `LayaRuntimeManager` stores the last checkpoint that passed warmup (`LayaVerifiedCheckpoint` in defaults); `displayState` reports a released, verified model as ready, while gating still uses `state`/`isReady`. Only an unverified installed model is loaded at launch. A failed load clears the record.
+
+`MicCaptureManager` runs all AVAudioEngine work (replacement, input node, tap, start/stop) in order on a private serial queue. Creating the input node of a cold audio device took about 4 s on the main thread. `stop()` invalidates the session gate at once and queues the teardown behind any start still in flight.
+
+Debug builds include `Support/UIFixture.swift` (mock mode only) for reproducible screenshots of fixture states via launch arguments; it is excluded from Release.
+
 ## Files and builds
 
 - `StealthApp/Sources/Stealth/Core`: provider contracts, profiles, conversation state, query and suggestion types.
