@@ -27,6 +27,8 @@ enum UIFixture {
     static func apply(to coordinator: AppCoordinator, openSettings: (SettingsPage) -> Void, openHistory: () -> Void) async {
         guard AppPaths.isMock else { return }
         if flag("--ui-dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
+        if let raw = value("--ui-listening-service"), let service = ListeningService(rawValue: raw) { coordinator.settings.listeningService = service }
+        if let raw = value("--ui-laya-idle"), let seconds = TimeInterval(raw) { coordinator.layaIdleReleaseSeconds = seconds }
         if let raw = value("--ui-background"), let background = AppBackground(rawValue: raw) { coordinator.settings.background = background }
         if let raw = value("--ui-language"), let language = AppLanguage(rawValue: raw) { coordinator.settings.language = language }
         if let raw = value("--ui-text-size"), let size = Double(raw) {
@@ -67,12 +69,15 @@ enum UIFixture {
             openSettings(page)
         }
         if flag("--ui-open-history") { openHistory() }
-        if let folder = value("--ui-snapshot") { await snapshot(into: URL(fileURLWithPath: folder)) }
+        if let folder = value("--ui-snapshot") {
+            await snapshot(into: URL(fileURLWithPath: folder), coordinator: coordinator)
+        }
     }
 
     /// Renders each visible window of this process to PNG without Screen Recording permission.
     /// Behind-window blur (materials) is not captured; the PNG shows those areas as transparent.
-    private static func snapshot(into folder: URL) async {
+    private static func snapshot(into folder: URL, coordinator: AppCoordinator) async {
+        let laya = coordinator.laya
         let delay = value("--ui-snapshot-delay").flatMap(Double.init) ?? 2.5
         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -84,6 +89,12 @@ enum UIFixture {
             let kind = window is OverlayWindow ? "overlay" : window.title.isEmpty ? String(describing: type(of: window)) : window.title
             let name = "\(prefix)--\(kind)".replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "_")
             try? bitmap.representation(using: .png, properties: [:])?.write(to: folder.appendingPathComponent(name + ".png"))
+        }
+        if flag("--ui-dump-laya") {
+            let report = ["state=\(laya.state.rawValue) display=\(laya.displayState.rawValue) verified=\(laya.wasVerified)",
+                          "running=\(coordinator.isRunning) auto=\(coordinator.settings.automaticSuggestions) service=\(coordinator.settings.listeningService.rawValue) gate=\(coordinator.layaGateStatus)",
+                          "status=\(coordinator.statusMessage)"] + laya.diagnosticEvents
+            try? report.joined(separator: "\n").write(to: folder.appendingPathComponent(prefix + "--laya.txt"), atomically: true, encoding: .utf8)
         }
         if flag("--ui-dump-scrollers") {
             // Scrollers are not rendered by cacheDisplay; record their style instead (0 legacy, 1 overlay).

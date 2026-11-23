@@ -109,7 +109,7 @@ struct OnboardingDetectedModelsView: View {
             ForEach(setup.capabilities) { capability in
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text(featureName(capability.id)).font(.system(size: 12, weight: .medium))
+                        JevBrand.text(featureName(capability.id), size: 13).font(.system(size: 12, weight: .medium))
                         Spacer(minLength: 3)
                         OnboardingCapabilityBadge(status: capability.status, language: coordinator.settings.language)
                     }

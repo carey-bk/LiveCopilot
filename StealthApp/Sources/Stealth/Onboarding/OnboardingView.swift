@@ -156,9 +156,9 @@ struct OnboardingView: View {
                         Text(L10n.text(scenario.rawValue, language: coordinator.settings.language)).tag(scenario)
                     }
                 }.disabled(locked).accessibilityIdentifier("onboarding-scenario")
-                Text(coordinator.settings.automaticSuggestions
+                JevBrand.text(coordinator.settings.automaticSuggestions
                      ? b("Jev Mode is on. When listening, complete questions can trigger suggestions.", "已开启 Jev Mode，监听时检测到完整提问可自动生成建议。")
-                     : b("Jev Mode is off. You can still ask manually.", "未开启 Jev Mode，你仍然可以手动提问。"))
+                     : b("Jev Mode is off. You can still ask manually.", "未开启 Jev Mode，你仍然可以手动提问。"), size: 11)
                     .font(.caption).foregroundStyle(.secondary)
             }
         case .models:
@@ -176,9 +176,9 @@ struct OnboardingView: View {
             Image(systemName: icon).foregroundStyle(LC.accent).frame(width: 20)
             VStack(alignment: .leading, spacing: 3) {
                 if title == "Jev Mode" {
-                    HStack(spacing: 7) {
-                        Text(b("Question recognition", "自动识别提问")).font(.system(size: 13, weight: .semibold))
-                        Text("Jev Mode").font(.custom(AppBrandTitle.fontName, size: 12)).foregroundStyle(.secondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        Text(JevBrand.name).font(.custom(AppBrandTitle.fontName, size: 15))
+                        Text(b("Question recognition", "自动识别提问")).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
                     }
                 } else {
                     Text(title).font(.system(size: 13, weight: .semibold))

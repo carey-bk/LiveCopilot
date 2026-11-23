@@ -155,7 +155,7 @@ struct OverlayView: View {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 LCStatusDot(tone: statusTone, pulsing: coordinator.isRunning && !speechFailed, size: 7)
                     .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
-                Text(t(coordinator.statusMessage)).font(.caption)
+                JevBrand.text(t(coordinator.statusMessage), size: 11).font(.caption)
                     .foregroundStyle(speechFailed ? LC.danger : Color.secondary).lineLimit(2).textSelection(.enabled)
             }
             if coordinator.isRunning, let notice = coordinator.captureNotice {
@@ -317,8 +317,14 @@ struct OverlayView: View {
                 .help(b("Turn off automatic docking to drag this header anywhere.", "关闭自动贴边后，可拖动这里自由移动窗口。"))
             Button { Task { await coordinator.toggle() } } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: coordinator.isRunning ? "stop.fill" : "play.fill").font(.system(size: 8, weight: .bold))
-                    Text(coordinator.isRunning ? b("Stop", "停止") : b("Listen", "监听")).font(.caption.weight(.semibold))
+                    if coordinator.isTransitioning {
+                        // Cold audio devices can take several seconds to start; keep the wait visible.
+                        LCSpinner(size: 9, color: coordinator.isRunning ? LC.danger : .white)
+                        Text(coordinator.isRunning ? b("Stopping", "停止中") : b("Starting", "启动中")).font(.caption.weight(.semibold))
+                    } else {
+                        Image(systemName: coordinator.isRunning ? "stop.fill" : "play.fill").font(.system(size: 8, weight: .bold))
+                        Text(coordinator.isRunning ? b("Stop", "停止") : b("Listen", "监听")).font(.caption.weight(.semibold))
+                    }
                 }
                 .padding(.horizontal, 10).frame(height: 24)
                 .foregroundStyle(coordinator.isRunning ? LC.danger : Color.white)

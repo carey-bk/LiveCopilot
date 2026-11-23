@@ -17,7 +17,9 @@ final class MicCaptureManager: ObservableObject {
     var testStartHandler: ((@escaping @Sendable (Data, TimeInterval) -> Void) async -> Bool)?
 
     private let log = Logger(subsystem: "com.livecopilot.app", category: "mic")
-    private var engine = AVAudioEngine()
+    /// AVAudioEngine work runs on its own serial queue: creating the input node of a cold audio
+    /// device took about 4 s on the main thread when listening started, freezing the app.
+    private let core = MicEngine()
     private var engineRevision = UUID()
     private let pcmConverter = PCMConverter()
     private var configurationObserver: NSObjectProtocol?
@@ -25,7 +27,7 @@ final class MicCaptureManager: ObservableObject {
     private var activeGate: MicSessionGate?
     private var activeSessionID = UUID()
     private var recoveries: [TimeInterval] = []
-    /// AVAudioEngine raises an Objective-C exception, which Swift cannot catch, on a second tap.
+    /// Main-actor mirror of the engine queue's tap state, for retry guards.
     private var tapInstalled = false
     /// Optional content-free level/arrival accounting; observed on the audio thread.
     var flow: AudioFlowMonitor?
@@ -33,11 +35,14 @@ final class MicCaptureManager: ObservableObject {
     var echo: EchoMonitor?
     func configure(sampleRate: Double) { if !isCapturing { pcmConverter.configure(sampleRate: sampleRate) } }
 
-    init() { observeEngine() }
+    init() {}
 
-    private func observeEngine() {
+    /// Follows configuration changes of the engine that is currently running.
+    private func observe(_ engine: MicEngine.EngineRef) {
+        engineRevision = UUID()
+        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
         let revision = engineRevision
-        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+        configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine.engine, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isCapturing, self.engineRevision == revision else { return }
                 self.recoverFromConfigurationChange()
@@ -81,8 +86,14 @@ final class MicCaptureManager: ObservableObject {
         guard !isCapturing else { gate.invalidate(); return }
         lastError = nil
         recoveries = []
-        rebuildEngine()
-        if startEngine(gate: gate) {
+        let started = await startEngine(gate: gate)
+        // stop() during the await already queued the engine teardown behind this start.
+        guard captureRevision == revision, !isCapturing else {
+            gate.invalidate()
+            if captureRevision != revision { tapInstalled = false }
+            return
+        }
+        if started {
             activeGate?.invalidate()
             activeGate = gate
             activeSessionID = sessionID
@@ -92,30 +103,15 @@ final class MicCaptureManager: ObservableObject {
         }
     }
 
-    /// Reads the current input format, installs the tap and starts the engine.
-    /// On failure, leaves no tap installed and sets `lastError`.
-    private func startEngine(gate: MicSessionGate) -> Bool {
-        let input = engine.inputNode
-
-        // Use the hardware microphone format. Voice processing can expose a
-        // multichannel input which converts to digital silence on built-in Macs.
-        CaptureDiagnostics.record(.micFormat)
-        let inputFormat = input.outputFormat(forBus: 0)
-        CaptureDiagnostics.record(.micFormat, details: .init(sampleRate: inputFormat.sampleRate.isFinite ? inputFormat.sampleRate : nil, channels: inputFormat.channelCount, echoCancellation: input.isVoiceProcessingEnabled))
-        guard inputFormat.sampleRate.isFinite, inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            CaptureDiagnostics.record(.micFailed)
-            lastError = "No microphone input available."
-            DebugLog.log("MIC no input format")
-            return false
-        }
-
+    /// Replaces the engine, reads the current input format, installs the tap and starts it on the
+    /// engine queue. On failure, leaves no tap installed and sets `lastError`.
+    private func startEngine(gate: MicSessionGate) async -> Bool {
+        pcmConverter.reset()
         let worker = pcmConverter, emit = onPCM16, flow = self.flow, echo = self.echo
-        CaptureDiagnostics.record(.micTap)
-        removeTap()
-        // `nil` taps the bus's current format. Passing the format read above raises an uncatchable
+        // `nil` taps the bus's current format. Passing a format read earlier raises an uncatchable
         // exception if the hardware format changes first (for example a Bluetooth headset switching
         // profile as its microphone opens). The converter follows each buffer's own format.
-        input.installTap(onBus: 0, bufferSize: 2048, format: nil) { buffer, when in
+        let tap: AVAudioNodeTapBlock = { buffer, when in
             if let data = worker.convert(buffer) {
                 let captureTime = EchoMonitor.captureEnd(
                     start: when.isHostTimeValid ? AVAudioTime.seconds(forHostTime: when.hostTime) : nil,
@@ -127,20 +123,15 @@ final class MicCaptureManager: ObservableObject {
                 }
             }
         }
-        tapInstalled = true
-
-        do {
-            CaptureDiagnostics.record(.micEngine)
-            engine.prepare()
-            try engine.start()
-            CaptureDiagnostics.record(.micReady, details: .init(sampleRate: inputFormat.sampleRate, channels: inputFormat.channelCount))
-            DebugLog.log("MIC capture started OK (input \(inputFormat.sampleRate)Hz)")
+        let result = await core.run { $0.rebuildAndStart(tap: tap) }
+        switch result {
+        case .success(let engine):
+            tapInstalled = true
+            observe(engine)
             return true
-        } catch {
-            CaptureDiagnostics.record(.micFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
-            lastError = error.localizedDescription
-            DebugLog.log("MIC capture FAILED: \(error.localizedDescription)")
-            removeTap()
+        case .failure(let message):
+            tapInstalled = false
+            lastError = message
             return false
         }
     }
@@ -151,30 +142,36 @@ final class MicCaptureManager: ObservableObject {
     /// Bounded so a device that keeps reconfiguring cannot cause a restart loop.
     private func recoverFromConfigurationChange() {
         // A new route change supersedes retries waiting for the previous route to settle.
-        captureRevision = UUID()
+        let revision = UUID(); captureRevision = revision
         activeGate?.invalidate()
         activeGate = nil
         CaptureDiagnostics.record(.micDeviceChanged)
         let now = ProcessInfo.processInfo.systemUptime
         recoveries = recoveries.filter { now - $0 < 30 } + [now]
-        rebuildEngine()
-        guard recoveries.count <= 3 else { stopAfterDeviceChange(); return }
-        let gate = MicSessionGate(sessionID: activeSessionID)
-        if startEngine(gate: gate) {
-            activeGate = gate
-            lastError = nil
-            DebugLog.log("MIC recovered after device configuration change")
-            return
+        guard recoveries.count <= 3 else {
+            tapInstalled = false
+            core.queue.async { [core] in core.stop() }
+            stopAfterDeviceChange(); return
         }
-        gate.invalidate()
-        // The new route's format can be briefly unavailable while it settles; retry once.
-        let revision = captureRevision
         Task { @MainActor [weak self] in
+            guard let self else { return }
+            let gate = MicSessionGate(sessionID: self.activeSessionID)
+            let started = await self.startEngine(gate: gate)
+            guard self.isCapturing, self.captureRevision == revision else { gate.invalidate(); return }
+            if started {
+                self.activeGate = gate
+                self.lastError = nil
+                DebugLog.log("MIC recovered after device configuration change")
+                return
+            }
+            gate.invalidate()
+            // The new route's format can be briefly unavailable while it settles; retry once.
             try? await Task.sleep(nanoseconds: 500_000_000)
-            guard let self, self.isCapturing, self.captureRevision == revision, !self.tapInstalled else { return }
-            self.rebuildEngine()
+            guard self.isCapturing, self.captureRevision == revision, !self.tapInstalled else { return }
             let retryGate = MicSessionGate(sessionID: self.activeSessionID)
-            if self.startEngine(gate: retryGate) {
+            let retried = await self.startEngine(gate: retryGate)
+            guard self.isCapturing, self.captureRevision == revision else { retryGate.invalidate(); return }
+            if retried {
                 self.activeGate = retryGate
                 self.lastError = nil
                 DebugLog.log("MIC recovered after device configuration change (retry)")
@@ -201,21 +198,44 @@ final class MicCaptureManager: ObservableObject {
         stop()
     }
 
+    /// Frames stop at once through the gate; the engine teardown runs in order on its queue.
     func stop() {
         captureRevision = UUID()
         activeGate?.invalidate()
         activeGate = nil
+        // Also tears down an engine whose start is still in flight.
+        core.queue.async { [core] in core.stop() }
+        tapInstalled = false
         guard isCapturing else { return }
-        removeTap()
-        engine.stop()
         pcmConverter.reset()
         isCapturing = false
         CaptureDiagnostics.record(.micStopped)
         DebugLog.log("MIC capture stopped")
     }
+}
+
+/// Owns AVAudioEngine. Every member except `queue` and `run` is used only on `queue`.
+private final class MicEngine: @unchecked Sendable {
+    struct EngineRef: @unchecked Sendable { let engine: AVAudioEngine }
+    enum StartResult: Sendable { case success(EngineRef), failure(String) }
+    let queue = DispatchQueue(label: "com.livecopilot.mic-engine", qos: .userInitiated)
+    private var engine: AVAudioEngine?
+    /// AVAudioEngine raises an Objective-C exception, which Swift cannot catch, on a second tap.
+    private var tapInstalled = false
+
+    func run<T: Sendable>(_ body: @escaping @Sendable (MicEngine) -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: body(self)) }
+        }
+    }
+
+    func stop() {
+        removeTap()
+        engine?.stop()
+    }
 
     private func removeTap() {
-        guard tapInstalled else { return }
+        guard tapInstalled, let engine else { return }
         engine.inputNode.removeTap(onBus: 0)
         tapInstalled = false
     }
@@ -223,16 +243,38 @@ final class MicCaptureManager: ObservableObject {
     /// A stopped engine can retain the old input-bus format after a Bluetooth route change.
     /// Replacing the graph refreshes that format; reinstalling a nil-format tap on the old
     /// graph still inherited 48 kHz while the AirPods hardware had moved to 24 kHz (-10868).
-    /// Called on MainActor after the notification callback returns, never from that callback.
-    private func rebuildEngine() {
-        engineRevision = UUID()
-        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver) }
-        configurationObserver = nil
-        removeTap()
-        engine.stop()
-        pcmConverter.reset()
-        engine = AVAudioEngine()
-        observeEngine()
+    func rebuildAndStart(tap: @escaping AVAudioNodeTapBlock) -> StartResult {
+        stop()
+        let engine = AVAudioEngine()
+        self.engine = engine
+        let input = engine.inputNode
+
+        // Use the hardware microphone format. Voice processing can expose a
+        // multichannel input which converts to digital silence on built-in Macs.
+        CaptureDiagnostics.record(.micFormat)
+        let inputFormat = input.outputFormat(forBus: 0)
+        CaptureDiagnostics.record(.micFormat, details: .init(sampleRate: inputFormat.sampleRate.isFinite ? inputFormat.sampleRate : nil, channels: inputFormat.channelCount, echoCancellation: input.isVoiceProcessingEnabled))
+        guard inputFormat.sampleRate.isFinite, inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            CaptureDiagnostics.record(.micFailed)
+            DebugLog.log("MIC no input format")
+            return .failure("No microphone input available.")
+        }
+        CaptureDiagnostics.record(.micTap)
+        input.installTap(onBus: 0, bufferSize: 2048, format: nil, block: tap)
+        tapInstalled = true
+        do {
+            CaptureDiagnostics.record(.micEngine)
+            engine.prepare()
+            try engine.start()
+            CaptureDiagnostics.record(.micReady, details: .init(sampleRate: inputFormat.sampleRate, channels: inputFormat.channelCount))
+            DebugLog.log("MIC capture started OK (input \(inputFormat.sampleRate)Hz)")
+            return .success(EngineRef(engine: engine))
+        } catch {
+            CaptureDiagnostics.record(.micFailed, code: (error as NSError).code, details: CaptureDiagnostics.errorDetails(error))
+            DebugLog.log("MIC capture FAILED: \(error.localizedDescription)")
+            removeTap()
+            return .failure(error.localizedDescription)
+        }
     }
 }
 

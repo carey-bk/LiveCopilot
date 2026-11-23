@@ -92,9 +92,9 @@ struct OnboardingReadyView: View {
                 Spacer(minLength: 0)
             }
             if !store.state.prefersTyping {
-                Text(coordinator.isMock ? b("Shows sample captions without recording or connecting to a service.", "显示示例字幕，不录音，也不连接真实服务。") : coordinator.settings.listeningService.isLocal
+                JevBrand.text(coordinator.isMock ? b("Shows sample captions without recording or connecting to a service.", "显示示例字幕，不录音，也不连接真实服务。") : coordinator.settings.listeningService.isLocal
                      ? b("Starts real audio capture. If Jev Mode is on, complete questions can trigger paid answer requests.", "点击后开始采集音频；开启 Jev Mode 时，完整问题可能触发付费回答请求。")
-                     : b("Starts audio streaming to OpenAI and may incur audio and answer API fees.", "点击后开始将音频发送至 OpenAI，可能产生语音及回答 API 费用。"))
+                     : b("Starts audio streaming to OpenAI and may incur audio and answer API fees.", "点击后开始将音频发送至 OpenAI，可能产生语音及回答 API 费用。"), size: 11)
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -143,7 +143,7 @@ struct OnboardingReadyView: View {
         HStack(spacing: 10) {
             Image(systemName: ready ? "checkmark.circle.fill" : "circle.dashed").foregroundStyle(ready ? LC.success : Color.secondary)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13, weight: .semibold))
+                JevBrand.text(title, size: 14).font(.system(size: 13, weight: .semibold))
                 Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)

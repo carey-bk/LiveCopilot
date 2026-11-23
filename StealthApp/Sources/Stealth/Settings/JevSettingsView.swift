@@ -45,15 +45,15 @@ struct JevSettingsView: View {
         switch laya.state {
         case .unsupported: return b("Unavailable on this Mac", "此 Mac 不支持")
         case .notInstalled: return b("Not downloaded", "未下载")
-        case .installed: return b("Downloaded · Not loaded", "已下载 · 未加载")
+        case .installed: return laya.wasVerified ? b("Ready · Loads when listening", "已就绪 · 监听时加载") : b("Downloaded · Not verified", "已下载 · 待验证")
         case .installing: return b("Downloading / Installing…", "正在下载与安装…")
         case .loading: return b("Loading and checking…", "正在加载与检测…")
         case .ready: return running ? b("Running", "运行中") : b("Loaded · Standby", "已加载 · 待机")
         case .failed: return b("Load / runtime failed", "加载或运行失败")
         }
     }
-    private var stateColor: Color { laya.state == .failed ? LC.danger : (laya.isReady ? LC.success : Color.secondary) }
-    private var stateIcon: String { laya.state == .failed ? "exclamationmark.circle" : (laya.isReady ? "checkmark.circle.fill" : "cpu") }
+    private var stateColor: Color { laya.state == .failed ? LC.danger : (laya.displayState == .ready ? LC.success : Color.secondary) }
+    private var stateIcon: String { laya.state == .failed ? "exclamationmark.circle" : (laya.displayState == .ready ? "checkmark.circle.fill" : "cpu") }
     private var sensitivity: JevSensitivity { .nearest(to: coordinator.settings.layaThreshold) }
     private var sensitivityLevels: [JevSensitivity] {
         return [.low, .medium, .high]

@@ -332,3 +332,24 @@ private struct OverlayScrollerProbe: NSViewRepresentable {
         deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     }
 }
+
+/// Small spinning ring for waits of unknown length; a static partial ring under Reduce Motion.
+struct LCSpinner: View {
+    var size: CGFloat = 10
+    var lineWidth: CGFloat = 1.6
+    var color: Color = .secondary
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var spinning = false
+    var body: some View {
+        ZStack {
+            Circle().stroke(color.opacity(0.25), lineWidth: lineWidth)
+            Circle().trim(from: 0, to: 0.7)
+                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(spinning ? 360 : 0))
+                .animation(reduceMotion ? nil : .linear(duration: 0.9).repeatForever(autoreverses: false), value: spinning)
+        }
+        .frame(width: size, height: size)
+        .onAppear { spinning = true }
+        .accessibilityHidden(true)
+    }
+}

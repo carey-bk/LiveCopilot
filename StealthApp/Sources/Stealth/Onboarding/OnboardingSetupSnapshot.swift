@@ -29,7 +29,7 @@ struct OnboardingSetupInventory {
         appleChecked = coordinator.appleSpeech.checkedLanguage == coordinator.settings.appleSpeechLanguage
         appleBusy = coordinator.appleSpeech.busy
         appleFailed = coordinator.appleSpeech.failedLanguage == coordinator.settings.appleSpeechLanguage
-        layaState = coordinator.laya.state; layaInstalled = coordinator.laya.isInstalled
+        layaState = coordinator.laya.displayState; layaInstalled = coordinator.laya.isInstalled
         layaDownloadBytes = coordinator.laya.downloadByteCount
         cloudKeyConfigured = coordinator.hasAPIKey
     }

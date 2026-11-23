@@ -458,6 +458,7 @@ final class AppCoordinator: ObservableObject {
             if !self.mic.isCapturing {
                 self.isRunning = false
                 self.invalidateAutomaticTrigger(releaseRuntime: !self.layaSelected)
+                self.scheduleLayaIdleRelease()
                 Task { @MainActor [weak self] in _ = await self?.saveSessionAsync() }
             }
         }.store(in: &cancellables)
@@ -476,35 +477,59 @@ final class AppCoordinator: ObservableObject {
             if !self.systemAudio.isCapturing {
                 self.isRunning = false
                 self.invalidateAutomaticTrigger(releaseRuntime: !self.layaSelected)
+                self.scheduleLayaIdleRelease()
                 Task { @MainActor [weak self] in _ = await self?.saveSessionAsync() }
             }
         }.store(in: &cancellables)
         sessions.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
         laya.$state.dropFirst().sink { [weak self] _ in
             // Published sends before mutation; read readiness on the next actor turn.
-            Task { @MainActor [weak self] in self?.configureAutomaticTrigger(prepare: false) }
+            Task { @MainActor [weak self] in
+                self?.configureAutomaticTrigger(prepare: false)
+                self?.scheduleLayaIdleRelease()
+            }
         }.store(in: &cancellables)
         localModels.$installed.dropFirst().sink { [weak self] _ in
             Task { @MainActor [weak self] in self?.prepareLocalRetrieval() }
         }.store(in: &cancellables)
         Task { await refreshKnowledge(); startIndexMigration() }
     }
-    /// Loads an installed Laya at launch or on the onboarding model step, so the first question of a
-    /// session is not missed during warmup. One automatic attempt per coordinator lifetime; failures
-    /// require an explicit retry. Never downloads. Installation already proceeds directly to
-    /// worker.prepare() inside LayaRuntimeManager.
+    /// Verifies an installed Laya that has never loaded successfully, at launch or on the onboarding
+    /// model step. A verified model is not preloaded: listening loads it, and status shows the last
+    /// successful verification. One automatic attempt per coordinator lifetime; failures require an
+    /// explicit retry. Never downloads. Installation already proceeds directly to worker.prepare().
     func prepareInstalledLayaIfNeeded() {
         guard !isMock, !isShuttingDown, !isRunning, !isTransitioning,
               settings.automaticSuggestions, settings.listeningService.isLocal,
               !onboarding.state.prefersTyping,
-              laya.state == .installed else { return }
+              laya.state == .installed, !laya.wasVerified else { return }
         laya.prepareInstalledOnce(enabled: true)
+    }
+
+    /// Idle time after which a loaded Laya (about 1 GB resident) is released. The next listening
+    /// session loads it again.
+    var layaIdleReleaseSeconds: TimeInterval = 600
+    private var layaIdleRelease: Task<Void, Never>?
+    /// Restarts the idle countdown while Laya is loaded and nothing is listening or testing it.
+    private func scheduleLayaIdleRelease() {
+        layaIdleRelease?.cancel(); layaIdleRelease = nil
+        guard laya.isReady, !isRunning, !isShuttingDown else { return }
+        let delay = layaIdleReleaseSeconds
+        layaIdleRelease = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, delay) * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            self.layaIdleRelease = nil
+            guard self.laya.isReady, !self.isRunning, !self.isTransitioning, !self.isTestingLaya, !self.isShuttingDown else {
+                self.scheduleLayaIdleRelease(); return
+            }
+            self.laya.stop()
+        }
     }
 
     /// Local transcribers use Laya; GPT-Live-1 owns its client delegation decisions.
     private var usesLaya: Bool { settings.listeningService.isLocal }
-    /// Laya stays loaded between sessions while this holds (about 1 GB resident), and is released
-    /// as soon as automatic suggestions or the local transcriber are turned off.
+    /// Laya stays loaded between sessions while this holds, until the idle release; it is released
+    /// at once when automatic suggestions or the local transcriber are turned off.
     private var layaSelected: Bool { settings.automaticSuggestions && usesLaya }
     private func invalidateAutomaticTrigger(releaseRuntime: Bool = true) {
         questions.clear(); syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
@@ -537,7 +562,7 @@ final class AppCoordinator: ObservableObject {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= 65536 else { throw LayaRuntimeError.invalidInput }
         isTestingLaya = true
-        defer { isTestingLaya = false }
+        defer { isTestingLaya = false; scheduleLayaIdleRelease() }
         let threshold = settings.layaThreshold
         let start = ProcessInfo.processInfo.systemUptime
         if layaPredictor == nil { try await laya.prepareAndWait() }
@@ -980,6 +1005,7 @@ final class AppCoordinator: ObservableObject {
         micToggleTask?.cancel()
         micToggleTask = nil
         if !isMock { LayaGateDiagnostics.begin() }
+        layaIdleRelease?.cancel(); layaIdleRelease = nil
         recordLaya(.idle)
         if !isMock { CaptureDiagnostics.record(.listeningStart, details: .init(listeningService: settings.listeningService.rawValue, captureMode: settings.mode.rawValue, automatic: settings.automaticSuggestions)) }
         prepareLocalRetrieval()
@@ -1487,6 +1513,7 @@ final class AppCoordinator: ObservableObject {
         incompleteLocalStop = false
         isRunning = false
         invalidateAutomaticTrigger(releaseRuntime: !layaSelected)
+        scheduleLayaIdleRelease()
         speakingSources = []
         questionTask?.cancel(); pendingAutomatic = nil; mockTask?.cancel(); audioCheckTask?.cancel()
         endOwnTurn(); captureNotice = nil

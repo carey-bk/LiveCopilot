@@ -19,3 +19,20 @@ struct AppBrandTitle: View {
         }.fixedSize(horizontal: true, vertical: false)
     }
 }
+
+/// Jev Mode is the headline feature, so its name always uses the wordmark face.
+enum JevBrand {
+    static let name = "Jev Mode"
+    /// `text` with every "Jev Mode" set in the wordmark face at `size`; other runs keep the
+    /// font applied to the returned Text.
+    static func text(_ text: String, size: CGFloat) -> Text {
+        var attributed = AttributedString(text)
+        var searchStart = attributed.startIndex
+        while searchStart < attributed.endIndex,
+              let range = attributed[searchStart...].range(of: name) {
+            attributed[range].swiftUI.font = .custom(AppBrandTitle.fontName, size: size)
+            searchStart = range.upperBound
+        }
+        return Text(attributed)
+    }
+}

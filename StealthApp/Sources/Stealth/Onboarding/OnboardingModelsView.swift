@@ -105,7 +105,7 @@ struct OnboardingModelsView: View {
                          : b("Detects complete questions and can trigger answer suggestions.", "用于判断提问是否完整，并在合适时机触发回答建议。"))
                     if coordinator.settings.automaticSuggestions && coordinator.settings.listeningService.isLocal {
                         if laya.state == .loading {
-                            HStack { ProgressView().controlSize(.small); Text(b("Verifying Jev Mode…", "正在验证 Jev Mode…")) }.font(.caption)
+                            HStack { ProgressView().controlSize(.small); JevBrand.text(b("Verifying Jev Mode…", "正在验证 Jev Mode…"), size: 11) }.font(.caption)
                         } else if laya.state == .failed {
                             HStack {
                                 Button(b("Retry verification", "重新验证")) { laya.prepare() }
@@ -172,7 +172,7 @@ struct OnboardingModelsView: View {
                                                 status: OnboardingCapabilityStatus, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Label(title, systemImage: icon).font(.system(size: 14, weight: .semibold))
+                Label { JevBrand.text(title, size: 15) } icon: { Image(systemName: icon) }.font(.system(size: 14, weight: .semibold))
                 OnboardingCapabilityBadge(status: status, language: coordinator.settings.language)
                 Spacer(minLength: 4)
                 Button(b("Advanced", "高级设置")) { detail = capability }

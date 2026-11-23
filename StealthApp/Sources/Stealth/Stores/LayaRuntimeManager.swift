@@ -41,6 +41,16 @@ final class LayaRuntimeManager: ObservableObject {
         return LayaNativeAssets.downloadSize(resources: resources, mode: backend)
     }
     var isReady: Bool { state == .ready }
+    private static let verifiedKey = "LayaVerifiedCheckpoint"
+    /// The last load of the installed checkpoint passed warmup. Kept across launches and idle
+    /// releases, so status can show ready without holding the worker in memory.
+    var wasVerified: Bool {
+        guard let checkpointID else { return false }
+        return defaults.string(forKey: Self.verifiedKey) == checkpointID && isInstalled
+    }
+    /// For status display: a released, previously verified model counts as ready. Runtime
+    /// decisions keep using `state` and `isReady`.
+    var displayState: State { state == .installed && wasVerified ? .ready : state }
     var isBusy: Bool { state == .installing || state == .loading }
     var isInstalled: Bool {
         return (try? LayaNativeAssets.pins(resources, backend).installed(at: nativeCurrent)) == true
@@ -165,6 +175,7 @@ final class LayaRuntimeManager: ObservableObject {
         stop()
         do {
             if FileManager.default.fileExists(atPath: root.path) { try FileManager.default.removeItem(at: root) }
+            defaults.removeObject(forKey: Self.verifiedKey)
             state = .notInstalled; progress = nil; transferProgress = nil; transferStatus = ""
             downloadFileIndex = nil; downloadFileTotal = nil
             message = "Laya model, runtime and download cache deleted."
@@ -233,11 +244,14 @@ final class LayaRuntimeManager: ObservableObject {
                     self.defaults.set(target.rawValue, forKey: "LayaBackend")
                 }
                 self.record("worker_ready · " + (mode.rawValue == "python" ? "python" : "livecopilot-laya") + " · " + mode.rawValue)
-                self.record("warmup_passed · \(self.checkpointID ?? "unknown")"); self.state = .ready; self.message = "Laya is ready. Detection runs offline."; self.task = nil
+                self.record("warmup_passed · \(self.checkpointID ?? "unknown")")
+                self.defaults.set(self.checkpointID, forKey: Self.verifiedKey)
+                self.state = .ready; self.message = "Laya is ready. Detection runs offline."; self.task = nil
             } catch {
                 if stamp == self.epoch {
                     self.worker?.stop(); self.worker = nil
                     self.installer?.stop(); self.installer = nil
+                    if !(error is CancellationError) { self.defaults.removeObject(forKey: Self.verifiedKey) }
                     self.record("load_or_install_failed · " + error.localizedDescription); self.task = nil; self.progress = nil; self.state = .failed
                     self.downloadFileIndex = nil; self.downloadFileTotal = nil
                     self.message = self.isInstalled

@@ -39,8 +39,15 @@ extension SettingsView {
                 .padding(.horizontal, 7).padding(.vertical, 3).lcWell(radius: LC.Radius.small)
                 .help(t("Show / Hide Overlay"))
             Button { Task { await coordinator.toggle() } } label: {
-                Label(coordinator.isRunning ? t("Stop Listening") : t("Start Listening"),
-                      systemImage: coordinator.isRunning ? "stop.fill" : "play.fill")
+                if coordinator.isTransitioning {
+                    HStack(spacing: 6) {
+                        LCSpinner(size: 11, color: .white)
+                        Text(coordinator.isRunning ? b("Stopping…", "正在停止…") : b("Starting…", "正在启动…"))
+                    }
+                } else {
+                    Label(coordinator.isRunning ? t("Stop Listening") : t("Start Listening"),
+                          systemImage: coordinator.isRunning ? "stop.fill" : "play.fill")
+                }
             }
             .buttonStyle(.borderedProminent).tint(coordinator.isRunning ? LC.danger : LC.accent)
             .disabled(coordinator.isTransitioning)

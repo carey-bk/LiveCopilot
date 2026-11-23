@@ -10,7 +10,7 @@ struct OnboardingAdvancedPanel<Content: View>: View {
     @ViewBuilder let content: () -> Content
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label(title, systemImage: icon).font(.system(size: 16, weight: .semibold))
+            Label { JevBrand.text(title, size: 17) } icon: { Image(systemName: icon) }.font(.system(size: 16, weight: .semibold))
             Divider()
             LCScrollView {
                 VStack(alignment: .leading, spacing: 16) { content() }
