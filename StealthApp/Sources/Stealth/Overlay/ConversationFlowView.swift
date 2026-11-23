@@ -126,7 +126,7 @@ struct ConversationJumpLabel: View {
             .font(.caption.weight(.semibold)).foregroundStyle(.primary)
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(ConversationJumpBackdrop().allowsHitTesting(false))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(0.14)))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(LC.hairline))
             .contentShape(RoundedRectangle(cornerRadius: 10))
             .shadow(color: .black.opacity(0.14), radius: 5, y: 2)
     }
@@ -166,6 +166,15 @@ struct AnswerMessageView: View {
         case .failed: return b("Failed", "生成失败")
         }
     }
+    private var statusTone: LC.Tone {
+        switch store.state {
+        case .queued: return .neutral
+        case .generating: return .accent
+        case .completed: return .success
+        case .interrupted: return .warning
+        case .failed: return .danger
+        }
+    }
     static func isEvidence(_ title: String) -> Bool {
         let key = title.lowercased()
         return key.contains("依据") || key.contains("依據") || key.contains("evidence") || key.contains("notes") || key.contains("证据") || key.contains("备注") || key.contains("说明")
@@ -173,19 +182,21 @@ struct AnswerMessageView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Label(record.automatic ? b("Automatic suggestion", "自动建议") : b("Manual question", "手动提问"),
-                          systemImage: record.automatic ? "waveform" : "text.bubble")
+                HStack(spacing: 6) {
+                    LCPill(text: record.automatic ? b("Automatic suggestion", "自动建议") : b("Manual question", "手动提问"),
+                           tone: record.automatic ? .pink : .accent, systemImage: record.automatic ? "waveform" : "text.bubble")
                     Spacer()
-                    Text(record.createdAt, style: .time)
-                }.font(.caption2).foregroundStyle(.secondary)
+                    Text(record.createdAt, style: .time).font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                }
                 Text(store.question).font(.system(size: fontSize, weight: .semibold))
                     .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-            }.padding(10).background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 9))
+            }.padding(10)
+                .background(LC.accent.opacity(0.06), in: RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous).strokeBorder(LC.accent.opacity(0.12)))
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 6) {
                     if store.isLoading { ProgressView().controlSize(.mini) }
-                    Text(status).font(.caption2).foregroundStyle(.secondary)
+                    LCPill(text: status, tone: statusTone)
                     Spacer()
                     if !store.text.isEmpty {
                         Button(t("Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(AnswerEmphasis.plainText(store.text, streaming: store.isLoading), forType: .string) }

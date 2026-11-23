@@ -69,7 +69,7 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if !answerOnly { voiceSection }
                     actions.frame(height: 28)
-                    if demonstrationAnswer == nil { bottom.frame(height: answerOnly ? 28 : 78, alignment: .top) }
+                    if demonstrationAnswer == nil { bottom.frame(height: answerOnly ? 34 : 86, alignment: .top) }
                     Divider()
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -152,11 +152,17 @@ struct OverlayView: View {
     private var top: some View {
         VStack(alignment: .leading, spacing: 10) {
             header.padding(.trailing, 16)
-            Text(t(coordinator.statusMessage)).font(.caption).foregroundStyle(.secondary).lineLimit(2).textSelection(.enabled)
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                LCStatusDot(tone: statusTone, pulsing: coordinator.isRunning && !speechFailed, size: 7)
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                Text(t(coordinator.statusMessage)).font(.caption)
+                    .foregroundStyle(speechFailed ? LC.danger : Color.secondary).lineLimit(2).textSelection(.enabled)
+            }
             if coordinator.isRunning, let notice = coordinator.captureNotice {
                 Label(t(notice), systemImage: "exclamationmark.triangle.fill")
                     .font(.caption).foregroundStyle(LC.warning).lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
+                    .lcCallout(.warning, padding: 8)
                     .accessibilityIdentifier("capture-notice")
             }
             if coordinator.isRunning {
@@ -199,8 +205,14 @@ struct OverlayView: View {
         HStack(spacing: 6) {
             ForEach(coordinator.settings.enabledSuggestionModes) { mode in
                 Button { coordinator.requestSuggestion(mode: mode) } label: {
-                    Label(t(mode.label), systemImage: mode.systemImage).font(.caption).labelStyle(style)
+                    Label(t(mode.label), systemImage: mode.systemImage).font(.caption.weight(.medium)).labelStyle(style)
+                        .padding(.horizontal, 10).frame(height: 26)
+                        .foregroundStyle(mode == .reply ? LC.accent : Color.primary)
+                        .background(mode == .reply ? LC.accent.opacity(0.12) : Color.primary.opacity(0.06), in: Capsule())
+                        .overlay(Capsule().strokeBorder(mode == .reply ? LC.accent.opacity(0.22) : LC.hairline))
+                        .contentShape(Capsule())
                 }
+                .buttonStyle(.plain)
                 .fixedSize()
                 .help(t(mode.label) + " · " + hotkeys.combo(for: mode).display)
                 .accessibilityIdentifier("action-" + mode.rawValue)
@@ -222,13 +234,7 @@ struct OverlayView: View {
     }
     private var bottom: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .center) {
-                TextField(t("Ask anything — listening can be off"), text: $query, axis: .vertical)
-                    .textFieldStyle(.roundedBorder).lineLimit(1).frame(height: 28)
-                    .onSubmit { submit() }.accessibilityIdentifier("manual-query")
-                    .onboardingHighlight(onboarding.visibleTip == .start && onboarding.state.prefersTyping)
-                Button(t("Ask")) { submit() }.disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
+            composer
             if !answerOnly {
                 HStack {
                     Toggle(t("Use recent conversation"), isOn: $coordinator.includeConversation).font(.caption2).toggleStyle(OverlaySwitchStyle())
@@ -248,6 +254,35 @@ struct OverlayView: View {
         }
     }
     private func submit() { let value = query; query = ""; coordinator.askText(value) }
+    private var canAsk: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// AI input bar: sparkle, plain field and a round send button inside a soft brand-gradient outline.
+    private var composer: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: "sparkles").font(.system(size: 12, weight: .semibold)).foregroundStyle(LC.accent)
+                .accessibilityHidden(true)
+            TextField(t("Ask anything — listening can be off"), text: $query, axis: .vertical)
+                .textFieldStyle(.plain).lineLimit(1)
+                .onSubmit { submit() }.accessibilityIdentifier("manual-query")
+            Button { submit() } label: {
+                Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 22, height: 22)
+                    .background(canAsk ? LC.accent : Color.secondary.opacity(0.35), in: Circle())
+            }
+            .buttonStyle(.plain).disabled(!canAsk)
+            .help(t("Ask")).accessibilityLabel(t("Ask")).accessibilityIdentifier("manual-query-submit")
+        }
+        .padding(.leading, 10).padding(.trailing, 6).frame(height: 34)
+        .background(Color(nsColor: .textBackgroundColor).opacity(0.92), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .strokeBorder(LinearGradient(colors: [LC.accent.opacity(0.55), LC.accentPink.opacity(0.45)], startPoint: .leading, endPoint: .trailing), lineWidth: 1))
+        .onboardingHighlight(onboarding.visibleTip == .start && onboarding.state.prefersTyping)
+    }
+    private var speechFailed: Bool { coordinator.speechRuntime == .failed && !coordinator.isRunning }
+    private var statusTone: LC.Tone {
+        if speechFailed { return .danger }
+        if coordinator.isTransitioning { return .warning }
+        return coordinator.isRunning ? .success : .neutral
+    }
     private var layoutToggle: some View {
         let label = answerOnly ? b("Show full view", "恢复完整模式") : b("Show answers only", "切换到精简模式")
         return Button {
@@ -274,16 +309,22 @@ struct OverlayView: View {
 
     private var header: some View {
         HStack {
-            HStack {
+            HStack(spacing: 8) {
                 AppBrandTitle(iconSize: 22)
-                if coordinator.isMock && demonstrationAnswer == nil { Text(t("MOCK")).font(.caption2.bold()).foregroundStyle(LC.warning) }
+                if coordinator.isMock && demonstrationAnswer == nil { LCPill(text: t("MOCK"), tone: .warning) }
                 Spacer(minLength: 0)
             }.overlay { OverlayDragRegion() }
                 .help(b("Turn off automatic docking to drag this header anywhere.", "关闭自动贴边后，可拖动这里自由移动窗口。"))
             Button { Task { await coordinator.toggle() } } label: {
-                Image(systemName: coordinator.isRunning ? "stop.circle.fill" : "play.circle.fill")
-                    .foregroundStyle(coordinator.isRunning ? LC.danger : .green)
-            }.disabled(coordinator.isTransitioning).help(t(coordinator.isRunning ? "Stop listening" : "Start listening"))
+                HStack(spacing: 4) {
+                    Image(systemName: coordinator.isRunning ? "stop.fill" : "play.fill").font(.system(size: 8, weight: .bold))
+                    Text(coordinator.isRunning ? b("Stop", "停止") : b("Listen", "监听")).font(.caption.weight(.semibold))
+                }
+                .padding(.horizontal, 10).frame(height: 24)
+                .foregroundStyle(coordinator.isRunning ? LC.danger : Color.white)
+                .background(coordinator.isRunning ? LC.danger.opacity(0.13) : LC.accent, in: Capsule())
+                .contentShape(Capsule())
+            }.buttonStyle(.plain).fixedSize().disabled(coordinator.isTransitioning).help(t(coordinator.isRunning ? "Stop listening" : "Start listening"))
                 .accessibilityIdentifier("overlay-toggle-listening")
                 .onboardingHighlight(onboarding.visibleTip == .start && !onboarding.state.prefersTyping)
             Button { Task { await coordinator.resetConversation() } } label: { Image(systemName: "arrow.clockwise") }
@@ -305,11 +346,13 @@ struct OverlayView: View {
             layoutToggle
             Button { (NSApp.windows.first(where: { $0 is OverlayWindow }) as? OverlayWindow)?.tuckAway() } label: { Image(systemName: "minus") }
                 .help(t("Hide ({shortcut})").replacingOccurrences(of: "{shortcut}", with: hotkeys.toggleOverlay.display))
-        }.buttonStyle(.borderless)
+        }.buttonStyle(.borderless).foregroundStyle(.secondary)
     }
     private var transcriptViewportHeight: CGFloat {
         if demonstrationAnswer != nil { return 60 }
-        return transcriptCollapsed ? NSLayoutManager().defaultLineHeight(for: NSFont.systemFont(ofSize: transcriptSize)) * 3 + 6 : 90
+        let line = NSLayoutManager().defaultLineHeight(for: NSFont.systemFont(ofSize: transcriptSize))
+        // Expanded keeps about three rows visible at any text size (90 pt at the default size).
+        return transcriptCollapsed ? line * 3 + 6 : max(90, line * 3 + 18)
     }
     private var transcriptView: some View {
         ScrollViewReader { proxy in
@@ -350,7 +393,7 @@ struct OverlayView: View {
     // Both states use the same rows and columns. Only the scroll viewport height changes.
     private func transcriptRow(_ source: String, speaker: Speaker, translated: String?, partial: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            transcriptTextRow(source, label: t(speaker.rawValue), color: speaker == .you ? .blue : .green,
+            transcriptTextRow(source, label: t(speaker.rawValue), color: speaker == .you ? LC.accent : LC.accentPink,
                               textColor: partial ? .secondary : .primary, selectable: !partial)
             if let translated {
                 transcriptTextRow(translated, label: b("Tr.", "译"), color: LC.accent, textColor: LC.accent, selectable: !partial)
@@ -377,9 +420,11 @@ struct OverlayView: View {
     }
     private var footer: some View {
         HStack {
-            Text(t(coordinator.settings.scenario.rawValue)).font(.caption2).foregroundStyle(.secondary)
+            Label(t(coordinator.settings.scenario.rawValue), systemImage: "theatermasks").font(.caption2).foregroundStyle(.secondary)
             Spacer()
-            Text(hotkeys.toggleOverlay.display).font(.caption2).foregroundStyle(.tertiary)
+            Text(hotkeys.toggleOverlay.display).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                 .onboardingHighlight(onboarding.visibleTip == .visibility)
         }
     }
