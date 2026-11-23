@@ -229,7 +229,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyPreferences(_ settings: AppSettings) {
         hotkeys.setEnabledModes(settings.enabledSuggestionModes)
         for window in [overlay, settingsWindow, historyWindow, onboardingWindow].compactMap({ $0 }) {
-            applyAppearance(to: window, background: window is OverlayWindow ? settings.background : .white)
+            if window is OverlayWindow || window === onboardingWindow {
+                applyAppearance(to: window, background: window is OverlayWindow ? settings.background : .white)
+            } else {
+                applyAdaptiveAppearance(to: window)
+            }
             if !(window is OverlayWindow) { window.sharingType = .readOnly }
         }
         let preview = coordinator.isMock && (AppPaths.isOnboardingPreview || ProcessInfo.processInfo.arguments.contains("--ui-preview"))
@@ -240,6 +244,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         historyWindow?.title = L10n.text("LiveCopilot — History", language: settings.language)
         onboardingWindow?.title = ServiceGuide.text("Welcome to LiveCopilot", "欢迎使用 LiveCopilot", settings.language)
         syncGuidancePresentation()
+    }
+
+    /// Settings and History follow the system appearance on the design-system canvas.
+    private func applyAdaptiveAppearance(to window: NSWindow) {
+        window.appearance = nil
+        window.isOpaque = true
+        window.backgroundColor = LC.canvasNSColor
     }
 
     private func applyAppearance(to window: NSWindow, background: AppBackground) {
@@ -318,7 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DebugLog.log("overlay.visibility visible=\(overlay?.isVisible == true)")
     }
 
-    func openSettings(initialPage: SettingsPage = .general) {
+    func openSettings(initialPage: SettingsPage = .overview) {
         if let settingsWindow {
             settingsWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -328,7 +339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = NSWindow(contentViewController: hosting)
         window.title = L10n.text("LiveCopilot Settings", language: coordinator.settings.language)
         window.sharingType = .readOnly
-        applyAppearance(to: window, background: .white)
+        applyAdaptiveAppearance(to: window)
         window.styleMask = [.titled, .closable, .resizable, .fullSizeContentView]
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
@@ -399,7 +410,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = NSWindow(contentViewController: hosting)
         window.title = L10n.text("LiveCopilot — History", language: coordinator.settings.language)
         window.sharingType = .readOnly
-        applyAppearance(to: window, background: .white)
+        applyAdaptiveAppearance(to: window)
         window.styleMask = [.titled, .closable, .resizable]
         window.isReleasedWhenClosed = false
         window.setContentSize(NSSize(width: 720, height: 460))

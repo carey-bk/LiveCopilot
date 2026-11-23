@@ -8,7 +8,7 @@ import Foundation
 ///     --mock --ui-preview --ui-fixture listening|streaming|answered|session|error|notice
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge
-///     --ui-settings-page <SettingsPage index>   --ui-open-history
+///     --ui-settings-page <SettingsPage case name>   --ui-open-history
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
 enum UIFixture {
@@ -58,8 +58,9 @@ enum UIFixture {
             break
         }
 
-        if let raw = value("--ui-settings-page"), let index = Int(raw), SettingsPage.allCases.indices.contains(index) {
-            openSettings(SettingsPage.allCases[index])
+        if let raw = value("--ui-settings-page"),
+           let page = SettingsPage.allCases.first(where: { String(describing: $0) == raw }) {
+            openSettings(page)
         }
         if flag("--ui-open-history") { openHistory() }
         if let folder = value("--ui-snapshot") { await snapshot(into: URL(fileURLWithPath: folder)) }

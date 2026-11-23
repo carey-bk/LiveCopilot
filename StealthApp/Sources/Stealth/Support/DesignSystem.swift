@@ -24,7 +24,8 @@ enum LC {
     /// Brand pink from the app icon; the far-end speaker and secondary highlights.
     static let accentPink = dynamic(light: 0xD9488B, dark: 0xFF7AB5)
     /// Window canvas behind cards.
-    static let canvas = dynamic(light: 0xF5F6F8, dark: 0x1B1C1F)
+    static let canvasNSColor = dynamicNS(light: 0xF5F6F8, dark: 0x1B1C1F)
+    static let canvas = Color(nsColor: canvasNSColor)
     /// Card and raised surfaces.
     static let surface = dynamic(light: 0xFFFFFF, dark: 0x26272B)
     /// Recessed wells inside a card (text editors, inline groups).
@@ -49,10 +50,13 @@ enum LC {
     }
 
     private static func dynamic(light: UInt32, lightAlpha: CGFloat = 1, dark: UInt32, darkAlpha: CGFloat = 1) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
+        Color(nsColor: dynamicNS(light: light, lightAlpha: lightAlpha, dark: dark, darkAlpha: darkAlpha))
+    }
+    private static func dynamicNS(light: UInt32, lightAlpha: CGFloat = 1, dark: UInt32, darkAlpha: CGFloat = 1) -> NSColor {
+        NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             return rgb(isDark ? dark : light, alpha: isDark ? darkAlpha : lightAlpha)
-        })
+        }
     }
     private static func rgb(_ hex: UInt32, alpha: CGFloat) -> NSColor {
         NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
