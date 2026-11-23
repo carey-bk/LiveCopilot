@@ -239,6 +239,8 @@ enum L10n {
         "Unpin and hide at right edge": "取消固定并贴右侧隐藏",
         "Listening — waiting for speech": "正在监听，等待讲话",
         "Translucent glass": "半透明毛玻璃",
+        "Liquid Glass": "液态玻璃",
+        "Liquid Glass uses the macOS 26 material, refracting and adapting to what is behind the window.": "液态玻璃使用 macOS 26 的新材质，随窗口后方的内容折射与变化。",
         "Soft frosted": "微透磨砂",
         "Solid white": "纯白底色",
         "Translucent glass lets more of your desktop show through.": "半透明毛玻璃保留更多桌面背景层次。",

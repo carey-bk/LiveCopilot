@@ -5,6 +5,7 @@ import Combine
 final class AppCoordinator: ObservableObject {
     let transcript = TranscriptStore()
     let translation = TranscriptTranslationStore()
+    let levels = AudioLevelStore()
     private var translationCredentialReference: CredentialReference?
     /// Test-only factory to observe which translation provider/credential is active during key changes.
     internal var testTranslationProviderFactory: ((_ liveKey: String?, _ analysisKey: String?) throws -> any ReasoningProvider)?
@@ -370,7 +371,14 @@ final class AppCoordinator: ObservableObject {
     }
     @Published private(set) var layaLastScore: Double?
     @Published var knowledgeDocuments: [KnowledgeDocument] = []
-    @Published var isIndexing = false
+    @Published var isIndexing = false {
+        didSet {
+            if isIndexing { indexingFinishedAt = nil }
+            else if oldValue { indexingFinishedAt = Date() }
+        }
+    }
+    /// When the last indexing run ended; Knowledge collapses a successful run's status after a moment.
+    @Published private(set) var indexingFinishedAt: Date?
     @Published private(set) var indexingProgress = 0.0
     @Published private(set) var indexingDocumentCount = 0
     @Published private(set) var indexingCompletedDocumentCount = 0
@@ -482,6 +490,18 @@ final class AppCoordinator: ObservableObject {
             }
         }.store(in: &cancellables)
         sessions.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
+        $isRunning.removeDuplicates().sink { [weak self] running in
+            guard let self else { return }
+            // Meter sampling runs only while listening; idle overlays do no periodic work.
+            if running {
+                self.levels.start { [weak self] in
+                    guard let self else { return (0, 0) }
+                    return (self.micFlow.level(), self.systemFlow.level())
+                }
+            } else {
+                self.levels.stop()
+            }
+        }.store(in: &cancellables)
         laya.$state.dropFirst().sink { [weak self] _ in
             // Published sends before mutation; read readiness on the next actor turn.
             Task { @MainActor [weak self] in

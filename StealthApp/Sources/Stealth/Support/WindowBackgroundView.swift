@@ -24,7 +24,18 @@ struct WindowBackgroundView: View {
 
     @ViewBuilder var body: some View {
         let lightweight = Self.usesLightweightSurface()
-        switch style {
+        switch style.effective {
+        case .liquidGlass:
+            if isOverlay && !lightweight, #available(macOS 26, *) {
+                // The overlay clips to its panel shape; the glass fills it edge to edge.
+                Rectangle().fill(.clear)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: LC.Radius.panel, style: .continuous))
+            } else if isOverlay {
+                // Intel and Reduce Transparency keep the lightweight surface (no live backdrop work).
+                Color(nsColor: .windowBackgroundColor).opacity(0.94)
+            } else {
+                Color(nsColor: .windowBackgroundColor)
+            }
         case .glass:
             if isOverlay {
                 if lightweight {

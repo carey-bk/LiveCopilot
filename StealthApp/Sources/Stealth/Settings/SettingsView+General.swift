@@ -29,11 +29,11 @@ extension SettingsView {
                     Text(t("Changes apply immediately. Set the answer language separately in the floating panel.")).font(.caption).foregroundStyle(.secondary)
                     Divider()
                     Picker(t("Floating window background"), selection: $coordinator.settings.background) {
-                        ForEach(AppBackground.allCases) { background in
+                        ForEach(AppBackground.available) { background in
                             Text(t(background.label)).tag(background)
                         }
                     }.pickerStyle(.segmented).accessibilityIdentifier("window-background")
-                    Text(t(coordinator.settings.background.detail)).font(.caption).foregroundStyle(.secondary)
+                    Text(t(coordinator.settings.background.effective.detail)).font(.caption).foregroundStyle(.secondary)
                     Divider()
                     HStack(alignment: .top, spacing: 24) {
                         fontSizeControl(b("Transcript text", "流式识别区字号"), value: $coordinator.settings.transcriptFontSize, identifier: "transcript-font-size",

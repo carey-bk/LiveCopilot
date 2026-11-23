@@ -396,6 +396,23 @@ final class NativeTests: XCTestCase {
         XCTAssertTrue(restored.excludeOverlayFromCapture)
         XCTAssertEqual(restored.background, .white)
     }
+    func testLiquidGlassBackgroundRoundTripsAndFallsBackBeforeMacOS26() throws {
+        var settings = AppSettings()
+        settings.background = .liquidGlass
+        let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(restored.background, .liquidGlass)
+        if #available(macOS 26, *) {
+            XCTAssertTrue(AppBackground.available.contains(.liquidGlass))
+            XCTAssertEqual(restored.background.effective, .liquidGlass)
+        } else {
+            XCTAssertFalse(AppBackground.available.contains(.liquidGlass))
+            XCTAssertEqual(restored.background.effective, .glass)
+        }
+        // Liquid Glass follows the system appearance like glass; the light backgrounds stay light.
+        XCTAssertFalse(AppBackground.liquidGlass.usesLightAppearance)
+        XCTAssertTrue(AppBackground.white.usesLightAppearance)
+        XCTAssertEqual(AppBackground.white.effective, .white)
+    }
     func testDebugLogRotatesAtItsBoundAndKeepsOnePreviousFile() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LiveCopilot-DebugLog-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
