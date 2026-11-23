@@ -23,7 +23,7 @@ enum ScenarioProfile: String, Codable, CaseIterable, Identifiable {
 }
 
 struct AppSettings: Codable, Equatable {
-    var listeningService = ListeningService.zipformer
+    var listeningService = ListeningService.apple
     var liveSpeechLanguage = LiveSpeechLanguage.mixed
     var professionalTerms = ProfessionalTerms.examples
     var professionalTermsEnabled = false

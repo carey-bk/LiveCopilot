@@ -38,12 +38,14 @@ struct OverlayView: View {
     @State private var query = ""
     @State private var followTranscript = true
     @AppStorage("overlayTranscriptCollapsed") private var transcriptCollapsed = false
+    @AppStorage("overlayAnswerOnly") private var answerOnly = false
     @State private var layoutMetrics = OverlayLayoutMetrics()
     var demonstrationAnswer: AppCoordinator.AnswerRecord?
     var onContentHeight: (CGFloat) -> Void
     var onMinimumHeight: (CGFloat) -> Void
     init(coordinator: AppCoordinator, demonstrationAnswer: AppCoordinator.AnswerRecord? = nil, transcriptPreferences: UserDefaults = .standard, onContentHeight: @escaping (CGFloat) -> Void = { _ in }, onMinimumHeight: @escaping (CGFloat) -> Void = { _ in }) {
         _transcriptCollapsed = AppStorage(wrappedValue: false, "overlayTranscriptCollapsed", store: transcriptPreferences)
+        _answerOnly = AppStorage(wrappedValue: false, "overlayAnswerOnly", store: transcriptPreferences)
         self.demonstrationAnswer = demonstrationAnswer
         self.coordinator = coordinator; translation = coordinator.translation; transcript = coordinator.transcript; hotkeys = coordinator.hotkeys
         onboarding = coordinator.onboarding
@@ -65,44 +67,9 @@ struct OverlayView: View {
         GeometryReader { geometry in
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 10) {
-                    top.fixedSize(horizontal: false, vertical: true)
-                    if let step = onboarding.visibleTip {
-                        OverlayFirstUseTip(step: step, coordinator: coordinator)
-                    }
-                    HStack {
-                        Button { transcriptCollapsed.toggle() } label: {
-                            Label(b(transcriptCollapsed ? "Expand transcript" : "Collapse transcript", transcriptCollapsed ? "展开转写" : "折叠转写"),
-                                  systemImage: transcriptCollapsed ? "chevron.down" : "chevron.up")
-                        }.buttonStyle(.borderless).font(.caption)
-                            .accessibilityIdentifier("transcript-collapse")
-                        Spacer()
-                        Button { showTranslation.toggle() } label: {
-                            Label(translation.enabled ? (translation.busy ? "… " : "") + translation.target.rawValue : b("Translate", "翻译"), systemImage: "character.bubble")
-                        }.buttonStyle(.borderless).font(.caption)
-                            .accessibilityIdentifier("transcript-translation")
-                            .popover(isPresented: $showTranslation) {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text(b("Transcript translation", "转写翻译")).font(.headline)
-                                    Picker(b("Target language", "目标语言"), selection: $translationTarget) {
-                                        ForEach(TranscriptTranslationStore.Language.allCases) { Text($0.rawValue).tag($0) }
-                                    }
-                                    Text(b("Uses your configured answer model. Enabling sends the latest utterance and subsequent stable transcript previews to that service and uses its API quota. Original text is retained. A slow service only processes the latest 20 lines.", "使用已配置的回答模型。开启后会向该服务发送最近一句及后续稳定的临时转写文字，并消耗 API 用量。保留原文；服务较慢时仅处理最近 20 条转写。")).font(.caption).fixedSize(horizontal: false, vertical: true)
-                                    Button(translation.enabled ? b("Apply language / retry", "应用语言 / 重试") : b("Enable translation", "开启翻译")) {
-                                        coordinator.setTranscriptTranslation(translationTarget); showTranslation = false
-                                    }
-                                    if translation.enabled {
-                                        Button(b("Stop translation", "关闭翻译")) { coordinator.setTranscriptTranslation(nil); showTranslation = false }
-                                    }
-                                }.padding(16).frame(width: 310)
-                            }
-                    }
-                    if translation.enabled && translation.failed {
-                        Text(b("Translation failed. Reopen Translation to retry; original text is retained.", "翻译失败，请重新开启翻译重试；原文已保留。")).font(.caption2).foregroundStyle(.orange)
-                    }
-                    transcriptView
-                    Divider()
+                    if !answerOnly { voiceSection }
                     actions.frame(height: 28)
-                    if demonstrationAnswer == nil { bottom.frame(height: 78, alignment: .top) }
+                    if demonstrationAnswer == nil { bottom.frame(height: answerOnly ? 28 : 78, alignment: .top) }
                     Divider()
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -144,6 +111,44 @@ struct OverlayView: View {
         .onAppear { reportSize() }
         .onDisappear { layoutMetrics.cancelTranscriptScroll() }
     }
+    @ViewBuilder private var voiceSection: some View {
+        top.fixedSize(horizontal: false, vertical: true)
+        if let step = onboarding.visibleTip {
+            OverlayFirstUseTip(step: step, coordinator: coordinator)
+        }
+        HStack {
+            Button { transcriptCollapsed.toggle() } label: {
+                Label(b(transcriptCollapsed ? "Expand transcript" : "Collapse transcript", transcriptCollapsed ? "展开转写" : "折叠转写"),
+                      systemImage: transcriptCollapsed ? "chevron.down" : "chevron.up")
+            }.buttonStyle(.borderless).font(.caption)
+                .accessibilityIdentifier("transcript-collapse")
+            Spacer()
+            Button { showTranslation.toggle() } label: {
+                Label(translation.enabled ? (translation.busy ? "… " : "") + translation.target.rawValue : b("Translate", "翻译"), systemImage: "character.bubble")
+            }.buttonStyle(.borderless).font(.caption)
+                .accessibilityIdentifier("transcript-translation")
+                .popover(isPresented: $showTranslation) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(b("Transcript translation", "转写翻译")).font(.headline)
+                        Picker(b("Target language", "目标语言"), selection: $translationTarget) {
+                            ForEach(TranscriptTranslationStore.Language.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        Text(b("Uses your configured answer model. Enabling sends the latest utterance and subsequent stable transcript previews to that service and uses its API quota. Original text is retained. A slow service only processes the latest 20 lines.", "使用已配置的回答模型。开启后会向该服务发送最近一句及后续稳定的临时转写文字，并消耗 API 用量。保留原文；服务较慢时仅处理最近 20 条转写。")).font(.caption).fixedSize(horizontal: false, vertical: true)
+                        Button(translation.enabled ? b("Apply language / retry", "应用语言 / 重试") : b("Enable translation", "开启翻译")) {
+                            coordinator.setTranscriptTranslation(translationTarget); showTranslation = false
+                        }
+                        if translation.enabled {
+                            Button(b("Stop translation", "关闭翻译")) { coordinator.setTranscriptTranslation(nil); showTranslation = false }
+                        }
+                    }.padding(16).frame(width: 310)
+                }
+        }
+        if translation.enabled && translation.failed {
+            Text(b("Translation failed. Reopen Translation to retry; original text is retained.", "翻译失败，请重新开启翻译重试；原文已保留。")).font(.caption2).foregroundStyle(.orange)
+        }
+        transcriptView
+        Divider()
+    }
     private var top: some View {
         VStack(alignment: .leading, spacing: 10) {
             header.padding(.trailing, 16)
@@ -176,25 +181,43 @@ struct OverlayView: View {
             }
         }
     }
-    private var actions: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                ForEach(coordinator.settings.enabledSuggestionModes) { mode in
-                    Button { coordinator.requestSuggestion(mode: mode) } label: { Label(t(mode.label), systemImage: mode.systemImage).font(.caption) }
-                        .help(hotkeys.combo(for: mode).display).accessibilityIdentifier("action-" + mode.rawValue)
-                        .onboardingHighlight(onboarding.visibleTip == .answer && mode == .reply)
-                }
-                Spacer(minLength: 4)
-                Menu {
-                    Picker(t("Answer language"), selection: $coordinator.settings.answerLanguage) {
-                        ForEach(AnswerLanguage.allCases) { language in Text(language.label).tag(language) }
-                    }.pickerStyle(.inline)
-                } label: {
-                    Label(coordinator.settings.answerLanguage.label, systemImage: "globe")
-                        .font(.caption)
-                }.fixedSize().help(t("Answer language"))
-                    .accessibilityIdentifier("answer-language")
+    @ViewBuilder private var actions: some View {
+        if answerOnly {
+            ViewThatFits(in: .horizontal) {
+                actionRow(.titleAndIcon)
+                actionRow(.titleOnly)
+                actionRow(.iconOnly)
             }
+            // Outer padding supplies another 14 pt of clearance from the resize corner.
+            .padding(.trailing, OverlayResizeView.corner / 2)
+        } else {
+            actionRow(.titleAndIcon)
+        }
+    }
+
+    private func actionRow<Style: LabelStyle>(_ style: Style) -> some View {
+        HStack(spacing: 6) {
+            ForEach(coordinator.settings.enabledSuggestionModes) { mode in
+                Button { coordinator.requestSuggestion(mode: mode) } label: {
+                    Label(t(mode.label), systemImage: mode.systemImage).font(.caption).labelStyle(style)
+                }
+                .fixedSize()
+                .help(t(mode.label) + " · " + hotkeys.combo(for: mode).display)
+                .accessibilityIdentifier("action-" + mode.rawValue)
+                .onboardingHighlight(onboarding.visibleTip == .answer && mode == .reply)
+            }
+            Spacer(minLength: 4).overlay { if answerOnly { OverlayDragRegion() } }
+            Menu {
+                Picker(t("Answer language"), selection: $coordinator.settings.answerLanguage) {
+                    ForEach(AnswerLanguage.allCases) { language in Text(language.label).tag(language) }
+                }.pickerStyle(.inline)
+            } label: {
+                Label(coordinator.settings.answerLanguage.label, systemImage: "globe")
+                    .font(.caption)
+            }.fixedSize().help(t("Answer language"))
+                .accessibilityIdentifier("answer-language")
+
+            if answerOnly { layoutToggle.fixedSize() }
         }
     }
     private var bottom: some View {
@@ -206,23 +229,49 @@ struct OverlayView: View {
                     .onboardingHighlight(onboarding.visibleTip == .start && onboarding.state.prefersTyping)
                 Button(t("Ask")) { submit() }.disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            HStack {
-                Toggle(t("Use recent conversation"), isOn: $coordinator.includeConversation).font(.caption2).toggleStyle(OverlaySwitchStyle())
-                Spacer(minLength: 4)
-                Menu {
-                    Picker(t("Knowledge mode"), selection: $coordinator.settings.knowledgeMode) {
-                        ForEach(KnowledgeMode.allCases) { mode in Text(t(mode.label)).tag(mode) }
-                    }.pickerStyle(.inline)
-                } label: {
-                    Text(t(coordinator.settings.knowledgeMode.compactLabel)).font(.caption2)
-                }.fixedSize().help(t(coordinator.settings.knowledgeMode.label))
-                    .accessibilityIdentifier("knowledge-mode")
-                if coordinator.answerIsRunning { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption) }
+            if !answerOnly {
+                HStack {
+                    Toggle(t("Use recent conversation"), isOn: $coordinator.includeConversation).font(.caption2).toggleStyle(OverlaySwitchStyle())
+                    Spacer(minLength: 4)
+                    Menu {
+                        Picker(t("Knowledge mode"), selection: $coordinator.settings.knowledgeMode) {
+                            ForEach(KnowledgeMode.allCases) { mode in Text(t(mode.label)).tag(mode) }
+                        }.pickerStyle(.inline)
+                    } label: {
+                        Text(t(coordinator.settings.knowledgeMode.compactLabel)).font(.caption2)
+                    }.fixedSize().help(t(coordinator.settings.knowledgeMode.label))
+                        .accessibilityIdentifier("knowledge-mode")
+                    if coordinator.answerIsRunning { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption) }
+                }
+                footer.padding(.trailing, 20)
             }
-            footer.padding(.trailing, 20)
         }
     }
     private func submit() { let value = query; query = ""; coordinator.askText(value) }
+    private var layoutToggle: some View {
+        let label = answerOnly ? b("Show full view", "恢复完整模式") : b("Show answers only", "切换到精简模式")
+        return Button {
+            showTranslation = false
+            answerOnly.toggle()
+        } label: {
+            if answerOnly {
+                Label(b("Full view", "完整模式"), systemImage: "rectangle.topthird.inset.filled")
+                    .font(.caption)
+                    .padding(.horizontal, 6)
+                    .frame(height: 28)
+                    .contentShape(Rectangle())
+            } else {
+                Image(systemName: "rectangle.compress.vertical")
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.borderless)
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("overlay-layout-toggle")
+    }
+
     private var header: some View {
         HStack {
             HStack {
@@ -253,6 +302,7 @@ struct OverlayView: View {
                    : b("Turn on automatic docking", "开启自动贴边"))
                 .accessibilityIdentifier("overlay-pin")
                 .onboardingHighlight(onboarding.visibleTip == .visibility)
+            layoutToggle
             Button { (NSApp.windows.first(where: { $0 is OverlayWindow }) as? OverlayWindow)?.tuckAway() } label: { Image(systemName: "minus") }
                 .help(t("Hide ({shortcut})").replacingOccurrences(of: "{shortcut}", with: hotkeys.toggleOverlay.display))
         }.buttonStyle(.borderless)

@@ -33,13 +33,12 @@ struct OnboardingRecommendation: Equatable {
     let speechScenario: OnboardingSpeechScenario?
     var recommendsJev: Bool { !typing && (speech == .openAI || jevSupported) }
     let wantsKnowledge: Bool
-    init(scenario: ScenarioProfile, typing: Bool, appleReady: Bool, jevSupported: Bool = true,
+    init(scenario: ScenarioProfile, typing: Bool, jevSupported: Bool = true,
          speechScenario: OnboardingSpeechScenario? = nil, wantsKnowledge: Bool? = nil) {
         self.scenario = scenario; self.typing = typing; self.jevSupported = jevSupported
         self.speechScenario = speechScenario
         self.wantsKnowledge = wantsKnowledge ?? (scenario != .meeting)
-        // Keep the legacy initializer's behavior for callers outside the scenario picker.
-        speech = speechScenario?.engine(appleAvailable: appleReady) ?? .zipformer
+        speech = (speechScenario ?? .singleLanguage).engine
     }
     func applyingSpeech(to settings: AppSettings) -> AppSettings {
         var result = settings
@@ -59,7 +58,7 @@ struct OnboardingRecommendation: Equatable {
         applying(to: coordinator.settings, preserveJev: coordinator.onboarding.state.jevChoiceReviewed == true) == coordinator.settings && coordinator.onboarding.state.wantsKnowledge == wantsKnowledge
     }
     @MainActor static func selectedScenario(_ coordinator: AppCoordinator) -> OnboardingSpeechScenario {
-        coordinator.onboarding.state.speechScenario ?? .mixedInterview
+        coordinator.onboarding.state.speechScenario ?? .singleLanguage
     }
     @MainActor static func canEdit(_ coordinator: AppCoordinator) -> Bool {
         !coordinator.isRunning && !coordinator.isTransitioning && !coordinator.isIndexing &&
@@ -68,7 +67,7 @@ struct OnboardingRecommendation: Equatable {
     }
     @MainActor static func current(_ coordinator: AppCoordinator) -> Self {
         Self(scenario: coordinator.settings.scenario, typing: coordinator.onboarding.state.prefersTyping,
-             appleReady: coordinator.appleSpeech.available, jevSupported: coordinator.laya.state != .unsupported,
+             jevSupported: coordinator.laya.state != .unsupported,
              speechScenario: selectedScenario(coordinator),
              wantsKnowledge: coordinator.onboarding.state.knowledgeRequested ??
                 (coordinator.onboarding.state.localSetupReviewed == false ? true : coordinator.onboarding.state.wantsKnowledge))

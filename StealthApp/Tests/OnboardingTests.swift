@@ -96,19 +96,19 @@ final class OnboardingTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
     }
 
-    @MainActor func testSkippingFreshGuideKeepsZipformerWithoutDownloading() throws {
+    @MainActor func testSkippingFreshGuideKeepsAppleWithoutDownloading() throws {
         let (suite, defaults) = defaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let store = OnboardingStore(defaults: defaults, dataDirectory: root)
         XCTAssertTrue(store.isNewInstall)
         let settings = AppSettings.load(defaults: defaults)
-        XCTAssertEqual(settings.listeningService, .zipformer)
+        XCTAssertEqual(settings.listeningService, .apple)
         store.deferSetup()
         settings.save(defaults: defaults)
         let reopened = OnboardingStore(defaults: defaults, dataDirectory: root)
         XCTAssertEqual(reopened.state.disposition, .deferred)
-        XCTAssertEqual(AppSettings.load(defaults: defaults).listeningService, .zipformer)
+        XCTAssertEqual(AppSettings.load(defaults: defaults).listeningService, .apple)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
         var chosen = settings
         chosen.listeningService = .paraformer
@@ -116,7 +116,7 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(AppSettings.load(defaults: defaults).listeningService, .paraformer)
     }
 
-    @MainActor func testNewGuideDefaultsToMixedLanguagesAndKnowledgeForEveryAnswerStyle() async throws {
+    @MainActor func testNewGuideDefaultsToAppleSpeechAndKnowledgeForEveryAnswerStyle() async throws {
         let (suite, defaults) = defaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         let app = AppCoordinator(mock: true, emitMockConversation: false, mockDefaults: defaults)
@@ -124,8 +124,8 @@ final class OnboardingTests: XCTestCase {
             app.onboarding.state = OnboardingState()
             app.settings.scenario = scenario
             OnboardingRecommendation.applyInitialIfNeeded(app)
-            XCTAssertEqual(app.onboarding.state.speechScenario, .mixedInterview)
-            XCTAssertEqual(app.settings.listeningService, .zipformer)
+            XCTAssertEqual(app.onboarding.state.speechScenario, .singleLanguage)
+            XCTAssertEqual(app.settings.listeningService, .apple)
             XCTAssertTrue(app.onboarding.state.wantsKnowledge)
             XCTAssertEqual(app.onboarding.state.knowledgeRequested, true)
         }
@@ -159,11 +159,10 @@ final class OnboardingTests: XCTestCase {
     }
 
     func testSpeechScenarioRecommendationsUseLanguageNeedsAndHardware() {
-        XCTAssertEqual(OnboardingSpeechScenario.mixedInterview.engine(appleAvailable: true), .zipformer)
-        XCTAssertEqual(OnboardingSpeechScenario.singleLanguage.engine(appleAvailable: true), .apple)
-        XCTAssertEqual(OnboardingSpeechScenario.singleLanguage.engine(appleAvailable: false), .zipformer)
-        XCTAssertEqual(OnboardingSpeechScenario.multilingualMeeting.engine(appleAvailable: false), .openAI)
-        let multilingual = OnboardingRecommendation(scenario: .interview, typing: false, appleReady: false,
+        XCTAssertEqual(OnboardingSpeechScenario.mixedInterview.engine, .zipformer)
+        XCTAssertEqual(OnboardingSpeechScenario.singleLanguage.engine, .apple)
+        XCTAssertEqual(OnboardingSpeechScenario.multilingualMeeting.engine, .openAI)
+        let multilingual = OnboardingRecommendation(scenario: .interview, typing: false,
                                                     jevSupported: false, speechScenario: .multilingualMeeting)
         XCTAssertTrue(multilingual.recommendsJev, "Cloud question detection does not require local Laya hardware")
     }
@@ -177,7 +176,7 @@ final class OnboardingTests: XCTestCase {
             for scene in OnboardingSpeechScenario.allCases {
                 OnboardingRecommendation.selectScenario(scene, coordinator: app)
                 OnboardingRecommendation.apply(app)
-                XCTAssertEqual(app.settings.listeningService, scene.engine(appleAvailable: app.appleSpeech.available))
+                XCTAssertEqual(app.settings.listeningService, scene.engine)
                 XCTAssertEqual(app.onboarding.state.wantsKnowledge, needsKnowledge)
                 XCTAssertEqual(OnboardingRecommendation.current(app).wantsKnowledge, needsKnowledge)
                 let setup = OnboardingSetupSnapshot(app)
@@ -234,9 +233,9 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(app.onboarding.state.speechManuallySelected, true)
         let before = app.settings
         OnboardingRecommendation.apply(app)
-        XCTAssertEqual(app.settings.listeningService, app.appleSpeech.available ? .apple : .zipformer)
+        XCTAssertEqual(app.settings.listeningService, .apple)
         var expected = before
-        expected.listeningService = app.appleSpeech.available ? .apple : .zipformer
+        expected.listeningService = .apple
         expected.embeddingService = .local; expected.automaticSuggestions = app.laya.state != .unsupported
         XCTAssertEqual(app.settings, expected, "Restore must not touch the answer provider, language, window or unrelated settings")
         XCTAssertEqual(AppSettings.load(defaults: defaults), app.settings)
@@ -679,16 +678,16 @@ final class OnboardingTests: XCTestCase {
         current.mode = .inPerson; current.language = .english
         current.recapEnabled = false; current.overlayEdgeHide = false
         current.automaticSuggestions = false
-        let plan = OnboardingRecommendation(scenario: .defense, typing: false, appleReady: true)
+        let plan = OnboardingRecommendation(scenario: .defense, typing: false)
         let updated = plan.applying(to: current)
         XCTAssertTrue(plan.wantsKnowledge)
-        XCTAssertEqual(updated.listeningService, .zipformer)
+        XCTAssertEqual(updated.listeningService, .apple)
         XCTAssertEqual(updated.embeddingService, .local)
         XCTAssertTrue(updated.automaticSuggestions)
         var expected = current
-        expected.listeningService = .zipformer; expected.embeddingService = .local; expected.automaticSuggestions = true
+        expected.listeningService = .apple; expected.embeddingService = .local; expected.automaticSuggestions = true
         XCTAssertEqual(updated, expected, "provider, model, language, mode, tools and window choices must be retained")
-        let meeting = OnboardingRecommendation(scenario: .meeting, typing: true, appleReady: false)
+        let meeting = OnboardingRecommendation(scenario: .meeting, typing: true)
         XCTAssertFalse(meeting.wantsKnowledge)
         XCTAssertEqual(meeting.applying(to: current), current, "typing meeting guidance must leave audio and services unchanged")
     }
@@ -696,10 +695,10 @@ final class OnboardingTests: XCTestCase {
     func testJevRecommendationRespectsHardwareAndTyping() {
         var settings = AppSettings()
         settings.automaticSuggestions = true
-        let unsupported = OnboardingRecommendation(scenario: .interview, typing: false, appleReady: false, jevSupported: false)
+        let unsupported = OnboardingRecommendation(scenario: .interview, typing: false, jevSupported: false)
         XCTAssertFalse(unsupported.recommendsJev)
         XCTAssertFalse(unsupported.applying(to: settings).automaticSuggestions)
-        let typing = OnboardingRecommendation(scenario: .meeting, typing: true, appleReady: false)
+        let typing = OnboardingRecommendation(scenario: .meeting, typing: true)
         XCTAssertFalse(typing.recommendsJev)
         XCTAssertEqual(typing.applying(to: settings).automaticSuggestions, settings.automaticSuggestions)
     }

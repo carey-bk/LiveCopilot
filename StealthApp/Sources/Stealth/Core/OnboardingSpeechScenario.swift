@@ -11,10 +11,10 @@ enum OnboardingSpeechScenario: String, Codable, CaseIterable, Identifiable {
         case .multilingualMeeting: return ServiceGuide.text("More languages", "更多语言", language)
         }
     }
-    func engine(appleAvailable: Bool) -> ListeningService {
+    var engine: ListeningService {
         switch self {
         case .mixedInterview: return .zipformer
-        case .singleLanguage: return appleAvailable ? .apple : .zipformer
+        case .singleLanguage: return .apple
         case .multilingualMeeting: return .openAI
         }
     }

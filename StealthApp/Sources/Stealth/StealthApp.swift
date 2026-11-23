@@ -45,7 +45,7 @@ private struct LiveCopilotMenuBar: Scene {
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button(L10n.text("About LiveCopilot", language: coordinator.settings.language)) {
-                    NSApp.orderFrontStandardAboutPanel(options: AppInfo.aboutPanelOptions)
+                    NSApp.orderFrontStandardAboutPanel(options: AppInfo.aboutPanelOptions(language: coordinator.settings.language))
                 }
             }
             CommandGroup(after: .appInfo) {

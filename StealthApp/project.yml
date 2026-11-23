@@ -33,6 +33,8 @@ targets:
       - path: Sources
       - path: Resources/AppIcon.icns
         buildPhase: resources
+      - path: Resources/GitHub-Mark.svg
+        buildPhase: resources
       - path: Resources/OpenAI-Logomark.svg
         buildPhase: resources
       - path: Resources/MetricIcons

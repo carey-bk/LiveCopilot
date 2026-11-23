@@ -79,8 +79,12 @@ final class AppUpdateTests: XCTestCase {
         }
         XCTAssertEqual(AppInfo.display, ReleaseVersion(AppInfo.version)?.display)
         XCTAssertFalse(AppInfo.display.contains("("))
-        XCTAssertEqual(AppInfo.aboutPanelOptions[.applicationVersion] as? String, AppInfo.display)
-        XCTAssertEqual(AppInfo.aboutPanelOptions[.version] as? String, "")
+        let options = AppInfo.aboutPanelOptions(language: .english)
+        XCTAssertEqual(options[.applicationVersion] as? String, AppInfo.display)
+        XCTAssertEqual(options[.version] as? String, "")
+        let credits = try XCTUnwrap(options[.credits] as? NSAttributedString)
+        XCTAssertEqual(credits.string, "Star on GitHub\nThanks for supporting LiveCopilot!")
+        XCTAssertEqual(credits.attribute(.link, at: 0, effectiveRange: nil) as? URL, AppInfo.repositoryURL)
     }
     func testSameVersionAndOlderReleaseNeverBecomeUpdates() throws {
         let app = AppUpdateController(mock: true, version: "2.3.0")

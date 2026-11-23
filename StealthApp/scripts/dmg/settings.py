@@ -6,7 +6,7 @@ files = [str(stage / name) for name in (
     "LiveCopilot.app", "Install - 安装说明.txt", "LICENSE.txt", "ReleaseInfo.txt"
 )]
 symlinks = {"Applications": "/Applications"}
-format = "UDZO"
+format = "ULMO"
 filesystem = "HFS+"
 background = str(stage / ".artwork" / "background.png")
 window_rect = ((180, 180), (760, 580))

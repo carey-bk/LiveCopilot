@@ -507,6 +507,59 @@ final class HybridLanguageTests: XCTestCase {
         XCTAssertEqual(calls, 2); XCTAssertEqual(triggers, 1)
         gate.reset()
     }
+    @MainActor func testAnswerOnlyLayoutRestoresFullViewAndConversation() async throws {
+        let app = app(PolicyReasoner())
+        app.settings.language = .simplifiedChinese
+        app.onboarding.dismissTips()
+        app.transcript.commit("保留这句话", speaker: .them)
+        app.askText("如何验证这个回答？")
+        await settled(app)
+        let answer = app.suggestion.text
+        let suite = "LiveCopilot-AnswerOnly-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "overlayTranscriptCollapsed")
+        var minimum: CGFloat = 0
+        let host = NSHostingView(rootView: OverlayView(coordinator: app, transcriptPreferences: defaults,
+                                                       onMinimumHeight: { minimum = $0 }))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 520),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let resizeView = OverlayResizeView(content: host)
+        window.contentView = resizeView
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let fullHeight = minimum
+        defaults.set(true, forKey: "overlayAnswerOnly")
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertLessThan(minimum + 100, fullHeight)
+        let output = ProcessInfo.processInfo.environment["LIVECOPILOT_UI_ACCEPTANCE"] ?? ""
+        if !output.isEmpty && !output.hasPrefix("$(") {
+            let url = URL(fileURLWithPath: output).appendingPathComponent("answer-only.png")
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:])).write(to: url)
+        }
+        let point = NSPoint(x: resizeView.bounds.maxX - 64, y: resizeView.bounds.maxY - 26)
+        XCTAssertTrue(resizeView.edges(at: point).isEmpty)
+        XCTAssertEqual(resizeView.edges(at: NSPoint(x: resizeView.bounds.maxX - 8, y: resizeView.bounds.maxY - 8)), [.top, .right])
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: resizeView.convert(point, to: nil),
+                                                         modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                         windowNumber: window.windowNumber, context: nil, eventNumber: 1,
+                                                         clickCount: 1, pressure: 1))
+            NSApp.postEvent(event, atStart: false)
+        }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertFalse(defaults.bool(forKey: "overlayAnswerOnly"))
+        XCTAssertEqual(minimum, fullHeight, accuracy: 1)
+        XCTAssertTrue(defaults.bool(forKey: "overlayTranscriptCollapsed"))
+        XCTAssertTrue(app.transcript.hasContent)
+        XCTAssertEqual(app.suggestion.text, answer)
+        await app.shutdown()
+    }
+
     @MainActor func testRenderNextReleaseFeedback() async throws {
         let output = ProcessInfo.processInfo.environment["LIVECOPILOT_UI_ACCEPTANCE"] ?? ""
         guard !output.isEmpty, !output.hasPrefix("$(") else { throw XCTSkip("Opt-in native panel rendering") }

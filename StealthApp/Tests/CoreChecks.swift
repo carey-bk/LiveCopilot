@@ -34,7 +34,7 @@ enum CoreChecks {
         }
         try check("local services migrate independently and do not require OpenAI for DeepSeek") {
             let empty = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
-            try expect(empty.listeningService == .zipformer, "Missing selection did not use the recommended default")
+            try expect(empty.listeningService == .apple, "Missing selection did not use the recommended default")
             let old = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"listeningService":"openAI","embeddingService":"openAI"}"#.utf8))
             try expect(old.listeningService == .openAI && old.embeddingService == .openAI, "Saved route silently changed")
             try expect(old.deepSeekModel == "deepseek-flash" && AppSettings().deepSeekModel == "deepseek-flash", "DeepSeek default is not Flash")
@@ -94,7 +94,7 @@ enum CoreChecks {
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
             try expect(restored == settings && !restored.requiresOpenAIKey && restored.listeningService.sampleRate == 16000, "Apple route incorrectly migrated")
             let old = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
-            try expect(old.appleSpeechLanguage == .chinese && old.listeningService == .zipformer, "missing language or recognizer default changed")
+            try expect(old.appleSpeechLanguage == .chinese && old.listeningService == .apple, "missing language or recognizer default changed")
         }
         try check("Apple volatile ranges revise, commit and reject stale results") {
             var state = SpeechPreviewState()

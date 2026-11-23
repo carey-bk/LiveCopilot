@@ -32,7 +32,7 @@ ent=plistlib.loads((APP/"Resources/LiveCopilot.entitlements").read_bytes())
 ent.update({"com.apple.security.app-sandbox":True,"com.apple.security.files.user-selected.read-only":True})
 plist(work/"App.entitlements",ent)
 resources=[{"path":str(APP/"Resources"/name),"buildPhase":"resources",**({"type":"folder"} if (APP/"Resources"/name).is_dir() else {})}
-           for name in ("AppIcon.icns","OpenAI-Logomark.svg","MetricIcons","ProviderLogos","AnalysisConfigurations.json","ThirdPartyNotices.txt")]
+           for name in ("AppIcon.icns","OpenAI-Logomark.svg","GitHub-Mark.svg","MetricIcons","ProviderLogos","AnalysisConfigurations.json","ThirdPartyNotices.txt")]
 # Package source-specific notices with the files shipped in this variant.
 staging["write_notices"](work, variant[1]["candidate"].split("-")[0] if variant else "w8")
 resources[-1]["path"]=str(work/"ThirdPartyNotices.txt")
