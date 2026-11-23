@@ -27,11 +27,11 @@ extension SettingsView {
                     LCStatusDot(tone: coordinator.isRunning ? .success : .neutral, pulsing: coordinator.isRunning)
                     Text(coordinator.isRunning ? b("Listening", "正在监听") : b("Not listening", "未在监听")).font(.headline)
                 }
-                HStack(spacing: 6) {
-                    LCPill(text: t(coordinator.settings.mode.rawValue), systemImage: "person.2")
-                    LCPill(text: t(coordinator.settings.scenario.rawValue), systemImage: "theatermasks")
-                    LCPill(text: coordinator.settings.automaticSuggestions ? b("Auto answers on", "自动建议已开") : b("Auto answers off", "自动建议已关"),
-                           tone: coordinator.settings.automaticSuggestions ? .accent : .neutral)
+                // Drop the least important pill instead of truncating when the card is narrow.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) { modePill; scenarioPill; autoPill }
+                    HStack(spacing: 6) { modePill; scenarioPill }
+                    modePill
                 }
             }
             Spacer(minLength: 8)
@@ -49,6 +49,12 @@ extension SettingsView {
         .lcCard()
     }
 
+    private var modePill: some View { LCPill(text: t(coordinator.settings.mode.rawValue), systemImage: "person.2").fixedSize() }
+    private var scenarioPill: some View { LCPill(text: t(coordinator.settings.scenario.rawValue), systemImage: "theatermasks").fixedSize() }
+    private var autoPill: some View {
+        LCPill(text: coordinator.settings.automaticSuggestions ? b("Auto answers on", "自动建议已开") : b("Auto answers off", "自动建议已关"),
+               tone: coordinator.settings.automaticSuggestions ? .accent : .neutral).fixedSize()
+    }
     private var speechReady: Bool {
         switch coordinator.settings.listeningService {
         case .openAI: return coordinator.hasAPIKey
