@@ -14,9 +14,7 @@ struct IndexingProgressView: View {
                 Spacer()
                 Text("\(Int(value * 100))%").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
             }
-            ProgressView(value: value, total: 1)
-                .progressViewStyle(.linear)
-                .tint(.accentColor)
+            LCDotMeter(fraction: value, segments: 32, tone: .accent, height: 7)
                 .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: value)
         }
         .accessibilityElement(children: .ignore)

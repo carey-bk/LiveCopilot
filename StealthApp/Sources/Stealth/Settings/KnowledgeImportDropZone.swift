@@ -16,19 +16,19 @@ struct KnowledgeImportDropZone: View {
         Button(action: selectDocuments) {
             VStack(spacing: 8) {
                 if busy { ProgressView().controlSize(.small).frame(height: 26) }
-                else { Image(systemName: isTargeted ? "arrow.down.doc" : "plus").font(.system(size: 25, weight: .medium)).frame(height: 26) }
+                else { Image(systemName: isTargeted ? "arrow.down.doc" : "plus").font(.system(size: 20, weight: .medium)).frame(height: 22) }
                 Text(t(busy ? "Indexing documents…" : isTargeted ? "Release to add to your knowledge base" : "Drag documents here"))
                     .font(.system(size: 15, weight: .semibold))
                 Text(t(busy ? "Wait for indexing to finish before adding more documents." : "or click to choose files"))
                     .font(.callout)
                 Text("PDF · Markdown · TXT · DOCX").font(.caption).foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 124).padding(12)
+            .frame(maxWidth: .infinity, minHeight: 104).padding(10)
             .foregroundStyle(LC.accent)
-            .background(LC.accent.opacity(isTargeted && !busy ? 0.14 : 0.045), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14)
+            .background(LC.accent.opacity(isTargeted && !busy ? 0.14 : 0.045), in: RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous)
                 .strokeBorder(LC.accent.opacity(busy ? 0.3 : isTargeted ? 1 : 0.6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])))
-            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .contentShape(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous))
         }
         .buttonStyle(.plain).disabled(busy)
         .accessibilityLabel(t("Import documents…"))

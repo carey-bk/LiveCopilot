@@ -121,7 +121,7 @@ struct HistoryBrowser: View {
                 }.padding(.horizontal, 7).padding(.bottom, 12)
             }
             Text("\(filtered.count) " + b("sessions", "条会话")).font(.caption2).foregroundStyle(.secondary).padding(8)
-        }.frame(width: 172).background(LC.canvas)
+        }.frame(width: 196).background(LC.canvas)
     }
     private func detail(_ session: SessionRecord) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -144,6 +144,7 @@ struct HistoryBrowser: View {
                 if session.namingState == "pending" { Text(b("Naming this session…", "正在生成会话名称…")).font(.caption2).foregroundStyle(.secondary) }
                 if session.namingState == "failed" { Text(b("Could not generate a title. Your previous title is kept. Check the analysis service and try again from the context menu.", "自动命名失败，已保留原名称。请检查分析服务，再从右键菜单重试。")).font(.caption).foregroundStyle(LC.warning) }
                 if let error = exportError ?? sessions.lastError { Text(error).font(.caption).foregroundStyle(LC.danger) }
+                HistorySessionStats(session: session, english: english, language: language).padding(.top, 6)
             }.padding(18)
             Divider()
             HistoryTimeline(session: session, english: english, language: language,
@@ -170,6 +171,69 @@ struct HistoryBrowser: View {
             Text(title).font(.headline)
             Text(text).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 290)
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Real counts for one session and when speech, questions and answers happened.
+private struct HistorySessionStats: View {
+    let session: SessionRecord
+    let english: Bool
+    let language: AppLanguage
+    private func b(_ en: String, _ zh: String) -> String { english ? en : language.interfaceText(zh) }
+    var body: some View {
+        let events = session.timeline
+        let questions = events.filter { $0.kind == .question }.count
+        let answers = events.filter { $0.kind == .answer }.count
+        let speech = events.filter { $0.kind == .room || $0.kind == .nearby || $0.kind == .own }.count
+        let sources = Set((session.answers ?? []).flatMap { $0.sources.map(\.label) }).count
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 0) {
+                stat(b("Duration", "时长"), session.durationLabel)
+                stat(b("Speech", "转写"), "\(speech)")
+                stat(b("Questions", "问题"), "\(questions)")
+                stat(b("Answers", "回答"), "\(answers)")
+                stat(b("Sources", "引用来源"), "\(sources)")
+            }
+            if events.count > 1 { HistoryActivityStrip(session: session, events: events) }
+        }
+    }
+    private func stat(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 15, weight: .semibold)).monospacedDigit()
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Dot columns across the session: speech density in blue, questions and answers in pink.
+private struct HistoryActivityStrip: View {
+    let session: SessionRecord
+    let events: [SessionEvent]
+    private let columns = 40, rows = 4
+    var body: some View {
+        let start = session.startedAt.timeIntervalSince1970
+        let span = max(session.endedAt.timeIntervalSince1970 - start, 1)
+        var speech = Array(repeating: 0, count: columns), asked = Array(repeating: false, count: columns)
+        for event in events {
+            let column = min(columns - 1, max(0, Int((event.at.timeIntervalSince1970 - start) / span * Double(columns))))
+            if event.kind == .question || event.kind == .answer { asked[column] = true } else { speech[column] += 1 }
+        }
+        let peak = max(speech.max() ?? 1, 1)
+        return HStack(alignment: .bottom, spacing: 2) {
+            ForEach(0..<columns, id: \.self) { column in
+                let filled = speech[column] == 0 ? 0 : max(1, Int((Double(speech[column]) / Double(peak) * Double(rows)).rounded()))
+                VStack(spacing: 2) {
+                    ForEach((0..<rows).reversed(), id: \.self) { row in
+                        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                            .fill(row < filled ? LC.accent.opacity(0.35 + 0.65 * Double(row + 1) / Double(rows))
+                                  : asked[column] && row == 0 ? LC.accentPink : LC.accent.opacity(0.08))
+                            .frame(height: 5)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 420)
+        .accessibilityHidden(true)
     }
 }
 
