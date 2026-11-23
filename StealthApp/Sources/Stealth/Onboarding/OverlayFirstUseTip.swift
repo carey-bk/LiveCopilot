@@ -32,7 +32,8 @@ struct OverlayFirstUseTip: View {
                     .font(.caption).accessibilityIdentifier("overlay-tip-next")
             }
         }.padding(11).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 10))
+            .background(LC.accent.opacity(0.09), in: RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous).strokeBorder(LC.accent.opacity(0.16)))
             .accessibilityElement(children: .contain).accessibilityIdentifier("overlay-first-use-tip")
     }
     private var title: String {
@@ -72,6 +73,6 @@ struct OverlayFirstUseTip: View {
 
 extension View {
     func onboardingHighlight(_ active: Bool) -> some View {
-        overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(active ? Color.accentColor : .clear, lineWidth: 2).padding(-3).allowsHitTesting(false))
+        overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(active ? LC.accent : .clear, lineWidth: 2).padding(-3).allowsHitTesting(false))
     }
 }

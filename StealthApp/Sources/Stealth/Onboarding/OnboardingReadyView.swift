@@ -75,7 +75,8 @@ struct OnboardingReadyView: View {
                     : b("Off · you can ask manually", "未启用 · 可手动提问")
                 statusRow("Jev Mode", detail: jevDetail, ready: jev.status == .ready,
                           step: coordinator.settings.automaticSuggestions && !typing ? .models : .workflow)
-            }.padding(.horizontal, 16).background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+            }.padding(.horizontal, 16).background(LC.surface, in: RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous).strokeBorder(LC.hairline))
             HStack(spacing: 12) {
                 if OnboardingDownloads.hasPending(coordinator) {
                     Button(b("Download selected models", "下载所选模型")) { OnboardingDownloads.start(coordinator) }
@@ -140,7 +141,7 @@ struct OnboardingReadyView: View {
     }
     private func statusRow(_ title: String, detail: String, ready: Bool, step: OnboardingStep) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: ready ? "checkmark.circle.fill" : "circle.dashed").foregroundStyle(ready ? Color.green : Color.secondary)
+            Image(systemName: ready ? "checkmark.circle.fill" : "circle.dashed").foregroundStyle(ready ? LC.success : Color.secondary)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.system(size: 13, weight: .semibold))
                 Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -181,7 +182,7 @@ private struct OnboardingPracticeView: View {
                     .frame(height: 170)
                     .accessibilityIdentifier("onboarding-practice-answer")
             }
-            if !error.isEmpty { Text(error).font(.caption).foregroundStyle(.red).lineLimit(3).help(error) }
+            if !error.isEmpty { Text(error).font(.caption).foregroundStyle(LC.danger).lineLimit(3).help(error) }
         }.onDisappear { cancel() }
     }
     private func cancel() { revision = UUID(); task?.cancel(); task = nil; busy = false }

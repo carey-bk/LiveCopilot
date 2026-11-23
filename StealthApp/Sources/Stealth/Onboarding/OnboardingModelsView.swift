@@ -86,7 +86,7 @@ struct OnboardingModelsView: View {
                         }
                     }.font(.caption)
                     if coordinator.currentSpeechRuntime == .failed, let error = coordinator.speechVerificationError {
-                        Text(error).font(.caption).foregroundStyle(.red).lineLimit(2).help(error)
+                        Text(error).font(.caption).foregroundStyle(LC.danger).lineLimit(2).help(error)
                     }
                 }
             }
@@ -176,7 +176,7 @@ struct OnboardingModelsView: View {
                 OnboardingCapabilityBadge(status: status, language: coordinator.settings.language)
                 Spacer(minLength: 4)
                 Button(b("Advanced", "高级设置")) { detail = capability }
-                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Color.accentColor)
+                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(LC.accent)
                     .disabled(store.state.prefersTyping && capability != .knowledge)
                     .accessibilityLabel(title + b(" advanced settings", "高级设置"))
                     .accessibilityIdentifier("onboarding-advanced-" + capability.rawValue)
@@ -184,8 +184,8 @@ struct OnboardingModelsView: View {
             content().font(.system(size: 12)).foregroundStyle(.secondary).controlSize(.small)
         }.padding(.horizontal, 13).padding(.vertical, 11)
             .frame(maxWidth: .infinity).frame(minHeight: capability == .speech ? 72 : 86, alignment: .topLeading)
-            .background(.background.opacity(0.55), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.primary.opacity(0.055)))
+            .background(.background.opacity(0.55), in: RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous).strokeBorder(LC.hairline))
     }
     private var speechName: String {
         switch coordinator.settings.listeningService {
@@ -329,7 +329,7 @@ struct OnboardingModelsView: View {
             Button(b("Cancel downloads", "取消下载")) { models.cancel() }
         } else if let report = models.health[kind] {
             Label(report.ready ? b("Self-check passed", "自检通过") : b("Self-check failed", "自检未通过"), systemImage: report.ready ? "checkmark.circle.fill" : "exclamationmark.triangle")
-                .foregroundStyle(report.ready ? Color.green : Color.orange)
+                .foregroundStyle(report.ready ? LC.success : LC.warning)
             Text(coordinator.settings.language.interfaceText(report.advice(english: !coordinator.settings.language.usesChinese))).font(.caption)
             if !report.ready { Text(b("Open Settings → Services for self-check and diagnostics.", "请到设置 → 服务运行自检或复制诊断信息。")).font(.caption) }
         } else if models.installed.contains(kind) && kind != .embedding {

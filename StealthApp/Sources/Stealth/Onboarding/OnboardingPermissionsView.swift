@@ -56,7 +56,8 @@ struct OnboardingPermissionsView: View {
                 }
                 Text(b("Granting access does not start recording.", "授权不会立即开始录音。")).font(.caption).foregroundStyle(.secondary)
             }
-        }.padding(16).background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
+        }.padding(16).background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: LC.Radius.panel, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LC.Radius.panel, style: .continuous).strokeBorder(LC.hairline))
     }
     private var microphoneStatus: String {
         switch permissions.microphone {
@@ -73,11 +74,12 @@ struct OnboardingPermissionsView: View {
             HStack {
                 Label(title, systemImage: icon).font(.callout.weight(.semibold))
                 Spacer()
-                Text(status).font(.caption.weight(.medium)).foregroundStyle(granted ? Color.green : Color.secondary)
+                Text(status).font(.caption.weight(.medium)).foregroundStyle(granted ? LC.success : Color.secondary)
             }
             Text(detail).font(.caption).foregroundStyle(.secondary)
             actions().controlSize(.small)
         }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+            .background(LC.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous).strokeBorder(LC.hairline))
     }
 }

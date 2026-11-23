@@ -101,6 +101,7 @@ struct OnboardingModePreview: View {
                 .background(.background, in: RoundedRectangle(cornerRadius: 7))
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.primary.opacity(typing ? 0.16 : 0)))
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
-            .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: 16))
+            .background(.background.opacity(0.82), in: RoundedRectangle(cornerRadius: LC.Radius.panel, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LC.Radius.panel, style: .continuous).strokeBorder(LC.hairline))
     }
 }

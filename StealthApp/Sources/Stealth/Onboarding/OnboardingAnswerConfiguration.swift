@@ -32,9 +32,9 @@ struct OnboardingAnswerConfiguration: View {
                         Text(settings.usesRecommendedAnalysis ? b("Applied", "已应用推荐配置") : b("Apply recommendation", "应用推荐配置"))
                     }
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(settings.usesRecommendedAnalysis ? Color.green : Color.accentColor)
+                    .foregroundStyle(settings.usesRecommendedAnalysis ? LC.success : LC.accent)
                     .padding(.horizontal, 7).padding(.vertical, 4)
-                    .background((settings.usesRecommendedAnalysis ? Color.green : Color.accentColor).opacity(0.08), in: Capsule())
+                    .background((settings.usesRecommendedAnalysis ? LC.success : LC.accent).opacity(0.08), in: Capsule())
                     .contentShape(Capsule())
                 }
                     .buttonStyle(.plain).fixedSize()
@@ -68,7 +68,7 @@ struct OnboardingAnswerConfiguration: View {
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             Label(b("Current configuration · ", "当前配置 · ") + name + " / " + settings.analysisThinking.menuName +
                   " · " + settings.analysisProcessing.name, systemImage: "slider.horizontal.3")
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(LC.accent)
                 .accessibilityIdentifier("analysis-current-configuration")
             if settings.usesRecommendedAnalysis {
                 Text(AnalysisModelCatalog.tags(for: settings.reasoningService, language: settings.language))
@@ -285,7 +285,7 @@ struct OnboardingCompatibleConnection: View {
                     b("Saved · configure the API key below", "已保存 · 可在下方配置 API Key"))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            if !error.isEmpty { Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
+            if !error.isEmpty { Text(error).font(.caption).foregroundStyle(LC.danger).fixedSize(horizontal: false, vertical: true) }
         }.onAppear {
             baseURL = coordinator.settings.compatibleBaseURL
             path = coordinator.settings.compatiblePath

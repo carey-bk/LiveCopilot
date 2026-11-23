@@ -57,7 +57,7 @@ struct OnboardingStepProgress: View {
             HStack(spacing: 6) {
                 ForEach(OnboardingStep.allCases) { item in
                     Capsule()
-                        .fill(item.position <= step.position ? Color.accentColor.opacity(item == step ? 1 : 0.55) : Color.primary.opacity(0.12))
+                        .fill(item.position <= step.position ? LC.accent.opacity(item == step ? 1 : 0.55) : Color.primary.opacity(0.12))
                         .frame(width: item == step ? 46 : 26, height: 7)
                 }
             }
@@ -87,8 +87,8 @@ private struct OnboardingQuietButtonLabel: View {
     var body: some View {
         label
             .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(isEnabled && (hovered || pressed) ? Color.accentColor : Color.secondary)
-            .underline(isEnabled && hovered, color: Color.accentColor.opacity(0.6))
+            .foregroundStyle(isEnabled && (hovered || pressed) ? LC.accent : Color.secondary)
+            .underline(isEnabled && hovered, color: LC.accent.opacity(0.6))
             .opacity(isEnabled ? (pressed ? 0.65 : 1) : 0.45)
             .padding(.horizontal, 4).padding(.vertical, 10)
             .contentShape(Rectangle())

@@ -229,8 +229,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyPreferences(_ settings: AppSettings) {
         hotkeys.setEnabledModes(settings.enabledSuggestionModes)
         for window in [overlay, settingsWindow, historyWindow, onboardingWindow].compactMap({ $0 }) {
-            if window is OverlayWindow || window === onboardingWindow {
-                applyAppearance(to: window, background: window is OverlayWindow ? settings.background : .white)
+            if window is OverlayWindow {
+                applyAppearance(to: window, background: settings.background)
             } else {
                 applyAdaptiveAppearance(to: window)
             }
@@ -246,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         syncGuidancePresentation()
     }
 
-    /// Settings and History follow the system appearance on the design-system canvas.
+    /// Settings, History and onboarding follow the system appearance on the design-system canvas.
     private func applyAdaptiveAppearance(to window: NSWindow) {
         window.appearance = nil
         window.isOpaque = true

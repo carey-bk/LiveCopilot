@@ -173,7 +173,7 @@ struct OnboardingView: View {
     }
     private func workflowItem(_ icon: String, _ title: String, _ detail: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon).foregroundStyle(.blue).frame(width: 20)
+            Image(systemName: icon).foregroundStyle(LC.accent).frame(width: 20)
             VStack(alignment: .leading, spacing: 3) {
                 if title == "Jev Mode" {
                     HStack(spacing: 7) {
@@ -275,8 +275,9 @@ struct OnboardingView: View {
                     if let detail { Text(detail).font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? Color.accentColor : Color.secondary)
-            }.padding(13).background(selected ? Color.accentColor.opacity(0.08) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(selected ? LC.accent : Color.secondary)
+            }.padding(13).background(selected ? LC.accent.opacity(0.08) : LC.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous).strokeBorder(selected ? LC.accent.opacity(0.35) : LC.hairline))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).accessibilityValue(selected ? b("Selected", "已选") : b("Not selected", "未选"))
     }

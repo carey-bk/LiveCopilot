@@ -53,21 +53,21 @@ struct OnboardingRecommendationView: View {
             ZStack(alignment: .leading) {
                 Text(recommendationDetail)
                     .id(recommendationDetail).transition(.opacity)
-                    .font(.system(size: 11)).foregroundStyle(Color.accentColor)
+                    .font(.system(size: 11)).foregroundStyle(LC.accent)
                     .lineLimit(1).minimumScaleFactor(0.85).help(recommendationDetail)
             }
             .frame(maxWidth: .infinity, minHeight: 15, maxHeight: 15, alignment: .leading)
         }.padding(.horizontal, 14).padding(.vertical, 12)
             .frame(maxWidth: .infinity).frame(height: 134, alignment: .topLeading)
-            .background(Color.accentColor.opacity(0.075), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.accentColor.opacity(0.15)))
+            .background(LC.accent.opacity(0.075), in: RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous).strokeBorder(LC.accent.opacity(0.15)))
     }
     private func recommendationButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button { update { action() } } label: {
             Text(title).font(.system(size: 12, weight: selected ? .semibold : .regular))
                 .padding(.horizontal, 13).padding(.vertical, 4)
                 .foregroundStyle(selected ? Color.white : Color.primary)
-                .background(selected ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+                .background(selected ? LC.accent : Color.clear, in: RoundedRectangle(cornerRadius: 6))
         }.buttonStyle(.plain)
             .disabled(!OnboardingRecommendation.canEdit(coordinator))
             .accessibilityAddTraits(selected ? .isSelected : [])

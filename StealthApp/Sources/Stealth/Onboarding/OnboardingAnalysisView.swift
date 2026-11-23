@@ -48,7 +48,7 @@ struct OnboardingConnectionFeedback: View {
         VStack(alignment: .leading, spacing: 5) {
             Label(title, systemImage: success ? "checkmark.circle.fill" : failure != nil ? "exclamationmark.circle" : "info.circle")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(success ? Color.green : failure != nil ? Color.orange : Color.secondary)
+                .foregroundStyle(success ? LC.success : failure != nil ? LC.warning : Color.secondary)
             if let failure, !compact { Text(failure.detail(language)).font(.caption).foregroundStyle(.secondary) }
         }.fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("onboarding-connection-result")
     }
@@ -62,15 +62,15 @@ struct OnboardingServiceSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Text(String(number)).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.accentColor)
-                    .frame(width: 21, height: 21).background(Color.accentColor.opacity(0.09), in: Circle())
+                Text(String(number)).font(.system(size: 11, weight: .semibold)).foregroundStyle(LC.accent)
+                    .frame(width: 21, height: 21).background(LC.accent.opacity(0.09), in: Circle())
                     .accessibilityHidden(true)
                 Text(title).font(.system(size: 14, weight: .semibold))
             }
             content()
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .windowBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.primary.opacity(showsBorder ? 0.045 : 0)))
+            .background(Color(nsColor: .windowBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous).strokeBorder(showsBorder ? LC.hairline : .clear))
             .accessibilityElement(children: .contain)
     }
 }

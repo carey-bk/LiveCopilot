@@ -43,7 +43,7 @@ struct OnboardingDownloadSummary: View {
                 ForEach(setup.resources) { resource in
                     HStack(spacing: 6) {
                         Text(resource.name)
-                        if !resource.needsStart { Text(resource.status.title(language)).foregroundStyle(Color.accentColor) }
+                        if !resource.needsStart { Text(resource.status.title(language)).foregroundStyle(LC.accent) }
                         Spacer(minLength: 4)
                         Text(resource.sizeLabel(language)).monospacedDigit()
                     }.font(.system(size: 11)).foregroundStyle(.secondary)
