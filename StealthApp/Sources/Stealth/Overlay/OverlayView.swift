@@ -167,8 +167,11 @@ struct OverlayView: View {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 LCStatusDot(tone: statusTone, pulsing: coordinator.isRunning && !speechFailed, size: 7)
                     .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                // One line while listening so the row never wraps; the full text stays in the tooltip.
                 JevBrand.text(statusLine, size: 11).font(.caption)
-                    .foregroundStyle(speechFailed ? LC.danger : Color.secondary).lineLimit(2).textSelection(.enabled)
+                    .foregroundStyle(speechFailed ? LC.danger : Color.secondary)
+                    .lineLimit(coordinator.isRunning ? 1 : 2).truncationMode(.tail).textSelection(.enabled)
+                    .help(statusLine)
                 Spacer(minLength: 8)
                 if coordinator.isRunning && coordinator.settings.listeningService == .apple {
                     // The single-language note lives behind an icon so listening adds no row.
@@ -195,12 +198,14 @@ struct OverlayView: View {
             }
         }
     }
-    /// Status text, followed by the local answer trigger's readiness while it matters.
+    /// Status text, plus the automatic-answer trigger only when it says something the rest of the
+    /// window does not: still loading, unavailable, or working on a question it heard.
     private var statusLine: String {
         let status = t(coordinator.statusMessage)
-        guard coordinator.isRunning, coordinator.settings.automaticSuggestions, coordinator.settings.listeningService.isLocal else { return status }
-        let gate = coordinator.layaGateStatus.label(coordinator.settings.language)
-        return gate.isEmpty ? status : status + " · " + gate
+        guard coordinator.isRunning, coordinator.settings.automaticSuggestions, coordinator.settings.listeningService.isLocal,
+              [.loading, .unavailable, .predicting, .dispatched].contains(coordinator.layaGateStatus)
+        else { return status }
+        return status + " · " + coordinator.layaGateStatus.label(coordinator.settings.language)
     }
     @ViewBuilder private var actions: some View {
         if answerOnly {

@@ -1162,7 +1162,7 @@ final class AppCoordinator: ObservableObject {
             if activeDelegations.count > 400 { activeDelegations = [id] }
             pendingAutomatic = (speaker, id, Date().addingTimeInterval(25))
             scheduleAutomatic()
-        case .ready: if !isMock { CaptureDiagnostics.record(.speechReady, details: .init(speaker: speaker.rawValue, readyMS: recognition(for: speaker)?.readyMS)) }; speechRuntime = .ready; statusMessage = "Listening · \(settings.mode.rawValue) · \(speaker.rawValue) ready"
+        case .ready: if !isMock { CaptureDiagnostics.record(.speechReady, details: .init(speaker: speaker.rawValue, readyMS: recognition(for: speaker)?.readyMS)) }; speechRuntime = .ready; statusMessage = "Listening · \(settings.mode.rawValue)"
         case .status(let message): statusMessage = message
         case .failed(let message):
             if !isMock { CaptureDiagnostics.record(.speechFailed, details: .init(speaker: speaker.rawValue, failure: recognition(for: speaker)?.failure)) }
