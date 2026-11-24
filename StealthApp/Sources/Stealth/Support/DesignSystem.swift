@@ -556,10 +556,10 @@ struct LCOptionCard: View {
         .lcHoverable(radius: LC.Radius.card - 2)
         .opacity(isEnabled ? 1 : 0.55)
         .lcAnimation(LC.Motion.quick, value: selected)
-        .accessibilityElement(children: .ignore)
+        // Label the button itself so its press action stays available to accessibility clients.
         .accessibilityLabel(title)
         .accessibilityHint(detail)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
