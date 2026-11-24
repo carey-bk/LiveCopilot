@@ -332,7 +332,7 @@ final class HybridLanguageTests: XCTestCase {
     @MainActor func testHybridNoHitCallsOneModelAndStrictNoHitCallsNone() async {
         let reasoner = PolicyReasoner()
         let actual = self.app(reasoner)
-        actual.includeConversation = false
+        actual.settings.includeConversation = false
         actual.askText("What is quantum entanglement?"); await settled(actual)
         XCTAssertEqual(reasoner.requests.count, 1)
         XCTAssertTrue(reasoner.requests[0].sources.isEmpty)

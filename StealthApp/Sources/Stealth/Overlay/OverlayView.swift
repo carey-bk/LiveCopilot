@@ -167,9 +167,17 @@ struct OverlayView: View {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
                 LCStatusDot(tone: statusTone, pulsing: coordinator.isRunning && !speechFailed, size: 7)
                     .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
-                JevBrand.text(t(coordinator.statusMessage), size: 11).font(.caption)
+                JevBrand.text(statusLine, size: 11).font(.caption)
                     .foregroundStyle(speechFailed ? LC.danger : Color.secondary).lineLimit(2).textSelection(.enabled)
                 Spacer(minLength: 8)
+                if coordinator.isRunning && coordinator.settings.listeningService == .apple {
+                    // The single-language note lives behind an icon so listening adds no row.
+                    Image(systemName: "info.circle").font(.system(size: 11)).foregroundStyle(.tertiary)
+                        .help(t("Apple ASR uses one language. For mixed Chinese/English, select another speech recognition engine in Services."))
+                        .accessibilityLabel(t("Apple ASR uses one language. For mixed Chinese/English, select another speech recognition engine in Services."))
+                        .accessibilityIdentifier("apple-speech-note")
+                        .transition(.opacity)
+                }
                 if coordinator.isRunning {
                     LiveLevelsView(levels: coordinator.levels, mode: coordinator.settings.mode,
                                    micEnabled: coordinator.micEnabled, language: coordinator.settings.language)
@@ -185,27 +193,14 @@ struct OverlayView: View {
                     .lcCallout(.warning, padding: 8)
                     .accessibilityIdentifier("capture-notice")
             }
-            if coordinator.isRunning {
-                HStack {
-                    if coordinator.settings.automaticSuggestions,
-                       coordinator.settings.listeningService.isLocal {
-                        Text(coordinator.layaGateStatus.label(coordinator.settings.language))
-                            .font(.caption2).foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .accessibilityIdentifier("laya-gate-status")
-                    }
-                    Spacer()
-                    Toggle(t("Auto"), isOn: $coordinator.settings.automaticSuggestions)
-                        .toggleStyle(OverlaySwitchStyle()).accessibilityIdentifier("automatic-suggestions")
-                        .fixedSize()
-                }
-                if coordinator.settings.listeningService == .apple {
-                    Text(t("Apple ASR uses one language. For mixed Chinese/English, select another speech recognition engine in Services."))
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                        .help(t("Apple ASR uses one language. For mixed Chinese/English, select another speech recognition engine in Services."))
-                }
-            }
         }
+    }
+    /// Status text, followed by the local answer trigger's readiness while it matters.
+    private var statusLine: String {
+        let status = t(coordinator.statusMessage)
+        guard coordinator.isRunning, coordinator.settings.automaticSuggestions, coordinator.settings.listeningService.isLocal else { return status }
+        let gate = coordinator.layaGateStatus.label(coordinator.settings.language)
+        return gate.isEmpty ? status : status + " · " + gate
     }
     @ViewBuilder private var actions: some View {
         if answerOnly {
@@ -256,8 +251,15 @@ struct OverlayView: View {
                 }
                 Spacer(minLength: 4).overlay { OverlayDragRegion() }
                 layoutToggle(iconOnly: compactToggle).fixedSize()
+                hideButton.buttonStyle(LCIconButtonStyle(size: 24)).foregroundStyle(.secondary)
             } else {
                 Spacer(minLength: 4)
+                // Always present so the row does not shift when listening starts or stops.
+                Toggle(t("Auto"), isOn: $coordinator.settings.automaticSuggestions)
+                    .font(.caption2).toggleStyle(OverlaySwitchStyle())
+                    .help(b("Suggest answers automatically while listening", "监听时自动生成回答建议"))
+                    .accessibilityIdentifier("automatic-suggestions")
+                    .fixedSize().padding(.trailing, 4)
                 knowledgeModeMenu
             }
         }
@@ -290,7 +292,6 @@ struct OverlayView: View {
             // Side controls stay level with the input's last line as it grows.
             HStack(alignment: .bottom, spacing: 8) {
                 composer
-                if coordinator.answerIsRunning { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption).fixedSize().frame(height: 34) }
                 answerLanguageMenu.frame(height: 34)
             }
         }
@@ -330,13 +331,7 @@ struct OverlayView: View {
                     .accessibilityHidden(true)
             }
             conversationContextMenu
-            Button { submit() } label: {
-                Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
-                    .frame(width: 22, height: 22)
-                    .background(canAsk ? AnyShapeStyle(LC.brandGradient) : AnyShapeStyle(Color.secondary.opacity(0.35)), in: Circle())
-            }
-            .buttonStyle(.plain).disabled(!canAsk)
-            .help(t("Ask")).accessibilityLabel(t("Ask")).accessibilityIdentifier("manual-query-submit")
+            sendButton
         }
         .padding(.leading, 10).padding(.trailing, 6).padding(.vertical, 6)
         .background(Color(nsColor: .textBackgroundColor).opacity(0.92), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -347,14 +342,32 @@ struct OverlayView: View {
         .shadow(color: LC.accent.opacity(composerFocused ? 0.22 : 0), radius: 8, y: 1)
         .lcAnimation(LC.Motion.quick, value: composerFocused)
         .lcAnimation(LC.Motion.quick, value: canAsk)
+        .lcAnimation(LC.Motion.quick, value: coordinator.answerIsRunning)
         .onboardingHighlight(onboarding.visibleTip == .start && onboarding.state.prefersTyping)
+    }
+    /// Send, or Stop while an answer is being written. Return still submits a new question.
+    private var sendButton: some View {
+        let stopping = coordinator.answerIsRunning
+        let fill: AnyShapeStyle = stopping ? AnyShapeStyle(Color.secondary.opacity(0.6))
+            : canAsk ? AnyShapeStyle(LC.brandGradient) : AnyShapeStyle(Color.secondary.opacity(0.35))
+        return Button { stopping ? coordinator.cancelAnswer() : submit() } label: {
+            Image(systemName: stopping ? "stop.fill" : "arrow.up")
+                .font(.system(size: stopping ? 9 : 11, weight: .bold)).foregroundStyle(.white)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 22, height: 22)
+                .background(fill, in: Circle())
+        }
+        .buttonStyle(.plain).disabled(!stopping && !canAsk)
+        .help(stopping ? b("Stop generating", "停止生成") : t("Ask"))
+        .accessibilityLabel(stopping ? b("Stop generating", "停止生成") : t("Ask"))
+        .accessibilityIdentifier("manual-query-submit")
     }
     /// Whether a typed question carries the recent conversation. Text-filled bubbles mean the
     /// conversation is attached; empty bubbles mean the question goes on its own.
     private var conversationContextMenu: some View {
-        let included = coordinator.includeConversation
+        let included = coordinator.settings.includeConversation
         return Menu {
-            Picker(b("Typed questions", "手动提问"), selection: $coordinator.includeConversation) {
+            Picker(b("Typed questions", "手动提问"), selection: $coordinator.settings.includeConversation) {
                 Label(t("Use recent conversation"), systemImage: "bubble.left.and.text.bubble.right").tag(true)
                 Label(b("Question only", "仅发送问题"), systemImage: "bubble.left.and.bubble.right").tag(false)
             }.pickerStyle(.inline)
@@ -464,15 +477,20 @@ struct OverlayView: View {
                 .accessibilityIdentifier("overlay-pin")
                 .onboardingHighlight(onboarding.visibleTip == .visibility)
             layoutToggle
-            Button { (NSApp.windows.first(where: { $0 is OverlayWindow }) as? OverlayWindow)?.tuckAway() } label: { Image(systemName: "minus") }
-                .help(t("Hide ({shortcut})").replacingOccurrences(of: "{shortcut}", with: hotkeys.toggleOverlay.display))
+            hideButton
         }.buttonStyle(LCIconButtonStyle(size: 24)).foregroundStyle(.secondary)
+    }
+    private var hideButton: some View {
+        Button { (NSApp.windows.first(where: { $0 is OverlayWindow }) as? OverlayWindow)?.tuckAway() } label: { Image(systemName: "minus") }
+            .help(t("Hide ({shortcut})").replacingOccurrences(of: "{shortcut}", with: hotkeys.toggleOverlay.display))
+            .accessibilityIdentifier("overlay-hide")
     }
     private var transcriptViewportHeight: CGFloat {
         if demonstrationAnswer != nil { return 60 }
         let line = NSLayoutManager().defaultLineHeight(for: NSFont.systemFont(ofSize: transcriptSize))
-        // Expanded keeps about three rows visible at any text size (90 pt at the default size).
-        return transcriptCollapsed ? line * 3 + 6 : max(90, line * 3 + 18)
+        // Collapsed shows the latest two rows; expanded shows the number chosen in Settings.
+        let rows = CGFloat(transcriptCollapsed ? 2 : coordinator.settings.transcriptExpandedLines)
+        return line * rows + (rows - 1) * 6 + 4
     }
     private var transcriptView: some View {
         ScrollViewReader { proxy in
@@ -480,7 +498,8 @@ struct OverlayView: View {
                 LCScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         if !transcript.hasContent {
-                            Text(t("Conversation appears here when listening.")).font(.system(size: transcriptSize)).foregroundStyle(.secondary)
+                            Text(coordinator.isRunning ? b("Listening — the conversation appears here.", "正在聆听，对话会显示在这里。")
+                                                       : t("Conversation appears here when listening.")).font(.system(size: transcriptSize)).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         ForEach(transcript.lines) { line in

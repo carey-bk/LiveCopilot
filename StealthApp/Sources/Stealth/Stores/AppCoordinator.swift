@@ -386,7 +386,6 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var indexingDocumentID: String?
     @Published private(set) var indexingSucceeded = false
     @Published var knowledgeMessage = ""
-    @Published var includeConversation = true
     @Published var micEnabled = true
     @Published private(set) var conversationGeneration = UUID()
     var onHotkeysChanged: (() -> Void)?
@@ -1882,7 +1881,7 @@ final class AppCoordinator: ObservableObject {
         if activeDeltaBuffer === buffer { activeDeltaBuffer = nil }
     }
 
-    func askText(_ query: String) { manualIntervention(); request(query: query, mode: .reply, useContext: includeConversation) }
+    func askText(_ query: String) { manualIntervention(); request(query: query, mode: .reply, useContext: settings.includeConversation) }
     func cancelAnswer() {
         manualIntervention()
         finalizeAnswerBuffer(activeDeltaBuffer)

@@ -56,6 +56,9 @@ struct AppSettings: Codable, Equatable {
     var excludeOverlayFromCapture = false
     var reasoningService = ReasoningService.sharedOpenAI
     var transcriptFontSize = 12.0
+    /// Rows the overlay transcript shows when expanded; collapsed always shows two.
+    var transcriptExpandedLines = 6
+    static let transcriptExpandedLineChoices = [4, 6, 8, 10]
     var answerFontSize = 14.0
     var qwenConnection = AnalysisConnection.qwen
     var glmConnection = AnalysisConnection.glm
@@ -85,7 +88,7 @@ struct AppSettings: Codable, Equatable {
         case layaThreshold, continuousQuestionPolicy, bilingualAnswers, additionalAnswerInstructions
         case showMenuBarIcon
         case recapEnabled, followUpEnabled
-        case transcriptFontSize, answerFontSize, qwenConnection, glmConnection, kimiConnection
+        case transcriptFontSize, transcriptExpandedLines, answerFontSize, qwenConnection, glmConnection, kimiConnection
         case listeningService, liveSpeechLanguage, appleSpeechLanguage, embeddingService, overlayAutoHeight, overlayEdgeHide
         case liveModel, reasoningModel, embeddingModel, reasoningEffort, openAIProcessing, mode, scenario, automaticSuggestions, includeConversation, retrievalCount, language, background, excludeOverlayFromCapture, reasoningService, deepSeekModel, deepSeekEffort, compatibleBaseURL, compatiblePath, compatibleModel
     }
@@ -131,6 +134,7 @@ struct AppSettings: Codable, Equatable {
         compatibleModel = try c.decodeIfPresent(String.self, forKey: .compatibleModel) ?? compatibleModel
         transcriptFontSize = OverlayTypography.clamped(try c.decodeIfPresent(Double.self, forKey: .transcriptFontSize) ?? transcriptFontSize, fallback: 12)
         answerFontSize = OverlayTypography.clamped(try c.decodeIfPresent(Double.self, forKey: .answerFontSize) ?? answerFontSize, fallback: 14)
+        transcriptExpandedLines = min(12, max(3, try c.decodeIfPresent(Int.self, forKey: .transcriptExpandedLines) ?? transcriptExpandedLines))
         qwenConnection = try c.decodeIfPresent(AnalysisConnection.self, forKey: .qwenConnection) ?? qwenConnection
         glmConnection = try c.decodeIfPresent(AnalysisConnection.self, forKey: .glmConnection) ?? glmConnection
         kimiConnection = try c.decodeIfPresent(AnalysisConnection.self, forKey: .kimiConnection) ?? kimiConnection

@@ -20,6 +20,24 @@ private final class CaptureSharingPanel: NSPanel {
 }
 
 final class NativeTests: XCTestCase {
+    func testOverlayConversationChoiceAndTranscriptRowsPersist() throws {
+        let suite = "LiveCopilot-Overlay-Prefs-Tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var settings = AppSettings.load(defaults: defaults)
+        XCTAssertTrue(settings.includeConversation)
+        XCTAssertEqual(settings.transcriptExpandedLines, 6)
+        settings.includeConversation = false
+        settings.transcriptExpandedLines = 10
+        settings.save(defaults: defaults)
+        let loaded = AppSettings.load(defaults: defaults)
+        XCTAssertFalse(loaded.includeConversation)
+        XCTAssertEqual(loaded.transcriptExpandedLines, 10)
+        let legacy = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+        XCTAssertEqual(legacy.transcriptExpandedLines, 6)
+        let outOfRange = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"transcriptExpandedLines":40}"#.utf8))
+        XCTAssertEqual(outOfRange.transcriptExpandedLines, 12)
+    }
     @MainActor func testAutomaticDockingDefaultsOffAndCanBeEnabledPersistently() throws {
         let suite = "LiveCopilot-Docking-Tests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

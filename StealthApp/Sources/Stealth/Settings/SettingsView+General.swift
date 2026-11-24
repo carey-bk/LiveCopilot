@@ -42,6 +42,15 @@ extension SettingsView {
                                         preview: b("I would start with the goal, then explain the approach.", "我会先说明目标，再介绍具体的方法。"))
                     }
                     Text(b("Text sizes are independent and take effect immediately. The window reflows; longer content scrolls.", "两处字号独立保存、即时生效；窗口会重新排版，较长的内容可滚动阅读。")).font(.caption).foregroundStyle(.secondary)
+                    Divider()
+                    HStack(spacing: 12) {
+                        Text(b("Expanded transcript", "展开转写行数"))
+                        Spacer()
+                        Picker(b("Expanded transcript", "展开转写行数"), selection: $coordinator.settings.transcriptExpandedLines) {
+                            ForEach(AppSettings.transcriptExpandedLineChoices, id: \.self) { Text(b("\($0) lines", "\($0) 行")).tag($0) }
+                        }.labelsHidden().pickerStyle(.segmented).fixedSize().accessibilityIdentifier("transcript-expanded-lines")
+                    }
+                    Text(b("Collapsed, the transcript shows the latest two lines.", "折叠时显示最新两行。")).font(.caption).foregroundStyle(.secondary)
                 }.padding(10)
             } label: { Label(t("Language & appearance"), systemImage: "paintpalette") }
             SettingsSection {

@@ -9,7 +9,7 @@ import Foundation
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
 ///     --ui-settings-page <SettingsPage case name>   --ui-open-history   --ui-answer-only
-///     --ui-query <typed question>   --ui-question-only
+///     --ui-query <typed question>   --ui-question-only   --ui-transcript-collapsed   --ui-transcript-lines n
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
 enum UIFixture {
@@ -32,7 +32,9 @@ enum UIFixture {
         if flag("--ui-dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
         // The mock preferences suite persists between runs, so every run states the layout explicitly.
         coordinator.settingsDefaults.set(flag("--ui-answer-only"), forKey: "overlayAnswerOnly")
-        if flag("--ui-question-only") { coordinator.includeConversation = false }
+        coordinator.settings.includeConversation = !flag("--ui-question-only")
+        coordinator.settingsDefaults.set(flag("--ui-transcript-collapsed"), forKey: "overlayTranscriptCollapsed")
+        coordinator.settings.transcriptExpandedLines = value("--ui-transcript-lines").flatMap(Int.init) ?? 6
         if let raw = value("--ui-listening-service"), let service = ListeningService(rawValue: raw) { coordinator.settings.listeningService = service }
         if let raw = value("--ui-laya-idle"), let seconds = TimeInterval(raw) { coordinator.layaIdleReleaseSeconds = seconds }
         if let raw = value("--ui-background"), let background = AppBackground(rawValue: raw) { coordinator.settings.background = background }
