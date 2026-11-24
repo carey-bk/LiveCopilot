@@ -6,6 +6,15 @@ extension SettingsView {
     var overview: some View {
         VStack(alignment: .leading, spacing: 16) {
             sessionCard
+            // How the next session listens and answers, with what that means in practice.
+            HStack(alignment: .top, spacing: 14) {
+                conversationTile(title: b("Mode", "模式"), value: t(coordinator.settings.mode.rawValue),
+                                 hint: modeHint, systemImage: coordinator.settings.mode == .remote ? "person.2" : "person.3",
+                                 identifier: "overview-mode")
+                conversationTile(title: b("Scenario", "场景"), value: t(coordinator.settings.scenario.rawValue),
+                                 hint: scenarioHint, systemImage: "theatermasks", identifier: "overview-scenario")
+            }
+            .fixedSize(horizontal: false, vertical: true)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
                 speechTile.lcHoverable(radius: LC.Radius.card, lift: true)
                 answerTile.lcHoverable(radius: LC.Radius.card, lift: true)
@@ -27,12 +36,7 @@ extension SettingsView {
                     LCStatusDot(tone: coordinator.isRunning ? .success : .neutral, pulsing: coordinator.isRunning)
                     Text(coordinator.isRunning ? b("Listening", "正在监听") : b("Not listening", "未在监听")).font(.headline)
                 }
-                // Drop the least important pill instead of truncating when the card is narrow.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 6) { modePill; scenarioPill; autoPill }
-                    HStack(spacing: 6) { modePill; scenarioPill }
-                    modePill
-                }
+                autoPill
             }
             Spacer(minLength: 8)
             Text(hotkeys.toggleOverlay.display).font(.caption.monospaced()).foregroundStyle(.secondary)
@@ -56,8 +60,53 @@ extension SettingsView {
         .lcCard()
     }
 
-    private var modePill: some View { LCPill(text: t(coordinator.settings.mode.rawValue), systemImage: "person.2").fixedSize() }
-    private var scenarioPill: some View { LCPill(text: t(coordinator.settings.scenario.rawValue), systemImage: "theatermasks").fixedSize() }
+    /// Describes what the code does for each mode: which input is which speaker and who can trigger answers.
+    private var modeHint: String {
+        switch coordinator.settings.mode {
+        case .remote:
+            return b("System audio is Them, your microphone is You. Only questions from Them trigger automatic answers.",
+                     "系统音频为对方，麦克风为我。只有对方的提问会触发自动回答。")
+        case .inPerson:
+            return b("One room microphone, speakers are not separated. A question from anyone in the room can trigger an automatic answer.",
+                     "只用房间麦克风，不区分说话人。房间里任何人的提问都可能触发自动回答。")
+        }
+    }
+    /// Mirrors ScenarioProfile.instructions, which only change how answers are written.
+    private var scenarioHint: String {
+        switch coordinator.settings.scenario {
+        case .interview:
+            return b("Short, natural answers to say aloud. Your documents are used only when a question asks about your experience.",
+                     "回答简短自然、便于说出口；只在问到你的经历时引用资料，不编造经历。")
+        case .meeting:
+            return b("Answers lead with decisions, exact facts, trade-offs and next actions.",
+                     "回答突出决策、准确事实、取舍和下一步行动，简短务实。")
+        case .defense:
+            return b("Answers explain methods and assumptions precisely, with sample sizes and limitations when supported.",
+                     "回答准确说明方法与假设，有依据时补充样本量和局限。")
+        }
+    }
+    private func conversationTile(title: String, value: String, hint: String, systemImage: String, identifier: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            LCIconTile(systemImage: systemImage, tone: .accent, size: 30)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(title).font(.caption).foregroundStyle(.secondary)
+                    Text(value).font(.headline)
+                }
+                Text(hint).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                overviewLink(locked ? b("Stop listening to change", "停止监听后可更改") : b("Change", "更改")) { page = .modesAndScenarios }
+                    .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .lcCard()
+        .lcHoverable(radius: LC.Radius.card, lift: true)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(identifier)
+    }
     private var autoPill: some View {
         LCPill(text: coordinator.settings.automaticSuggestions ? b("Auto answers on", "自动建议已开") : b("Auto answers off", "自动建议已关"),
                tone: coordinator.settings.automaticSuggestions ? .accent : .neutral).fixedSize()
