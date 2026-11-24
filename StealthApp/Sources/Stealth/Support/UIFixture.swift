@@ -8,7 +8,7 @@ import Foundation
 ///     --mock --ui-preview --ui-fixture listening|streaming|answered|session|error|notice
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
-///     --ui-settings-page <SettingsPage case name>   --ui-open-history
+///     --ui-settings-page <SettingsPage case name>   --ui-open-history   --ui-answer-only
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
 enum UIFixture {
@@ -27,6 +27,8 @@ enum UIFixture {
     static func apply(to coordinator: AppCoordinator, openSettings: (SettingsPage) -> Void, openHistory: () -> Void) async {
         guard AppPaths.isMock else { return }
         if flag("--ui-dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
+        // The mock preferences suite persists between runs, so every run states the layout explicitly.
+        coordinator.settingsDefaults.set(flag("--ui-answer-only"), forKey: "overlayAnswerOnly")
         if let raw = value("--ui-listening-service"), let service = ListeningService(rawValue: raw) { coordinator.settings.listeningService = service }
         if let raw = value("--ui-laya-idle"), let seconds = TimeInterval(raw) { coordinator.layaIdleReleaseSeconds = seconds }
         if let raw = value("--ui-background"), let background = AppBackground(rawValue: raw) { coordinator.settings.background = background }

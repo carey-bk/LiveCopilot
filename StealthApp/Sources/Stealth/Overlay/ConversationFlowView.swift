@@ -100,7 +100,8 @@ struct ConversationFlowView: View {
                 }
             }
             .onPreferenceChange(ConversationContentHeightKey.self, perform: onContentHeight)
-            .onAppear { scrollController.scheduleScrollToBottom(proxy: proxy) }
+            // The empty state reads from the top; bottom-anchoring it would cut off its title.
+            .onAppear { if !coordinator.answers.isEmpty { scrollController.scheduleScrollToBottom(proxy: proxy) } }
             .onDisappear { scrollController.cancel() }
             .onChange(of: coordinator.answerRevision) { _, _ in
                 if scrollController.state.followsLatest {

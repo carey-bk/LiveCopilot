@@ -40,7 +40,11 @@ struct SettingsView: View {
         HStack(spacing: 0) {
             sidebar
                 .background { LCVisualEffect(material: .sidebar).ignoresSafeArea() }
-            Rectangle().fill(LC.hairline).frame(width: 1).ignoresSafeArea(edges: .top)
+                // Drawn over the sidebar material. A separate 1 pt column had no backing in this
+                // translucent window, so the desktop showed through as a dark line.
+                .overlay(alignment: .trailing) {
+                    Rectangle().fill(LC.hairline).frame(width: 0.5).ignoresSafeArea(edges: .top).allowsHitTesting(false)
+                }
             VStack(alignment: .leading, spacing: 18) {
                 UpdateBanner(updates: updates, language: coordinator.settings.language, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
                 LCPageHeader(breadcrumb: ["LiveCopilot", groupTitle(page.group)], title: pageTitle(page), subtitle: pageSubtitle(page))

@@ -229,7 +229,8 @@ final class AppCoordinator: ObservableObject {
     private var flowSources: [Speaker] = []
     private var audioCheckTask: Task<Void, Never>?
     let isMock: Bool
-    private let settingsDefaults: UserDefaults
+    /// `.standard` in the real app; an isolated suite in mock and preview runs.
+    let settingsDefaults: UserDefaults
     private(set) var knowledge: KnowledgeIndex?
     private var systemLive: (any LiveProvider)?
     private var micLive: (any LiveProvider)?

@@ -23,6 +23,7 @@ final class OverlayWindow: NSPanel {
     var setupWindowVisible = false { didSet { hover.reset() } }
     var onManualHeight: (() -> Void)?
     private var desiredHeight: CGFloat = 280
+    private var reportedMinimum: CGFloat?
     private var edgeTimer: Timer?
     private var hover = OverlayHoverState()
     private var holdUntil: TimeInterval = 0
@@ -204,8 +205,17 @@ final class OverlayWindow: NSPanel {
         guard height.isFinite, let screen = displayScreen else { return }
         let minimum = min(max(240, height), screen.visibleFrame.height - 24)
         guard abs(minSize.height - minimum) > 1 else { return }
+        let previous = reportedMinimum
+        reportedMinimum = minimum
         minSize.height = minimum
-        fitHeight(animated: false)
+        // A manually sized window keeps its answer viewport: when live controls or
+        // transcript chrome appear above the answers, the window grows by the same amount
+        // instead of squeezing the answers underneath.
+        if !autoHeight, let previous {
+            fitHeight(animated: false, height: frame.height + (minimum - previous))
+        } else {
+            fitHeight(animated: false)
+        }
     }
 
     private var displayScreen: NSScreen? {
@@ -214,9 +224,10 @@ final class OverlayWindow: NSPanel {
         return screen ?? NSScreen.main ?? NSScreen.screens.first
     }
 
-    private func fitHeight(animated: Bool) {
+    private func fitHeight(animated: Bool, height manualHeight: CGFloat? = nil) {
         guard let display = displayScreen else { return }
-        let fitted = OverlayLayout.fitted(frame, height: max(minSize.height, autoHeight ? desiredHeight : frame.height),
+        let target = manualHeight ?? (autoHeight ? desiredHeight : frame.height)
+        let fitted = OverlayLayout.fitted(frame, height: max(minSize.height, target),
                                          visible: display.visibleFrame, docked: edgeHide, minimumHeight: minSize.height)
         guard fitted != frame else { return }
         // Keep the top edge stable. Hidden content can grow without revealing the window.

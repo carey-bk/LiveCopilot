@@ -186,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.appearance = NSAppearance(named: .darkAqua)
         }
 
-        let overlay = OverlayWindow(rootView: OverlayView(coordinator: coordinator, onContentHeight: { [weak self] height in
+        let overlay = OverlayWindow(rootView: OverlayView(coordinator: coordinator, transcriptPreferences: coordinator.settingsDefaults, onContentHeight: { [weak self] height in
             // Hosting can measure synchronously inside OverlayWindow.init, before self.overlay is assigned.
             DispatchQueue.main.async { self?.overlay?.contentHeightChanged(height) }
         }, onMinimumHeight: { [weak self] height in

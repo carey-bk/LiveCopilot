@@ -61,8 +61,11 @@ struct OverlayView: View {
         // Only the answer viewport grows. The voice area and composer keep
         // their position relative to the window's stable top edge.
         let fixedHeight = layoutMetrics.chromeHeight + 10 + 28 // inter-pane spacing and outer padding
-        onMinimumHeight(fixedHeight + 56)
-        onContentHeight(fixedHeight + max(56, layoutMetrics.answerContentHeight))
+        // Enough for the empty state or two lines of an answer, so live controls can never
+        // squeeze the answers out of view.
+        let minimumAnswer: CGFloat = 92
+        onMinimumHeight(fixedHeight + minimumAnswer)
+        onContentHeight(fixedHeight + max(minimumAnswer, layoutMetrics.answerContentHeight))
     }
     var body: some View {
         GeometryReader { geometry in
@@ -70,7 +73,7 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if !answerOnly { voiceSection }
                     actions.frame(height: 28)
-                    if demonstrationAnswer == nil { bottom.frame(height: answerOnly ? 34 : 86, alignment: .top) }
+                    if demonstrationAnswer == nil { bottom.frame(height: answerOnly ? 34 : 66, alignment: .top) }
                     Divider()
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -200,7 +203,8 @@ struct OverlayView: View {
             ViewThatFits(in: .horizontal) {
                 actionRow(.titleAndIcon)
                 actionRow(.titleOnly)
-                actionRow(.iconOnly)
+                actionRow(.titleOnly, compactToggle: true)
+                actionRow(.iconOnly, compactToggle: true)
             }
             // Outer padding supplies another 14 pt of clearance from the resize corner.
             .padding(.trailing, OverlayResizeView.corner / 2)
@@ -209,7 +213,7 @@ struct OverlayView: View {
         }
     }
 
-    private func actionRow<Style: LabelStyle>(_ style: Style) -> some View {
+    private func actionRow<Style: LabelStyle>(_ style: Style, compactToggle: Bool = false) -> some View {
         HStack(spacing: 6) {
             ForEach(coordinator.settings.enabledSuggestionModes) { mode in
                 Button { coordinator.requestSuggestion(mode: mode) } label: {
@@ -228,37 +232,53 @@ struct OverlayView: View {
                 .onboardingHighlight(onboarding.visibleTip == .answer && mode == .reply)
             }
             Spacer(minLength: 4).overlay { if answerOnly { OverlayDragRegion() } }
-            Menu {
-                Picker(t("Answer language"), selection: $coordinator.settings.answerLanguage) {
-                    ForEach(AnswerLanguage.allCases) { language in Text(language.label).tag(language) }
-                }.pickerStyle(.inline)
-            } label: {
-                Label(coordinator.settings.answerLanguage.label, systemImage: "globe")
-                    .font(.caption)
-            }.fixedSize().help(t("Answer language"))
-                .accessibilityIdentifier("answer-language")
-
-            if answerOnly { layoutToggle.fixedSize() }
+            // Answers-only mode has no status row, so the live meters ride along here.
+            if answerOnly && coordinator.isRunning {
+                LiveLevelsView(levels: coordinator.levels, mode: coordinator.settings.mode,
+                               micEnabled: coordinator.micEnabled, language: coordinator.settings.language)
+                    .transition(.opacity)
+            }
+            knowledgeModeMenu
+            if answerOnly { layoutToggle(iconOnly: compactToggle).fixedSize() }
         }
+        .lcAnimation(LC.Motion.quick, value: coordinator.isRunning)
+    }
+    private var knowledgeModeMenu: some View {
+        Menu {
+            Picker(t("Knowledge mode"), selection: $coordinator.settings.knowledgeMode) {
+                ForEach(KnowledgeMode.allCases) { mode in Text(t(mode.label)).tag(mode) }
+            }.pickerStyle(.inline)
+        } label: {
+            Label(t(coordinator.settings.knowledgeMode.compactLabel), systemImage: "books.vertical")
+                .font(.caption)
+        }.fixedSize().help(t(coordinator.settings.knowledgeMode.label))
+            .accessibilityIdentifier("knowledge-mode")
+    }
+    private var answerLanguageMenu: some View {
+        Menu {
+            Picker(t("Answer language"), selection: $coordinator.settings.answerLanguage) {
+                ForEach(AnswerLanguage.allCases) { language in Text(language.label).tag(language) }
+            }.pickerStyle(.inline)
+        } label: {
+            Label(coordinator.settings.answerLanguage.label, systemImage: "globe")
+                .font(.caption)
+        }.fixedSize().help(t("Answer language"))
+            .accessibilityIdentifier("answer-language")
     }
     private var bottom: some View {
         VStack(alignment: .leading, spacing: 6) {
-            composer
+            HStack(spacing: 8) {
+                composer
+                answerLanguageMenu
+            }
             if !answerOnly {
-                HStack {
+                HStack(spacing: 8) {
                     Toggle(t("Use recent conversation"), isOn: $coordinator.includeConversation).font(.caption2).toggleStyle(OverlaySwitchStyle())
-                    Spacer(minLength: 4)
-                    Menu {
-                        Picker(t("Knowledge mode"), selection: $coordinator.settings.knowledgeMode) {
-                            ForEach(KnowledgeMode.allCases) { mode in Text(t(mode.label)).tag(mode) }
-                        }.pickerStyle(.inline)
-                    } label: {
-                        Text(t(coordinator.settings.knowledgeMode.compactLabel)).font(.caption2)
-                    }.fixedSize().help(t(coordinator.settings.knowledgeMode.label))
-                        .accessibilityIdentifier("knowledge-mode")
+                        .fixedSize()
                     if coordinator.answerIsRunning { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption) }
+                    Spacer(minLength: 4)
+                    footer
                 }
-                footer.padding(.trailing, 20)
             }
         }
     }
@@ -305,13 +325,18 @@ struct OverlayView: View {
         if coordinator.isTransitioning { return .warning }
         return coordinator.isRunning ? .success : .neutral
     }
-    private var layoutToggle: some View {
+    private var layoutToggle: some View { layoutToggle(iconOnly: false) }
+    private func layoutToggle(iconOnly: Bool) -> some View {
         let label = answerOnly ? b("Show full view", "恢复完整模式") : b("Show answers only", "切换到精简模式")
         return Button {
             showTranslation = false
             answerOnly.toggle()
         } label: {
-            if answerOnly {
+            if answerOnly && iconOnly {
+                Image(systemName: "rectangle.topthird.inset.filled")
+                    .frame(width: 24, height: 28)
+                    .contentShape(Rectangle())
+            } else if answerOnly {
                 Label(b("Full view", "完整模式"), systemImage: "rectangle.topthird.inset.filled")
                     .font(.caption)
                     .padding(.horizontal, 6)
@@ -462,9 +487,9 @@ struct OverlayView: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private var footer: some View {
-        HStack {
+        HStack(spacing: 8) {
             Label(t(coordinator.settings.scenario.rawValue), systemImage: "theatermasks").font(.caption2).foregroundStyle(.secondary)
-            Spacer()
+                .lineLimit(1)
             Text(hotkeys.toggleOverlay.display).font(.caption2.monospaced()).foregroundStyle(.secondary)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(LC.fill, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
