@@ -36,6 +36,8 @@ struct SettingsView: View {
     func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
     var locked: Bool { coordinator.isRunning || coordinator.isTransitioning }
 
+    static let pageInset: CGFloat = 28
+
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -46,19 +48,24 @@ struct SettingsView: View {
                     Rectangle().fill(LC.hairline).frame(width: 0.5).ignoresSafeArea(edges: .top).allowsHitTesting(false)
                 }
             VStack(alignment: .leading, spacing: 18) {
-                UpdateBanner(updates: updates, language: coordinator.settings.language, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
-                LCPageHeader(breadcrumb: ["LiveCopilot", groupTitle(page.group)], title: pageTitle(page), subtitle: pageSubtitle(page))
+                VStack(alignment: .leading, spacing: 18) {
+                    UpdateBanner(updates: updates, language: coordinator.settings.language, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
+                    LCPageHeader(breadcrumb: ["LiveCopilot", groupTitle(page.group)], title: pageTitle(page), subtitle: pageSubtitle(page))
+                }.padding(.horizontal, Self.pageInset)
+                // Scrolling pages span the full detail width and inset their content instead, so the
+                // overlay scroll bar runs along the window edge rather than over cards and controls.
                 switch page {
-                case .overview: LCScrollView { overview }
-                case .general: LCScrollView { general }
-                case .modesAndScenarios: LCScrollView { modesAndScenarios }
-                case .services: LCScrollView { services }
+                case .overview: LCScrollView(horizontalInset: Self.pageInset) { overview }
+                case .general: LCScrollView(horizontalInset: Self.pageInset) { general }
+                case .modesAndScenarios: LCScrollView(horizontalInset: Self.pageInset) { modesAndScenarios }
+                case .services: LCScrollView(horizontalInset: Self.pageInset) { services }
                 case .knowledge: knowledge
                 case .history: HistoryView(coordinator: coordinator).lcCard(padding: 0).clipShape(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
-                case .shortcuts: LCScrollView { shortcuts }
-                case .about: LCScrollView { about }
+                        .padding(.horizontal, Self.pageInset)
+                case .shortcuts: LCScrollView(horizontalInset: Self.pageInset) { shortcuts }
+                case .about: LCScrollView(horizontalInset: Self.pageInset) { about }
                 }
-            }.padding(.horizontal, 28).padding(.top, 24).padding(.bottom, page == .history ? 20 : 0)
+            }.padding(.top, 24).padding(.bottom, page == .history ? 20 : 0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .background { LC.canvas.ignoresSafeArea() }
         }

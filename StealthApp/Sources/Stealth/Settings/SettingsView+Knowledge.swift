@@ -7,7 +7,7 @@ extension SettingsView {
     var importStatusHidden: Bool { importStatusCollapsed && !coordinator.isIndexing && coordinator.indexingSucceeded }
 
     var knowledge: some View {
-        LCScrollView {
+        LCScrollView(horizontalInset: Self.pageInset) {
             VStack(alignment: .leading, spacing: 16) {
                 if !knowledgeConfigured {
                     HStack(spacing: 12) {

@@ -506,9 +506,12 @@ struct LCSidebarGroupLabel: View {
 /// otherwise switches every window to wide, always-visible legacy scrollers with a track.
 struct LCScrollView<Content: View>: View {
     var axes: Axis.Set = .vertical
+    /// Padding inside the scrolled content. Use it instead of padding the scroll view, so the
+    /// scroll bar stays at the outer edge and does not cover the content.
+    var horizontalInset: CGFloat = 0
     @ViewBuilder var content: () -> Content
     var body: some View {
-        ScrollView(axes) { content().background(OverlayScrollerProbe()) }
+        ScrollView(axes) { content().padding(.horizontal, horizontalInset).background(OverlayScrollerProbe()) }
     }
 }
 
