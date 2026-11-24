@@ -32,6 +32,8 @@ enum JevSensitivity: Int, CaseIterable {
 struct JevSettingsView: View {
     @ObservedObject var coordinator: AppCoordinator
     @ObservedObject var laya: LayaRuntimeManager
+    /// Jev Mode is switched in Modes & Scenarios; this tab only shows its state.
+    var showModes: (() -> Void)?
     @State private var confirmLegacyCleanup = false
     @State private var confirmRemoval = false
     @State private var testText = ""
@@ -82,24 +84,18 @@ struct JevSettingsView: View {
         }
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            JevModeCard(isOn: $coordinator.settings.automaticSuggestions, language: coordinator.settings.language,
-                        identifier: "jev-enabled", details: {
-                Label(laya.engineTitle + " · " + stateTitle, systemImage: stateIcon)
-                    .font(.caption).foregroundStyle(stateColor).accessibilityIdentifier("laya-runtime-status")
-                if coordinator.settings.listeningService == .openAI {
-                    Text(b("GPT-Live-1 handles triggering; Laya sensitivity applies to local speech engines.", "当前由 GPT-Live-1 触发；Laya 灵敏度用于本地语音引擎。"))
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Divider().padding(.vertical, 2)
+        VStack(alignment: .leading, spacing: 16) {
+            switchStatus
+            LCSettingsCard(b("Trigger sensitivity", "触发灵敏度"),
+                           subtitle: coordinator.settings.listeningService == .openAI
+                               ? b("GPT-Live-1 handles triggering now; this applies to local speech engines.", "当前由 GPT-Live-1 触发；此设置用于本地语音引擎。")
+                               : b("How readily a question counts as complete.", "多完整的提问才触发回答。"),
+                           systemImage: "dial.medium") {
                 HStack(spacing: 8) {
-                    Text(b("Trigger sensitivity", "触发灵敏度")).font(.subheadline.weight(.medium))
-                    Text(sensitivity.title(coordinator.settings.language)).font(.subheadline.weight(.semibold)).foregroundStyle(LC.accent)
+                    (Text(b("Current: ", "当前：")).foregroundColor(.secondary) + Text(sensitivity.title(coordinator.settings.language)).foregroundColor(LC.accent))
+                        .font(.callout.weight(.semibold))
                         .accessibilityIdentifier("laya-sensitivity-level")
                     Spacer()
-                    Button(b("Restore recommended", "恢复推荐值")) { coordinator.settings.layaThreshold = JevSensitivity.medium.threshold }
-                        .disabled(coordinator.isTestingLaya || coordinator.settings.layaThreshold == JevSensitivity.medium.threshold)
-                        .accessibilityIdentifier("laya-reset-threshold")
                 }
                 Slider(value: sensitivityBinding, in: 0...Double(sensitivityLevels.count - 1), step: 1)
                     .disabled(coordinator.isTestingLaya).accessibilityLabel(b("Trigger sensitivity", "触发灵敏度"))
@@ -109,15 +105,22 @@ struct JevSettingsView: View {
                     Spacer()
                     Text(b("More responses", "更多响应"))
                 }.font(.caption).foregroundStyle(.secondary)
-            })
-            .disabled(coordinator.isTestingLaya)
-            card {
-                HStack {
-                    Text(b("Local model management", "本地模型管理")).font(.headline)
-                    Spacer()
-                    Label(laya.engineTitle + " · " + stateTitle, systemImage: stateIcon).font(.caption).foregroundStyle(stateColor)
-                        .accessibilityIdentifier("laya-install-status")
-                }
+            } accessory: {
+                Button(b("Restore recommended", "恢复推荐值")) { coordinator.settings.layaThreshold = JevSensitivity.medium.threshold }
+                    .disabled(coordinator.isTestingLaya || coordinator.settings.layaThreshold == JevSensitivity.medium.threshold)
+                    .accessibilityIdentifier("laya-reset-threshold")
+            }
+            LCSettingsCard(b("Continuous questions", "连续提问处理"), subtitle: b("What happens when questions come one after another.", "对方连续提问时如何处理。"),
+                           systemImage: "text.bubble") {
+                Picker(b("Continuous questions", "连续提问处理"), selection: $coordinator.settings.continuousQuestionPolicy) {
+                    ForEach(ContinuousQuestionPolicy.allCases) { policy in Text(L10n.text(policy.label, language: coordinator.settings.language)).tag(policy) }
+                }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("continuous-question-policy")
+                Text(continuousQuestionDescription).font(.callout).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("continuous-question-description")
+                Label(b("All modes keep previous answers; new answers never overwrite them.", "所有模式均保留历史回答，新回答不会覆盖旧回答。"), systemImage: "clock.arrow.circlepath")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            LCSettingsCard(b("Local trigger model", "本地触发模型"), subtitle: laya.engineTitle, systemImage: "cpu") {
                 HStack(spacing: 8) {
                     Button(modelActionTitle) { if laya.isInstalled { laya.prepare() } else { laya.install() } }
                         .disabled(laya.isReady || laya.isBusy || locked || laya.state == .unsupported).accessibilityIdentifier("install-laya")
@@ -140,6 +143,7 @@ struct JevSettingsView: View {
                 if coordinator.isRunning || coordinator.isTransitioning {
                     Text(b("Stop listening to manage the model.", "停止监听后可管理模型。")).font(.caption).foregroundStyle(.secondary)
                 }
+                Divider()
                 DisclosureGroup(b("Test automatic triggering", "测试自动触发")) {
                     VStack(alignment: .leading, spacing: 10) {
                         TextField(b("Enter a sample question", "输入一段模拟提问"), text: $testText, axis: .vertical)
@@ -175,16 +179,12 @@ struct JevSettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }.padding(.top, 8)
                 }.accessibilityIdentifier("laya-test-section")
-            }
-            card {
-                Text(b("Continuous questions", "连续提问处理")).font(.headline)
-                Picker(b("Continuous questions", "连续提问处理"), selection: $coordinator.settings.continuousQuestionPolicy) {
-                    ForEach(ContinuousQuestionPolicy.allCases) { policy in Text(L10n.text(policy.label, language: coordinator.settings.language)).tag(policy) }
-                }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("continuous-question-policy")
-                Text(continuousQuestionDescription).font(.caption).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("continuous-question-description")
-                Label(b("All modes keep previous answers; new answers never overwrite them.", "所有模式均保留历史回答，新回答不会覆盖旧回答。"), systemImage: "clock.arrow.circlepath")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } accessory: {
+                Label(stateTitle, systemImage: stateIcon).font(.caption.weight(.medium)).foregroundStyle(stateColor)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(stateColor.opacity(0.12), in: Capsule())
+                    .fixedSize()
+                    .accessibilityIdentifier("laya-install-status")
             }
         }.controlSize(.regular)
         .onChange(of: testText) { _, _ in result = nil; testError = "" }
@@ -197,7 +197,26 @@ struct JevSettingsView: View {
         case .threshold: return b("The score meets the current threshold.", "判断分数达到当前阈值。")
         }
     }
-    private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8, content: content).lcCard(padding: 14)
+    private var switchStatus: some View {
+        let on = coordinator.settings.automaticSuggestions
+        return HStack(spacing: 10) {
+            LCStatusDot(tone: on ? .success : .neutral)
+            Text("Jev Mode").font(.custom(AppBrandTitle.fontName, size: 15))
+            Text(on ? b("On", "已开启") : b("Off · answers only when you ask", "已关闭 · 只在你提问时回答"))
+                .font(.callout.weight(.medium)).foregroundStyle(on ? Color.primary : Color.secondary)
+            Label(laya.engineTitle + " · " + stateTitle, systemImage: stateIcon)
+                .font(.caption).foregroundStyle(stateColor).lineLimit(1)
+                .accessibilityIdentifier("laya-runtime-status")
+            Spacer(minLength: 8)
+            if let showModes {
+                Button(action: showModes) {
+                    HStack(spacing: 4) { Text(b("Switch in Modes & Scenarios", "在模式与场景中切换")); Image(systemName: "arrow.right").font(.caption.weight(.semibold)) }
+                        .font(.callout).foregroundStyle(LC.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("jev-switch-location")
+            }
+        }
+        .lcCallout(on ? .accent : .neutral, padding: 12)
     }
 }
