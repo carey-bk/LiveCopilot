@@ -5,6 +5,9 @@ import UniformTypeIdentifiers
 /// About: a brand header, three equal action tiles, software update and a quiet footer.
 extension SettingsView {
     var about: some View {
+        aboutContent.task { await stars.refresh(mock: coordinator.isMock) }
+    }
+    private var aboutContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             aboutHero
             HStack(alignment: .top, spacing: 12) {
@@ -13,7 +16,7 @@ extension SettingsView {
                               detail: AppInfo.starThanks(coordinator.settings.language), gold: true) {
                         GitHubMarkBadge()
                     } accessory: {
-                        GoldStarPill()
+                        GitHubStarButton(count: stars.count)
                     }
                 }
                 .buttonStyle(.plain)
@@ -193,17 +196,64 @@ private struct GoldSurface: ViewModifier {
     }
 }
 
-/// "Star" on a small gold gradient capsule.
-private struct GoldStarPill: View {
+/// Looks like GitHub's own Star button: outlined star, "Star", and the star count in a separate segment.
+private struct GitHubStarButton: View {
+    let count: Int?
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
-        Label("Star", systemImage: "star.fill").labelStyle(.titleAndIcon)
-            .font(LC.Typo.micro.weight(.bold))
-            .foregroundStyle(Color(red: 0.36, green: 0.25, blue: 0.03))
-            .padding(.horizontal, 8).frame(height: 21)
-            .background(LinearGradient(colors: [Color(red: 1.0, green: 0.90, blue: 0.62), Color(red: 0.90, green: 0.72, blue: 0.36)],
-                                       startPoint: .top, endPoint: .bottom), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.5), lineWidth: 0.5))
-            .shadow(color: Color(red: 0.75, green: 0.55, blue: 0.15).opacity(0.3), radius: 2, y: 1)
+        let dark = scheme == .dark
+        let border = dark ? Color(red: 0.24, green: 0.27, blue: 0.31) : Color(red: 0.82, green: 0.85, blue: 0.88)
+        let fill = dark ? Color(red: 0.13, green: 0.15, blue: 0.18) : Color(red: 0.965, green: 0.973, blue: 0.98)
+        let ink = dark ? Color(red: 0.94, green: 0.96, blue: 0.98) : Color(red: 0.15, green: 0.16, blue: 0.18)
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        HStack(spacing: 0) {
+            HStack(spacing: 5) {
+                Image(systemName: "star").font(.system(size: 11, weight: .semibold))
+                Text("Star").font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 9)
+            if let count {
+                Rectangle().fill(border).frame(width: 1)
+                Text(count.formatted(.number.notation(.compactName)))
+                    .font(.system(size: 11, weight: .semibold)).monospacedDigit()
+                    .padding(.horizontal, 7).padding(.vertical, 1)
+                    .background(dark ? Color.white.opacity(0.10) : Color.black.opacity(0.07), in: Capsule())
+                    .padding(.horizontal, 6)
+            }
+        }
+        .foregroundStyle(ink)
+        .frame(height: 24)
+        .background(fill, in: shape)
+        .overlay(shape.strokeBorder(border))
+        .fixedSize()
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The public star count of the repository, cached for six hours. Anonymous, no cookies; hidden on failure.
+@MainActor final class GitHubStarCount: ObservableObject {
+    @Published private(set) var count: Int?
+    private static let countKey = "livecopilot.github.stars", dateKey = "livecopilot.github.stars.date"
+    private var loading = false
+    init() {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: Self.countKey) != nil { count = defaults.integer(forKey: Self.countKey) }
+    }
+    func refresh(mock: Bool) async {
+        let defaults = UserDefaults.standard
+        if let date = defaults.object(forKey: Self.dateKey) as? Date, Date().timeIntervalSince(date) < 6 * 3600, count != nil { return }
+        guard !mock, !loading, let api = URL(string: "https://api.github.com/repos" + AppInfo.repositoryURL.path) else { return }
+        loading = true; defer { loading = false }
+        var request = URLRequest(url: api, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 6)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
+        guard let (data, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let stars = object["stargazers_count"] as? Int else { return }
+        count = stars
+        defaults.set(stars, forKey: Self.countKey); defaults.set(Date(), forKey: Self.dateKey)
     }
 }
 

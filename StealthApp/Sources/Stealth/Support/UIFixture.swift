@@ -8,7 +8,7 @@ import Foundation
 ///     --mock --ui-preview --ui-fixture listening|streaming|answered|session|error|notice
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
-///     --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-open-history   --ui-answer-only
+///     --ui-tip <OverlayTourState.Step case>   --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-open-history   --ui-answer-only
 ///     --ui-query <typed question>   --ui-question-only   --ui-transcript-collapsed   --ui-transcript-lines n   --ui-translations japanese,english   --ui-scroll-end
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
@@ -84,6 +84,10 @@ enum UIFixture {
             break
         }
 
+        if let raw = value("--ui-tip"), let step = OverlayTourState.Step.order.first(where: { String(describing: $0) == raw }) {
+            coordinator.onboarding.replayTips()
+            for _ in 0..<step.position { coordinator.onboarding.advanceTip() }
+        }
         if let raw = value("--ui-settings-page"),
            let page = SettingsPage.allCases.first(where: { String(describing: $0) == raw }) {
             openSettings(page)

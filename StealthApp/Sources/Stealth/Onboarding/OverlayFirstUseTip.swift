@@ -16,7 +16,7 @@ struct OverlayFirstUseTip: View {
             HStack {
                 Text(title).font(.system(size: 12, weight: .semibold))
                 Spacer(minLength: 4)
-                Text("\(step.rawValue + 1) / \(OverlayTourState.Step.allCases.count)").font(.caption2).foregroundStyle(.secondary)
+                Text("\(step.position + 1) / \(OverlayTourState.Step.order.count)").font(.caption2).foregroundStyle(.secondary)
                 Button(b("Dismiss tips", "跳过提示")) { store.dismissTips() }
                     .font(.caption2).buttonStyle(.borderless).accessibilityIdentifier("overlay-tip-dismiss")
             }
@@ -40,6 +40,10 @@ struct OverlayFirstUseTip: View {
         switch step {
         case .start: return store.state.prefersTyping ? b("Start with a question", "先输入一个问题") : b("Start listening when you are ready", "准备好后，再开始监听")
         case .answer: return b("Choose when to ask for help", "按需生成回答")
+        case .transcript: return b("Follow the conversation", "实时转写")
+        case .tools: return b("Recap, follow-up and automatic answers", "总结、追问与自动建议")
+        case .composer: return b("Type a question any time", "随时输入问题")
+        case .window: return b("Buttons along the top", "顶部按钮")
         case .visibility: return b("Keep the window within reach", "随时唤出悬浮窗")
         case .captureExclusion: return L10n.text("Hide the floating window from meeting screen sharing and recording", language: coordinator.settings.language)
         }
@@ -60,6 +64,21 @@ struct OverlayFirstUseTip: View {
                 return hotkeys.combo(for: .reply).display + b(" or Generate answer shows a sample suggestion here. In normal use, this requests your configured answer service.", " 或“生成回答”会在这里展示示例建议。正式使用时会请求你配置的回答服务。")
             }
             return hotkeys.combo(for: .reply).display + b(" or Generate answer uses the current conversation. You can also type a question below. Requests use your configured answer service.", " 或“生成回答”会根据当前对话请求建议，也可在下方直接输入问题。请求使用你配置的回答服务。")
+        case .transcript:
+            return coordinator.settings.mode == .remote
+                ? b("What is said appears here: You is your microphone, Them is the system audio. Collapse transcript keeps the latest two lines; Translate shows the other side in a language you pick; turn off Follow transcript to scroll back.",
+                    "对话会实时显示在这里：「我」是你的麦克风，「对方」是系统音频。「折叠转写」只留最新两行；「翻译」把对方的话译成你选的语言；关闭「跟随最新转写」可往回翻看。")
+                : b("What is said in the room appears here. Collapse transcript keeps the latest two lines; Translate shows it in a language you pick; turn off Follow transcript to scroll back.",
+                    "现场说的话会实时显示在这里。「折叠转写」只留最新两行；「翻译」把内容译成你选的语言；关闭「跟随最新转写」可往回翻看。")
+        case .tools:
+            return b("Recap summarizes what has been said and decided; Follow-up suggests one question you can ask next. With Auto on, an answer is prepared when the other side finishes a question. The knowledge menu chooses whether answers draw on your documents.",
+                     "「总结」概括目前聊了什么、定了什么；「追问」帮你想一个接下来可以问的问题。打开「自动建议」后，对方问完问题会自动准备回答。「混合知识」菜单决定回答是否引用你的资料。")
+        case .composer:
+            return b("Type and press Return to ask; a long question wraps onto more lines. The bubble button inside the field chooses whether recent conversation is sent with the question. While an answer is being written, Send becomes Stop. The globe menu sets the answer language.",
+                     "在输入框打字，回车即可提问，长问题会自动换行显示。输入框里的气泡按钮选择是否附带近期对话；生成回答时发送键会变成停止键。右侧地球菜单设置回答语言。")
+        case .window:
+            return b("Play starts or stops listening. ↻ clears the conversation and answers (listening continues). The microphone turns your voice on or off in Remote Meeting. The gear opens Settings, the pin switches edge docking, the layout button switches to answers only, and − hides the window.",
+                     "播放键开始/停止监听；↻ 清空对话和回答，监听不中断；麦克风在远程会议中开关你的声音；齿轮打开设置；图钉切换自动贴边；布局按钮切换为只看回答；“−”隐藏窗口。")
         case .captureExclusion:
             let status = coordinator.settings.excludeOverlayFromCapture
                 ? b("Currently on. ", "当前已开启。") : b("Currently off. ", "当前未开启。")

@@ -18,6 +18,7 @@ struct SettingsView: View {
     @ObservedObject var updates: AppUpdateController
     @StateObject var permissions: OnboardingPermissions
     @State var showDiagnostics = false
+    @StateObject var stars = GitHubStarCount()
     /// Set 5 s after a successful import; hides the finished progress bar and status line.
     @State var importStatusCollapsed = false
     @State var page = SettingsPage.overview

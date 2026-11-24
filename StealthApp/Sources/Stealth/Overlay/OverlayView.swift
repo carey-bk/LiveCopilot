@@ -134,11 +134,13 @@ struct OverlayView: View {
                       systemImage: transcriptCollapsed ? "chevron.down" : "chevron.up")
             }.buttonStyle(.borderless).font(.caption)
                 .accessibilityIdentifier("transcript-collapse")
+                .onboardingHighlight(onboarding.visibleTip == .transcript)
             Spacer()
             Button { showTranslation.toggle() } label: {
                 Label(translation.enabled ? (translation.busy ? "… " : "") + translation.target.rawValue : b("Translate", "翻译"), systemImage: "character.bubble")
             }.buttonStyle(.borderless).font(.caption)
                 .accessibilityIdentifier("transcript-translation")
+                .onboardingHighlight(onboarding.visibleTip == .transcript)
                 .popover(isPresented: $showTranslation) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(b("Transcript translation", "转写翻译")).font(.headline)
@@ -243,7 +245,7 @@ struct OverlayView: View {
                 .fixedSize()
                 .help(t(mode.label) + " · " + hotkeys.combo(for: mode).display)
                 .accessibilityIdentifier("action-" + mode.rawValue)
-                .onboardingHighlight(onboarding.visibleTip == .answer && mode == .reply)
+                .onboardingHighlight((onboarding.visibleTip == .answer && mode == .reply) || (onboarding.visibleTip == .tools && mode != .reply))
             }
             if answerOnly {
                 // Answers-only mode has no header or status row: listening and the live
@@ -265,8 +267,10 @@ struct OverlayView: View {
                     .font(.caption2).toggleStyle(OverlaySwitchStyle())
                     .help(b("Suggest answers automatically while listening", "监听时自动生成回答建议"))
                     .accessibilityIdentifier("automatic-suggestions")
-                    .fixedSize().padding(.trailing, 4)
-                knowledgeModeMenu
+                    .fixedSize()
+                    .onboardingHighlight(onboarding.visibleTip == .tools)
+                    .padding(.trailing, 4)
+                knowledgeModeMenu.onboardingHighlight(onboarding.visibleTip == .tools)
             }
         }
         .lcAnimation(LC.Motion.quick, value: coordinator.isRunning)
@@ -349,7 +353,7 @@ struct OverlayView: View {
         .lcAnimation(LC.Motion.quick, value: composerFocused)
         .lcAnimation(LC.Motion.quick, value: canAsk)
         .lcAnimation(LC.Motion.quick, value: coordinator.answerIsRunning)
-        .onboardingHighlight(onboarding.visibleTip == .start && onboarding.state.prefersTyping)
+        .onboardingHighlight((onboarding.visibleTip == .start && onboarding.state.prefersTyping) || onboarding.visibleTip == .composer)
     }
     /// Send, or Stop while an answer is being written. Return still submits a new question.
     private var sendButton: some View {
@@ -455,7 +459,7 @@ struct OverlayView: View {
             .accessibilityAddTraits(coordinator.isTransitioning ? .updatesFrequently : [])
             .help(t(coordinator.isRunning ? "Stop listening" : "Start listening"))
             .accessibilityIdentifier("overlay-toggle-listening")
-            .onboardingHighlight(onboarding.visibleTip == .start && !onboarding.state.prefersTyping)
+            .onboardingHighlight((onboarding.visibleTip == .start && !onboarding.state.prefersTyping) || onboarding.visibleTip == .window)
     }
     private var header: some View {
         HStack {
@@ -470,10 +474,12 @@ struct OverlayView: View {
                 .disabled(coordinator.isTransitioning)
                 .help(t("Clear conversation and answers; keep listening if active"))
                 .accessibilityLabel(t("Start fresh")).accessibilityIdentifier("reset-conversation")
+                .onboardingHighlight(onboarding.visibleTip == .window)
             Button { coordinator.toggleMic() } label: { Image(systemName: coordinator.micEnabled ? "mic.fill" : "mic.slash") }
                 .disabled(coordinator.isTransitioning).help(t("Toggle your microphone in Remote Meeting mode"))
+                .onboardingHighlight(onboarding.visibleTip == .window)
             Button { coordinator.onOpenSettings?() } label: { Image(systemName: "gearshape") }.help(t("Settings and knowledge base"))
-                .onboardingHighlight(onboarding.visibleTip == .captureExclusion)
+                .onboardingHighlight(onboarding.visibleTip == .captureExclusion || onboarding.visibleTip == .window)
             Button { coordinator.settings.overlayEdgeHide.toggle() } label: {
                 Image(systemName: coordinator.settings.overlayEdgeHide ? "pin" : "pin.fill")
                     .foregroundStyle(coordinator.settings.overlayEdgeHide ? Color.secondary : LC.accent)
@@ -481,9 +487,9 @@ struct OverlayView: View {
                    ? b("Turn off automatic docking · drag freely", "关闭自动贴边 · 自由拖动")
                    : b("Turn on automatic docking", "开启自动贴边"))
                 .accessibilityIdentifier("overlay-pin")
-                .onboardingHighlight(onboarding.visibleTip == .visibility)
-            layoutToggle
-            hideButton
+                .onboardingHighlight(onboarding.visibleTip == .visibility || onboarding.visibleTip == .window)
+            layoutToggle.onboardingHighlight(onboarding.visibleTip == .window)
+            hideButton.onboardingHighlight(onboarding.visibleTip == .window)
         }.buttonStyle(LCIconButtonStyle(size: 24)).foregroundStyle(.secondary)
     }
     private var hideButton: some View {
