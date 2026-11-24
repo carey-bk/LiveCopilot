@@ -27,12 +27,11 @@ extension SettingsView {
     }
     var knowledgeContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-                LCSectionHeader(t("Local knowledge base"),
-                                subtitle: t(coordinator.settings.embeddingService == .local
-                                            ? "PDF, Markdown, TXT and DOCX · parsing, embeddings and retrieval stay on this Mac. Answer generation sends selected excerpts to your analysis service."
-                                            : "PDF, Markdown, TXT and DOCX · original copies remain local. Indexing sends extracted text to OpenAI."),
-                                systemImage: "tray.and.arrow.down")
+            LCSettingsCard(t("Local knowledge base"),
+                           subtitle: t(coordinator.settings.embeddingService == .local
+                                       ? "PDF, Markdown, TXT and DOCX · parsing, embeddings and retrieval stay on this Mac. Answer generation sends selected excerpts to your analysis service."
+                                       : "PDF, Markdown, TXT and DOCX · original copies remain local. Indexing sends extracted text to OpenAI."),
+                           systemImage: "tray.and.arrow.down", tone: .success) {
                 KnowledgeImportDropZone(language: coordinator.settings.language, isIndexing: coordinator.isIndexing || !knowledgeConfigured,
                                         selectDocuments: selectDocuments, importDocuments: { urls in
                                             guard knowledgeConfigured else { return }; coordinator.importDocuments(urls)
@@ -57,7 +56,7 @@ extension SettingsView {
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-            }.lcCard()
+            }
             .lcAnimation(LC.Motion.standard, value: importStatusHidden)
             .task(id: coordinator.indexingFinishedAt) {
                 // A successful run's progress and status fold away 5 s after it ends; failures stay.
@@ -83,29 +82,33 @@ extension SettingsView {
 
             documentTable
 
-            VStack(alignment: .leading, spacing: 10) {
-                LCSectionHeader(b("Retrieval", "检索设置"), systemImage: "magnifyingglass")
-                Stepper(t("Evidence chunks") + ": \(coordinator.settings.retrievalCount)", value: $coordinator.settings.retrievalCount, in: 3...8)
-                Text(b("More evidence chunks provide more context but increase the analysis model's input tokens and may add irrelevant text.", "证据片段越多，分析模型可读的上下文越多，但输入 token 和无关信息也可能增加。")).font(.caption).foregroundStyle(.secondary)
+            LCSettingsCard(b("Retrieval", "检索设置"), systemImage: "magnifyingglass") {
+                LCSettingsRow(t("Evidence chunks"),
+                              detail: b("More evidence chunks provide more context but increase the analysis model's input tokens and may add irrelevant text.", "证据片段越多，分析模型可读的上下文越多，但输入 token 和无关信息也可能增加。")) {
+                    HStack(spacing: 6) {
+                        Text("\(coordinator.settings.retrievalCount)").monospacedDigit().font(.callout.weight(.semibold))
+                        Stepper(t("Evidence chunks"), value: $coordinator.settings.retrievalCount, in: 3...8).labelsHidden()
+                    }
+                }
                 if coordinator.settings.embeddingService == .local {
+                    Divider()
                     Button(b("Check local model / copy diagnostics", "检查本地模型 / 复制诊断信息")) {
                         page = Self.knowledgeModelDiagnosticsTarget.page
                         serviceRole = Self.knowledgeModelDiagnosticsTarget.serviceRole.rawValue
                     }
                         .accessibilityIdentifier("knowledge-model-diagnostics")
                 }
-            }.lcCard()
+            }
         }
     }
 
     private var documentTable: some View {
         let documents = coordinator.knowledgeDocuments
         let chunks = documents.reduce(0) { $0 + $1.chunkCount }
-        return VStack(alignment: .leading, spacing: 0) {
-            LCSectionHeader(title: b("Documents", "资料"),
-                            subtitle: documents.isEmpty ? nil : b("\(documents.count) documents · \(chunks) evidence chunks", "\(documents.count) 份资料 · \(chunks) 个证据片段"),
-                            systemImage: "doc.text") { EmptyView() }
-                .padding(.bottom, 12)
+        return LCSettingsCard(b("Documents", "资料"),
+                              subtitle: documents.isEmpty ? nil : b("\(documents.count) documents · \(chunks) evidence chunks", "\(documents.count) 份资料 · \(chunks) 个证据片段"),
+                              systemImage: "doc.text") {
+          VStack(alignment: .leading, spacing: 0) {
             if documents.isEmpty {
                 LCEmptyState(systemImage: "books.vertical", title: b("No documents yet", "还没有资料"),
                              message: t("Import a document to ground answers in your own evidence."))
@@ -116,7 +119,8 @@ extension SettingsView {
                     documentRow(document)
                 }
             }
-        }.lcCard()
+          }
+        }
     }
 
     private func documentRow(_ document: KnowledgeDocument) -> some View {

@@ -51,7 +51,7 @@ struct UpdateSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                LCIconTile(systemImage: "arrow.down.circle", tone: .accent, size: 28)
+                LCIconTile(systemImage: "arrow.down.circle", tone: .accent, size: 26)
                 Text(u("软件更新")).font(LC.Typo.headline)
                 if let statusPill { LCPill(text: statusPill.0, tone: statusPill.1) }
                 Spacer()
