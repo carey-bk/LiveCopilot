@@ -10,13 +10,10 @@ extension SettingsView {
             HStack(alignment: .top, spacing: 12) {
                 Link(destination: AppInfo.repositoryURL) {
                     AboutTile(title: b("Star on GitHub", "在 GitHub 点亮 Star"),
-                              detail: AppInfo.starThanks(coordinator.settings.language)) {
+                              detail: AppInfo.starThanks(coordinator.settings.language), gold: true) {
                         GitHubMarkBadge()
                     } accessory: {
-                        Label("Star", systemImage: "star.fill").labelStyle(.titleAndIcon)
-                            .font(LC.Typo.micro.weight(.semibold)).foregroundStyle(LC.warning)
-                            .padding(.horizontal, 7).frame(height: 20)
-                            .background(LC.warning.opacity(0.12), in: Capsule())
+                        GoldStarPill()
                     }
                 }
                 .buttonStyle(.plain)
@@ -107,27 +104,106 @@ extension SettingsView {
 private struct AboutTile<Icon: View, Accessory: View>: View {
     let title: String
     let detail: String
+    /// Pale champagne-gold finish for the one tile that asks for support.
+    var gold = false
     @ViewBuilder var icon: () -> Icon
     @ViewBuilder var accessory: () -> Accessory
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let content = VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 icon()
                 Spacer(minLength: 4)
                 accessory()
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(LC.Typo.body.weight(.semibold)).foregroundStyle(.primary)
-                Text(detail).font(LC.Typo.caption).foregroundStyle(.secondary)
+                Text(title).font(LC.Typo.body.weight(.semibold)).foregroundStyle(gold ? AnyShapeStyle(Gold.ink) : AnyShapeStyle(.primary))
+                Text(detail).font(LC.Typo.caption).foregroundStyle(gold ? AnyShapeStyle(Gold.inkSoft) : AnyShapeStyle(.secondary))
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .lcSurface()
-        .contentShape(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
-        .lcHoverable(radius: LC.Radius.card, lift: true)
+        if gold {
+            content.modifier(GoldSurface())
+        } else {
+            content
+                .lcSurface()
+                .contentShape(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
+                .lcHoverable(radius: LC.Radius.card, lift: true)
+        }
+    }
+}
+
+/// Champagne-gold palette; deep bronze in dark appearance.
+private enum Gold {
+    static let ink = adaptive(light: (0.42, 0.30, 0.05), dark: (0.96, 0.84, 0.55))
+    static let inkSoft = adaptive(light: (0.52, 0.40, 0.17), dark: (0.85, 0.74, 0.50))
+    static let fillTop = adaptive(light: (1.00, 0.98, 0.92), dark: (0.24, 0.20, 0.12))
+    static let fillBottom = adaptive(light: (0.97, 0.91, 0.75), dark: (0.17, 0.14, 0.09))
+    static let rimLight = adaptive(light: (0.94, 0.83, 0.55), dark: (0.86, 0.71, 0.38))
+    static let rimDeep = adaptive(light: (0.78, 0.62, 0.27), dark: (0.62, 0.48, 0.22))
+    static let glow = Color(red: 0.86, green: 0.68, blue: 0.27)
+    private static func adaptive(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let c = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+            return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
+        })
+    }
+}
+
+/// Soft gold gradient, a fine gold rim, a warm glow, and a light sheen that sweeps across on hover.
+private struct GoldSurface: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovering = false
+    @State private var sweep = false
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous)
+        content
+            .background {
+                ZStack {
+                    LinearGradient(colors: [Gold.fillTop, Gold.fillBottom], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    // Faint highlight in the top-left corner, like light on brushed metal.
+                    RadialGradient(colors: [Color.white.opacity(0.55), .clear], center: .topLeading, startRadius: 0, endRadius: 180)
+                        .blendMode(.softLight)
+                    GeometryReader { proxy in
+                        LinearGradient(colors: [.clear, Color.white.opacity(0.45), .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: proxy.size.width * 0.45)
+                            .rotationEffect(.degrees(18))
+                            .offset(x: sweep ? proxy.size.width * 1.3 : -proxy.size.width * 0.6)
+                            .opacity(reduceMotion ? 0 : 1)
+                    }
+                    .allowsHitTesting(false)
+                }
+                .clipShape(shape)
+            }
+            .overlay {
+                shape.strokeBorder(LinearGradient(colors: [Gold.rimLight, Gold.rimDeep, Gold.rimLight],
+                                                  startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: hovering ? 1.5 : 1)
+            }
+            .shadow(color: Gold.glow.opacity(hovering ? 0.32 : 0.16), radius: hovering ? 14 : 8, y: hovering ? 5 : 3)
+            .scaleEffect(hovering && !reduceMotion ? 1.012 : 1)
+            .contentShape(shape)
+            .onHover { inside in
+                withAnimation(reduceMotion ? nil : LC.Motion.standard) { hovering = inside }
+                guard inside, !reduceMotion else { return }
+                sweep = false
+                withAnimation(.easeInOut(duration: 0.9)) { sweep = true }
+            }
+    }
+}
+
+/// "Star" on a small gold gradient capsule.
+private struct GoldStarPill: View {
+    var body: some View {
+        Label("Star", systemImage: "star.fill").labelStyle(.titleAndIcon)
+            .font(LC.Typo.micro.weight(.bold))
+            .foregroundStyle(Color(red: 0.36, green: 0.25, blue: 0.03))
+            .padding(.horizontal, 8).frame(height: 21)
+            .background(LinearGradient(colors: [Color(red: 1.0, green: 0.90, blue: 0.62), Color(red: 0.90, green: 0.72, blue: 0.36)],
+                                       startPoint: .top, endPoint: .bottom), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.5), lineWidth: 0.5))
+            .shadow(color: Color(red: 0.75, green: 0.55, blue: 0.15).opacity(0.3), radius: 2, y: 1)
     }
 }
 
