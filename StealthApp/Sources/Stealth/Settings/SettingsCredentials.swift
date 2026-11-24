@@ -12,17 +12,38 @@ struct LocalModelCard: View {
     let locked: Bool
     let remove: () -> Void
     private func t(_ text: String) -> String { L10n.text(text, language: language) }
+    private var title: String {
+        kind == .embedding ? ServiceGuide.text("\(LocalModelKind.embeddingName) local index model", "\(LocalModelKind.embeddingName) 本地索引模型", language) : kind.title
+    }
+    private var statusLabel: some View {
+        Label(statusTitle, systemImage: manager.health[kind]?.ready == true ? "checkmark.circle.fill"
+              : manager.queued.contains(kind) ? "clock" : "arrow.down.circle")
+            .font(.caption).foregroundStyle(manager.health[kind]?.ready == true ? LC.success : Color.secondary)
+    }
+    /// Compact sits inside another settings card; otherwise it is a settings card of its own.
     var body: some View {
+        Group {
+            if compact {
+                details
+            } else {
+                LCSettingsCard(title, subtitle: t("Download size") + " · " + kind.downloadSize, systemImage: "cpu", tone: .success) {
+                    details
+                } accessory: { statusLabel }
+            }
+        }
+        .onAppear { manager.refresh() }
+    }
+    private var details: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(kind == .embedding ? (ServiceGuide.text("\(LocalModelKind.embeddingName) local index model", "\(LocalModelKind.embeddingName) 本地索引模型", language)) : kind.title).font(.headline)
-                    Text(t("Download size") + " · " + kind.downloadSize).font(.caption).foregroundStyle(.secondary)
+            if compact {
+                HStack {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title).font(.headline)
+                        Text(t("Download size") + " · " + kind.downloadSize).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    statusLabel
                 }
-                Spacer()
-                Label(statusTitle, systemImage: manager.health[kind]?.ready == true ? "checkmark.circle.fill"
-                      : manager.queued.contains(kind) ? "clock" : "arrow.down.circle")
-                    .font(.caption).foregroundStyle(manager.health[kind]?.ready == true ? LC.success : Color.secondary)
             }
             Text(ServiceGuide.text("Automatically tries available download sources. Progress is for the current file.", "自动尝试可用下载线路；进度显示当前文件的下载比例。", language))
                 .font(.caption).foregroundStyle(.secondary)
@@ -68,8 +89,7 @@ struct LocalModelCard: View {
                         .accessibilityIdentifier("selfcheck-result-" + kind.rawValue)
                 }
             }
-        }.lcCard()
-            .onAppear { manager.refresh() }
+        }
     }
     private var statusTitle: String {
         if manager.checking == kind { return ServiceGuide.text("Checking…", "正在自检…", language) }
@@ -173,7 +193,7 @@ struct CredentialEditor: View {
         Group {
             if liveLayout { fields }
             else if onboarding { fields }
-            else { SettingsSection { fields.padding(12) } label: { Text("API Key") } }
+            else { LCSettingsCard("API Key", systemImage: "key", tone: .warning) { fields } }
         }
         .confirmationDialog(t("Remove this service's saved key?"), isPresented: $confirmingRemoval) {
             Button(t("Remove"), role: .destructive) {

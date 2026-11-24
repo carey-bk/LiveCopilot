@@ -77,10 +77,6 @@ extension SettingsView {
         }
     }
 
-    private var lockedStatus: (text: String, tone: LC.Tone)? {
-        locked ? (b("Stop listening to change", "停止监听后可更改"), .neutral) : nil
-    }
-
     private func optionGrid<Content: View>(columns: Int, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .top, spacing: 12) { content() }
             .fixedSize(horizontal: false, vertical: true)
