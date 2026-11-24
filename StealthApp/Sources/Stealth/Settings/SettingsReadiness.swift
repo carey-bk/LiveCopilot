@@ -171,7 +171,7 @@ extension SettingsReadiness.Entry {
         let b = { (en: String, zh: String) in ServiceGuide.text(en, zh, language) }
         switch state {
         case .ready: return (b("Ready", "就绪"), .success)
-        case .needsSetup: return (b("Needs setup", "待配置"), .warning)
+        case .needsSetup: return (b("Set up", "待配置"), .warning)
         case .inactive: return (item == .knowledge ? b("Empty", "空") : b("Off", "未启用"), .neutral)
         }
     }

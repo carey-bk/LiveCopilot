@@ -83,12 +83,27 @@ extension SettingsView {
             documentTable
 
             LCSettingsCard(b("Retrieval", "检索设置"), systemImage: "magnifyingglass") {
-                LCSettingsRow(t("Evidence chunks"),
-                              detail: b("More evidence chunks provide more context but increase the analysis model's input tokens and may add irrelevant text.", "证据片段越多，分析模型可读的上下文越多，但输入 token 和无关信息也可能增加。")) {
-                    HStack(spacing: 6) {
-                        Text("\(coordinator.settings.retrievalCount)").monospacedDigit().font(.callout.weight(.semibold))
-                        Stepper(t("Evidence chunks"), value: $coordinator.settings.retrievalCount, in: 3...8).labelsHidden()
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(t("Evidence chunks"))
+                        Spacer()
+                        Text("\(coordinator.settings.retrievalCount)").font(.title3.weight(.semibold)).monospacedDigit().foregroundStyle(LC.accent)
+                            .contentTransition(.numericText()).lcAnimation(LC.Motion.quick, value: coordinator.settings.retrievalCount)
+                        if coordinator.settings.retrievalCount == 5 {
+                            Text(b("Recommended", "推荐")).font(.caption).foregroundStyle(.secondary)
+                        }
                     }
+                    Slider(value: Binding(get: { Double(coordinator.settings.retrievalCount) },
+                                          set: { coordinator.settings.retrievalCount = Int($0.rounded()) }),
+                           in: 3...8, step: 1) {
+                        Text(t("Evidence chunks"))
+                    } minimumValueLabel: { Text("3").font(.caption).foregroundStyle(.secondary) }
+                      maximumValueLabel: { Text("8").font(.caption).foregroundStyle(.secondary) }
+                        .labelsHidden()
+                        .accessibilityValue("\(coordinator.settings.retrievalCount)")
+                        .accessibilityIdentifier("retrieval-count")
+                    Text(b("More evidence chunks provide more context but increase the analysis model's input tokens and may add irrelevant text.", "证据片段越多，分析模型可读的上下文越多，但输入 token 和无关信息也可能增加。"))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 if coordinator.settings.embeddingService == .local {
                     Divider()
@@ -105,7 +120,7 @@ extension SettingsView {
     private var documentTable: some View {
         let documents = coordinator.knowledgeDocuments
         let chunks = documents.reduce(0) { $0 + $1.chunkCount }
-        return LCSettingsCard(b("Documents", "资料"),
+        return LCSettingsCard(b("Document list", "资料列表"),
                               subtitle: documents.isEmpty ? nil : b("\(documents.count) documents · \(chunks) evidence chunks", "\(documents.count) 份资料 · \(chunks) 个证据片段"),
                               systemImage: "doc.text") {
           VStack(alignment: .leading, spacing: 0) {

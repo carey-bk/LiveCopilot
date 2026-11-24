@@ -215,9 +215,6 @@ extension SettingsView {
                 if let reason = readiness[.knowledge].reason, readiness[.knowledge].needsSetup, !coordinator.knowledgeNeedsReindex {
                     Label(reason, systemImage: "exclamationmark.circle.fill").font(.callout).foregroundStyle(LC.warning)
                 }
-                Divider()
-                Button(b("Configure the answer model in Analysis & answers", "前往「分析与回答」配置回答模型")) { serviceRole = ServiceRole.analysisAndAnswers.rawValue }
-                    .buttonStyle(.link)
                 if coordinator.settings.embeddingService == .openAI {
                     Text(b("Billed per token · knowledge indexing only", "按 token 计费 · 仅用于知识库索引")).font(.caption)
                     modelField("Embedding model", value: $coordinator.settings.embeddingModel).disabled(coordinator.isIndexing)
@@ -247,9 +244,23 @@ extension SettingsView {
                         .disabled(!knowledgeConfigured || coordinator.isIndexing)
                 }.lcCallout(.warning)
             }
-            if coordinator.settings.embeddingService == .local { localCost }
-            Text(t("After changing the embedding model, re-index documents. Keyword retrieval remains available for older indexes.")).font(.caption).foregroundStyle(.secondary)
-            Button(t("Open knowledge library")) { page = .knowledge }
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 3) {
+                    if coordinator.settings.embeddingService == .local { localCost }
+                    Text(t("After changing the embedding model, re-index documents. Keyword retrieval remains available for older indexes.")).font(.caption).foregroundStyle(.secondary)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Button { page = .knowledge } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "books.vertical")
+                        Text(t("Open knowledge library"))
+                        Image(systemName: "arrow.right").font(.caption.weight(.semibold))
+                    }
+                }
+                .buttonStyle(.bordered).tint(LC.accent).fixedSize()
+                .accessibilityIdentifier("open-knowledge-library")
+            }
         }
         .task(id: coordinator.settings.selectedEmbeddingIdentity) {
             if coordinator.settings.embeddingService == .openAI {

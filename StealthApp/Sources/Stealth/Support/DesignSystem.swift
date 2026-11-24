@@ -418,9 +418,10 @@ struct LCStatTile<Footer: View>: View {
                 LCIconTile(systemImage: systemImage, tone: tone, filled: true)
                 Text(title).font(.callout.weight(.medium)).lineLimit(1)
                 Spacer(minLength: 4)
-                if let badge { LCPill(text: badge.text, tone: badge.tone) }
+                if let badge { LCPill(text: badge.text, tone: badge.tone).fixedSize() }
             }
-            Text(value).font(.system(size: 22, weight: .semibold)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            Text(value).font(.system(size: 22, weight: .semibold)).monospacedDigit().lineLimit(2).minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.numericText())
                 .lcAnimation(LC.Motion.standard, value: value)
             if let detail {
@@ -533,20 +534,20 @@ struct LCOptionCard: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: LC.Radius.card - 2, style: .continuous)
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top) {
-                    LCIconTile(systemImage: systemImage, tone: selected ? .accent : .neutral, size: 28, filled: selected)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .center, spacing: 8) {
+                    LCIconTile(systemImage: systemImage, tone: selected ? .accent : .neutral, size: 24, filled: selected)
+                    Text(title).font(LC.Typo.headline).foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.85)
                     Spacer(minLength: 4)
                     Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(selected ? LC.accent : Color.secondary.opacity(0.45))
                 }
-                Text(title).font(LC.Typo.headline).foregroundStyle(.primary)
                 Text(detail).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
-            .padding(14)
+            .padding(.horizontal, 12).padding(.vertical, 10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(selected ? LC.accent.opacity(0.07) : LC.fillSubtle, in: shape)
             .overlay(shape.strokeBorder(selected ? LC.accent.opacity(0.6) : LC.hairline, lineWidth: selected ? 1.5 : 1))

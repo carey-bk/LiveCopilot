@@ -50,7 +50,11 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 18) {
                     UpdateBanner(updates: updates, language: coordinator.settings.language, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
-                    LCPageHeader(breadcrumb: ["LiveCopilot", groupTitle(page.group)], title: pageTitle(page), subtitle: pageSubtitle(page))
+                    HStack(alignment: .top) {
+                        LCPageHeader(breadcrumb: ["LiveCopilot", groupTitle(page.group)], title: pageTitle(page), subtitle: pageSubtitle(page))
+                        Spacer(minLength: 12)
+                        if page == .overview { guideButtons }
+                    }
                 }.padding(.horizontal, Self.pageInset)
                 // Scrolling pages span the full detail width and inset their content instead, so the
                 // overlay scroll bar runs along the window edge rather than over cards and controls.

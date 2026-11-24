@@ -48,16 +48,11 @@ extension SettingsView {
                                                                      "自动识别提问 · 判断提问是否完整，适时生成建议。也可随时手动提问。", coordinator.settings.language),
                               systemImage: "wand.and.sparkles", titleFont: .custom(AppBrandTitle.fontName, size: 19)) {
             HStack(spacing: 8) {
-                if entry.needsSetup, let reason = entry.reason {
-                    Label(reason, systemImage: "exclamationmark.circle.fill").foregroundStyle(LC.warning)
-                } else if !coordinator.settings.automaticSuggestions {
-                    Text(b("Off. Answers are generated only when you ask.", "已关闭，只在你提问时生成回答。")).foregroundStyle(.secondary)
-                } else if coordinator.settings.listeningService == .openAI {
-                    Text(b("GPT-Live-1 decides when a question is complete.", "由 GPT-Live-1 判断提问是否完整。")).foregroundStyle(.secondary)
+                let summary = jevSummary(entry)
+                if summary.warning {
+                    Label(summary.text, systemImage: "exclamationmark.circle.fill").foregroundStyle(LC.warning)
                 } else {
-                    Text(b("Sensitivity: ", "触发灵敏度：") + JevSensitivity.nearest(to: coordinator.settings.layaThreshold).title(coordinator.settings.language)
-                         + " · " + b("Follow-ups: ", "连续提问：") + t(coordinator.settings.continuousQuestionPolicy.label))
-                        .foregroundStyle(.secondary)
+                    Text(summary.text).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
                 Button {
@@ -75,6 +70,15 @@ extension SettingsView {
             LCSwitch(title: "Jev Mode", isOn: $coordinator.settings.automaticSuggestions)
                 .accessibilityIdentifier("automatic-suggestions")
         }
+    }
+
+    /// One line on Jev Mode's state: what needs fixing, that it is off, or its current trigger settings.
+    func jevSummary(_ entry: SettingsReadiness.Entry) -> (text: String, warning: Bool) {
+        if entry.needsSetup, let reason = entry.reason { return (reason, true) }
+        if !coordinator.settings.automaticSuggestions { return (b("Off. Answers are generated only when you ask.", "已关闭，只在你提问时生成回答。"), false) }
+        if coordinator.settings.listeningService == .openAI { return (b("GPT-Live-1 decides when a question is complete.", "由 GPT-Live-1 判断提问是否完整。"), false) }
+        return (b("Sensitivity: ", "触发灵敏度：") + JevSensitivity.nearest(to: coordinator.settings.layaThreshold).title(coordinator.settings.language)
+                + " · " + b("Follow-ups: ", "连续提问：") + t(coordinator.settings.continuousQuestionPolicy.label), false)
     }
 
     private func optionGrid<Content: View>(columns: Int, @ViewBuilder content: () -> Content) -> some View {

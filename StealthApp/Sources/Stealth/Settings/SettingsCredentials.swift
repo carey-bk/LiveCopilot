@@ -65,6 +65,12 @@ struct LocalModelCard: View {
                     if manager.installed.contains(kind) {
                         Button(ServiceGuide.text("Run self-check", "运行自检", language)) { copiedDiagnostics = false; manager.runSelfCheck(kind) }
                             .disabled(locked || manager.downloading != nil).accessibilityIdentifier("selfcheck-" + kind.rawValue)
+                        if let report = manager.health[kind] {
+                            Button(copiedDiagnostics ? (ServiceGuide.text("Copied", "已复制", language)) : (ServiceGuide.text("Copy diagnostics", "复制诊断信息", language))) {
+                                NSPasteboard.general.clearContents()
+                                copiedDiagnostics = NSPasteboard.general.setString(report.diagnostic(kind: kind), forType: .string)
+                            }.fixedSize().accessibilityIdentifier("copy-diagnostics-" + kind.rawValue)
+                        }
                         if !kind.isBundled {
                         Button(ServiceGuide.text("Delete local model…", "删除本地模型…", language), role: .destructive) { confirmRemoval = true }
                             .foregroundStyle(LC.danger)
@@ -78,16 +84,10 @@ struct LocalModelCard: View {
                 if manager.downloading == nil, manager.messageKind == kind, !manager.message.isEmpty { Text(t(manager.message)).font(.caption).foregroundStyle(.secondary) }
             }
             if let report = manager.health[kind] {
-                HStack(alignment: .center, spacing: 12) {
-                    Button(copiedDiagnostics ? (ServiceGuide.text("Copied", "已复制", language)) : (ServiceGuide.text("Copy diagnostics", "复制诊断信息", language))) {
-                        NSPasteboard.general.clearContents()
-                        copiedDiagnostics = NSPasteboard.general.setString(report.diagnostic(kind: kind), forType: .string)
-                    }.fixedSize().accessibilityIdentifier("copy-diagnostics-" + kind.rawValue)
-                    Text(language.interfaceText(report.advice(english: !language.usesChinese)))
-                        .font(.caption).foregroundStyle(report.ready ? Color.secondary : LC.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("selfcheck-result-" + kind.rawValue)
-                }
+                Text(language.interfaceText(report.advice(english: !language.usesChinese)))
+                    .font(.caption).foregroundStyle(report.ready ? Color.secondary : LC.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("selfcheck-result-" + kind.rawValue)
             }
         }
     }
