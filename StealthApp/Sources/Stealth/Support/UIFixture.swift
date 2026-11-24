@@ -8,7 +8,7 @@ import Foundation
 ///     --mock --ui-preview --ui-fixture listening|streaming|answered|session|error|notice
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
-///     --ui-settings-page <SettingsPage case name>   --ui-open-history   --ui-answer-only
+///     --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-open-history   --ui-answer-only
 ///     --ui-query <typed question>   --ui-question-only   --ui-transcript-collapsed   --ui-transcript-lines n
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
@@ -22,6 +22,8 @@ enum UIFixture {
 
     static var state: String? { value("--ui-fixture") }
     /// Text placed in the overlay's question field, for the multi-line input state.
+    /// Services tab to open with `--ui-settings-page services`: 0 speech, 1 triggers, 2 indexing, 3 answers.
+    static var serviceRole: Int { value("--ui-service-role").flatMap(Int.init) ?? 0 }
     static var query: String? { value("--ui-query")?.replacingOccurrences(of: "\\n", with: "\n") }
 
     /// Holds the mock answer half-way so the streaming state can be captured.

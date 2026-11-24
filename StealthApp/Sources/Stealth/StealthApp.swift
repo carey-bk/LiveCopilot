@@ -360,7 +360,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let hosting = NSHostingController(rootView: SettingsView(coordinator: coordinator, initialPage: initialPage))
+        #if DEBUG
+        let initialServiceRole = UIFixture.serviceRole
+        #else
+        let initialServiceRole = 0
+        #endif
+        let hosting = NSHostingController(rootView: SettingsView(coordinator: coordinator, initialPage: initialPage, initialServiceRole: initialServiceRole))
         let window = NSWindow(contentViewController: hosting)
         window.title = L10n.text("LiveCopilot Settings", language: coordinator.settings.language)
         window.sharingType = .readOnly

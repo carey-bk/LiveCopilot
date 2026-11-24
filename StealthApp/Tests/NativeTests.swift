@@ -20,6 +20,56 @@ private final class CaptureSharingPanel: NSPanel {
 }
 
 final class NativeTests: XCTestCase {
+    func testSettingsReadinessReportsWhatIsMissing() {
+        var ready = SettingsReadiness.Inputs()
+        ready.listeningService = .apple; ready.appleSpeechInstalled = true
+        ready.reasoningService = .deepSeek; ready.hasAnalysisKey = true
+        ready.microphoneAllowed = true; ready.screenAudioAllowed = true
+        ready.layaState = .installed
+        let all = SettingsReadiness(ready)
+        XCTAssertTrue(all.canStart)
+        XCTAssertTrue(all.pending.isEmpty)
+        XCTAssertEqual(all[.knowledge].state, .inactive("No documents yet"), "An empty library is not a setup problem")
+
+        var missingKey = ready
+        missingKey.hasAnalysisKey = false
+        let noKey = SettingsReadiness(missingKey)
+        XCTAssertFalse(noKey.canStart)
+        XCTAssertEqual(noKey.blockers.map(\.item), [.answers])
+        XCTAssertEqual(noKey[.answers].reason, "No DeepSeek key saved")
+        missingKey.reasoningService = .sharedOpenAI; missingKey.hasOpenAIKey = true
+        XCTAssertTrue(SettingsReadiness(missingKey)[.answers].isReady, "Shared OpenAI answers use the speech key")
+
+        var noModel = ready
+        noModel.listeningService = .zipformer; noModel.localSpeechModelInstalled = false
+        noModel.layaState = .notInstalled
+        let local = SettingsReadiness(noModel)
+        XCTAssertEqual(local[.speech].reason, "Zipformer model not downloaded")
+        XCTAssertEqual(local[.triggers].reason, "Trigger model not downloaded")
+        XCTAssertEqual(local.blockers.map(\.item), [.speech], "A missing trigger model does not block listening")
+        noModel.automaticSuggestions = false
+        XCTAssertEqual(SettingsReadiness(noModel)[.triggers].state, .inactive("Off · ask manually"))
+
+        var permissions = ready
+        permissions.screenAudioAllowed = false
+        XCTAssertEqual(SettingsReadiness(permissions)[.permissions].reason, "System audio not allowed")
+        permissions.mode = .inPerson
+        XCTAssertTrue(SettingsReadiness(permissions)[.permissions].isReady, "In-person mode only needs the microphone")
+        permissions.microphoneAllowed = false
+        XCTAssertEqual(SettingsReadiness(permissions)[.permissions].reason, "Microphone not allowed")
+
+        var library = ready
+        library.documentCount = 2; library.localEmbeddingInstalled = true
+        XCTAssertEqual(SettingsReadiness(library)[.knowledge].reason, "Index model not verified")
+        library.localEmbeddingVerification = .ready
+        XCTAssertTrue(SettingsReadiness(library)[.knowledge].isReady)
+        library.knowledgeNeedsReindex = true
+        XCTAssertEqual(SettingsReadiness(library)[.knowledge].reason, "Indexes need rebuilding")
+
+        library.language = .simplifiedChinese
+        XCTAssertEqual(SettingsReadiness(library)[.knowledge].reason, "需要重建索引")
+    }
+
     func testOverlayConversationChoiceAndTranscriptRowsPersist() throws {
         let suite = "LiveCopilot-Overlay-Prefs-Tests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

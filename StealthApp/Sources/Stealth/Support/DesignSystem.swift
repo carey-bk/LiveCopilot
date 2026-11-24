@@ -437,6 +437,130 @@ extension LCStatTile where Footer == EmptyView {
     }
 }
 
+// MARK: - Settings building blocks
+
+/// The one card used across Settings: icon tile, title, an optional line of context and an
+/// optional status or action on the right, then the card's rows.
+struct LCSettingsCard<Content: View, Accessory: View>: View {
+    let title: String
+    var subtitle: String?
+    var systemImage: String?
+    var tone: LC.Tone = .accent
+    var status: (text: String, tone: LC.Tone)?
+    var titleFont: Font = LC.Typo.headline
+    let content: Content
+    let accessory: Accessory
+
+    init(_ title: String, subtitle: String? = nil, systemImage: String? = nil, tone: LC.Tone = .accent,
+         status: (text: String, tone: LC.Tone)? = nil, titleFont: Font = LC.Typo.headline,
+         @ViewBuilder content: () -> Content, @ViewBuilder accessory: () -> Accessory) {
+        self.title = title; self.subtitle = subtitle; self.systemImage = systemImage; self.tone = tone
+        self.status = status; self.titleFont = titleFont; self.content = content(); self.accessory = accessory()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: subtitle == nil ? .center : .top, spacing: 10) {
+                if let systemImage { LCIconTile(systemImage: systemImage, tone: tone, size: 26) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(titleFont)
+                    if let subtitle {
+                        Text(subtitle).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.top, subtitle == nil ? 0 : 1)
+                Spacer(minLength: 8)
+                if let status { LCPill(text: status.text, tone: status.tone).fixedSize() }
+                accessory
+            }
+            content
+        }
+        .lcCard()
+        .accessibilityElement(children: .contain)
+    }
+}
+
+extension LCSettingsCard where Accessory == EmptyView {
+    init(_ title: String, subtitle: String? = nil, systemImage: String? = nil, tone: LC.Tone = .accent,
+         status: (text: String, tone: LC.Tone)? = nil, titleFont: Font = LC.Typo.headline, @ViewBuilder content: () -> Content) {
+        self.init(title, subtitle: subtitle, systemImage: systemImage, tone: tone, status: status, titleFont: titleFont,
+                  content: content, accessory: { EmptyView() })
+    }
+}
+
+/// One setting: its name and an optional line of explanation on the left, the control on the right.
+struct LCSettingsRow<Control: View>: View {
+    let title: String
+    var detail: String?
+    let control: Control
+    init(_ title: String, detail: String? = nil, @ViewBuilder control: () -> Control) {
+        self.title = title; self.detail = detail; self.control = control()
+    }
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                if let detail {
+                    Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            control
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// Compact switch for the right side of a settings row; the title is its accessibility label.
+struct LCSwitch: View {
+    let title: String
+    @Binding var isOn: Bool
+    var body: some View {
+        Toggle(title, isOn: $isOn).labelsHidden().toggleStyle(.switch).controlSize(.mini)
+    }
+}
+
+/// A choice shown as a card: icon, name and one line on what it means. Read as a radio button.
+struct LCOptionCard: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+    let selected: Bool
+    let action: () -> Void
+    @Environment(\.isEnabled) private var isEnabled
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: LC.Radius.card - 2, style: .continuous)
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top) {
+                    LCIconTile(systemImage: systemImage, tone: selected ? .accent : .neutral, size: 28, filled: selected)
+                    Spacer(minLength: 4)
+                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(selected ? LC.accent : Color.secondary.opacity(0.45))
+                }
+                Text(title).font(LC.Typo.headline).foregroundStyle(.primary)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(selected ? LC.accent.opacity(0.07) : LC.fillSubtle, in: shape)
+            .overlay(shape.strokeBorder(selected ? LC.accent.opacity(0.6) : LC.hairline, lineWidth: selected ? 1.5 : 1))
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .lcHoverable(radius: LC.Radius.card - 2)
+        .opacity(isEnabled ? 1 : 0.55)
+        .lcAnimation(LC.Motion.quick, value: selected)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityHint(detail)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
 /// Segmented dot bar for real proportions (index progress, audio level, activity).
 struct LCDotMeter: View {
     /// 0...1
@@ -652,15 +776,20 @@ struct LCSegmented<Value: Hashable>: View {
     let title: String
     @Binding var selection: Value
     let items: [(value: Value, label: String)]
+    /// Optional status dot before each label, for example ready or needs setup.
+    var dot: ((Value) -> LC.Tone?)? = nil
     @Namespace private var thumb
     var body: some View {
         HStack(spacing: 2) {
             ForEach(items, id: \.value) { item in
                 let selected = item.value == selection
                 Button { selection = item.value } label: {
-                    Text(item.label).font(LC.Typo.callout.weight(selected ? .semibold : .regular))
-                        .foregroundStyle(selected ? Color.primary : Color.secondary)
-                        .lineLimit(1).minimumScaleFactor(0.85)
+                    HStack(spacing: 6) {
+                        if let tone = dot?(item.value) { Circle().fill(tone.color).frame(width: 6, height: 6) }
+                        Text(item.label).font(LC.Typo.callout.weight(selected ? .semibold : .regular))
+                            .foregroundStyle(selected ? Color.primary : Color.secondary)
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                    }
                         .padding(.horizontal, 12).frame(maxWidth: .infinity).frame(height: 28)
                         .background {
                             if selected {
