@@ -1367,6 +1367,7 @@ final class ReliabilityAuditRegressionTests: XCTestCase {
         if hangBeforeReady {
             body = """
             #!/bin/sh
+            [ "$1" = warmup ] && exit 0
             echo spawn >> \(String(reflecting: spawnLog.path))
             while :; do sleep 1; done
             """
@@ -1374,6 +1375,7 @@ final class ReliabilityAuditRegressionTests: XCTestCase {
             body = """
             #!/usr/bin/env python3
             import json, sys
+            if sys.argv[1:2] == ["warmup"]: sys.exit(0)
             with open(\(String(reflecting: spawnLog.path)), "a") as f: f.write("spawn\\n")
             sys.stdout.write(json.dumps({"ready": True}) + "\\n"); sys.stdout.flush()
             for line in sys.stdin:
@@ -1383,6 +1385,19 @@ final class ReliabilityAuditRegressionTests: XCTestCase {
         }
         try body.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        // macOS checks a newly written executable the first time it runs. Under a loaded parallel
+        // test run that first launch can stall for seconds, longer than the short deadlines these
+        // tests use, so the child is killed before it logs its spawn. Run it once here, without
+        // logging, so the timed launches measure the worker rather than that one-time check.
+        let warmup = Process()
+        warmup.executableURL = url
+        warmup.arguments = ["warmup"]
+        warmup.standardOutput = FileHandle.nullDevice
+        warmup.standardError = FileHandle.nullDevice
+        try warmup.run()
+        let warmupDeadline = Date().addingTimeInterval(20)
+        while warmup.isRunning && Date() < warmupDeadline { usleep(10_000) }
+        if warmup.isRunning { warmup.terminate() }
         return url
     }
 
