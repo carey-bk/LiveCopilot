@@ -121,12 +121,15 @@ final class NativeTests: XCTestCase {
         let outOfRange = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"transcriptExpandedLines":40}"#.utf8))
         XCTAssertEqual(outOfRange.transcriptExpandedLines, 12)
     }
-    @MainActor func testAutomaticDockingDefaultsOffAndCanBeEnabledPersistently() throws {
+    @MainActor func testAutomaticDockingDefaultsOnAndCanBeTurnedOffPersistently() throws {
         let suite = "LiveCopilot-Docking-Tests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         var settings = AppSettings.load(defaults: defaults)
-        XCTAssertFalse(settings.overlayEdgeHide)
+        XCTAssertTrue(settings.overlayEdgeHide, "New installs dock to the edge")
+        XCTAssertTrue(settings.overlayAutoHeight); XCTAssertFalse(settings.excludeOverlayFromCapture)
+        settings.overlayEdgeHide = false; settings.save(defaults: defaults)
+        XCTAssertFalse(AppSettings.load(defaults: defaults).overlayEdgeHide)
         settings.overlayEdgeHide = true; settings.save(defaults: defaults)
         XCTAssertTrue(AppSettings.load(defaults: defaults).overlayEdgeHide)
         let window = OverlayWindow(rootView: Text("Drag test"))

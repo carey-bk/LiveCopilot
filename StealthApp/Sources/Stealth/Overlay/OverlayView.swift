@@ -203,7 +203,8 @@ struct OverlayView: View {
     private var statusLine: String {
         let status = t(coordinator.statusMessage)
         guard coordinator.isRunning, coordinator.settings.automaticSuggestions, coordinator.settings.listeningService.isLocal,
-              [.loading, .unavailable, .predicting, .dispatched].contains(coordinator.layaGateStatus)
+              // Only lasting states: "understanding" and "preparing" switch on every partial transcript and flicker.
+              [.loading, .unavailable].contains(coordinator.layaGateStatus)
         else { return status }
         return status + " · " + coordinator.layaGateStatus.label(coordinator.settings.language)
     }

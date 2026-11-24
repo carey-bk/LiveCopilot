@@ -11,12 +11,21 @@ import Combine
     private var task: Task<Void, Never>?
     private var revision = UUID()
     var available: Bool { AppleSpeechSupport.available }
+    private let defaults: UserDefaults
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    private static func key(_ language: AppleSpeechLanguage) -> String { "livecopilot.appleSpeech.installed." + language.rawValue }
+    /// The last checked result for `language`, so a relaunch shows it before the system query returns.
+    func lastKnownInstalled(_ language: AppleSpeechLanguage) -> Bool {
+        checkedLanguage == language ? installed : defaults.bool(forKey: Self.key(language))
+    }
+    private func remember(_ ready: Bool, _ language: AppleSpeechLanguage) { defaults.set(ready, forKey: Self.key(language)) }
     func refresh(_ language: AppleSpeechLanguage) async {
         let id = UUID(); revision = id
         let ready = await AppleSpeechSupport.installed(language)
         guard revision == id else { return }
         installed = ready
         checkedLanguage = language
+        remember(ready, language)
         if !busy { message = available ? (ready ? "Installed · offline ready" : "Not downloaded") : "Apple speech requires macOS 26 and a supported Mac and language." }
     }
     func install(_ language: AppleSpeechLanguage) {
@@ -36,6 +45,7 @@ import Combine
             if !wasCancelled, !Task.isCancelled {
                 installed = await AppleSpeechSupport.installed(language)
                 checkedLanguage = language
+                remember(installed, language)
             }
             task = nil
         }

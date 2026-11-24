@@ -829,6 +829,15 @@ final class AppCoordinator: ObservableObject {
     var knowledgeNeedsReindex: Bool {
         knowledgeDocuments.contains { $0.embeddingModel != settings.selectedEmbeddingIdentity }
     }
+    /// Re-checks downloaded models so Settings shows current readiness without visiting each page.
+    /// Results already known are shown meanwhile; nothing is downloaded.
+    func refreshModelReadiness() async {
+        if settings.listeningService == .apple { await appleSpeech.refresh(settings.appleSpeechLanguage) }
+        localModels.refresh()
+        if settings.embeddingService == .local, localModels.installed.contains(.embedding) {
+            await localModels.verifyEmbeddingIfNeeded()
+        }
+    }
     func verifyEmbeddingIfNeeded() async {
         if settings.embeddingService == .local { await localModels.verifyEmbeddingIfNeeded() }
         else if hasAPIKey && embeddingVerification == .idle { try? await testEmbeddingConnection() }

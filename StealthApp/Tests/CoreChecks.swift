@@ -133,8 +133,8 @@ enum CoreChecks {
         }
         try check("overlay preferences migrate and persist independently") {
             let migrated = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
-            try expect(migrated.overlayAutoHeight && !migrated.overlayEdgeHide && migrated.showMenuBarIcon, "new window defaults missing")
-            var manual = migrated; manual.overlayAutoHeight = false; manual.overlayEdgeHide = true; manual.showMenuBarIcon = false
+            try expect(migrated.overlayAutoHeight && migrated.overlayEdgeHide && !migrated.excludeOverlayFromCapture && migrated.showMenuBarIcon, "new window defaults missing")
+            var manual = migrated; manual.overlayAutoHeight = false; manual.overlayEdgeHide = false; manual.showMenuBarIcon = false
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(manual))
             try expect(restored == manual, "manual window preferences lost")
         }

@@ -180,6 +180,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         coordinator.updates.start()
+        if !coordinator.isMock {
+            // Confirm downloaded models shortly after launch so Settings opens already showing them ready.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await self?.coordinator.refreshModelReadiness()
+            }
+        }
         // With onboarding pending, its model step loads Laya instead.
         if !coordinator.onboarding.state.shouldPresent { coordinator.prepareInstalledLayaIfNeeded() }
         if AppPaths.isOnboardingPreview && ProcessInfo.processInfo.arguments.contains("--onboarding-dark") {

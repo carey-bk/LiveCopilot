@@ -5,6 +5,9 @@ struct AppBrandTitle: View {
     var iconSize: CGFloat = 24
     var titleSize: CGFloat = 15
     static let fontName = "AvenirNext-HeavyItalic"
+    static let ink = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : NSColor(srgbRed: 0.07, green: 0.07, blue: 0.08, alpha: 1)
+    })
     static let icon: NSImage = {
         guard let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
               let image = NSImage(contentsOf: url) else { return NSApp.applicationIconImage }
@@ -15,7 +18,9 @@ struct AppBrandTitle: View {
             Image(nsImage: Self.icon).resizable().interpolation(.high)
                 .aspectRatio(contentMode: .fit).frame(width: iconSize, height: iconSize)
                 .accessibilityHidden(true)
+            // A concrete color: hierarchical .primary turns vibrant (gray) over the overlay's material.
             Text("LiveCopilot").font(.custom(Self.fontName, size: titleSize)).lineLimit(1)
+                .foregroundStyle(Self.ink)
         }.fixedSize(horizontal: true, vertical: false)
     }
 }
