@@ -60,12 +60,6 @@ struct JevSettingsView: View {
     private var sensitivityLevels: [JevSensitivity] {
         return [.low, .medium, .high]
     }
-    private var sensitivityBinding: Binding<Double> {
-        Binding(get: { Double(sensitivityLevels.firstIndex(of: sensitivity) ?? 1) }, set: { value in
-            guard value.isFinite, sensitivityLevels.indices.contains(Int(value.rounded())) else { return }
-            coordinator.settings.layaThreshold = sensitivityLevels[Int(value.rounded())].threshold
-        })
-    }
     private var modelActionTitle: String {
         switch laya.state {
         case .ready: return b("Loaded", "已加载")
@@ -74,6 +68,33 @@ struct JevSettingsView: View {
         case .installed: return b("Load model", "加载模型")
         case .failed: return laya.isInstalled ? b("Retry loading", "重试加载") : b("Retry download", "重试下载")
         default: return b("Download model", "下载模型")
+        }
+    }
+    /// What each level does, from the thresholds in JevSensitivity.
+    private var sensitivityDescription: String {
+        switch sensitivity {
+        case .low, .lower: return b("Answers only clear, complete questions. Fewest false triggers.", "只在问题清楚完整时回答，误触发最少。")
+        case .medium: return b("Balances answering promptly with avoiding false triggers.", "兼顾及时回答与避免误触发。")
+        case .higher, .high: return b("Responds more readily, including looser questions; may trigger more often.", "更积极地回应，较模糊的提问也会回答，可能多一些误触发。")
+        }
+    }
+    /// A segmented control when the labels fit, otherwise a menu, so long English labels never truncate.
+    private func choice<Value: Hashable>(_ title: String, selection: Binding<Value>, options: [(Value, String)]) -> some View {
+        ViewThatFits(in: .horizontal) {
+            Picker(title, selection: selection) {
+                ForEach(options, id: \.0) { Text($0.1).tag($0.0) }
+            }.pickerStyle(.segmented).labelsHidden().fixedSize()
+            Picker(title, selection: selection) {
+                ForEach(options, id: \.0) { Text($0.1).tag($0.0) }
+            }.pickerStyle(.menu).labelsHidden().fixedSize()
+        }
+    }
+    /// Short enough for a segmented control in a half-width card; the description below gives the detail.
+    private func shortLabel(_ policy: ContinuousQuestionPolicy) -> String {
+        switch policy {
+        case .fast: return b("Fast", "快速响应")
+        case .smart: return b("Merge", "智能合并")
+        case .complete: return b("Wait", "完整优先")
         }
     }
     private var continuousQuestionDescription: String {
@@ -86,40 +107,37 @@ struct JevSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             switchStatus
-            LCSettingsCard(b("Trigger sensitivity", "触发灵敏度"),
-                           subtitle: coordinator.settings.listeningService == .openAI
-                               ? b("GPT-Live-1 handles triggering now; this applies to local speech engines.", "当前由 GPT-Live-1 触发；此设置用于本地语音引擎。")
-                               : b("How readily a question counts as complete.", "多完整的提问才触发回答。"),
-                           systemImage: "dial.medium") {
-                HStack(spacing: 8) {
-                    (Text(b("Current: ", "当前：")).foregroundColor(.secondary) + Text(sensitivity.title(coordinator.settings.language)).foregroundColor(LC.accent))
-                        .font(.callout.weight(.semibold))
+            // Two short choices side by side; each card says what the selected option does.
+            HStack(alignment: .top, spacing: 14) {
+                LCSettingsCard(b("Trigger sensitivity", "触发灵敏度"), systemImage: "dial.medium") {
+                    choice(b("Trigger sensitivity", "触发灵敏度"), selection: Binding(get: { sensitivity }, set: { coordinator.settings.layaThreshold = $0.threshold }),
+                           options: sensitivityLevels.map { ($0, $0.title(coordinator.settings.language) + ($0 == .medium ? b(" (rec.)", "（推荐）") : "")) })
+                        .disabled(coordinator.isTestingLaya)
+                        .accessibilityIdentifier("laya-threshold")
+                    Text(sensitivityDescription).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("laya-sensitivity-level")
-                    Spacer()
+                    if coordinator.settings.listeningService == .openAI {
+                        Text(b("GPT-Live-1 handles triggering now; this applies to local speech engines.", "当前由 GPT-Live-1 触发；此设置用于本地语音引擎。"))
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Slider(value: sensitivityBinding, in: 0...Double(sensitivityLevels.count - 1), step: 1)
-                    .disabled(coordinator.isTestingLaya).accessibilityLabel(b("Trigger sensitivity", "触发灵敏度"))
-                    .accessibilityValue(sensitivity.title(coordinator.settings.language)).accessibilityIdentifier("laya-threshold")
-                HStack {
-                    Text(b("Fewer false triggers", "减少误触发"))
-                    Spacer()
-                    Text(b("More responses", "更多响应"))
-                }.font(.caption).foregroundStyle(.secondary)
-            } accessory: {
-                Button(b("Restore recommended", "恢复推荐值")) { coordinator.settings.layaThreshold = JevSensitivity.medium.threshold }
-                    .disabled(coordinator.isTestingLaya || coordinator.settings.layaThreshold == JevSensitivity.medium.threshold)
-                    .accessibilityIdentifier("laya-reset-threshold")
+                .frame(maxHeight: .infinity, alignment: .top)
+                LCSettingsCard(b("Continuous questions", "连续提问处理"), systemImage: "text.bubble") {
+                    choice(b("Continuous questions", "连续提问处理"), selection: $coordinator.settings.continuousQuestionPolicy,
+                           options: ContinuousQuestionPolicy.allCases.map { ($0, shortLabel($0)) })
+                        .accessibilityIdentifier("continuous-question-policy")
+                    Text(continuousQuestionDescription).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("continuous-question-description")
+                    Label(b("Previous answers are always kept.", "历史回答始终保留，不会被覆盖。"), systemImage: "clock.arrow.circlepath")
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
-            LCSettingsCard(b("Continuous questions", "连续提问处理"), subtitle: b("What happens when questions come one after another.", "对方连续提问时如何处理。"),
-                           systemImage: "text.bubble") {
-                Picker(b("Continuous questions", "连续提问处理"), selection: $coordinator.settings.continuousQuestionPolicy) {
-                    ForEach(ContinuousQuestionPolicy.allCases) { policy in Text(L10n.text(policy.label, language: coordinator.settings.language)).tag(policy) }
-                }.pickerStyle(.segmented).labelsHidden().accessibilityIdentifier("continuous-question-policy")
-                Text(continuousQuestionDescription).font(.callout).foregroundStyle(.secondary)
-                    .accessibilityIdentifier("continuous-question-description")
-                Label(b("All modes keep previous answers; new answers never overwrite them.", "所有模式均保留历史回答，新回答不会覆盖旧回答。"), systemImage: "clock.arrow.circlepath")
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
+            .fixedSize(horizontal: false, vertical: true)
             LCSettingsCard(b("Local trigger model", "本地触发模型"), subtitle: laya.engineTitle, systemImage: "cpu") {
                 HStack(spacing: 8) {
                     Button(modelActionTitle) { if laya.isInstalled { laya.prepare() } else { laya.install() } }
