@@ -61,7 +61,7 @@ xcrun stapler validate "$STAGED_APP"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$STAGED_APP/Contents/Info.plist")"
 BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$STAGED_APP/Contents/Info.plist")"
 MINIMUM_MACOS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$STAGED_APP/Contents/Info.plist")"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid release version." >&2; exit 1; }
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+$ ]] || { echo "Invalid release version." >&2; exit 1; }
 EXECUTABLE="$STAGED_APP/Contents/MacOS/LiveCopilot"
 ARCHITECTURES="$(lipo -archs "$EXECUTABLE")"
 [[ " $ARCHITECTURES " == *" arm64 "* && " $ARCHITECTURES " == *" x86_64 "* ]] || {

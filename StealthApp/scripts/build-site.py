@@ -24,7 +24,7 @@ for url in [github_download, mirror_download]:
     if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ValueError('Download URLs must be public HTTPS URLs without credentials, query strings or fragments.')
 version = download['version']
-assert re.fullmatch(r'\d+\.\d+\.\d+', version), 'download.json needs a semantic version.'
+assert re.fullmatch(r'\d+\.\d+(?:\.\d+)?', version), 'download.json needs a MAJOR.MINOR version (older releases had a patch).'
 assert re.fullmatch(r'[0-9a-f]{64}', download['sha256']), 'download.json needs a SHA-256 digest.'
 release_url = f'https://github.com/carey-bk/LiveCopilot/releases/tag/v{version}'
 size = f"{download['size'] / 1_000_000:.2f} MB"

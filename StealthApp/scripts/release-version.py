@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def release_version(root=ROOT):
     text = (root / 'Version.xcconfig').read_text()
     values = re.findall(r'^MARKETING_VERSION\s*=\s*(.*?)\s*$', text, re.M)
-    if len(values) != 1 or not re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)', values[0]):
-        raise ValueError('Version.xcconfig requires one stable MAJOR.MINOR.PATCH')
+    if len(values) != 1 or not re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)', values[0]):
+        raise ValueError('Version.xcconfig requires one stable MAJOR.MINOR, e.g. 2.11')
     return values[0]
 
 def validate_app(app, version):
