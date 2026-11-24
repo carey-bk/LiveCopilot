@@ -213,6 +213,12 @@ final class OverlayWindow: NSPanel {
         // instead of squeezing the answers underneath.
         if !autoHeight, let previous {
             fitHeight(animated: false, height: frame.height + (minimum - previous))
+        } else if let previous {
+            // Chrome such as a multi-line question grew or shrank. Apply the same delta to the
+            // content height now rather than letting the answers absorb it until the throttled
+            // content report lands.
+            desiredHeight += minimum - previous
+            fitHeight(animated: false)
         } else {
             fitHeight(animated: false)
         }

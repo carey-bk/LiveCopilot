@@ -9,6 +9,7 @@ import Foundation
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
 ///     --ui-settings-page <SettingsPage case name>   --ui-open-history   --ui-answer-only
+///     --ui-query <typed question>   --ui-question-only
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
 enum UIFixture {
@@ -20,6 +21,8 @@ enum UIFixture {
     private static func flag(_ name: String) -> Bool { AppPaths.isMock && arguments.contains(name) }
 
     static var state: String? { value("--ui-fixture") }
+    /// Text placed in the overlay's question field, for the multi-line input state.
+    static var query: String? { value("--ui-query")?.replacingOccurrences(of: "\\n", with: "\n") }
 
     /// Holds the mock answer half-way so the streaming state can be captured.
     static var reasoning: (any ReasoningProvider)? { state == "streaming" ? PausedReasoningProvider() : nil }
@@ -29,6 +32,7 @@ enum UIFixture {
         if flag("--ui-dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
         // The mock preferences suite persists between runs, so every run states the layout explicitly.
         coordinator.settingsDefaults.set(flag("--ui-answer-only"), forKey: "overlayAnswerOnly")
+        if flag("--ui-question-only") { coordinator.includeConversation = false }
         if let raw = value("--ui-listening-service"), let service = ListeningService(rawValue: raw) { coordinator.settings.listeningService = service }
         if let raw = value("--ui-laya-idle"), let seconds = TimeInterval(raw) { coordinator.layaIdleReleaseSeconds = seconds }
         if let raw = value("--ui-background"), let background = AppBackground(rawValue: raw) { coordinator.settings.background = background }

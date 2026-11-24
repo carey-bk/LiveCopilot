@@ -37,6 +37,9 @@ struct OverlayView: View {
     @ObservedObject var onboarding: OnboardingStore
     @State private var query = ""
     @FocusState private var composerFocused: Bool
+    /// Natural height of the typed text. Driven through state so the input box grows and shrinks with an animation.
+    @State private var composerTextHeight: CGFloat = 16
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var followTranscript = true
     @AppStorage("overlayTranscriptCollapsed") private var transcriptCollapsed = false
     @AppStorage("overlayAnswerOnly") private var answerOnly = false
@@ -73,7 +76,7 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if !answerOnly { voiceSection }
                     actions.frame(height: 28)
-                    if demonstrationAnswer == nil { bottom.frame(height: 34, alignment: .top) }
+                    if demonstrationAnswer == nil { bottom }
                     Divider()
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -112,7 +115,12 @@ struct OverlayView: View {
             layoutMetrics.chromeHeight = height
             reportSize()
         }
-        .onAppear { reportSize() }
+        .onAppear {
+            #if DEBUG
+            if demonstrationAnswer == nil, let fixture = UIFixture.query { query = fixture }
+            #endif
+            reportSize()
+        }
         .onDisappear { layoutMetrics.cancelTranscriptScroll() }
     }
     @ViewBuilder private var voiceSection: some View {
@@ -210,17 +218,15 @@ struct OverlayView: View {
             // Outer padding supplies another 14 pt of clearance from the resize corner.
             .padding(.trailing, OverlayResizeView.corner / 2)
         } else {
-            // Shorten the context switch's label before the action chips lose their titles.
             ViewThatFits(in: .horizontal) {
                 actionRow(.titleAndIcon)
-                actionRow(.titleAndIcon, shortLabels: true)
-                actionRow(.titleOnly, shortLabels: true)
-                actionRow(.iconOnly, shortLabels: true)
+                actionRow(.titleOnly)
+                actionRow(.iconOnly)
             }
         }
     }
 
-    private func actionRow<Style: LabelStyle>(_ style: Style, compactToggle: Bool = false, shortLabels: Bool = false) -> some View {
+    private func actionRow<Style: LabelStyle>(_ style: Style, compactToggle: Bool = false) -> some View {
         HStack(spacing: 6) {
             ForEach(coordinator.settings.enabledSuggestionModes) { mode in
                 Button { coordinator.requestSuggestion(mode: mode) } label: {
@@ -251,10 +257,6 @@ struct OverlayView: View {
                 Spacer(minLength: 4).overlay { OverlayDragRegion() }
                 layoutToggle(iconOnly: compactToggle).fixedSize()
             } else {
-                Toggle(shortLabels ? b("Context", "附带对话") : t("Use recent conversation"), isOn: $coordinator.includeConversation)
-                    .font(.caption2).toggleStyle(OverlaySwitchStyle())
-                    .help(t("Use recent conversation"))
-                    .fixedSize().padding(.leading, 4)
                 Spacer(minLength: 4)
                 knowledgeModeMenu
             }
@@ -285,10 +287,11 @@ struct OverlayView: View {
     }
     private var bottom: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+            // Side controls stay level with the input's last line as it grows.
+            HStack(alignment: .bottom, spacing: 8) {
                 composer
-                if coordinator.answerIsRunning { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption).fixedSize() }
-                answerLanguageMenu
+                if coordinator.answerIsRunning { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption).fixedSize().frame(height: 34) }
+                answerLanguageMenu.frame(height: 34)
             }
         }
     }
@@ -296,20 +299,37 @@ struct OverlayView: View {
     private var canAsk: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     /// AI input bar: sparkle, plain field and a round send button inside a soft brand-gradient outline.
     private var composer: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .bottom, spacing: 8) {
             Image(systemName: "sparkles").font(.system(size: 12, weight: .semibold)).foregroundStyle(LC.accent)
+                .frame(height: 22)
                 .accessibilityHidden(true)
+            // Grows to six lines, then scrolls. The field keeps its natural height and is measured;
+            // the visible frame follows that measurement with a spring.
             TextField(t("Ask anything — listening can be off"), text: $query, axis: .vertical)
-                .textFieldStyle(.plain).lineLimit(1)
+                .textFieldStyle(.plain).lineLimit(1...6)
                 .focused($composerFocused)
                 .onSubmit { submit() }.accessibilityIdentifier("manual-query")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: ComposerTextHeightKey.self, value: proxy.size.height)
+                })
+                .frame(height: composerTextHeight, alignment: .top)
+                .clipped()
+                .padding(.vertical, 3)
+                .onPreferenceChange(ComposerTextHeightKey.self) { height in
+                    guard height > 0, abs(height - composerTextHeight) > 0.5 else { return }
+                    withAnimation(reduceMotion ? nil : LC.Motion.standard) { composerTextHeight = height }
+                }
             if canAsk {
                 Text("↩").font(LC.Typo.micro).foregroundStyle(.tertiary)
                     .padding(.horizontal, 5).frame(height: 16)
                     .background(LC.fillSubtle, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .frame(height: 22)
                     .transition(.opacity)
                     .accessibilityHidden(true)
             }
+            conversationContextMenu
             Button { submit() } label: {
                 Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                     .frame(width: 22, height: 22)
@@ -318,7 +338,7 @@ struct OverlayView: View {
             .buttonStyle(.plain).disabled(!canAsk)
             .help(t("Ask")).accessibilityLabel(t("Ask")).accessibilityIdentifier("manual-query-submit")
         }
-        .padding(.leading, 10).padding(.trailing, 6).frame(height: 34)
+        .padding(.leading, 10).padding(.trailing, 6).padding(.vertical, 6)
         .background(Color(nsColor: .textBackgroundColor).opacity(0.92), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
             .strokeBorder(LinearGradient(colors: [LC.accent.opacity(composerFocused ? 0.85 : 0.5), LC.accentPink.opacity(composerFocused ? 0.75 : 0.4)],
@@ -328,6 +348,30 @@ struct OverlayView: View {
         .lcAnimation(LC.Motion.quick, value: composerFocused)
         .lcAnimation(LC.Motion.quick, value: canAsk)
         .onboardingHighlight(onboarding.visibleTip == .start && onboarding.state.prefersTyping)
+    }
+    /// Whether a typed question carries the recent conversation. Text-filled bubbles mean the
+    /// conversation is attached; empty bubbles mean the question goes on its own.
+    private var conversationContextMenu: some View {
+        let included = coordinator.includeConversation
+        return Menu {
+            Picker(b("Typed questions", "手动提问"), selection: $coordinator.includeConversation) {
+                Label(t("Use recent conversation"), systemImage: "bubble.left.and.text.bubble.right").tag(true)
+                Label(b("Question only", "仅发送问题"), systemImage: "bubble.left.and.bubble.right").tag(false)
+            }.pickerStyle(.inline)
+        } label: {
+            Image(systemName: included ? "bubble.left.and.text.bubble.right" : "bubble.left.and.bubble.right")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(included ? LC.accent : Color.secondary)
+                .frame(width: 26, height: 22)
+                .background(included ? LC.accent.opacity(0.12) : LC.fillSubtle, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .help(included ? t("Use recent conversation") : b("Question only — the conversation is not sent", "仅发送问题，不附带对话"))
+        .accessibilityLabel(b("Conversation context", "对话上下文"))
+        .accessibilityValue(included ? t("Use recent conversation") : b("Question only", "仅发送问题"))
+        .accessibilityIdentifier("conversation-context")
+        .lcAnimation(LC.Motion.quick, value: included)
     }
     private var speechFailed: Bool { coordinator.speechRuntime == .failed && !coordinator.isRunning }
     private var statusTone: LC.Tone {
@@ -548,6 +592,11 @@ private struct OverlaySwitchStyle: ToggleStyle {
             Toggle(isOn: configuration.$isOn) { configuration.label }.toggleStyle(.switch)
         }
     }
+}
+
+private struct ComposerTextHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 private struct OverlayChromeHeightKey: PreferenceKey {
