@@ -409,6 +409,8 @@ struct LCStatTile<Footer: View>: View {
     var systemImage: String
     var tone: LC.Tone = .accent
     var badge: (text: String, tone: LC.Tone)?
+    /// Lines of detail before truncating; nil shows all of it.
+    var detailLineLimit: Int? = 2
     @ViewBuilder var footer: () -> Footer
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -422,7 +424,7 @@ struct LCStatTile<Footer: View>: View {
                 .contentTransition(.numericText())
                 .lcAnimation(LC.Motion.standard, value: value)
             if let detail {
-                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(detailLineLimit).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
             footer()

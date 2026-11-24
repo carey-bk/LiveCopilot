@@ -4,44 +4,53 @@ import AVFoundation
 /// Readiness at a glance. Every value comes from live app state; nothing is estimated.
 extension SettingsView {
     var overview: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            sessionCard
+        let readiness = readiness
+        return VStack(alignment: .leading, spacing: 16) {
+            sessionCard(readiness)
+            if !readiness.canStart { guideCard(readiness) }
             // How the next session listens and answers, with what that means in practice.
             HStack(alignment: .top, spacing: 14) {
                 conversationTile(title: b("Mode", "模式"), value: t(coordinator.settings.mode.rawValue),
-                                 hint: modeHint, systemImage: coordinator.settings.mode == .remote ? "person.2" : "person.3",
+                                 hint: modeHint(coordinator.settings.mode), systemImage: modeSymbol(coordinator.settings.mode),
                                  identifier: "overview-mode")
                 conversationTile(title: b("Scenario", "场景"), value: t(coordinator.settings.scenario.rawValue),
-                                 hint: scenarioHint, systemImage: "theatermasks", identifier: "overview-scenario")
+                                 hint: scenarioHint(coordinator.settings.scenario), systemImage: scenarioSymbol(coordinator.settings.scenario),
+                                 identifier: "overview-scenario")
             }
             .fixedSize(horizontal: false, vertical: true)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 14) {
-                speechTile.lcHoverable(radius: LC.Radius.card, lift: true)
-                answerTile.lcHoverable(radius: LC.Radius.card, lift: true)
-                knowledgeTile.lcHoverable(radius: LC.Radius.card, lift: true)
-                permissionsTile.lcHoverable(radius: LC.Radius.card, lift: true)
+                speechTile(readiness[.speech]).lcHoverable(radius: LC.Radius.card, lift: true)
+                answerTile(readiness[.answers]).lcHoverable(radius: LC.Radius.card, lift: true)
+                knowledgeTile(readiness[.knowledge]).lcHoverable(radius: LC.Radius.card, lift: true)
+                permissionsTile(readiness[.permissions]).lcHoverable(radius: LC.Radius.card, lift: true)
             }
             recentSessions
+            if readiness.canStart { guideCard(readiness) }
         }
         .padding(.bottom, 24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { permissions.refresh() }
     }
 
-    private var sessionCard: some View {
+    private func sessionCard(_ readiness: SettingsReadiness) -> some View {
         HStack(alignment: .center, spacing: 14) {
-            LCIconTile(systemImage: coordinator.isRunning ? "waveform" : "waveform.slash", tone: coordinator.isRunning ? .success : .neutral, size: 36, filled: coordinator.isRunning)
-            VStack(alignment: .leading, spacing: 5) {
+            LCIconTile(systemImage: coordinator.isRunning ? "waveform" : "waveform.slash", tone: coordinator.isRunning ? .success : .neutral, size: 40, filled: coordinator.isRunning)
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     LCStatusDot(tone: coordinator.isRunning ? .success : .neutral, pulsing: coordinator.isRunning)
-                    Text(coordinator.isRunning ? b("Listening", "正在监听") : b("Not listening", "未在监听")).font(.headline)
+                    Text(coordinator.isRunning ? b("Listening", "正在监听") : b("Not listening", "未在监听")).font(LC.Typo.headline)
+                    autoPill
                 }
-                autoPill
+                readinessLine(readiness)
             }
             Spacer(minLength: 8)
-            Text(hotkeys.toggleOverlay.display).font(.caption.monospaced()).foregroundStyle(.secondary)
-                .padding(.horizontal, 7).padding(.vertical, 3).lcWell(radius: LC.Radius.small)
-                .help(t("Show / Hide Overlay"))
+            HStack(spacing: 5) {
+                Text(b("Show / hide", "显示/隐藏")).font(.caption).foregroundStyle(.secondary)
+                Text(hotkeys.toggleOverlay.display).font(.caption.monospaced()).foregroundStyle(.primary)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4).lcWell(radius: LC.Radius.small)
+            .fixedSize()
+            .help(t("Show / Hide Overlay"))
             Button { Task { await coordinator.toggle() } } label: {
                 if coordinator.isTransitioning {
                     HStack(spacing: 6) {
@@ -53,56 +62,86 @@ extension SettingsView {
                           systemImage: coordinator.isRunning ? "stop.fill" : "play.fill")
                 }
             }
-            .buttonStyle(.borderedProminent).tint(coordinator.isRunning ? LC.danger : LC.accent)
+            .buttonStyle(.borderedProminent).controlSize(.large).tint(coordinator.isRunning ? LC.danger : LC.accent)
             .disabled(coordinator.isTransitioning)
+            .fixedSize()
             .accessibilityIdentifier("overview-toggle-listening")
         }
         .lcCard()
     }
 
-    /// Describes what the code does for each mode: which input is which speaker and who can trigger answers.
-    private var modeHint: String {
-        switch coordinator.settings.mode {
-        case .remote:
-            return b("System audio is Them, your microphone is You. Only questions from Them trigger automatic answers.",
-                     "系统音频为对方，麦克风为我。只有对方的提问会触发自动回答。")
-        case .inPerson:
-            return b("One room microphone, speakers are not separated. A question from anyone in the room can trigger an automatic answer.",
-                     "只用房间麦克风，不区分说话人。房间里任何人的提问都可能触发自动回答。")
-        }
-    }
-    /// Mirrors ScenarioProfile.instructions, which only change how answers are written.
-    private var scenarioHint: String {
-        switch coordinator.settings.scenario {
-        case .interview:
-            return b("Short, natural answers to say aloud. Your documents are used only when a question asks about your experience.",
-                     "回答简短自然、便于说出口；只在问到你的经历时引用资料，不编造经历。")
-        case .meeting:
-            return b("Answers lead with decisions, exact facts, trade-offs and next actions.",
-                     "回答突出决策、准确事实、取舍和下一步行动，简短务实。")
-        case .defense:
-            return b("Answers explain methods and assumptions precisely, with sample sizes and limitations when supported.",
-                     "回答准确说明方法与假设，有依据时补充样本量和局限。")
-        }
-    }
-    private func conversationTile(title: String, value: String, hint: String, systemImage: String, identifier: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            LCIconTile(systemImage: systemImage, tone: .accent, size: 30)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(title).font(.caption).foregroundStyle(.secondary)
-                    Text(value).font(.headline)
+    /// One line on whether the next session can start, linking to the first thing to fix.
+    @ViewBuilder private func readinessLine(_ readiness: SettingsReadiness) -> some View {
+        let language = coordinator.settings.language
+        if let first = readiness.blockers.first {
+            let names = readiness.blockers.map { SettingsReadiness.title($0.item, language: language) }.joined(separator: b(", ", "、"))
+            Button { open(first.item) } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                    Text(b("\(readiness.blockers.count) to set up: \(names)", "\(readiness.blockers.count) 项待配置：\(names)"))
+                    Image(systemName: "arrow.right").font(.caption.weight(.semibold))
                 }
-                Text(hint).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                overviewLink(locked ? b("Stop listening to change", "停止监听后可更改") : b("Change", "更改")) { page = .modesAndScenarios }
-                    .padding(.top, 2)
+                .font(.callout.weight(.medium)).foregroundStyle(LC.warning)
             }
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("overview-readiness")
+        } else if let first = readiness.pending.first {
+            Button { open(first.item) } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(LC.success)
+                    Text(b("Ready to start", "可以开始")).foregroundStyle(.primary)
+                    Text("·").foregroundStyle(.secondary)
+                    Text(SettingsReadiness.title(first.item, language: language) + b(" needs setup", "待配置")).foregroundStyle(.secondary)
+                    Image(systemName: "arrow.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
+                .font(.callout)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("overview-readiness")
+        } else {
+            Label(b("Ready to start", "可以开始"), systemImage: "checkmark.circle.fill")
+                .font(.callout).foregroundStyle(LC.success)
+                .accessibilityIdentifier("overview-readiness")
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .lcCard()
+    }
+
+    /// The setup guide: prominent while something blocks listening, a quiet row once all is set.
+    private func guideCard(_ readiness: SettingsReadiness) -> some View {
+        let prominent = !readiness.canStart
+        return HStack(alignment: .center, spacing: 12) {
+            LCIconTile(systemImage: "sparkles.rectangle.stack", tone: prominent ? .accent : .neutral, size: 30)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(b("Setup guide", "新手引导")).font(.callout.weight(.semibold))
+                Text(prominent
+                     ? b("Walks through language, models, services and permissions step by step.", "一步步完成语言、模型、服务和权限设置。")
+                     : b("Review language, models, services and permissions. Your setup is kept.", "重新查看语言、模型、服务和权限，已有配置会保留。"))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button(b("Floating window tips", "悬浮窗操作提示")) { coordinator.onShowOverlayTips?() }
+                .accessibilityIdentifier("settings-overlay-tips")
+            Group {
+                if prominent {
+                    Button(b("Open guide", "打开引导")) { coordinator.onOpenOnboarding?() }.buttonStyle(.borderedProminent)
+                } else {
+                    Button(b("Open guide", "打开引导")) { coordinator.onOpenOnboarding?() }
+                }
+            }
+            .accessibilityIdentifier("settings-open-onboarding")
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .modifier(GuideCardStyle(prominent: prominent))
+    }
+
+    private func conversationTile(title: String, value: String, hint: String, systemImage: String, identifier: String) -> some View {
+        LCStatTile(title: title, value: value, detail: hint, systemImage: systemImage, tone: .accent, detailLineLimit: nil) {
+            if locked {
+                Text(b("Stop listening to change", "停止监听后可更改")).font(.callout).foregroundStyle(.secondary)
+            } else {
+                overviewLink(b("Change", "更改")) { page = .modesAndScenarios }
+            }
+        }
+        .frame(maxHeight: .infinity)
         .lcHoverable(radius: LC.Radius.card, lift: true)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
@@ -111,61 +150,50 @@ extension SettingsView {
         LCPill(text: coordinator.settings.automaticSuggestions ? b("Auto answers on", "自动建议已开") : b("Auto answers off", "自动建议已关"),
                tone: coordinator.settings.automaticSuggestions ? .accent : .neutral).fixedSize()
     }
-    private var speechReady: Bool {
-        switch coordinator.settings.listeningService {
-        case .openAI: return coordinator.hasAPIKey
-        case .apple: return coordinator.appleSpeech.installed
-        case .zipformer, .paraformer:
-            return coordinator.settings.listeningService.localModel?.isInstalled(in: localModels.root) == true
-        }
-    }
-    private var answerReady: Bool {
-        coordinator.settings.reasoningService == .sharedOpenAI ? coordinator.hasAPIKey : coordinator.hasAnalysisKey
-    }
-    private var microphoneReady: Bool { permissions.microphone == .authorized }
-    private var readyBadge: (Bool) -> (text: String, tone: LC.Tone) {
-        { ready in ready ? (b("Ready", "就绪"), .success) : (b("Needs setup", "待配置"), .warning) }
-    }
-
-    private var speechTile: some View {
+    private func speechTile(_ entry: SettingsReadiness.Entry) -> some View {
         LCStatTile(title: b("Speech recognition", "语音识别"),
                    value: t(coordinator.settings.listeningService.label),
-                   detail: coordinator.settings.listeningService.isLocal ? b("Runs on this Mac · no API fees", "在本机运行 · 无 API 费用") : b("Cloud · usage-based", "云端 · 按量计费"),
-                   systemImage: "waveform", tone: .accent, badge: readyBadge(speechReady)) {
-            overviewLink(b("Configure", "去设置")) { serviceRole = ServiceRole.speechRecognition.rawValue; page = .services }
+                   detail: entry.reason ?? (coordinator.settings.listeningService.isLocal ? b("Runs on this Mac · no API fees", "在本机运行 · 无 API 费用") : b("Cloud · usage-based", "云端 · 按量计费")),
+                   systemImage: "waveform", tone: .accent, badge: entry.badge(coordinator.settings.language)) {
+            overviewLink(b("Configure", "去设置")) { open(.speech) }
         }
     }
 
-    private var answerTile: some View {
+    private func answerTile(_ entry: SettingsReadiness.Entry) -> some View {
         let model = coordinator.settings.analysisModel.trimmingCharacters(in: .whitespacesAndNewlines)
         return LCStatTile(title: b("Answer model", "回答模型"),
                           value: model.isEmpty ? t(coordinator.settings.reasoningService.label) : model,
-                          detail: t(coordinator.settings.reasoningService.label),
-                          systemImage: "sparkles", tone: .pink, badge: readyBadge(answerReady)) {
-            overviewLink(b("Configure", "去设置")) { serviceRole = ServiceRole.analysisAndAnswers.rawValue; page = .services }
+                          detail: entry.reason ?? t(coordinator.settings.reasoningService.label),
+                          systemImage: "sparkles", tone: .pink, badge: entry.badge(coordinator.settings.language)) {
+            overviewLink(b("Configure", "去设置")) { open(.answers) }
         }
     }
 
-    private var knowledgeTile: some View {
+    private func knowledgeTile(_ entry: SettingsReadiness.Entry) -> some View {
         let documents = coordinator.knowledgeDocuments
         let chunks = documents.reduce(0) { $0 + $1.chunkCount }
+        let detail: String = documents.isEmpty ? b("Import documents to ground answers.", "导入资料，让回答有据可依。")
+            : entry.needsSetup ? (entry.reason ?? "") : b("\(chunks) evidence chunks · \(t(coordinator.settings.knowledgeMode.label))", "\(chunks) 个证据片段 · \(t(coordinator.settings.knowledgeMode.label))")
         return LCStatTile(title: b("Knowledge base", "知识库"),
                           value: b("\(documents.count) documents", "\(documents.count) 份资料"),
-                          detail: documents.isEmpty ? b("Import documents to ground answers.", "导入资料，让回答有据可依。")
-                                                    : b("\(chunks) evidence chunks · \(t(coordinator.settings.knowledgeMode.label))", "\(chunks) 个证据片段 · \(t(coordinator.settings.knowledgeMode.label))"),
-                          systemImage: "books.vertical", tone: .success,
-                          badge: documents.isEmpty ? (b("Empty", "空"), .neutral) : readyBadge(knowledgeConfigured)) {
-            overviewLink(b("Open knowledge", "管理资料")) { page = .knowledge }
+                          detail: detail, systemImage: "books.vertical", tone: .success,
+                          badge: entry.badge(coordinator.settings.language)) {
+            if entry.needsSetup {
+                overviewLink(b("Fix", "去处理")) { open(.knowledge) }
+            } else {
+                overviewLink(b("Open knowledge", "管理资料")) { page = .knowledge }
+            }
         }
     }
 
-    private var permissionsTile: some View {
-        let granted = (microphoneReady ? 1 : 0) + (permissions.screenAudio ? 1 : 0)
+    private func permissionsTile(_ entry: SettingsReadiness.Entry) -> some View {
+        let microphone = permissions.microphone == .authorized
+        let granted = (microphone ? 1 : 0) + (permissions.screenAudio ? 1 : 0)
         return LCStatTile(title: b("Permissions", "权限"),
                           value: b("\(granted) of 2 granted", "已授权 \(granted) / 2"),
-                          detail: b("Microphone ", "麦克风 ") + (microphoneReady ? "✓" : "—") + b(" · System audio ", " · 系统音频 ") + (permissions.screenAudio ? "✓" : "—"),
-                          systemImage: "lock.shield", tone: .warning, badge: readyBadge(granted == 2)) {
-            overviewLink(b("Review", "查看")) { page = .general }
+                          detail: entry.reason ?? (b("Microphone ", "麦克风 ") + (microphone ? "✓" : "—") + b(" · System audio ", " · 系统音频 ") + (permissions.screenAudio ? "✓" : "—")),
+                          systemImage: "lock.shield", tone: .warning, badge: entry.badge(coordinator.settings.language)) {
+            overviewLink(b("Review", "查看")) { open(.permissions) }
         }
     }
 
@@ -178,10 +206,7 @@ extension SettingsView {
 
     @ViewBuilder private var recentSessions: some View {
         let recent = Array(coordinator.sessions.sessions.prefix(4))
-        VStack(alignment: .leading, spacing: 10) {
-            LCSectionHeader(title: b("Recent sessions", "最近会话"), systemImage: "clock.arrow.circlepath") {
-                if !recent.isEmpty { overviewLink(b("All history", "全部记录")) { page = .history } }
-            }
+        LCSettingsCard(b("Recent sessions", "最近会话"), systemImage: "clock.arrow.circlepath") {
             if coordinator.sessions.sessions.count >= 2 {
                 // Real durations of the latest sessions, oldest first.
                 let trend = Array(coordinator.sessions.sessions.prefix(14).reversed())
@@ -214,7 +239,16 @@ extension SettingsView {
                     }
                 }
             }
+        } accessory: {
+            if !recent.isEmpty { overviewLink(b("All history", "全部记录")) { page = .history } }
         }
-        .lcCard()
+    }
+}
+
+/// Accent-tinted while setup is unfinished; a plain card afterwards.
+private struct GuideCardStyle: ViewModifier {
+    let prominent: Bool
+    func body(content: Content) -> some View {
+        if prominent { content.lcCallout(.accent, padding: 16) } else { content.lcCard(padding: 14) }
     }
 }
