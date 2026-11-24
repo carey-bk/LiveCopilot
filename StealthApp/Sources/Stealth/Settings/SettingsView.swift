@@ -41,13 +41,7 @@ struct SettingsView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar
-                .background { LCVisualEffect(material: .sidebar).ignoresSafeArea() }
-                // Drawn over the sidebar material. A separate 1 pt column had no backing in this
-                // translucent window, so the desktop showed through as a dark line.
-                .overlay(alignment: .trailing) {
-                    Rectangle().fill(LC.hairline).frame(width: 0.5).ignoresSafeArea(edges: .top).allowsHitTesting(false)
-                }
+            sidebarPanel
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 18) {
                     UpdateBanner(updates: updates, language: coordinator.settings.language, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
@@ -87,6 +81,30 @@ struct SettingsView: View {
                 CredentialEditor(coordinator: coordinator, analysis: false)
                 Button(t("Done")) { showOpenAIKey = false }
             }.padding(24).frame(width: 540)
+        }
+    }
+
+    /// macOS 26 and later: the sidebar floats as a Liquid Glass pane over the page canvas, as in
+    /// System Settings. Earlier systems, Intel Macs and Reduce Transparency keep the sidebar material.
+    @ViewBuilder private var sidebarPanel: some View {
+        if #available(macOS 26, *), !WindowBackgroundView.usesLightweightSurface() {
+            sidebar
+                .padding(.horizontal, 4)
+                .background {
+                    Rectangle().fill(.clear)
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .padding(8)
+                        .ignoresSafeArea(edges: .top)
+                }
+                .background { LC.canvas.ignoresSafeArea() }
+        } else {
+            sidebar
+                .background { LCVisualEffect(material: .sidebar).ignoresSafeArea() }
+                // Drawn over the sidebar material. A separate 1 pt column had no backing in this
+                // translucent window, so the desktop showed through as a dark line.
+                .overlay(alignment: .trailing) {
+                    Rectangle().fill(LC.hairline).frame(width: 0.5).ignoresSafeArea(edges: .top).allowsHitTesting(false)
+                }
         }
     }
 

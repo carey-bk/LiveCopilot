@@ -564,6 +564,28 @@ struct LCOptionCard: View {
     }
 }
 
+/// Liquid Glass track on macOS 26 and later; a plain fill elsewhere.
+struct LCSegmentedTrack: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26, *), !WindowBackgroundView.usesLightweightSurface() {
+            content.glassEffect(.regular, in: Capsule())
+        } else {
+            content.background(LC.fill, in: Capsule())
+        }
+    }
+}
+
+extension View {
+    /// Liquid Glass button on macOS 26 and later (prominent for the primary action); bordered elsewhere.
+    @ViewBuilder func lcGlassButton(prominent: Bool = false) -> some View {
+        if #available(macOS 26, *) {
+            if prominent { self.buttonStyle(.glassProminent) } else { self.buttonStyle(.glass) }
+        } else {
+            if prominent { self.buttonStyle(.borderedProminent) } else { self.buttonStyle(.bordered) }
+        }
+    }
+}
+
 /// Segmented dot bar for real proportions (index progress, audio level, activity).
 struct LCDotMeter: View {
     /// 0...1
@@ -806,7 +828,7 @@ struct LCSegmented<Value: Hashable>: View {
             }
         }
         .padding(3)
-        .background(LC.fill, in: Capsule())
+        .modifier(LCSegmentedTrack())
         .lcAnimation(LC.Motion.standard, value: selection)
         .accessibilityRepresentation {
             Picker(title, selection: $selection) {

@@ -32,7 +32,7 @@ extension SettingsView {
                 .accessibilityIdentifier("settings-overlay-tips")
         }
         .controlSize(.small)
-        .buttonStyle(.bordered)
+        .lcGlassButton()
         .fixedSize()
         .padding(.top, 18)
     }
@@ -67,7 +67,7 @@ extension SettingsView {
                           systemImage: coordinator.isRunning ? "stop.fill" : "play.fill")
                 }
             }
-            .buttonStyle(.borderedProminent).controlSize(.large).tint(coordinator.isRunning ? LC.danger : LC.accent)
+            .lcGlassButton(prominent: true).controlSize(.large).tint(coordinator.isRunning ? LC.danger : LC.accent)
             .disabled(coordinator.isTransitioning)
             .fixedSize()
             .accessibilityIdentifier("overview-toggle-listening")
