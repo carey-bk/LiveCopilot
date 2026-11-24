@@ -56,7 +56,7 @@ struct OverlayView: View {
     private func t(_ text: String) -> String { L10n.text(text, language: coordinator.settings.language) }
     private var transcriptSize: CGFloat { OverlayTypography.clamped(coordinator.settings.transcriptFontSize, fallback: 12) }
     private var answerSize: CGFloat { OverlayTypography.clamped(coordinator.settings.answerFontSize, fallback: 14) }
-    private var speakerWidth: CGFloat { max(35, transcriptSize * 2.8) }
+    private var speakerWidth: CGFloat { max(36, transcriptSize * 3.2) } // fits "Them" in its pill at every text size
     private func reportSize() {
         // Only the answer viewport grows. The voice area and composer keep
         // their position relative to the window's stable top edge.
@@ -73,7 +73,7 @@ struct OverlayView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if !answerOnly { voiceSection }
                     actions.frame(height: 28)
-                    if demonstrationAnswer == nil { bottom.frame(height: answerOnly ? 34 : 66, alignment: .top) }
+                    if demonstrationAnswer == nil { bottom.frame(height: 34, alignment: .top) }
                     Divider()
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -167,6 +167,7 @@ struct OverlayView: View {
                                    micEnabled: coordinator.micEnabled, language: coordinator.settings.language)
                         .transition(.opacity)
                 }
+                footer.fixedSize()
             }
             .lcAnimation(LC.Motion.quick, value: coordinator.isRunning)
             if coordinator.isRunning, let notice = coordinator.captureNotice {
@@ -209,11 +210,17 @@ struct OverlayView: View {
             // Outer padding supplies another 14 pt of clearance from the resize corner.
             .padding(.trailing, OverlayResizeView.corner / 2)
         } else {
-            actionRow(.titleAndIcon)
+            // Shorten the context switch's label before the action chips lose their titles.
+            ViewThatFits(in: .horizontal) {
+                actionRow(.titleAndIcon)
+                actionRow(.titleAndIcon, shortLabels: true)
+                actionRow(.titleOnly, shortLabels: true)
+                actionRow(.iconOnly, shortLabels: true)
+            }
         }
     }
 
-    private func actionRow<Style: LabelStyle>(_ style: Style, compactToggle: Bool = false) -> some View {
+    private func actionRow<Style: LabelStyle>(_ style: Style, compactToggle: Bool = false, shortLabels: Bool = false) -> some View {
         HStack(spacing: 6) {
             ForEach(coordinator.settings.enabledSuggestionModes) { mode in
                 Button { coordinator.requestSuggestion(mode: mode) } label: {
@@ -231,15 +238,26 @@ struct OverlayView: View {
                 .accessibilityIdentifier("action-" + mode.rawValue)
                 .onboardingHighlight(onboarding.visibleTip == .answer && mode == .reply)
             }
-            Spacer(minLength: 4).overlay { if answerOnly { OverlayDragRegion() } }
-            // Answers-only mode has no status row, so the live meters ride along here.
-            if answerOnly && coordinator.isRunning {
-                LiveLevelsView(levels: coordinator.levels, mode: coordinator.settings.mode,
-                               micEnabled: coordinator.micEnabled, language: coordinator.settings.language)
-                    .transition(.opacity)
+            if answerOnly {
+                // Answers-only mode has no header or status row: listening and the live
+                // meters ride along in this row.
+                listenButton.padding(.leading, 2)
+                if coordinator.isRunning {
+                    LiveLevelsView(levels: coordinator.levels, mode: coordinator.settings.mode,
+                                   micEnabled: coordinator.micEnabled, language: coordinator.settings.language)
+                        .padding(.leading, 4)
+                        .transition(.opacity)
+                }
+                Spacer(minLength: 4).overlay { OverlayDragRegion() }
+                layoutToggle(iconOnly: compactToggle).fixedSize()
+            } else {
+                Toggle(shortLabels ? b("Context", "附带对话") : t("Use recent conversation"), isOn: $coordinator.includeConversation)
+                    .font(.caption2).toggleStyle(OverlaySwitchStyle())
+                    .help(t("Use recent conversation"))
+                    .fixedSize().padding(.leading, 4)
+                Spacer(minLength: 4)
+                knowledgeModeMenu
             }
-            knowledgeModeMenu
-            if answerOnly { layoutToggle(iconOnly: compactToggle).fixedSize() }
         }
         .lcAnimation(LC.Motion.quick, value: coordinator.isRunning)
     }
@@ -269,16 +287,8 @@ struct OverlayView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 composer
+                if coordinator.answerIsRunning { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption).fixedSize() }
                 answerLanguageMenu
-            }
-            if !answerOnly {
-                HStack(spacing: 8) {
-                    Toggle(t("Use recent conversation"), isOn: $coordinator.includeConversation).font(.caption2).toggleStyle(OverlaySwitchStyle())
-                        .fixedSize()
-                    if coordinator.answerIsRunning { Button(t("Cancel")) { coordinator.cancelAnswer() }.font(.caption) }
-                    Spacer(minLength: 4)
-                    footer
-                }
             }
         }
     }
@@ -354,6 +364,36 @@ struct OverlayView: View {
         .accessibilityIdentifier("overlay-layout-toggle")
     }
 
+    private var listenButton: some View {
+        Button { Task { await coordinator.toggle() } } label: {
+            HStack(spacing: 4) {
+                if coordinator.isTransitioning {
+                    // Cold audio devices can take several seconds to start; keep the wait visible.
+                    LCSpinner(size: 9, color: coordinator.isRunning ? LC.danger : .white)
+                    Text(coordinator.isRunning ? b("Stopping", "停止中") : b("Starting", "启动中")).font(.caption.weight(.semibold))
+                } else {
+                    Image(systemName: coordinator.isRunning ? "stop.fill" : "play.fill").font(.system(size: 8, weight: .bold))
+                        .contentTransition(.symbolEffect(.replace))
+                    Text(coordinator.isRunning ? b("Stop", "停止") : b("Listen", "监听")).font(.caption.weight(.semibold))
+                }
+            }
+            .padding(.horizontal, 10).frame(height: 24)
+            .foregroundStyle(coordinator.isRunning ? LC.danger : Color.white)
+            .background {
+                if coordinator.isRunning { Capsule().fill(LC.danger.opacity(0.13)) }
+                else { Capsule().fill(LC.brandGradient).shadow(color: LC.accent.opacity(0.3), radius: 4, y: 1) }
+            }
+            .contentShape(Capsule())
+            .lcAnimation(LC.Motion.standard, value: coordinator.isRunning)
+            .lcAnimation(LC.Motion.quick, value: coordinator.isTransitioning)
+        }.buttonStyle(.plain).fixedSize()
+            // Not .disabled: the dimmed style would hide the start-up spinner. Taps are ignored instead.
+            .allowsHitTesting(!coordinator.isTransitioning)
+            .accessibilityAddTraits(coordinator.isTransitioning ? .updatesFrequently : [])
+            .help(t(coordinator.isRunning ? "Stop listening" : "Start listening"))
+            .accessibilityIdentifier("overlay-toggle-listening")
+            .onboardingHighlight(onboarding.visibleTip == .start && !onboarding.state.prefersTyping)
+    }
     private var header: some View {
         HStack {
             HStack(spacing: 8) {
@@ -362,34 +402,7 @@ struct OverlayView: View {
                 Spacer(minLength: 0)
             }.overlay { OverlayDragRegion() }
                 .help(b("Turn off automatic docking to drag this header anywhere.", "关闭自动贴边后，可拖动这里自由移动窗口。"))
-            Button { Task { await coordinator.toggle() } } label: {
-                HStack(spacing: 4) {
-                    if coordinator.isTransitioning {
-                        // Cold audio devices can take several seconds to start; keep the wait visible.
-                        LCSpinner(size: 9, color: coordinator.isRunning ? LC.danger : .white)
-                        Text(coordinator.isRunning ? b("Stopping", "停止中") : b("Starting", "启动中")).font(.caption.weight(.semibold))
-                    } else {
-                        Image(systemName: coordinator.isRunning ? "stop.fill" : "play.fill").font(.system(size: 8, weight: .bold))
-                            .contentTransition(.symbolEffect(.replace))
-                        Text(coordinator.isRunning ? b("Stop", "停止") : b("Listen", "监听")).font(.caption.weight(.semibold))
-                    }
-                }
-                .padding(.horizontal, 10).frame(height: 24)
-                .foregroundStyle(coordinator.isRunning ? LC.danger : Color.white)
-                .background {
-                    if coordinator.isRunning { Capsule().fill(LC.danger.opacity(0.13)) }
-                    else { Capsule().fill(LC.brandGradient).shadow(color: LC.accent.opacity(0.3), radius: 4, y: 1) }
-                }
-                .contentShape(Capsule())
-                .lcAnimation(LC.Motion.standard, value: coordinator.isRunning)
-                .lcAnimation(LC.Motion.quick, value: coordinator.isTransitioning)
-            }.buttonStyle(.plain).fixedSize()
-                // Not .disabled: the dimmed style would hide the start-up spinner. Taps are ignored instead.
-                .allowsHitTesting(!coordinator.isTransitioning)
-                .accessibilityAddTraits(coordinator.isTransitioning ? .updatesFrequently : [])
-                .help(t(coordinator.isRunning ? "Stop listening" : "Start listening"))
-                .accessibilityIdentifier("overlay-toggle-listening")
-                .onboardingHighlight(onboarding.visibleTip == .start && !onboarding.state.prefersTyping)
+            listenButton
             Button { Task { await coordinator.resetConversation() } } label: { Image(systemName: "arrow.clockwise") }
                 .disabled(coordinator.isTransitioning)
                 .help(t("Clear conversation and answers; keep listening if active"))
@@ -471,7 +484,8 @@ struct OverlayView: View {
                 .foregroundStyle(color)
                 .padding(.horizontal, 5).padding(.vertical, 1)
                 .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .frame(width: speakerWidth, alignment: .leading)
+                .fixedSize()
+                .frame(minWidth: speakerWidth, alignment: .leading)
             // ASR fragments retain separator spaces for merging; do not render them as indentation.
             if selectable {
                 Text(text.trimmingCharacters(in: .whitespacesAndNewlines))
