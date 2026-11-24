@@ -272,11 +272,7 @@ extension SettingsView {
                     .id(try? coordinator.settings.analysisCredentialReference().account)
             }
             LCSettingsCard(b("Answer style", "回答风格"), systemImage: "text.quote", tone: .pink) {
-                    LCSettingsRow(b("Chinese / English sentence pairs", "中英逐句对照"),
-                                  detail: b("Each Chinese sentence is followed by its English equivalent. Applies to manual and automatic answers and overrides single-language output.", "每句中文后紧接对应英文。对手动和自动回答生效，优先于单语设置。")) {
-                        LCSwitch(title: b("Chinese / English sentence pairs", "中英逐句对照"), isOn: $coordinator.settings.bilingualAnswers)
-                            .accessibilityIdentifier("bilingual-answers")
-                    }
+                    answerTranslationSetting
                     Divider()
                     Text(b("Additional answer instructions", "个性化额外提示词"))
                     TextEditor(text: Binding(get: { answerInstructionsDraft }, set: { answerInstructionsDraft = String($0.prefix(4000)) }))
@@ -300,10 +296,75 @@ extension SettingsView {
                         .disabled(answerInstructionsDraft == coordinator.settings.additionalAnswerInstructions)
                         .accessibilityIdentifier("save-answer-instructions")
                     }
-                    Text(b("Your instructions take priority over default answer style, including bilingual formatting. Factual accuracy still applies.", "自定义要求优先于默认回答风格和中英对照格式，但不会改变事实准确性要求。"))
+                    Text(b("Your instructions take priority over default answer style, including translation lines. Factual accuracy still applies.", "自定义要求优先于默认回答风格和译文格式，但不会改变事实准确性要求。"))
                         .font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+    /// Translation lines after each answer sentence; languages are picked in order, up to three.
+    private var answerTranslationSetting: some View {
+        let title = b("Sentence translations", "逐句附译文")
+        let enabled = Binding(get: { coordinator.settings.answerTranslationEnabled }, set: { on in
+            if on && coordinator.settings.answerTranslationLanguages.isEmpty {
+                coordinator.settings.answerTranslationLanguages = TranslationLanguage.defaults(for: coordinator.settings.language)
+            }
+            coordinator.settings.answerTranslationEnabled = on
+        })
+        let chosen = coordinator.settings.effectiveTranslationLanguages
+        return VStack(alignment: .leading, spacing: 12) {
+            LCSettingsRow(title, detail: b("Each answer sentence is followed by its translation. Applies to manual and automatic answers.",
+                                           "每句回答后紧接对应译文。对手动和自动回答生效。")) {
+                LCSwitch(title: title, isOn: enabled).accessibilityIdentifier("answer-translations")
+            }
+            if coordinator.settings.answerTranslationEnabled {
+                VStack(alignment: .leading, spacing: 8) {
+                    LCFlowLayout(spacing: 8) {
+                        ForEach(TranslationLanguage.allCases) { language in
+                            translationChip(language, order: chosen.firstIndex(of: language), chosen: chosen)
+                        }
+                    }
+                    Text(b("Pick up to \(TranslationLanguage.maximum); translations follow in the order picked. Sentences already in a picked language are not translated again.",
+                           "最多选 \(TranslationLanguage.maximum) 种，译文按选择顺序排列；与原句语言相同的不再重复翻译。"))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("answer-translation-languages")
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .lcAnimation(LC.Motion.standard, value: coordinator.settings.answerTranslationEnabled)
+    }
+    private func translationChip(_ language: TranslationLanguage, order: Int?, chosen: [TranslationLanguage]) -> some View {
+        let selected = order != nil
+        let full = chosen.count >= TranslationLanguage.maximum
+        return Button {
+            var languages = chosen
+            if let order {
+                guard languages.count > 1 else { return }   // keep at least one; turn the switch off instead
+                languages.remove(at: order)
+            } else if !full {
+                languages.append(language)
+            }
+            coordinator.settings.answerTranslationLanguages = languages
+        } label: {
+            HStack(spacing: 5) {
+                if let order {
+                    Text("\(order + 1)").font(.caption2.weight(.bold)).monospacedDigit()
+                        .frame(width: 15, height: 15).background(Color.white.opacity(0.25), in: Circle())
+                }
+                Text(language.nativeName).font(.callout.weight(selected ? .semibold : .regular))
+            }
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .padding(.horizontal, 10).frame(height: 26)
+            .background(selected ? LC.accent : LC.fill, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!selected && full)
+        .opacity(!selected && full ? 0.45 : 1)
+        .accessibilityLabel(language.nativeName)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("translation-" + language.rawValue)
     }
     var customService: some View {
         VStack(alignment: .leading, spacing: 14) {

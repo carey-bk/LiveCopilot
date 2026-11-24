@@ -1997,13 +1997,17 @@ final class AppCoordinator: ObservableObject {
                 output.retrievalMS = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
                 output.mark(.ragComplete)
                 if settings.knowledgeMode == .knowledgeBaseOnly && sources.isEmpty {
-                    let missing = settings.bilingualAnswers
-                        ? AnswerLanguage.chinese.missingEvidence(question: query) + "\n" + AnswerLanguage.english.missingEvidence(question: query)
-                        : settings.answerLanguage.missingEvidence(question: languageQuestion ?? query)
+                    // Written locally without a model call: add the other built-in language when it is a chosen translation.
+                    let question = languageQuestion ?? query
+                    let chinese = settings.answerLanguage.localFallbackIsChinese(question: question)
+                    var missing = settings.answerLanguage.missingEvidence(question: question)
+                    let translations = settings.effectiveTranslationLanguages
+                    if chinese && translations.contains(.english) { missing += "\n" + AnswerLanguage.english.missingEvidence(question: question) }
+                    if !chinese && translations.contains(where: \.isChinese) { missing += "\n" + AnswerLanguage.chinese.missingEvidence(question: question) }
                     output.appendDelta(missing)
                 } else {
                     var answer = AnswerRequest(query: normalized, conversation: context, scenario: settings.scenario, sources: sources, mode: mode,
-                                               knowledgeMode: settings.knowledgeMode, answerLanguage: settings.answerLanguage, bilingualAnswers: settings.bilingualAnswers, additionalAnswerInstructions: settings.additionalAnswerInstructions, languageQuestion: languageQuestion)
+                                               knowledgeMode: settings.knowledgeMode, answerLanguage: settings.answerLanguage, translationLanguages: settings.effectiveTranslationLanguages, additionalAnswerInstructions: settings.additionalAnswerInstructions, languageQuestion: languageQuestion)
                     answer.onStreamProgress = { [weak self] stage, time in
                         guard let coordinator = self else { return }
                         await MainActor.run {

@@ -9,7 +9,7 @@ import Foundation
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
 ///     --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-open-history   --ui-answer-only
-///     --ui-query <typed question>   --ui-question-only   --ui-transcript-collapsed   --ui-transcript-lines n
+///     --ui-query <typed question>   --ui-question-only   --ui-transcript-collapsed   --ui-transcript-lines n   --ui-translations japanese,english   --ui-scroll-end
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
 enum UIFixture {
@@ -37,6 +37,10 @@ enum UIFixture {
         coordinator.settings.includeConversation = !flag("--ui-question-only")
         coordinator.settingsDefaults.set(flag("--ui-transcript-collapsed"), forKey: "overlayTranscriptCollapsed")
         coordinator.settings.transcriptExpandedLines = value("--ui-transcript-lines").flatMap(Int.init) ?? 6
+        // Mock settings persist between runs, so the translation state is set on every launch.
+        let translations = value("--ui-translations")?.split(separator: ",").compactMap { TranslationLanguage(rawValue: String($0)) } ?? []
+        coordinator.settings.answerTranslationEnabled = !translations.isEmpty
+        coordinator.settings.answerTranslationLanguages = translations
         if let raw = value("--ui-listening-service"), let service = ListeningService(rawValue: raw) { coordinator.settings.listeningService = service }
         if let raw = value("--ui-laya-idle"), let seconds = TimeInterval(raw) { coordinator.layaIdleReleaseSeconds = seconds }
         if let raw = value("--ui-background"), let background = AppBackground(rawValue: raw) { coordinator.settings.background = background }
@@ -99,6 +103,20 @@ enum UIFixture {
         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let prefix = value("--ui-snapshot-name") ?? (state ?? "app")
+        if flag("--ui-scroll-end") {
+            // Show the end of long settings pages: scroll the tallest scroll view of each titled window to its bottom.
+            func scrollViews(_ view: NSView) -> [NSScrollView] {
+                ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrollViews)
+            }
+            for window in NSApp.windows where window.isVisible && !window.title.isEmpty {
+                guard let scroll = (window.contentView.map(scrollViews) ?? []).max(by: { $0.frame.height < $1.frame.height }),
+                      let document = scroll.documentView else { continue }
+                let bottom = document.isFlipped ? max(0, document.bounds.height - scroll.contentView.bounds.height) : 0
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: bottom))
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+        }
         for window in NSApp.windows where window.isVisible && window.frame.width > 40 {
             guard let view = window.contentView?.superview ?? window.contentView,
                   let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }

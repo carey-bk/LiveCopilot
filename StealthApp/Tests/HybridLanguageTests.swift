@@ -150,7 +150,7 @@ final class HybridLanguageTests: XCTestCase {
     @MainActor func testSavedStyleReachesNewAnswers() async throws {
         let reasoner = PolicyReasoner(), app = app(reasoner)
         app.settings.knowledgeMode = .general
-        app.settings.bilingualAnswers = true
+        app.settings.answerTranslationEnabled = true
         app.settings.additionalAnswerInstructions = "回答都写成七言绝句的形式"
         let suite = "Style-Save-" + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!

@@ -40,7 +40,10 @@ struct AppSettings: Codable, Equatable {
     var automaticSuggestions = true
     var layaThreshold = 0.8
     var continuousQuestionPolicy = ContinuousQuestionPolicy.smart
-    var bilingualAnswers = false
+    /// Each answer sentence is followed by its translation into `answerTranslationLanguages`.
+    var answerTranslationEnabled = false
+    /// Chosen translation languages in order; empty means the default for the interface language.
+    var answerTranslationLanguages: [TranslationLanguage] = []
     var additionalAnswerInstructions = ""
     var recapEnabled = true
     var followUpEnabled = true
@@ -82,10 +85,17 @@ struct AppSettings: Codable, Equatable {
     }
 
     init() {}
+    /// Languages actually sent to the answer model; empty while translations are off.
+    var effectiveTranslationLanguages: [TranslationLanguage] {
+        guard answerTranslationEnabled else { return [] }
+        return answerTranslationLanguages.isEmpty ? TranslationLanguage.defaults(for: language) : answerTranslationLanguages
+    }
     private enum CodingKeys: String, CodingKey {
         case professionalTerms, professionalTermsEnabled
         case knowledgeMode, answerLanguage
-        case layaThreshold, continuousQuestionPolicy, bilingualAnswers, additionalAnswerInstructions
+        case layaThreshold, continuousQuestionPolicy, additionalAnswerInstructions
+        // The switch keeps the stored key of the former Chinese/English sentence pairs setting.
+        case answerTranslationEnabled = "bilingualAnswers", answerTranslationLanguages
         case showMenuBarIcon
         case recapEnabled, followUpEnabled
         case transcriptFontSize, transcriptExpandedLines, answerFontSize, qwenConnection, glmConnection, kimiConnection
@@ -111,7 +121,15 @@ struct AppSettings: Codable, Equatable {
         mode = try c.decodeIfPresent(OperatingMode.self, forKey: .mode) ?? mode
         scenario = try c.decodeIfPresent(ScenarioProfile.self, forKey: .scenario) ?? scenario
         automaticSuggestions = try c.decodeIfPresent(Bool.self, forKey: .automaticSuggestions) ?? automaticSuggestions
-        bilingualAnswers = try c.decodeIfPresent(Bool.self, forKey: .bilingualAnswers) ?? false
+        answerTranslationEnabled = try c.decodeIfPresent(Bool.self, forKey: .answerTranslationEnabled) ?? false
+        if let languages = try c.decodeIfPresent([String].self, forKey: .answerTranslationLanguages) {
+            var seen = Set<TranslationLanguage>()
+            answerTranslationLanguages = Array(languages.compactMap(TranslationLanguage.init(rawValue:)).filter { seen.insert($0).inserted }
+                .prefix(TranslationLanguage.maximum))
+        } else if answerTranslationEnabled {
+            // Former sentence pairs: Chinese answers gained English, English answers gained Chinese.
+            answerTranslationLanguages = [.english, .simplifiedChinese]
+        }
         additionalAnswerInstructions = String((try c.decodeIfPresent(String.self, forKey: .additionalAnswerInstructions) ?? "").prefix(4000))
         continuousQuestionPolicy = try c.decodeIfPresent(ContinuousQuestionPolicy.self, forKey: .continuousQuestionPolicy) ?? .smart
         let threshold = try c.decodeIfPresent(Double.self, forKey: .layaThreshold) ?? layaThreshold
@@ -212,7 +230,7 @@ struct AnswerRequest {
     var mode: SuggestionMode = .reply
     var knowledgeMode: KnowledgeMode = .hybrid
     var answerLanguage: AnswerLanguage = .auto
-    var bilingualAnswers = false
+    var translationLanguages: [TranslationLanguage] = []
     var additionalAnswerInstructions = ""
     var languageQuestion: String? = nil
     /// Timing signals only; providers never expose or persist reasoning text here.
@@ -287,11 +305,9 @@ struct AnswerRequest {
         var result = ""
         let extra = String(additionalAnswerInstructions.prefix(4000)).trimmingCharacters(in: .whitespacesAndNewlines)
         if !extra.isEmpty {
-            result += "User's answer style and format preferences (override default brevity, tone, layout, response language and bilingual formatting when they conflict, but never evidence accuracy, citation integrity or personal-fact constraints):\n" + extra + "\nEnd of user style preferences.\n"
+            result += "User's answer style and format preferences (override default brevity, tone, layout, response language and translation formatting when they conflict, but never evidence accuracy, citation integrity or personal-fact constraints):\n" + extra + "\nEnd of user style preferences.\n"
         }
-        if bilingualAnswers {
-            result += "Bilingual output is enabled by default. Follow explicit user style and format preferences above when they conflict; otherwise use the following bilingual format. For each sentence in the spoken answer, write the Chinese sentence immediately followed by its English equivalent on the next line. Keep each pair together, preserving meaning; do not separate the answer into full Chinese and English blocks. Evidence and notes remain a separate section."
-        }
+        result += TranslationLanguage.instructions(translationLanguages)
         return result
     }
     var input: String {

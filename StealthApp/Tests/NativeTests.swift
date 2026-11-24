@@ -70,6 +70,39 @@ final class NativeTests: XCTestCase {
         XCTAssertEqual(SettingsReadiness(library)[.knowledge].reason, "需要重建索引")
     }
 
+    func testAnswerTranslationsDefaultMigrateAndReachThePrompt() throws {
+        // A saved "sentence pairs" switch keeps its behavior: English after Chinese, Chinese after English.
+        let legacy = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"bilingualAnswers":true}"#.utf8))
+        XCTAssertTrue(legacy.answerTranslationEnabled)
+        XCTAssertEqual(legacy.effectiveTranslationLanguages, [.english, .simplifiedChinese])
+
+        var settings = AppSettings()
+        XCTAssertEqual(settings.effectiveTranslationLanguages, [], "Off by default")
+        settings.answerTranslationEnabled = true
+        settings.language = .simplifiedChinese
+        XCTAssertEqual(settings.effectiveTranslationLanguages, [.english], "Non-English interface defaults to English")
+        settings.language = .english
+        XCTAssertEqual(settings.effectiveTranslationLanguages, [.simplifiedChinese], "English interface defaults to Simplified Chinese")
+        settings.answerTranslationLanguages = [.japanese, .french]
+        let saved = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(saved.effectiveTranslationLanguages, [.japanese, .french])
+        settings.answerTranslationEnabled = false
+        XCTAssertEqual(settings.effectiveTranslationLanguages, [], "Turning it off keeps the choice but sends nothing")
+
+        let capped = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"bilingualAnswers":true,"answerTranslationLanguages":["korean","korean","german","klingon","spanish","italian"]}"#.utf8))
+        XCTAssertEqual(capped.answerTranslationLanguages, [.korean, .german, .spanish], "Unknown and duplicate languages dropped, at most three kept")
+
+        let request = { (languages: [TranslationLanguage]) in
+            AnswerRequest(query: RetrievalQuery(question: "What is caching?", semantic: "caching", lexical: "caching"), conversation: "",
+                          scenario: .interview, sources: [], translationLanguages: languages)
+        }
+        XCTAssertFalse(request([]).instructions.contains("Translation lines are enabled"))
+        let prompt = request([.japanese, .english]).instructions
+        XCTAssertTrue(prompt.contains("Translation lines are enabled (Japanese and English)"))
+        XCTAssertTrue(prompt.contains("one line per translation, in this order: Japanese, English"))
+        XCTAssertTrue(prompt.contains("Skip a translation when the sentence is already in that language"))
+    }
+
     func testOverlayConversationChoiceAndTranscriptRowsPersist() throws {
         let suite = "LiveCopilot-Overlay-Prefs-Tests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

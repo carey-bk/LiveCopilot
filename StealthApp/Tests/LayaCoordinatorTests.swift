@@ -396,12 +396,15 @@ final class LayaCoordinatorTests: XCTestCase {
     }
     @MainActor func testStylePreferencesReachAutomaticAndManualRequests() async throws {
         var defaults = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
-        XCTAssertFalse(defaults.bilingualAnswers); XCTAssertEqual(defaults.additionalAnswerInstructions, "")
-        defaults.bilingualAnswers = true; defaults.additionalAnswerInstructions = "Use short sentences."
+        XCTAssertFalse(defaults.answerTranslationEnabled); XCTAssertEqual(defaults.additionalAnswerInstructions, "")
+        defaults.answerTranslationEnabled = true; defaults.answerTranslationLanguages = [.japanese, .english]
+        defaults.additionalAnswerInstructions = "Use short sentences."
         let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(defaults))
-        XCTAssertTrue(decoded.bilingualAnswers); XCTAssertEqual(decoded.additionalAnswerInstructions, defaults.additionalAnswerInstructions)
+        XCTAssertTrue(decoded.answerTranslationEnabled); XCTAssertEqual(decoded.answerTranslationLanguages, [.japanese, .english])
+        XCTAssertEqual(decoded.additionalAnswerInstructions, defaults.additionalAnswerInstructions)
         let reasoning = CountingLayaReasoning(); let app = make(reasoning)
-        app.settings.bilingualAnswers = true; app.settings.additionalAnswerInstructions = defaults.additionalAnswerInstructions
+        app.settings.answerTranslationEnabled = true; app.settings.answerTranslationLanguages = [.japanese, .english]
+        app.settings.additionalAnswerInstructions = defaults.additionalAnswerInstructions
         await app.start()
         final(app, text: "Could you explain retrieval design?")
         await pause(0.7)
@@ -409,7 +412,7 @@ final class LayaCoordinatorTests: XCTestCase {
         await pause(0.2)
         XCTAssertEqual(reasoning.requests.count, 2)
         for request in reasoning.requests {
-            XCTAssertTrue(request.instructions.contains("Chinese sentence immediately followed"))
+            XCTAssertTrue(request.instructions.contains("one line per translation, in this order: Japanese, English"))
             XCTAssertTrue(request.instructions.contains("Use short sentences."))
         }
         XCTAssertEqual(app.answers.count, 2)

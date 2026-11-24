@@ -93,6 +93,64 @@ enum AnswerLanguage: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Languages a translation line can follow each answer sentence in. Labels are each language's own name.
+enum TranslationLanguage: String, Codable, CaseIterable, Identifiable {
+    case english, simplifiedChinese, traditionalChinese, japanese, korean, french, german, spanish, portuguese, italian, russian, arabic
+    var id: String { rawValue }
+    /// Shown as is in every interface language, so speakers can find their own language.
+    var nativeName: String {
+        switch self {
+        case .english: return "English"
+        case .simplifiedChinese: return "简体中文"
+        case .traditionalChinese: return "繁體中文"
+        case .japanese: return "日本語"
+        case .korean: return "한국어"
+        case .french: return "Français"
+        case .german: return "Deutsch"
+        case .spanish: return "Español"
+        case .portuguese: return "Português"
+        case .italian: return "Italiano"
+        case .russian: return "Русский"
+        case .arabic: return "العربية"
+        }
+    }
+    var promptName: String {
+        switch self {
+        case .english: return "English"
+        case .simplifiedChinese: return "Simplified Chinese"
+        case .traditionalChinese: return "Traditional Chinese"
+        case .japanese: return "Japanese"
+        case .korean: return "Korean"
+        case .french: return "French"
+        case .german: return "German"
+        case .spanish: return "Spanish"
+        case .portuguese: return "Portuguese"
+        case .italian: return "Italian"
+        case .russian: return "Russian"
+        case .arabic: return "Arabic"
+        }
+    }
+    var isChinese: Bool { self == .simplifiedChinese || self == .traditionalChinese }
+    /// Up to this many translations follow each sentence, so an answer stays readable while speaking.
+    static let maximum = 3
+    /// English for a non-English interface; Simplified Chinese for an English one.
+    static func defaults(for interface: AppLanguage) -> [Self] { interface.usesChinese ? [.english] : [.simplifiedChinese] }
+
+    /// Prompt section for the answer model; empty when no translation is requested.
+    static func instructions(_ languages: [Self]) -> String {
+        guard !languages.isEmpty else { return "" }
+        let names = languages.map(\.promptName)
+        let list = names.count == 1 ? names[0] : names.dropLast().joined(separator: ", ") + " and " + names.last!
+        return """
+        Translation lines are enabled (\(list)). Follow explicit user style and format preferences above when they conflict; otherwise use this format.
+        For each sentence in the spoken answer, write the sentence in the response language, then immediately below it one line per translation, in this order: \(names.joined(separator: ", ")).
+        Skip a translation when the sentence is already in that language. Keep each sentence and its translations together; never split the answer into separate whole-language blocks.
+        Translate faithfully and naturally, as something the user could say aloud. Keep names, numbers, units and technical terms; carry **bold** over to the matching phrase in each translation. Do not label translation lines with language names.
+        Headings stay in the response language only. Evidence and notes remain a separate, untranslated section.
+        """
+    }
+}
+
 enum QuestionScope {
     /// Resolve short anaphoric follow-ups locally; independent topics must not inherit old retrieval terms.
     static func needsContext(_ question: String) -> Bool {
