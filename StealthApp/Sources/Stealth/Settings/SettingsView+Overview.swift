@@ -112,8 +112,8 @@ extension SettingsView {
 
     /// Mode and scenario together: what the next session listens to and how it answers.
     private var conversationTile: some View {
-        LCStatTile(title: b("Modes & Scenarios", "模式与场景"), value: t(coordinator.settings.scenario.rawValue),
-                   detail: t(coordinator.settings.mode.rawValue) + " · " + modeShortHint(coordinator.settings.mode),
+        LCStatTile(title: b("Modes & Scenarios", "模式与场景"), value: t(coordinator.settings.mode.rawValue) + " · " + t(coordinator.settings.scenario.rawValue),
+                   detail: modeShortHint(coordinator.settings.mode),
                    systemImage: scenarioSymbol(coordinator.settings.scenario), tone: .accent, detailLineLimit: nil) {
             if locked {
                 Text(b("Stop listening to change", "停止监听后可更改")).font(.callout).foregroundStyle(.secondary)

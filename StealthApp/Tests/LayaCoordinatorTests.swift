@@ -422,23 +422,25 @@ final class LayaCoordinatorTests: XCTestCase {
         XCTAssertTrue(app.sessions.sessions.contains { $0.plainText.contains("retrieval design") })
         await app.shutdown()
     }
-    func testSensitivityPresetsKeepThresholdSemanticsAndPersistence() throws {
-        let levels = JevSensitivity.allCases
-        XCTAssertEqual(levels.count, 5)
-        for (less, more) in zip(levels, levels.dropFirst()) {
-            XCTAssertGreaterThan(less.threshold, more.threshold, "Higher sensitivity must require a lower score")
-        }
-        XCTAssertEqual(JevSensitivity.medium.threshold, AppSettings().layaThreshold)
-        XCTAssertEqual(JevSensitivity.nearest(to: 0.83), .medium)
-        XCTAssertEqual(JevSensitivity.nearest(to: 0.99), .low)
-        XCTAssertEqual(JevSensitivity.nearest(to: .nan), .medium)
-        for level in levels {
-            var settings = AppSettings(); settings.layaThreshold = level.threshold
+    func testThresholdDetentsDefaultAndPersistence() throws {
+        XCTAssertEqual(JevThreshold.values, [0.80, 0.85, 0.90, 0.95])
+        XCTAssertEqual(AppSettings().layaThreshold, 0.90, "New installs default to 0.90")
+        XCTAssertEqual(JevThreshold.snapped(0.83), 0.85)
+        XCTAssertEqual(JevThreshold.snapped(0.99), 0.95)
+        XCTAssertEqual(JevThreshold.snapped(.nan), 0.90)
+        XCTAssertEqual(JevThreshold.text(0.9), "0.90")
+        for value in JevThreshold.values {
+            var settings = AppSettings(); settings.layaThreshold = value
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
-            XCTAssertEqual(restored.layaThreshold, [0.50, 0.80, 0.95].contains(level.threshold) ? level.threshold : 0.80)
+            XCTAssertEqual(restored.layaThreshold, value)
         }
-        XCTAssertFalse(LayaTriggerDecision.evaluate(score: 0.7, threshold: JevSensitivity.low.threshold).shouldTrigger)
-        XCTAssertTrue(LayaTriggerDecision.evaluate(score: 0.7, threshold: JevSensitivity.high.threshold).shouldTrigger)
+        // Presets saved by older builds: 0.50 and 0.65 become the lowest detent, 0.80 is kept.
+        for (saved, expected) in [(0.50, 0.80), (0.65, 0.80), (0.80, 0.80), (0.95, 0.95)] {
+            let data = try JSONSerialization.data(withJSONObject: ["layaThreshold": saved])
+            XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: data).layaThreshold, expected)
+        }
+        XCTAssertFalse(LayaTriggerDecision.evaluate(score: 0.88, threshold: 0.90).shouldTrigger)
+        XCTAssertTrue(LayaTriggerDecision.evaluate(score: 0.88, threshold: 0.85).shouldTrigger)
     }
     @MainActor func testRenderCompactJevSettingsPreservesExistingThreshold() async throws {
         let root = URL(fileURLWithPath: "/tmp/jev-settings-qa")

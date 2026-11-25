@@ -77,7 +77,7 @@ extension SettingsView {
         if entry.needsSetup, let reason = entry.reason { return (reason, true) }
         if !coordinator.settings.automaticSuggestions { return (b("Off. Answers are generated only when you ask.", "已关闭，只在你提问时生成回答。"), false) }
         if coordinator.settings.listeningService == .openAI { return (b("GPT-Live-1 decides when a question is complete.", "由 GPT-Live-1 判断提问是否完整。"), false) }
-        return (b("Sensitivity: ", "触发灵敏度：") + JevSensitivity.nearest(to: coordinator.settings.layaThreshold).title(coordinator.settings.language)
+        return (b("Threshold ", "触发阈值 ") + JevThreshold.text(coordinator.settings.layaThreshold)
                 + " · " + b("Follow-ups: ", "连续提问：") + t(coordinator.settings.continuousQuestionPolicy.label), false)
     }
 

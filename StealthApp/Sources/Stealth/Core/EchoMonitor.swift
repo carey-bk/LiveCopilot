@@ -26,7 +26,17 @@ final class EchoMonitor: @unchecked Sendable {
         /// Enough microphone speech that the far end cannot explain (a silent far end included),
         /// and not outweighed by replay, or no reference at all. Scattered misjudged frames in a long
         /// replay therefore do not add up to the user's speech.
-        var isOwn: Bool { referenceAbsent || (ownMS >= EchoMonitor.ownEvidenceMS && 2 * ownMS >= echoMS) }
+        ///
+        /// Once this room's speaker-to-microphone path is known and the far end is audible, replay is
+        /// proven possible here, so own evidence must at least match the replay: a third of loud
+        /// frames in a replayed question (speaker and room colouring) no longer passes as the user.
+        var isOwn: Bool {
+            if referenceAbsent { return true }
+            guard ownMS >= EchoMonitor.ownEvidenceMS else { return false }
+            return systemActive && echoPathKnown ? ownMS >= echoMS : 2 * ownMS >= echoMS
+        }
+        /// Own evidence clearly outweighing replay; required to keep words that repeat the far end.
+        var isStronglyOwn: Bool { referenceAbsent || (ownMS >= EchoMonitor.ownEvidenceMS && ownMS >= 2 * echoMS) }
         /// Mostly far-end replay.
         var isEcho: Bool { !referenceAbsent && systemActive && echoMS >= EchoMonitor.echoEvidenceMS && echoMS > 2 * ownMS }
         var verdict: Verdict { isOwn ? .own : isEcho ? .echo : .unclear }
@@ -50,6 +60,9 @@ final class EchoMonitor: @unchecked Sendable {
         var bestCorrelationPercent: Int?, bestLagMS: Int?
         /// Largest delivery delay after capture, per source: how late each stream reaches the app.
         var systemDelayMSMax = 0, micDelayMSMax = 0
+        /// Speech-level microphone time by verdict, and why frames counted as the user: the far end
+        /// was silent, or the frame was louder than the predicted replay.
+        var echoFrameMS = 0, unclearFrameMS = 0, ownSilentFarEndMS = 0, ownLouderMS = 0
     }
 
     static let frameSeconds = 0.02
@@ -75,7 +88,12 @@ final class EchoMonitor: @unchecked Sendable {
     static let reverb = 0.4
     static let reverbDecayDBPerSecond: Float = 75
 
-    private struct Frame { let sequence: UInt64; let time: TimeInterval; let db: Float; var classified = false; var verdict: Verdict? }
+    private struct Frame {
+        let sequence: UInt64; let time: TimeInterval; let db: Float
+        var classified = false; var verdict: Verdict?
+        /// Own because the far end was silent at every plausible delay (diagnostics only).
+        var farEndSilent = false
+    }
     private struct Track {
         var frames: [Frame] = []
         var sum = 0.0, count = 0
@@ -194,8 +212,17 @@ final class EchoMonitor: @unchecked Sendable {
                     if state.micFrames[snapIndex].sequence == seq,
                        !mic.frames[index].classified,
                        state.micFrames[snapIndex].classified {
+                        let frame = state.micFrames[snapIndex]
                         mic.frames[index].classified = true
-                        mic.frames[index].verdict = state.micFrames[snapIndex].verdict
+                        mic.frames[index].verdict = frame.verdict
+                        mic.frames[index].farEndSilent = frame.farEndSilent
+                        let ms = Int(Self.frameSeconds * 1000)
+                        switch frame.verdict {
+                        case .echo: counters.echoFrameMS += ms
+                        case .unclear: counters.unclearFrameMS += ms
+                        case .own: if frame.farEndSilent { counters.ownSilentFarEndMS += ms } else { counters.ownLouderMS += ms }
+                        case nil: break
+                        }
                     }
                 }
                 floorDB = state.floorDB
@@ -282,7 +309,10 @@ final class EchoMonitor: @unchecked Sendable {
             let frame = micFrames[index]
             let t = frame.time
             // Far end silent at every plausible delay (reverberation included): nothing to echo.
-            guard systemPeak(from: t - (EchoMonitor.lags.last ?? 0) - EchoMonitor.reverb, to: t - (EchoMonitor.lags.first ?? 0)) > EchoMonitor.systemActiveDB else { return .own }
+            guard systemPeak(from: t - (EchoMonitor.lags.last ?? 0) - EchoMonitor.reverb, to: t - (EchoMonitor.lags.first ?? 0)) > EchoMonitor.systemActiveDB else {
+                micFrames[index].farEndSilent = true
+                return .own
+            }
             if index % 5 == 0 { learnPath(at: index) }
             if let path, t - path.updatedAt < EchoMonitor.pathLifetime {
                 // Energy the far end can explain at this delay, with a reverberation decay. Speech
@@ -384,6 +414,26 @@ final class EchoMonitor: @unchecked Sendable {
         }
         guard varianceA > 1e-3, varianceB > 1e-3 else { return 0 }
         return covariance / (varianceA * varianceB).squareRoot()
+    }
+}
+
+extension EchoMonitor.Counters {
+    /// Journal records written before a counter existed still decode; missing counters read as zero.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func int(_ key: CodingKeys) throws -> Int { try c.decodeIfPresent(Int.self, forKey: key) ?? 0 }
+        self.init()
+        heldTurns = try int(.heldTurns); confirmedTurns = try int(.confirmedTurns)
+        ignoredFinals = try int(.ignoredFinals); unclearFinals = try int(.unclearFinals)
+        textEchoFinals = try int(.textEchoFinals); textOwnConfirms = try int(.textOwnConfirms)
+        confirmedTurnEchoFinals = try int(.confirmedTurnEchoFinals); confirmMSMax = try int(.confirmMSMax)
+        pathLagMS = try c.decodeIfPresent(Int.self, forKey: .pathLagMS)
+        pathGainDB = try c.decodeIfPresent(Int.self, forKey: .pathGainDB)
+        bestCorrelationPercent = try c.decodeIfPresent(Int.self, forKey: .bestCorrelationPercent)
+        bestLagMS = try c.decodeIfPresent(Int.self, forKey: .bestLagMS)
+        systemDelayMSMax = try int(.systemDelayMSMax); micDelayMSMax = try int(.micDelayMSMax)
+        echoFrameMS = try int(.echoFrameMS); unclearFrameMS = try int(.unclearFrameMS)
+        ownSilentFarEndMS = try int(.ownSilentFarEndMS); ownLouderMS = try int(.ownLouderMS)
     }
 }
 

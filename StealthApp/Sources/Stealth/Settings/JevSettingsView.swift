@@ -2,28 +2,14 @@ import SwiftUI
 import AVFoundation
 import UniformTypeIdentifiers
 
-enum JevSensitivity: Int, CaseIterable {
-    case low, lower, medium, higher, high
-    var threshold: Double {
-        switch self {
-        case .low: return 0.95
-        case .lower: return 0.9
-        case .medium: return 0.8
-        case .higher: return 0.65
-        case .high: return 0.5
-        }
-    }
-    static func nearest(to threshold: Double) -> Self {
-        guard threshold.isFinite else { return .medium }
-        return allCases.min { abs($0.threshold - threshold) < abs($1.threshold - threshold) } ?? .medium
-    }
-    func title(_ language: AppLanguage) -> String {
-        switch self {
-        case .low: return ServiceGuide.text("Low", "低", language)
-        case .lower: return ServiceGuide.text("Lower", "较低", language)
-        case .medium: return ServiceGuide.text("Medium", "中", language)
-        case .higher: return ServiceGuide.text("Higher", "较高", language)
-        case .high: return ServiceGuide.text("High", "高", language)
+extension JevThreshold {
+    static func description(_ value: Double, _ language: AppLanguage) -> String {
+        let b = { (en: String, zh: String) in ServiceGuide.text(en, zh, language) }
+        switch snapped(value) {
+        case 0.80: return b("Answers readily, including looser questions; may trigger more often.", "更积极：较模糊的提问也会回答，可能多一些误触发。")
+        case 0.85: return b("Leans toward answering; occasional false triggers.", "偏积极：多数提问都会回答，偶尔误触发。")
+        case 0.90: return b("Balances answering promptly with avoiding false triggers.", "兼顾及时回答与避免误触发。")
+        default: return b("Answers only clear, complete questions. Fewest false triggers.", "更严格：只在问题清楚完整时回答，误触发最少。")
         }
     }
 }
@@ -56,10 +42,6 @@ struct JevSettingsView: View {
     }
     private var stateColor: Color { laya.state == .failed ? LC.danger : (laya.displayState == .ready ? LC.success : Color.secondary) }
     private var stateIcon: String { laya.state == .failed ? "exclamationmark.circle" : (laya.displayState == .ready ? "checkmark.circle.fill" : "cpu") }
-    private var sensitivity: JevSensitivity { .nearest(to: coordinator.settings.layaThreshold) }
-    private var sensitivityLevels: [JevSensitivity] {
-        return [.low, .medium, .high]
-    }
     private var modelActionTitle: String {
         switch laya.state {
         case .ready: return b("Loaded", "已加载")
@@ -68,14 +50,6 @@ struct JevSettingsView: View {
         case .installed: return b("Load model", "加载模型")
         case .failed: return laya.isInstalled ? b("Retry loading", "重试加载") : b("Retry download", "重试下载")
         default: return b("Download model", "下载模型")
-        }
-    }
-    /// What each level does, from the thresholds in JevSensitivity.
-    private var sensitivityDescription: String {
-        switch sensitivity {
-        case .low, .lower: return b("Answers only clear, complete questions. Fewest false triggers.", "只在问题清楚完整时回答，误触发最少。")
-        case .medium: return b("Balances answering promptly with avoiding false triggers.", "兼顾及时回答与避免误触发。")
-        case .higher, .high: return b("Responds more readily, including looser questions; may trigger more often.", "更积极地回应，较模糊的提问也会回答，可能多一些误触发。")
         }
     }
     /// A segmented control when the labels fit, otherwise a menu, so long English labels never truncate.
@@ -104,19 +78,42 @@ struct JevSettingsView: View {
         case .complete: return b("Wait briefly for follow-ups before answering.", "短暂等待后续补充，再生成完整回答。")
         }
     }
+    /// Four detents (0.80–0.95); the current value is shown large beside the title while dragging.
+    private var thresholdSlider: some View {
+        let value = coordinator.settings.layaThreshold
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(b("Answer when the score reaches", "评分达到此值时回答")).font(.callout).foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Text(JevThreshold.text(value)).font(.title3.weight(.semibold)).monospacedDigit().foregroundStyle(LC.accent)
+                    .contentTransition(.numericText()).lcAnimation(LC.Motion.quick, value: value)
+                    .accessibilityIdentifier("laya-threshold-value")
+                if JevThreshold.snapped(value) == JevThreshold.standard {
+                    Text(b("Recommended", "推荐")).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Slider(value: Binding(get: { JevThreshold.snapped(coordinator.settings.layaThreshold) },
+                                  set: { coordinator.settings.layaThreshold = JevThreshold.snapped($0) }),
+                   in: JevThreshold.range, step: 0.05) {
+                Text(b("Trigger threshold", "触发阈值"))
+            } minimumValueLabel: { Text(b("Readier", "积极")).font(.caption).foregroundStyle(.secondary) }
+              maximumValueLabel: { Text(b("Stricter", "严格")).font(.caption).foregroundStyle(.secondary) }
+                .labelsHidden()
+                .disabled(coordinator.isTestingLaya)
+                .accessibilityValue(JevThreshold.text(value))
+                .accessibilityIdentifier("laya-threshold")
+            Text(JevThreshold.description(value, coordinator.settings.language)).font(.callout).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("laya-sensitivity-level")
+        }
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             switchStatus
             // Two short choices side by side; each card says what the selected option does.
             HStack(alignment: .top, spacing: 14) {
-                LCSettingsCard(b("Trigger sensitivity", "触发灵敏度"), systemImage: "dial.medium") {
-                    choice(b("Trigger sensitivity", "触发灵敏度"), selection: Binding(get: { sensitivity }, set: { coordinator.settings.layaThreshold = $0.threshold }),
-                           options: sensitivityLevels.map { ($0, $0.title(coordinator.settings.language) + ($0 == .medium ? b(" (rec.)", "（推荐）") : "")) })
-                        .disabled(coordinator.isTestingLaya)
-                        .accessibilityIdentifier("laya-threshold")
-                    Text(sensitivityDescription).font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("laya-sensitivity-level")
+                LCSettingsCard(b("Trigger threshold", "触发阈值"), systemImage: "dial.medium") {
+                    thresholdSlider
                     if coordinator.settings.listeningService == .openAI {
                         Text(b("GPT-Live-1 handles triggering now; this applies to local speech engines.", "当前由 GPT-Live-1 触发；此设置用于本地语音引擎。"))
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

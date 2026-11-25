@@ -140,7 +140,12 @@ final class AppCoordinator: ObservableObject {
             self.statusMessage = ServiceGuide.text("Laya unavailable — manual generation remains available. Check Live services settings.", "Laya 暂不可用，仍可手动生成回答。请检查“实时服务”设置。", self.settings.language)
         }
         gate.onEvent = { [weak self] event in self?.recordLaya(event) }
-        gate.onDecision = { [weak self] score in self?.layaLastScore = score }
+        gate.onDecision = { [weak self] score in
+            guard let self else { return }
+            self.layaLastScore = score
+            // Numbers only: why an automatic answer did or did not follow is otherwise lost on quit.
+            DebugLog.log(String(format: "laya.score value=%.3f threshold=%.2f", score, self.settings.layaThreshold))
+        }
         gate.onTrace = { trace, stage in DebugLog.log(trace.logLine(stage)) }
         return gate
     }()
@@ -368,7 +373,11 @@ final class AppCoordinator: ObservableObject {
         // A late microphone echo final is diagnostic only. Keep the decision for the
         // remote question visible, including below-threshold and duplicate decisions.
         if ![.ownSpeechStarted, .ownSpeechEnded, .otherSpeechStarted, .otherSpeechEnded, .inputReceived, .received, .predictionStarted, .predictionCompleted, .discarded, .candidateRetired, .predictionRetired, .echoIgnored, .echoHeld].contains(event) { layaGateStatus = event }
-        if !isMock { LayaGateDiagnostics.record(event) }
+        if !isMock {
+            LayaGateDiagnostics.record(event)
+            if [.dispatched, .belowThreshold, .ownSpeech, .ownTranscript, .candidateRetired, .predictionRetired, .staleCandidate,
+                .duplicate, .expired, .busy, .echoHeld, .echoIgnored].contains(event) { DebugLog.log("laya.event \(event.rawValue)") }
+        }
     }
     @Published private(set) var layaLastScore: Double?
     @Published var knowledgeDocuments: [KnowledgeDocument] = []
@@ -1272,16 +1281,17 @@ final class AppCoordinator: ObservableObject {
         let assessment = echo.assess(from: start, to: end ?? now, now: now)
         let recent = farEndTexts.filter { $0.at >= start - 1 }.map(\.text)
         let repeatsFarEnd = text.flatMap { EchoText.similarity($0, to: recent) }.map { $0 >= EchoText.echoSimilarity } ?? false
-        // While the far end is audible, a held turn whose words repeat it stays held: a few frames
-        // louder than the predicted replay (a longer room tail, noise) must not promote a replayed
-        // question to the user's speech. A final is judged on its whole window below instead.
-        if !final, assessment.systemActive, repeatsFarEnd, assessment.isEcho || assessment.echoPathKnown { return .echo }
-        if assessment.isOwn { return .own }
-        guard assessment.systemActive else { return assessment.isEcho ? .echo : .unknown }
-        if repeatsFarEnd, assessment.isEcho || assessment.echoPathKnown {
+        // While the far end is audible, words that repeat it are replay: a few frames louder than
+        // the predicted replay (a longer room tail, noise) must not promote a replayed question to
+        // the user's speech. Only a final whose audio is clearly the user's (for example quoting the
+        // far end after it stopped) is kept.
+        if assessment.systemActive, repeatsFarEnd, assessment.isEcho || assessment.echoPathKnown {
+            if final, assessment.isStronglyOwn { return .own }
             if final { echo.note { $0.textEchoFinals += 1 } }
             return .echo
         }
+        if assessment.isOwn { return .own }
+        guard assessment.systemActive else { return assessment.isEcho ? .echo : .unknown }
         if assessment.isEcho { return .echo }
         // Long previews allow a three-token ASR lag. Short, distinct interruptions
         // must not wait for nine tokens; acoustic echo evidence above still takes precedence.

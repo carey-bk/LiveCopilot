@@ -250,7 +250,7 @@ enum L10n {
         "Operating mode": "使用模式",
         "Scenario": "使用场景",
         "Remote Meeting": "远程会议",
-        "In-Person / Defense": "现场交流／答辩",
+        "In-Person / Defense": "现场交流",
         "Interview": "面试",
         "Meeting": "会议",
         "Academic Defense": "学术答辩",

@@ -88,15 +88,21 @@ struct SettingsView: View {
     /// System Settings. Earlier systems, Intel Macs and Reduce Transparency keep the sidebar material.
     @ViewBuilder private var sidebarPanel: some View {
         if #available(macOS 26, *), !WindowBackgroundView.usesLightweightSurface() {
-            sidebar
-                .padding(.horizontal, 4)
-                .background {
-                    Rectangle().fill(.clear)
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .padding(8)
-                        .ignoresSafeArea(edges: .top)
-                }
-                .background { LC.canvas.ignoresSafeArea() }
+            // The window buttons and the wordmark stay on the plain canvas; the glass panel starts
+            // below the wordmark so it never runs under the traffic lights.
+            VStack(alignment: .leading, spacing: 10) {
+                sidebarBrand
+                sidebarNavigation
+                    .padding(.top, 8)
+                    .background {
+                        Rectangle().fill(.clear)
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    }
+                    .padding([.horizontal, .bottom], 8)
+            }
+            .frame(width: 208)
+            .modifier(SidebarKeys(step: step))
+            .background { LC.canvas.ignoresSafeArea() }
         } else {
             sidebar
                 .background { LCVisualEffect(material: .sidebar).ignoresSafeArea() }
@@ -110,8 +116,19 @@ struct SettingsView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 18) {
-            AppBrandTitle(iconSize: 26, titleSize: 18)
-                .padding(.horizontal, 18).padding(.top, 40)
+            sidebarBrand
+            sidebarNavigation
+        }.frame(width: 208)
+        .modifier(SidebarKeys(step: step))
+    }
+
+    private var sidebarBrand: some View {
+        AppBrandTitle(iconSize: 26, titleSize: 18)
+            .padding(.horizontal, 18).padding(.top, 40)
+    }
+
+    private var sidebarNavigation: some View {
+        VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(SettingsPage.Group.allCases, id: \.self) { group in
                     VStack(alignment: .leading, spacing: 3) {
@@ -133,12 +150,7 @@ struct SettingsView: View {
                 Text(coordinator.isRunning ? b("Listening", "正在监听") : (coordinator.isMock ? t("MOCK — no API calls") : AppInfo.display))
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }.padding(18)
-        }.frame(width: 208)
-        // Up and down arrows move between pages once the sidebar has keyboard focus.
-        .focusable()
-        .focusEffectDisabled()
-        .onKeyPress(.upArrow) { step(-1) }
-        .onKeyPress(.downArrow) { step(1) }
+        }
     }
 
     private func step(_ offset: Int) -> KeyPress.Result {
@@ -192,5 +204,17 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .shortcuts: return "keyboard"
         case .about: return "info.circle"
         }
+    }
+}
+
+/// Up and down arrows move between pages once the sidebar has keyboard focus.
+private struct SidebarKeys: ViewModifier {
+    let step: (Int) -> KeyPress.Result
+    func body(content: Content) -> some View {
+        content
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(.upArrow) { step(-1) }
+            .onKeyPress(.downArrow) { step(1) }
     }
 }

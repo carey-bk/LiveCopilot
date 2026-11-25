@@ -38,7 +38,7 @@ struct AppSettings: Codable, Equatable {
     var mode = OperatingMode.remote
     var scenario = ScenarioProfile.interview
     var automaticSuggestions = true
-    var layaThreshold = 0.8
+    var layaThreshold = JevThreshold.standard
     var continuousQuestionPolicy = ContinuousQuestionPolicy.smart
     /// Each answer sentence is followed by its translation into `answerTranslationLanguages`.
     var answerTranslationEnabled = false
@@ -133,7 +133,7 @@ struct AppSettings: Codable, Equatable {
         additionalAnswerInstructions = String((try c.decodeIfPresent(String.self, forKey: .additionalAnswerInstructions) ?? "").prefix(4000))
         continuousQuestionPolicy = try c.decodeIfPresent(ContinuousQuestionPolicy.self, forKey: .continuousQuestionPolicy) ?? .smart
         let threshold = try c.decodeIfPresent(Double.self, forKey: .layaThreshold) ?? layaThreshold
-        layaThreshold = [0.5, 0.8, 0.95].contains(threshold) ? threshold : 0.8
+        layaThreshold = JevThreshold.snapped(threshold)
         recapEnabled = try c.decodeIfPresent(Bool.self, forKey: .recapEnabled) ?? recapEnabled
         followUpEnabled = try c.decodeIfPresent(Bool.self, forKey: .followUpEnabled) ?? followUpEnabled
         includeConversation = try c.decodeIfPresent(Bool.self, forKey: .includeConversation) ?? includeConversation
@@ -430,4 +430,18 @@ enum AnswerEmphasis {
     static func plainText(_ source: String, streaming: Bool = false) -> String {
         String(parsed(source, streaming: streaming).characters)
     }
+}
+
+/// Laya's response-needed score must reach this threshold before an automatic answer: lower
+/// answers more readily, higher only clear questions. Four detents from 0.80 to 0.95.
+enum JevThreshold {
+    static let values: [Double] = [0.80, 0.85, 0.90, 0.95]
+    static let standard = 0.90
+    static var range: ClosedRange<Double> { values.first!...values.last! }
+    /// The nearest detent; values saved by older builds (0.50, 0.65) become 0.80.
+    static func snapped(_ value: Double) -> Double {
+        guard value.isFinite else { return standard }
+        return values.min { abs($0 - value) < abs($1 - value) } ?? standard
+    }
+    static func text(_ value: Double) -> String { String(format: "%.2f", value) }
 }

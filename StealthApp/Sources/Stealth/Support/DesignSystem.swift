@@ -420,7 +420,7 @@ struct LCStatTile<Footer: View>: View {
                 Spacer(minLength: 4)
                 if let badge { LCPill(text: badge.text, tone: badge.tone).fixedSize() }
             }
-            Text(value).font(.system(size: 22, weight: .semibold)).monospacedDigit().lineLimit(2).minimumScaleFactor(0.8)
+            Text(value).font(.system(size: 18, weight: .semibold)).monospacedDigit().lineLimit(2).minimumScaleFactor(0.8)
                 .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.numericText())
                 .lcAnimation(LC.Motion.standard, value: value)
