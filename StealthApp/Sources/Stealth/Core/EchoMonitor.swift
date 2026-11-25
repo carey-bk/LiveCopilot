@@ -352,7 +352,9 @@ final class EchoMonitor: @unchecked Sendable {
             // A path needs repeated matches at one delay (±20 ms), most of the recent ones; unrelated
             // speech scatters its lags.
             let buckets = lagVotes.map { Int(($0 * 50).rounded()) }
-            guard let mode = Set(buckets).max(by: { a, b in
+            // Candidates in ascending order so a tie always resolves to the shorter delay: a Set's
+            // iteration order is randomized per instance, which made the learned delay vary.
+            guard let mode = Set(buckets).sorted().max(by: { a, b in
                 buckets.filter { abs($0 - a) <= 1 }.count < buckets.filter { abs($0 - b) <= 1 }.count
             }) else { return }
             let agreeing = buckets.filter { abs($0 - mode) <= 1 }.count
