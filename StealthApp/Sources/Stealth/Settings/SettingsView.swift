@@ -90,7 +90,7 @@ struct SettingsView: View {
         if #available(macOS 26, *), !WindowBackgroundView.usesLightweightSurface() {
             // The window buttons and the wordmark stay on the plain canvas; the glass panel starts
             // below the wordmark so it never runs under the traffic lights.
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 10 + Self.brandLift) {
                 sidebarBrand
                 sidebarNavigation
                     .padding(.top, 8)
@@ -115,16 +115,18 @@ struct SettingsView: View {
     }
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 18 + Self.brandLift) {
             sidebarBrand
             sidebarNavigation
         }.frame(width: 208)
         .modifier(SidebarKeys(step: step))
     }
 
+    /// The wordmark sits on the page breadcrumb's line; the navigation below keeps its position.
+    private static let brandLift: CGFloat = 22
     private var sidebarBrand: some View {
         AppBrandTitle(iconSize: 26, titleSize: 18)
-            .padding(.horizontal, 18).padding(.top, 40)
+            .padding(.horizontal, 18).padding(.top, 40 - Self.brandLift)
     }
 
     private var sidebarNavigation: some View {
