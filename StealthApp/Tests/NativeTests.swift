@@ -531,6 +531,10 @@ final class NativeTests: XCTestCase {
             XCTAssertFalse(AppBackground.available.contains(.liquidGlass))
             XCTAssertEqual(restored.background.effective, .glass)
         }
+        // Most see-through first; before macOS 26 the same order without Liquid Glass.
+        XCTAssertEqual(AppBackground.allCases, [.liquidGlass, .glass, .frosted, .white])
+        if #available(macOS 26, *) {} else { XCTAssertEqual(AppBackground.available, [.glass, .frosted, .white]) }
+        XCTAssertEqual(L10n.text(AppBackground.glass.label, language: .simplifiedChinese), "半透磨砂")
         // Liquid Glass follows the system appearance like glass; the light backgrounds stay light.
         XCTAssertFalse(AppBackground.liquidGlass.usesLightAppearance)
         XCTAssertTrue(AppBackground.white.usesLightAppearance)
