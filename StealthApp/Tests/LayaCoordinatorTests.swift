@@ -774,6 +774,30 @@ final class LayaCoordinatorTests: XCTestCase {
         await app.shutdown()
     }
 
+    /// Two recognizers can transcribe one replay quite differently (mixed languages, homophones).
+    /// Replayed audio whose words differ from the far end's text must stay held, not retire the question.
+    @MainActor func testReplayWithDifferentRecognizedWordsStaysHeld() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning)
+        await app.start()
+        let far = SyntheticTalk.speech(seed: 1, seconds: 4)
+        feedEcho(app, far: far, mic: SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count))
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
+        app.receiveMockEvent(.partialTranscript("Please introduce your most recent project"), speaker: .them)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        await pause(0.5)
+        app.receiveMockEvent(.partialTranscript("Lease in reduce yo mows recent pro jet"), speaker: .you)
+        XCTAssertTrue(app.transcript.partialYou.isEmpty, "replay with differently recognized words is not the user")
+        XCTAssertEqual(app.echo.snapshot.textOwnConfirms, 0)
+        XCTAssertGreaterThan(app.echo.snapshot.heldTurns, 0)
+        final(app, text: "Please introduce your most recent project", id: "them")
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        await pause(1.0)
+        XCTAssertEqual(reasoning.requests.count, 1, "the question is still answered")
+        await app.shutdown()
+    }
+
     func testEchoMonitorLockFreeAssessMatchesReferenceUnderConcurrentObserve() {
         let rate = SyntheticTalk.rate
         let base: TimeInterval = 100.0
