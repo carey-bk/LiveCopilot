@@ -209,6 +209,27 @@ final class HybridLanguageTests: XCTestCase {
         await app.shutdown()
     }
 
+    @MainActor func testAnswerCleanupDropsRulesAndSameLanguageRepeats() {
+        let raw = "衡量效果上，我们主要看**线上业务指标**。\nWe mainly looked at **online business metrics**.\n衡量效果上，我们主要看**线上业务指标**。\n\n具体数值会后补充。\nI can follow up with the numbers.\n具体数值会后补充。\n\n---\n## 依据与补充\n- 示例说明"
+        let done = AnswerCleanup.cleaned(raw, streaming: false)
+        XCTAssertEqual(done.components(separatedBy: "衡量效果上").count - 1, 1, "the repeated original is dropped")
+        XCTAssertEqual(done.components(separatedBy: "具体数值会后补充").count - 1, 1)
+        XCTAssertTrue(done.contains("We mainly looked at **online business metrics**."))
+        XCTAssertFalse(done.contains("---"))
+        XCTAssertTrue(done.contains("- 示例说明"), "list items are not rules")
+        XCTAssertEqual(SuggestionParser.sections(done).map(\.title), ["", "依据与补充"])
+        // Streaming: a line that so far repeats an earlier one, or a rule being typed, is held back.
+        let partial = "第一句。\nFirst sentence.\n第一"
+        XCTAssertFalse(AnswerCleanup.cleaned(partial, streaming: true).hasSuffix("第一"))
+        XCTAssertFalse(AnswerCleanup.cleaned("第一句。\n\n--", streaming: true).contains("--"))
+        XCTAssertTrue(AnswerCleanup.cleaned("第一句。\n第二", streaming: true).hasSuffix("第二"))
+        // The same sentence in a later paragraph is kept.
+        XCTAssertEqual(AnswerCleanup.cleaned("好的。\n\n好的。", streaming: false), "好的。\n\n好的。")
+        let store = SuggestionStore(); store.begin()
+        store.appendDelta("A.\n甲。\nA."); store.finish()
+        XCTAssertEqual(store.text, "A.\n甲。")
+    }
+
     func testPriorAnswerSpokenTextAndKeyTerms() {
         let spoken = PriorAnswer.spoken(Self.communityAnswer)
         XCTAssertTrue(spoken.contains("自建社群 160+ 用户沉淀")); XCTAssertFalse(spoken.contains("示例")); XCTAssertFalse(spoken.contains("[S1]"))

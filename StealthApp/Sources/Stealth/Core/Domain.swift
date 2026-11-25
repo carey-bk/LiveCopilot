@@ -362,6 +362,7 @@ struct AnswerRequest {
         phrases per paragraph; a simple answer may need none. Keep numbers and units together,
         and emphasize a before/after comparison together. Never bold whole sentences or paragraphs.
         Do not add facts or verbosity for emphasis. Keep evidence notes and source markers unhighlighted.
+        Never use horizontal rules (---, ***) or other separator lines.
         \(answerStyleInstructions)
         \(knowledgeMode.instructions)
         Clearly qualify uncertain inferences and hypothetical examples in natural language. Never

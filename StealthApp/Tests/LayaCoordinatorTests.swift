@@ -439,7 +439,7 @@ final class LayaCoordinatorTests: XCTestCase {
         await pause(0.5)
         let longHeight = window.frame.height
         XCTAssertGreaterThan(longHeight, shortHeight)
-        XCTAssertLessThanOrEqual(longHeight, 900)
+        XCTAssertLessThanOrEqual(longHeight, (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900, "Grows only as far as the screen")
         XCTAssertEqual(window.frame.maxY, top, accuracy: 1)
         try snapshot("long")
         await app.resetConversation(); await pause(0.4)

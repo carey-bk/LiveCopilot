@@ -18,9 +18,9 @@ enum OverlayLayout {
         let width = min(frame.width, inset.width)
         let minimum = min(max(240, minimumHeight), inset.height)
         let top = min(max(frame.maxY, inset.minY + minimum), inset.maxY)
-        // Grow down from the existing top edge; scroll at the bottom boundary
+        // Grow down from the existing top edge to the bottom of the screen, then scroll,
         // instead of shifting the fixed voice/composer area upward.
-        let height = min(max(minimum, height), top - inset.minY, 900)
+        let height = min(max(minimum, height), top - inset.minY)
         let x = docked ? inset.maxX - width : min(max(frame.minX, inset.minX), inset.maxX - width)
         return CGRect(x: x, y: top - height, width: width, height: height)
     }

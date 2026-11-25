@@ -35,8 +35,11 @@ enum AnswerState: String { case queued, generating, completed, interrupted, fail
         self.mode = mode; self.question = question; isLoading = true; error = nil; text = ""; rawText = ""
         sources = []; warning = nil; retrievalMS = 0; firstTextMS = nil; trace = nil
     }
-    func appendDelta(_ delta: String) { if answeredAt == nil && !delta.isEmpty { answeredAt = Date() }; rawText += delta; text = CitationPolicy.sanitized(rawText, sourceCount: sources.count) }
-    func finish() { completedAt = Date(); isLoading = false; if state == .generating { state = .completed } }
+    func appendDelta(_ delta: String) { if answeredAt == nil && !delta.isEmpty { answeredAt = Date() }; rawText += delta; text = AnswerCleanup.cleaned(CitationPolicy.sanitized(rawText, sourceCount: sources.count), streaming: true) }
+    func finish() {
+        completedAt = Date(); isLoading = false; if state == .generating { state = .completed }
+        text = AnswerCleanup.cleaned(CitationPolicy.sanitized(rawText, sourceCount: sources.count), streaming: false)
+    }
     func interrupt(_ message: String? = nil) { completedAt = Date(); isLoading = false; state = .interrupted; warning = message }
     func prepare(question: String) { self.question = question; state = .queued }
     func fail(_ message: String) { completedAt = Date(); isLoading = false; state = .failed; error = message }
