@@ -43,9 +43,12 @@ final class MicCaptureManager: ObservableObject {
     /// (no prompt) and for a Bluetooth default input, where opening it could switch a headset into
     /// its lower-quality call profile.
     func prewarm() {
-        guard testStartHandler == nil, !isCapturing,
-              AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
-              !AudioDevices.defaultInputIsBluetooth() else { return }
+        guard testStartHandler == nil, !isCapturing else { return }
+        let permission = AVCaptureDevice.authorizationStatus(for: .audio), bluetooth = AudioDevices.defaultInputIsBluetooth()
+        guard permission == .authorized, !bluetooth else {
+            DebugLog.log("MIC prewarm skipped permission=\(permission.rawValue) bluetooth=\(bluetooth)"); return
+        }
+        DebugLog.log("MIC prewarm queued")
         let core = self.core
         Task.detached(priority: .utility) { await core.run { $0.prewarm() } }
     }
@@ -251,7 +254,10 @@ private final class MicEngine: @unchecked Sendable {
     func prewarm() {
         guard engine == nil else { return }
         let started = ProcessInfo.processInfo.systemUptime
-        let format = AVAudioEngine().inputNode.outputFormat(forBus: 0)
+        // The node belongs to the engine: keep the engine alive until the format has been read
+        // (a temporary engine was released first and the read crashed).
+        let engine = AVAudioEngine()
+        let format = withExtendedLifetime(engine) { engine.inputNode.outputFormat(forBus: 0) }
         DebugLog.log(String(format: "MIC prewarm %.0f ms (input %.0f Hz)", (ProcessInfo.processInfo.systemUptime - started) * 1000, format.sampleRate))
     }
 
