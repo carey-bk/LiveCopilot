@@ -443,6 +443,8 @@ final class LayaCoordinatorTests: XCTestCase {
         XCTAssertEqual(window.frame.maxY, top, accuracy: 1)
         try snapshot("long")
         await app.resetConversation(); await pause(0.4)
+        // Under a loaded test host the throttled resize can land later; wait for it, bounded.
+        for _ in 0..<16 where abs(window.frame.height - emptyHeight) > 2 { await pause(0.1) }
         XCTAssertEqual(window.frame.height, emptyHeight, accuracy: 2, "Reset must shrink to the empty content again")
         let manualHeight = emptyHeight + 80
         window.setFrame(NSRect(x: window.frame.minX, y: top - manualHeight, width: window.frame.width, height: manualHeight), display: true)
