@@ -17,11 +17,29 @@ enum AppleSpeechSupport {
     static func installed(_ language: AppleSpeechLanguage) async -> Bool {
         guard #available(macOS 26, *), available,
               let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: language.rawValue)) else { return false }
-        // Assets can already be on disk but appear "supported" to a new app
-        // until it reserves the locale. Reservation registers use; it does not
-        // download data or authorize cloud recognition.
+        let module = SpeechTranscriber(locale: locale, preset: .timeIndexedProgressiveTranscription)
+        if await AssetInventory.status(forModules: [module]) == .installed { return true }
+        // Assets can already be on disk but appear "supported" to a new app until it reserves the
+        // locale. Reservation registers use; it does not download data or authorize cloud
+        // recognition. An app may hold only `maximumReservedLocales` (5), so a check reserves only
+        // into a free slot and never evicts; downloading may (see `install`).
+        let reserved = await AssetInventory.reservedLocales
+        guard reserved.contains(where: { $0.identifier(.bcp47) == locale.identifier(.bcp47) })
+                || reserved.count < AssetInventory.maximumReservedLocales else { return false }
         do { try await AssetInventory.reserve(locale: locale) } catch { return false }
-        return await AssetInventory.status(forModules: [SpeechTranscriber(locale: locale, preset: .timeIndexedProgressiveTranscription)]) == .installed
+        return await AssetInventory.status(forModules: [module]) == .installed
+    }
+    /// Reserves `locale`, releasing another of this app's reservations when all slots are taken. A
+    /// released language stays on disk until macOS reclaims space, and can be reserved again.
+    @available(macOS 26, *)
+    private static func reserveMakingRoom(_ locale: Locale) async throws {
+        let reserved = await AssetInventory.reservedLocales
+        if !reserved.contains(where: { $0.identifier(.bcp47) == locale.identifier(.bcp47) }),
+           reserved.count >= AssetInventory.maximumReservedLocales,
+           let other = reserved.first(where: { $0.identifier(.bcp47) != locale.identifier(.bcp47) }) {
+            _ = await AssetInventory.release(reservedLocale: other)
+        }
+        try await AssetInventory.reserve(locale: locale)
     }
     static func install(_ language: AppleSpeechLanguage) async throws {
         guard #available(macOS 26, *), available,
@@ -29,7 +47,7 @@ enum AppleSpeechSupport {
             throw CopilotError.message("Apple speech requires macOS 26 and a supported Mac and language.")
         }
         let transcriber = SpeechTranscriber(locale: locale, preset: .timeIndexedProgressiveTranscription)
-        try await AssetInventory.reserve(locale: locale)
+        try await reserveMakingRoom(locale)
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await request.downloadAndInstall()
         }

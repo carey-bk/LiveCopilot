@@ -62,7 +62,7 @@ extension SettingsView {
                     }
                 }
                 if coordinator.settings.listeningService == .apple {
-                    Text(b("Only the selected language is recognized; words in other languages are often lost. Use Zipformer for mixed Chinese and English. A new language downloads once, then works offline.", "仅识别所选语言，夹杂的其他语言常会识别不出；中英混合建议使用 Zipformer。新语言首次使用需下载一次，之后可离线运行。"))
+                    Text(b("Only the selected language is recognized; words in other languages are often lost. Use Zipformer for mixed Chinese and English. A new language downloads once (about 150 MB; variants of one language share a model), then works offline.", "仅识别所选语言，夹杂的其他语言常会识别不出；中英混合建议使用 Zipformer。新语言首次使用需下载一次（约 150 MB，同一语言的不同地区共用模型），之后可离线运行。"))
                         .font(.caption).foregroundStyle(.secondary)
                 } else if coordinator.settings.listeningService == .openAI {
                     Text(b("Language options guide recognition without restricting the languages recognized.", "语言选项仅影响识别偏好，不限制实际识别语言。"))
