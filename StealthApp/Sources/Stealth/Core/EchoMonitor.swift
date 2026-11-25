@@ -103,6 +103,9 @@ final class EchoMonitor: @unchecked Sendable {
     private var filter = (0.0, 0.0, 0.0, 0.0, 0.0)
 
     private let lock = NSLock()
+    /// Serializes `assess` callers only. Without it, an overlapping caller could commit an older
+    /// snapshot's floor, path and votes over a newer one. Capture threads never take this lock.
+    private let classifyLock = NSLock()
     private var sessionGeneration: UInt64 = 0
     private var nextFrameSequence: UInt64 = 0
     private var frameSamples = 320
@@ -177,6 +180,7 @@ final class EchoMonitor: @unchecked Sendable {
     /// Microphone verdict durations for frames captured in `start...end`, judged only as far as
     /// the system reference has arrived (it is delivered later than the microphone).
     func assess(from start: TimeInterval, to requestedEnd: TimeInterval, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Assessment {
+        classifyLock.lock(); defer { classifyLock.unlock() }
         // 1. Short lock: snapshot value-type state so real-time audio threads are never blocked
         //    by the multi-lag correlation loops below.
         var state = lock.withLock {
