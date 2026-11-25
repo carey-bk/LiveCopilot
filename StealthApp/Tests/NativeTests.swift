@@ -2423,3 +2423,56 @@ final class ReliabilityAuditRegressionTests: XCTestCase {
         await app.shutdown()
     }
 }
+
+/// Popovers, menus and tooltips opened from the overlay are separate windows; they must be
+/// hidden from capture with it, and stay shareable when they come from elsewhere.
+final class OverlayAuxiliaryCaptureTests: XCTestCase {
+    @MainActor func testOverlayPopoversAndMenusAreHiddenWithIt() async throws {
+        let overlay = NSPanel(contentRect: NSRect(x: 200, y: 200, width: 480, height: 300), styleMask: [.borderless], backing: .buffered, defer: false)
+        overlay.isReleasedWhenClosed = false
+        overlay.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 300))
+        overlay.orderFrontRegardless()
+        var pointer = NSPoint(x: 300, y: 300)   // inside the overlay
+        let protection = OverlayInputCaptureProtection(overlay: overlay, candidate: { _ in false }, pointer: { pointer })
+        defer { protection.stop(); overlay.close() }
+
+        // Popover: a child window of the overlay.
+        let popover = NSPopover()
+        popover.contentViewController = NSHostingController(rootView: Text("popover").padding())
+        popover.show(relativeTo: NSRect(x: 20, y: 20, width: 10, height: 10), of: overlay.contentView!, preferredEdge: .maxY)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let popoverWindow = try XCTUnwrap(NSApp.windows.first { $0.parent === overlay && $0.isVisible })
+        XCTAssertEqual(popoverWindow.sharingType, .none, "the overlay's popover is hidden from capture")
+        popover.close()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        protection.refresh()   // the app's next update after the popover leaves the screen
+        XCTAssertFalse(popoverWindow.isVisible)
+
+        // Menu opened under the overlay's pointer, then one opened elsewhere.
+        func menuSharing(pointerInside: Bool) -> [NSWindow.SharingType] {
+            pointer = pointerInside ? NSPoint(x: 300, y: 300) : NSPoint(x: 5, y: 5)
+            let menu = NSMenu(); menu.addItem(withTitle: "One", action: nil, keyEquivalent: "")
+            var seen: [NSWindow.SharingType] = []
+            let timer = Timer(timeInterval: 0.3, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    let windows = NSApp.windows.filter { $0.isVisible && (OverlayInputCaptureProtection.isTransientChrome($0) || $0.parent.map(OverlayInputCaptureProtection.isTransientChrome) == true) }
+                    seen = windows.map(\.sharingType)
+                    menu.cancelTracking()
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            menu.popUp(positioning: nil, at: NSPoint(x: 30, y: 30), in: overlay.contentView!)
+            return seen
+        }
+        let inside = menuSharing(pointerInside: true)
+        XCTAssertFalse(inside.isEmpty, "the menu's windows were found")
+        XCTAssertTrue(inside.allSatisfy { $0 == .none }, "the overlay's menu (and its backdrop) is hidden: \(inside.map(\.rawValue))")
+        let outside = menuSharing(pointerInside: false)
+        XCTAssertTrue(outside.allSatisfy { $0 == .readOnly }, "a menu opened elsewhere stays shareable: \(outside.map(\.rawValue))")
+
+        // Protection off: nothing is touched.
+        protection.setEnabled(false)
+        let off = menuSharing(pointerInside: true)
+        XCTAssertTrue(off.allSatisfy { $0 == .readOnly }, "with hiding off the overlay's menus are shareable")
+    }
+}
