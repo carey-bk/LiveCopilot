@@ -133,8 +133,8 @@ enum CoreChecks {
         }
         try check("overlay preferences migrate and persist independently") {
             let migrated = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
-            try expect(migrated.overlayAutoHeight && !migrated.overlayEdgeHide && migrated.showMenuBarIcon, "new window defaults missing")
-            var manual = migrated; manual.overlayAutoHeight = false; manual.overlayEdgeHide = true; manual.showMenuBarIcon = false
+            try expect(migrated.overlayAutoHeight && migrated.overlayEdgeHide && !migrated.excludeOverlayFromCapture && migrated.showMenuBarIcon, "new window defaults missing")
+            var manual = migrated; manual.overlayAutoHeight = false; manual.overlayEdgeHide = false; manual.showMenuBarIcon = false
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(manual))
             try expect(restored == manual, "manual window preferences lost")
         }
@@ -593,6 +593,23 @@ enum CoreChecks {
             let both = monitor(system: far, mic: doubleTalk)
             try expect(both.assess(from: 100.5, to: 102.9, now: 103).isEcho, "echo before the user spoke not recognized")
             try expect(both.assess(from: 102.6, to: 104.0, now: 104.0).isOwn, "barge-in over the far end not recognized within 1 s")
+            // Short replies over a far end that keeps talking: the replay fills every pause, so own
+            // frames are outnumbered, but they are far louder than any replay. Still the user.
+            var replies = echoOnly
+            for (n, at) in [2.0, 4.0].enumerated() {
+                let burst = SyntheticTalk.speech(seed: UInt64(10 + n), seconds: 0.2)
+                for i in burst.indices { replies[Int(at * rate) + i] += burst[i] }
+            }
+            let short = monitor(system: far, mic: replies).assess(from: 100.5, to: 105.5, now: 105.8)
+            try expect(short.ownMS < short.echoMS, "fixture should be outnumbered by replay \(short)")
+            try expect(short.isOwn, "short replies over a talking far end held as echo \(short)")
+            // Room colouring: stretches of replay 6 dB louder than predicted are not the user.
+            var coloured = echoOnly
+            for start in stride(from: Int(1.0 * rate), to: coloured.count, by: Int(0.3 * rate)) {
+                for i in start..<min(coloured.count, start + Int(0.1 * rate)) { coloured[i] *= 2 }
+            }
+            let colouredReplay = monitor(system: far, mic: coloured).assess(from: 100.5, to: 105.5, now: 106.5)
+            try expect(!colouredReplay.isOwn, "coloured replay counted as own speech \(colouredReplay)")
             // Far end silent (the user repeats its words afterwards), or headphones: own speech.
             let silent = [Float](repeating: 0, count: far.count)
             try expect(monitor(system: silent, mic: far).assess(from: 100.5, to: 105.5, now: 106).isOwn, "speech with a silent far end not own")
@@ -742,8 +759,12 @@ enum CoreChecks {
             try expect(state.phase == .followUp, "follow-up state")
         }
         try check("already answered remote question and force fallback") {
+            // Starting to talk within the grace period is a filler or the start of an answer: still answered.
+            var quick = ConversationState(); _ = quick.append(f("What is the sample size?", id: "q"))
+            _ = quick.append(f("Um, let me think.", id: "a", speaker: .you, start: 600, at: now.addingTimeInterval(1)))
+            try expect(quick.candidate(speaker: .them, now: now, cooldown: 0) != nil, "filler right after the question cancelled it")
             var state = ConversationState(); _ = state.append(f("What is the sample size?", id: "q"))
-            _ = state.append(f("128 samples.", id: "a", speaker: .you, at: now.addingTimeInterval(1)))
+            _ = state.append(f("128 samples.", id: "a", speaker: .you, start: 5000, at: now.addingTimeInterval(ConversationState.ownReplyGrace + 1.5)))
             try expect(state.candidate(speaker: .them, now: now, cooldown: 0) == nil && state.phase == .answered, "answered question repeated")
             try expect(state.candidate(speaker: .them, now: now, cooldown: 0, force: true) != nil, "manual override blocked")
         }

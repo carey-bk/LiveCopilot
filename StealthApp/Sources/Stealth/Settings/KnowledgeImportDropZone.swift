@@ -29,6 +29,9 @@ struct KnowledgeImportDropZone: View {
             .overlay(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous)
                 .strokeBorder(LC.accent.opacity(busy ? 0.3 : isTargeted ? 1 : 0.6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])))
             .contentShape(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous))
+            .scaleEffect(isTargeted && !busy ? 1.012 : 1)
+            .lcHoverable(radius: LC.Radius.control + 2)
+            .lcAnimation(LC.Motion.standard, value: isTargeted)
         }
         .buttonStyle(.plain).disabled(busy)
         .accessibilityLabel(t("Import documents…"))

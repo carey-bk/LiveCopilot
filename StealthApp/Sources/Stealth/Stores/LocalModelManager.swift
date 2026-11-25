@@ -12,7 +12,24 @@ final class LocalModelManager: ObservableObject {
     @Published private(set) var messageKind: LocalModelKind?
     @Published private(set) var downloadProgress: Double?
     @Published private(set) var transferStatus = ""
-    @Published private(set) var embeddingVerification: ServiceVerification = .idle
+    @Published private(set) var embeddingVerification: ServiceVerification = .idle {
+        didSet {
+            switch embeddingVerification {
+            case .ready: verificationDefaults.set(true, forKey: Self.verifiedKey)
+            case .failed: verificationDefaults.set(false, forKey: Self.verifiedKey)
+            default: break
+            }
+        }
+    }
+    private static let verifiedKey = "livecopilot.localEmbedding.verified"
+    private var verificationDefaults: UserDefaults { .standard }
+    /// Passed its last self-check and is still installed. A relaunch shows this until a new check
+    /// completes; only a failed check, or deleting the model, clears it.
+    var embeddingLastVerified: Bool {
+        guard installed.contains(.embedding) else { return false }
+        if case .failed = embeddingVerification { return false }
+        return embeddingVerification == .ready || verificationDefaults.bool(forKey: Self.verifiedKey)
+    }
     private var verificationTask: Task<Void, Never>?
     private let embeddingVerifier: (@MainActor (URL) async throws -> Void)?
     @Published private(set) var checking: LocalModelKind?
@@ -123,6 +140,7 @@ final class LocalModelManager: ObservableObject {
             if FileManager.default.fileExists(atPath: directory.path) { try FileManager.default.removeItem(at: directory) }
             downloadProgress = nil; transferStatus = ""
             health[kind] = nil; failures[kind] = nil
+            if kind == .embedding { verificationDefaults.set(false, forKey: Self.verifiedKey) }
             message = "Local model deleted. Download it again to use it."
         } catch { message = error.localizedDescription }
         refresh()

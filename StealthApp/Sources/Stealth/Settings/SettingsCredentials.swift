@@ -12,17 +12,38 @@ struct LocalModelCard: View {
     let locked: Bool
     let remove: () -> Void
     private func t(_ text: String) -> String { L10n.text(text, language: language) }
+    private var title: String {
+        kind == .embedding ? ServiceGuide.text("\(LocalModelKind.embeddingName) local index model", "\(LocalModelKind.embeddingName) 本地索引模型", language) : kind.title
+    }
+    private var statusLabel: some View {
+        Label(statusTitle, systemImage: manager.health[kind]?.ready == true ? "checkmark.circle.fill"
+              : manager.queued.contains(kind) ? "clock" : "arrow.down.circle")
+            .font(.caption).foregroundStyle(manager.health[kind]?.ready == true ? LC.success : Color.secondary)
+    }
+    /// Compact sits inside another settings card; otherwise it is a settings card of its own.
     var body: some View {
+        Group {
+            if compact {
+                details
+            } else {
+                LCSettingsCard(title, subtitle: t("Download size") + " · " + kind.downloadSize, systemImage: "cpu", tone: .success) {
+                    details
+                } accessory: { statusLabel }
+            }
+        }
+        .onAppear { manager.refresh() }
+    }
+    private var details: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(kind == .embedding ? (ServiceGuide.text("\(LocalModelKind.embeddingName) local index model", "\(LocalModelKind.embeddingName) 本地索引模型", language)) : kind.title).font(.headline)
-                    Text(t("Download size") + " · " + kind.downloadSize).font(.caption).foregroundStyle(.secondary)
+            if compact {
+                HStack {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title).font(.headline)
+                        Text(t("Download size") + " · " + kind.downloadSize).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    statusLabel
                 }
-                Spacer()
-                Label(statusTitle, systemImage: manager.health[kind]?.ready == true ? "checkmark.circle.fill"
-                      : manager.queued.contains(kind) ? "clock" : "arrow.down.circle")
-                    .font(.caption).foregroundStyle(manager.health[kind]?.ready == true ? LC.success : Color.secondary)
             }
             Text(ServiceGuide.text("Automatically tries available download sources. Progress is for the current file.", "自动尝试可用下载线路；进度显示当前文件的下载比例。", language))
                 .font(.caption).foregroundStyle(.secondary)
@@ -44,6 +65,12 @@ struct LocalModelCard: View {
                     if manager.installed.contains(kind) {
                         Button(ServiceGuide.text("Run self-check", "运行自检", language)) { copiedDiagnostics = false; manager.runSelfCheck(kind) }
                             .disabled(locked || manager.downloading != nil).accessibilityIdentifier("selfcheck-" + kind.rawValue)
+                        if let report = manager.health[kind] {
+                            Button(copiedDiagnostics ? (ServiceGuide.text("Copied", "已复制", language)) : (ServiceGuide.text("Copy diagnostics", "复制诊断信息", language))) {
+                                NSPasteboard.general.clearContents()
+                                copiedDiagnostics = NSPasteboard.general.setString(report.diagnostic(kind: kind), forType: .string)
+                            }.fixedSize().accessibilityIdentifier("copy-diagnostics-" + kind.rawValue)
+                        }
                         if !kind.isBundled {
                         Button(ServiceGuide.text("Delete local model…", "删除本地模型…", language), role: .destructive) { confirmRemoval = true }
                             .foregroundStyle(LC.danger)
@@ -57,19 +84,12 @@ struct LocalModelCard: View {
                 if manager.downloading == nil, manager.messageKind == kind, !manager.message.isEmpty { Text(t(manager.message)).font(.caption).foregroundStyle(.secondary) }
             }
             if let report = manager.health[kind] {
-                HStack(alignment: .center, spacing: 12) {
-                    Button(copiedDiagnostics ? (ServiceGuide.text("Copied", "已复制", language)) : (ServiceGuide.text("Copy diagnostics", "复制诊断信息", language))) {
-                        NSPasteboard.general.clearContents()
-                        copiedDiagnostics = NSPasteboard.general.setString(report.diagnostic(kind: kind), forType: .string)
-                    }.fixedSize().accessibilityIdentifier("copy-diagnostics-" + kind.rawValue)
-                    Text(language.interfaceText(report.advice(english: !language.usesChinese)))
-                        .font(.caption).foregroundStyle(report.ready ? Color.secondary : LC.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("selfcheck-result-" + kind.rawValue)
-                }
+                Text(language.interfaceText(report.advice(english: !language.usesChinese)))
+                    .font(.caption).foregroundStyle(report.ready ? Color.secondary : LC.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("selfcheck-result-" + kind.rawValue)
             }
-        }.lcCard()
-            .onAppear { manager.refresh() }
+        }
     }
     private var statusTitle: String {
         if manager.checking == kind { return ServiceGuide.text("Checking…", "正在自检…", language) }
@@ -173,7 +193,7 @@ struct CredentialEditor: View {
         Group {
             if liveLayout { fields }
             else if onboarding { fields }
-            else { SettingsSection { fields.padding(12) } label: { Text("API Key") } }
+            else { LCSettingsCard("API Key", systemImage: "key", tone: .warning) { fields } }
         }
         .confirmationDialog(t("Remove this service's saved key?"), isPresented: $confirmingRemoval) {
             Button(t("Remove"), role: .destructive) {
@@ -318,10 +338,9 @@ struct SettingsSection<Content: View, Heading: View>: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            heading.font(.headline)
+            heading.font(LC.Typo.callout.weight(.semibold)).foregroundStyle(.secondary).padding(.leading, 4)
             content.frame(maxWidth: .infinity, alignment: .leading)
-                .background(LC.surface, in: RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous).strokeBorder(LC.hairline))
+                .lcSurface()
         }.accessibilityElement(children: .contain)
     }
 }

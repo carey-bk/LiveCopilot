@@ -439,7 +439,7 @@ final class OnboardingTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let store = OnboardingStore(defaults: defaults, dataDirectory: root)
         store.complete(); store.enterOverlay()
-        for _ in 0..<3 { store.advanceTip() }
+        for _ in 0..<(OverlayTourState.Step.order.count - 1) { store.advanceTip() }
         XCTAssertEqual(store.visibleTip, .captureExclusion)
         let restored = OnboardingStore(defaults: defaults, dataDirectory: root)
         XCTAssertEqual(restored.visibleTip, .captureExclusion)
@@ -644,8 +644,9 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(store.visibleTip, .start)
         store.advanceTip()
         let restored = OnboardingStore(defaults: defaults, dataDirectory: root)
-        XCTAssertEqual(restored.visibleTip, .answer)
-        restored.advanceTip(); restored.advanceTip()
+        XCTAssertEqual(restored.visibleTip, .transcript, "Tips follow Step.order, not raw values")
+        XCTAssertEqual(OverlayTourState.Step.order, [.start, .transcript, .answer, .tools, .composer, .window, .visibility, .captureExclusion])
+        for _ in 0..<(OverlayTourState.Step.order.count - 2) { restored.advanceTip() }
         XCTAssertEqual(restored.visibleTip, .captureExclusion)
         restored.advanceTip()
         XCTAssertNil(restored.visibleTip)

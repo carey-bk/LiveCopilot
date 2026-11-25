@@ -20,12 +20,135 @@ private final class CaptureSharingPanel: NSPanel {
 }
 
 final class NativeTests: XCTestCase {
-    @MainActor func testAutomaticDockingDefaultsOffAndCanBeEnabledPersistently() throws {
+    func testAppleSpeechLanguagesKeepSavedValuesAndNames() throws {
+        XCTAssertEqual(AppleSpeechLanguage.chinese.rawValue, "zh_CN")
+        XCTAssertEqual(AppleSpeechLanguage.english.rawValue, "en_US")
+        XCTAssertEqual(AppleSpeechLanguage.cantoneseHongKong.bcp47, "zh-HK")
+        XCTAssertEqual(Set(AppleSpeechLanguage.allCases.map(\.rawValue)).count, AppleSpeechLanguage.allCases.count)
+        for language in AppleSpeechLanguage.allCases {
+            XCTAssertFalse(language.names.en.isEmpty); XCTAssertFalse(language.names.zh.isEmpty)
+            var settings = AppSettings(); settings.appleSpeechLanguage = language
+            let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+            XCTAssertEqual(restored.appleSpeechLanguage, language)
+        }
+        let saved = try JSONSerialization.data(withJSONObject: ["appleSpeechLanguage": "en_US"])
+        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: saved).appleSpeechLanguage, .english)
+        XCTAssertEqual(AppSettings().appleSpeechLanguage, .chinese)
+        // Japanese has no spaces between words: replay is compared by character pairs.
+        XCTAssertEqual(EchoText.tokens("最近のプロジェクト"), ["最近", "近の", "のプ", "プロ", "ロジ", "ジェ", "ェク", "クト"])
+        XCTAssertEqual(EchoText.similarity("最近のプロジェクト", to: ["最近のプロジェクトについて"]), 1)
+    }
+
+    func testSettingsReadinessReportsWhatIsMissing() {
+        var ready = SettingsReadiness.Inputs()
+        ready.listeningService = .apple; ready.appleSpeechInstalled = true
+        ready.reasoningService = .deepSeek; ready.hasAnalysisKey = true
+        ready.microphoneAllowed = true; ready.screenAudioAllowed = true
+        ready.layaState = .installed
+        let all = SettingsReadiness(ready)
+        XCTAssertTrue(all.canStart)
+        XCTAssertTrue(all.pending.isEmpty)
+        XCTAssertEqual(all[.knowledge].state, .inactive("No documents yet"), "An empty library is not a setup problem")
+
+        var missingKey = ready
+        missingKey.hasAnalysisKey = false
+        let noKey = SettingsReadiness(missingKey)
+        XCTAssertFalse(noKey.canStart)
+        XCTAssertEqual(noKey.blockers.map(\.item), [.answers])
+        XCTAssertEqual(noKey[.answers].reason, "No DeepSeek key saved")
+        missingKey.reasoningService = .sharedOpenAI; missingKey.hasOpenAIKey = true
+        XCTAssertTrue(SettingsReadiness(missingKey)[.answers].isReady, "Shared OpenAI answers use the speech key")
+
+        var noModel = ready
+        noModel.listeningService = .zipformer; noModel.localSpeechModelInstalled = false
+        noModel.layaState = .notInstalled
+        let local = SettingsReadiness(noModel)
+        XCTAssertEqual(local[.speech].reason, "Zipformer model not downloaded")
+        XCTAssertEqual(local[.triggers].reason, "Trigger model not downloaded")
+        XCTAssertEqual(local.blockers.map(\.item), [.speech], "A missing trigger model does not block listening")
+        noModel.automaticSuggestions = false
+        XCTAssertEqual(SettingsReadiness(noModel)[.triggers].state, .inactive("Off · ask manually"))
+
+        var permissions = ready
+        permissions.screenAudioAllowed = false
+        XCTAssertEqual(SettingsReadiness(permissions)[.permissions].reason, "System audio not allowed")
+        permissions.mode = .inPerson
+        XCTAssertTrue(SettingsReadiness(permissions)[.permissions].isReady, "In-person mode only needs the microphone")
+        permissions.microphoneAllowed = false
+        XCTAssertEqual(SettingsReadiness(permissions)[.permissions].reason, "Microphone not allowed")
+
+        var library = ready
+        library.documentCount = 2; library.localEmbeddingInstalled = true
+        XCTAssertEqual(SettingsReadiness(library)[.knowledge].reason, "Index model not verified")
+        library.localEmbeddingVerification = .ready
+        XCTAssertTrue(SettingsReadiness(library)[.knowledge].isReady)
+        library.knowledgeNeedsReindex = true
+        XCTAssertEqual(SettingsReadiness(library)[.knowledge].reason, "Indexes need rebuilding")
+
+        library.language = .simplifiedChinese
+        XCTAssertEqual(SettingsReadiness(library)[.knowledge].reason, "需要重建索引")
+    }
+
+    func testAnswerTranslationsDefaultMigrateAndReachThePrompt() throws {
+        // A saved "sentence pairs" switch keeps its behavior: English after Chinese, Chinese after English.
+        let legacy = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"bilingualAnswers":true}"#.utf8))
+        XCTAssertTrue(legacy.answerTranslationEnabled)
+        XCTAssertEqual(legacy.effectiveTranslationLanguages, [.english, .simplifiedChinese])
+
+        var settings = AppSettings()
+        XCTAssertEqual(settings.effectiveTranslationLanguages, [], "Off by default")
+        settings.answerTranslationEnabled = true
+        settings.language = .simplifiedChinese
+        XCTAssertEqual(settings.effectiveTranslationLanguages, [.english], "Non-English interface defaults to English")
+        settings.language = .english
+        XCTAssertEqual(settings.effectiveTranslationLanguages, [.simplifiedChinese], "English interface defaults to Simplified Chinese")
+        settings.answerTranslationLanguages = [.japanese, .french]
+        let saved = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(saved.effectiveTranslationLanguages, [.japanese, .french])
+        settings.answerTranslationEnabled = false
+        XCTAssertEqual(settings.effectiveTranslationLanguages, [], "Turning it off keeps the choice but sends nothing")
+
+        let capped = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"bilingualAnswers":true,"answerTranslationLanguages":["korean","korean","german","klingon","spanish","italian"]}"#.utf8))
+        XCTAssertEqual(capped.answerTranslationLanguages, [.korean, .german, .spanish], "Unknown and duplicate languages dropped, at most three kept")
+
+        let request = { (languages: [TranslationLanguage]) in
+            AnswerRequest(query: RetrievalQuery(question: "What is caching?", semantic: "caching", lexical: "caching"), conversation: "",
+                          scenario: .interview, sources: [], translationLanguages: languages)
+        }
+        XCTAssertFalse(request([]).instructions.contains("Translation lines are enabled"))
+        let prompt = request([.japanese, .english]).instructions
+        XCTAssertTrue(prompt.contains("Translation lines are enabled (Japanese and English)"))
+        XCTAssertTrue(prompt.contains("one line per translation, in this order: Japanese, English"))
+        XCTAssertTrue(prompt.contains("Skip a translation when the sentence is already in that language"))
+    }
+
+    func testOverlayConversationChoiceAndTranscriptRowsPersist() throws {
+        let suite = "LiveCopilot-Overlay-Prefs-Tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var settings = AppSettings.load(defaults: defaults)
+        XCTAssertTrue(settings.includeConversation)
+        XCTAssertEqual(settings.transcriptExpandedLines, 6)
+        settings.includeConversation = false
+        settings.transcriptExpandedLines = 10
+        settings.save(defaults: defaults)
+        let loaded = AppSettings.load(defaults: defaults)
+        XCTAssertFalse(loaded.includeConversation)
+        XCTAssertEqual(loaded.transcriptExpandedLines, 10)
+        let legacy = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+        XCTAssertEqual(legacy.transcriptExpandedLines, 6)
+        let outOfRange = try JSONDecoder().decode(AppSettings.self, from: Data(#"{"transcriptExpandedLines":40}"#.utf8))
+        XCTAssertEqual(outOfRange.transcriptExpandedLines, 12)
+    }
+    @MainActor func testAutomaticDockingDefaultsOnAndCanBeTurnedOffPersistently() throws {
         let suite = "LiveCopilot-Docking-Tests-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         var settings = AppSettings.load(defaults: defaults)
-        XCTAssertFalse(settings.overlayEdgeHide)
+        XCTAssertTrue(settings.overlayEdgeHide, "New installs dock to the edge")
+        XCTAssertTrue(settings.overlayAutoHeight); XCTAssertFalse(settings.excludeOverlayFromCapture)
+        settings.overlayEdgeHide = false; settings.save(defaults: defaults)
+        XCTAssertFalse(AppSettings.load(defaults: defaults).overlayEdgeHide)
         settings.overlayEdgeHide = true; settings.save(defaults: defaults)
         XCTAssertTrue(AppSettings.load(defaults: defaults).overlayEdgeHide)
         let window = OverlayWindow(rootView: Text("Drag test"))
@@ -395,6 +518,27 @@ final class NativeTests: XCTestCase {
         let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(explicit))
         XCTAssertTrue(restored.excludeOverlayFromCapture)
         XCTAssertEqual(restored.background, .white)
+    }
+    func testLiquidGlassBackgroundRoundTripsAndFallsBackBeforeMacOS26() throws {
+        var settings = AppSettings()
+        settings.background = .liquidGlass
+        let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(restored.background, .liquidGlass)
+        if #available(macOS 26, *) {
+            XCTAssertTrue(AppBackground.available.contains(.liquidGlass))
+            XCTAssertEqual(restored.background.effective, .liquidGlass)
+        } else {
+            XCTAssertFalse(AppBackground.available.contains(.liquidGlass))
+            XCTAssertEqual(restored.background.effective, .glass)
+        }
+        // Most see-through first; before macOS 26 the same order without Liquid Glass.
+        XCTAssertEqual(AppBackground.allCases, [.liquidGlass, .glass, .frosted, .white])
+        if #available(macOS 26, *) {} else { XCTAssertEqual(AppBackground.available, [.glass, .frosted, .white]) }
+        XCTAssertEqual(L10n.text(AppBackground.glass.label, language: .simplifiedChinese), "半透磨砂")
+        // Liquid Glass follows the system appearance like glass; the light backgrounds stay light.
+        XCTAssertFalse(AppBackground.liquidGlass.usesLightAppearance)
+        XCTAssertTrue(AppBackground.white.usesLightAppearance)
+        XCTAssertEqual(AppBackground.white.effective, .white)
     }
     func testDebugLogRotatesAtItsBoundAndKeepsOnePreviousFile() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LiveCopilot-DebugLog-" + UUID().uuidString)
@@ -1332,6 +1476,7 @@ final class ReliabilityAuditRegressionTests: XCTestCase {
         if hangBeforeReady {
             body = """
             #!/bin/sh
+            [ "$1" = warmup ] && exit 0
             echo spawn >> \(String(reflecting: spawnLog.path))
             while :; do sleep 1; done
             """
@@ -1339,6 +1484,7 @@ final class ReliabilityAuditRegressionTests: XCTestCase {
             body = """
             #!/usr/bin/env python3
             import json, sys
+            if sys.argv[1:2] == ["warmup"]: sys.exit(0)
             with open(\(String(reflecting: spawnLog.path)), "a") as f: f.write("spawn\\n")
             sys.stdout.write(json.dumps({"ready": True}) + "\\n"); sys.stdout.flush()
             for line in sys.stdin:
@@ -1348,6 +1494,19 @@ final class ReliabilityAuditRegressionTests: XCTestCase {
         }
         try body.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        // macOS checks a newly written executable the first time it runs. Under a loaded parallel
+        // test run that first launch can stall for seconds, longer than the short deadlines these
+        // tests use, so the child is killed before it logs its spawn. Run it once here, without
+        // logging, so the timed launches measure the worker rather than that one-time check.
+        let warmup = Process()
+        warmup.executableURL = url
+        warmup.arguments = ["warmup"]
+        warmup.standardOutput = FileHandle.nullDevice
+        warmup.standardError = FileHandle.nullDevice
+        try warmup.run()
+        let warmupDeadline = Date().addingTimeInterval(20)
+        while warmup.isRunning && Date() < warmupDeadline { usleep(10_000) }
+        if warmup.isRunning { warmup.terminate() }
         return url
     }
 
@@ -2262,5 +2421,58 @@ final class ReliabilityAuditRegressionTests: XCTestCase {
         XCTAssertEqual(captured.all.count, 1, "Intentional mic mute emitting .closed must NOT reset Laya and drop Them's pending question")
         XCTAssertTrue(captured.all.first?.contains("cache invalidation") == true)
         await app.shutdown()
+    }
+}
+
+/// Popovers, menus and tooltips opened from the overlay are separate windows; they must be
+/// hidden from capture with it, and stay shareable when they come from elsewhere.
+final class OverlayAuxiliaryCaptureTests: XCTestCase {
+    @MainActor func testOverlayPopoversAndMenusAreHiddenWithIt() async throws {
+        let overlay = NSPanel(contentRect: NSRect(x: 200, y: 200, width: 480, height: 300), styleMask: [.borderless], backing: .buffered, defer: false)
+        overlay.isReleasedWhenClosed = false
+        overlay.contentView = NSView(frame: NSRect(x: 0, y: 0, width: 480, height: 300))
+        overlay.orderFrontRegardless()
+        var pointer = NSPoint(x: 300, y: 300)   // inside the overlay
+        let protection = OverlayInputCaptureProtection(overlay: overlay, candidate: { _ in false }, pointer: { pointer })
+        defer { protection.stop(); overlay.close() }
+
+        // Popover: a child window of the overlay.
+        let popover = NSPopover()
+        popover.contentViewController = NSHostingController(rootView: Text("popover").padding())
+        popover.show(relativeTo: NSRect(x: 20, y: 20, width: 10, height: 10), of: overlay.contentView!, preferredEdge: .maxY)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let popoverWindow = try XCTUnwrap(NSApp.windows.first { $0.parent === overlay && $0.isVisible })
+        XCTAssertEqual(popoverWindow.sharingType, .none, "the overlay's popover is hidden from capture")
+        popover.close()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        protection.refresh()   // the app's next update after the popover leaves the screen
+        XCTAssertFalse(popoverWindow.isVisible)
+
+        // Menu opened under the overlay's pointer, then one opened elsewhere.
+        func menuSharing(pointerInside: Bool) -> [NSWindow.SharingType] {
+            pointer = pointerInside ? NSPoint(x: 300, y: 300) : NSPoint(x: 5, y: 5)
+            let menu = NSMenu(); menu.addItem(withTitle: "One", action: nil, keyEquivalent: "")
+            var seen: [NSWindow.SharingType] = []
+            let timer = Timer(timeInterval: 0.3, repeats: false) { _ in
+                MainActor.assumeIsolated {
+                    let windows = NSApp.windows.filter { $0.isVisible && (OverlayInputCaptureProtection.isTransientChrome($0) || $0.parent.map(OverlayInputCaptureProtection.isTransientChrome) == true) }
+                    seen = windows.map(\.sharingType)
+                    menu.cancelTracking()
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            menu.popUp(positioning: nil, at: NSPoint(x: 30, y: 30), in: overlay.contentView!)
+            return seen
+        }
+        let inside = menuSharing(pointerInside: true)
+        XCTAssertFalse(inside.isEmpty, "the menu's windows were found")
+        XCTAssertTrue(inside.allSatisfy { $0 == .none }, "the overlay's menu (and its backdrop) is hidden: \(inside.map(\.rawValue))")
+        let outside = menuSharing(pointerInside: false)
+        XCTAssertTrue(outside.allSatisfy { $0 == .readOnly }, "a menu opened elsewhere stays shareable: \(outside.map(\.rawValue))")
+
+        // Protection off: nothing is touched.
+        protection.setEnabled(false)
+        let off = menuSharing(pointerInside: true)
+        XCTAssertTrue(off.allSatisfy { $0 == .readOnly }, "with hiding off the overlay's menus are shareable")
     }
 }

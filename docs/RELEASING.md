@@ -4,7 +4,7 @@ The public source repository is `carey-bk/LiveCopilot`. Preserve the upstream St
 
 ## Public version and internal build
 
-Edit **only `StealthApp/Version.xcconfig` → `MARKETING_VERSION`** for the next public version. Use three numeric components: major for architectural changes, minor for new features or substantial improvements, patch for fixes and small improvements. XcodeGen applies this file to Debug and Release; `Info.plist` substitutes that value into `CFBundleShortVersionString`. Application UI reads the metadata and displays `vMAJOR.MINOR.PATCH`.
+Edit **only `StealthApp/Version.xcconfig` → `MARKETING_VERSION`** for the next public version. From 2.11 on, use two numeric components with one decimal point (`2.11`, not `2.11.0`): major for architectural changes, minor for every other release, including fixes. XcodeGen applies this file to Debug and Release; `Info.plist` substitutes that value into `CFBundleShortVersionString`. Application UI reads the metadata and displays `vMAJOR.MINOR`. Earlier tags such as `v2.2.10` still parse and compare correctly; `2.11` sorts after `2.10.0`. Sparkle compares the internal build below, not this string.
 
 `CURRENT_PROJECT_VERSION` remains an independent development build. Distribution signing assigns a monotonically increasing UTC build to `CFBundleVersion`. Builds appear only in diagnostics and release manifests, and retain Sparkle compatibility with older clients. Never replace them with a lower counter or change a published release to disguise a rebuild. A new public release needs a new public version; the new client deliberately does not notify users about another build of the same public version.
 

@@ -11,8 +11,19 @@ struct OnboardingAnswerConfiguration: View {
             coordinator.settings.selectRecommendedAnalysisService($0)
         })
     }
+    /// Settings shows this as a regular settings card; onboarding keeps its numbered step.
+    var settingsStyle = false
     var body: some View {
-        OnboardingServiceSection(number: 1, title: b("Choose & configure your answer model", "选择与配置回答模型"), showsBorder: false) {
+        if settingsStyle {
+            LCSettingsCard(b("Answer model", "回答模型"), subtitle: b("The provider and model that write answers.", "生成回答所用的服务商和模型。"),
+                           systemImage: "sparkles", tone: .pink) { configuration }
+                .accessibilityIdentifier("onboarding-answer-configuration")
+        } else {
+            OnboardingServiceSection(number: 1, title: b("Choose & configure your answer model", "选择与配置回答模型"), showsBorder: false) { configuration }
+                .accessibilityIdentifier("onboarding-answer-configuration")
+        }
+    }
+    @ViewBuilder private var configuration: some View {
             HStack(spacing: 10) {
                 Picker(b("Provider", "AI 服务商"), selection: provider) {
                     Text("OpenAI").tag(ReasoningService.separateOpenAI)
@@ -60,7 +71,6 @@ struct OnboardingAnswerConfiguration: View {
                 Divider()
                 AnalysisMetrics(settings: settings)
             }
-        }.accessibilityIdentifier("onboarding-answer-configuration")
     }
     private var currentConfiguration: some View {
         let name = OnboardingAnalysisChoice.displayName(settings) ??

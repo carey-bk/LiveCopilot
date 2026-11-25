@@ -68,9 +68,14 @@ final class WindowCaptureProtection {
     }
 }
 
-/// InputMethodKit hosts its candidate surface in a separate ViewBridge panel.
-/// Protect only app-owned input panels while editing the protected overlay;
-/// never change another process's windows or blanket-protect settings/setup.
+/// Windows the overlay opens are separate windows that do not inherit its sharing preference:
+/// popovers (child windows of the overlay), its menus and hover tooltips, and the input method's
+/// candidate panel while editing. Without this they appeared in a shared screen each time they
+/// opened, which looked like the hidden overlay flashing. Each is excluded only while it belongs
+/// to the overlay and restored when it closes, so Settings menus and tooltips stay shareable.
+/// (AppKit ignores the restore for a closed popover or menu window, observed on macOS 27; such a
+/// window stays excluded until AppKit replaces it, which only hides more.)
+/// Only this app's windows are touched.
 @MainActor
 final class OverlayInputCaptureProtection {
     private struct SavedWindow {
@@ -82,10 +87,13 @@ final class OverlayInputCaptureProtection {
     private var saved: [ObjectIdentifier: SavedWindow] = [:]
     private var enabled = true
     private let candidate: @MainActor (NSWindow) -> Bool
+    private let pointer: @MainActor () -> NSPoint
 
-    init(overlay: NSWindow, candidate: @escaping @MainActor (NSWindow) -> Bool = isInputPanel) {
+    init(overlay: NSWindow, candidate: @escaping @MainActor (NSWindow) -> Bool = isInputPanel,
+         pointer: @escaping @MainActor () -> NSPoint = { NSEvent.mouseLocation }) {
         self.overlay = overlay
         self.candidate = candidate
+        self.pointer = pointer
         InputPanelOrdering.add(self)
         let center = NotificationCenter.default
         for name in [NSApplication.willUpdateNotification, NSApplication.didUpdateNotification,
@@ -104,6 +112,13 @@ final class OverlayInputCaptureProtection {
             window.contentView.map { NSStringFromClass(type(of: $0)) == "NSRemoteView" } == true
     }
 
+    /// Menus (NSPopupMenuWindow, observed on macOS 26/27) and hover tooltips (NSToolTipPanel) have
+    /// no parent window; they belong to the overlay when they open under its pointer.
+    static func isTransientChrome(_ window: NSWindow) -> Bool {
+        let name = NSStringFromClass(type(of: window))
+        return name.contains("ToolTip") || name.contains("MenuWindow")
+    }
+
     func setEnabled(_ enabled: Bool) {
         self.enabled = enabled
         if enabled { refresh() } else { restoreAll() }
@@ -114,33 +129,56 @@ final class OverlayInputCaptureProtection {
             (overlay?.firstResponder as? NSTextView)?.isEditable == true
     }
 
+    private var pointerInOverlay: Bool {
+        guard let overlay, overlay.isVisible, overlay.alphaValue > 0 else { return false }
+        return overlay.frame.contains(pointer())
+    }
+
+    /// Whether `window` currently belongs to the protected overlay.
+    private func shouldProtect(_ window: NSWindow, editing: Bool) -> Bool {
+        guard enabled, let overlay, window !== overlay else { return false }
+        if candidate(window) { return editing }
+        if Self.isTransientChrome(window), pointerInOverlay { return true }
+        // Popovers are child windows of the overlay; a menu's own glass backdrop is a child of
+        // the menu window.
+        var parent = window.parent
+        while let next = parent {
+            if next === overlay || saved[ObjectIdentifier(next)] != nil { return true }
+            if Self.isTransientChrome(next), pointerInOverlay { return true }
+            parent = next.parent
+        }
+        return false
+    }
+
     func refresh() {
         guard enabled || !saved.isEmpty else { return }
-        let active = protectsEditing
-        guard active || !saved.isEmpty else { return }
-        update(windows: NSApp.windows, protectInput: active)
+        update(windows: NSApp.windows, protectInput: protectsEditing)
     }
 
     fileprivate func willOrder(_ window: NSWindow) {
-        guard window !== overlay, candidate(window) else { return }
-        if protectsEditing {
+        guard window !== overlay else { return }
+        if shouldProtect(window, editing: protectsEditing) {
             protect(window)
         } else {
-            // A reused panel is about to be presented for an ordinary input
-            // owner. Restore before that presentation, not at focus loss while
-            // its previous protected content is still on screen.
+            // A reused panel (input candidates, the tooltip panel) is about to be presented for
+            // something else. Restore before that presentation, not at focus loss while its
+            // previous protected content is still on screen.
             restore(ObjectIdentifier(window))
         }
     }
 
     fileprivate func didOrderOut(_ window: NSWindow) {
-        if !protectsEditing && !window.isVisible { restore(ObjectIdentifier(window)) }
+        guard !window.isVisible else { return }
+        if candidate(window) && protectsEditing { return }
+        restore(ObjectIdentifier(window))
     }
 
     // Explicit inputs make focus changes and reuse testable without an IME or
     // synthesizing keystrokes. Production callers use refresh() above.
     func update(windows: [NSWindow], protectInput: Bool) {
-        let targets = protectInput ? windows.filter { $0 !== overlay && candidate($0) } : []
+        // Input candidates are protected ahead of their presentation; other windows only while
+        // on screen (a closed popover can stay attached to the overlay, hidden).
+        let targets = windows.filter { shouldProtect($0, editing: protectInput) && (candidate($0) || $0.isVisible) }
         let targetIDs = Set(targets.map(ObjectIdentifier.init))
         for (id, entry) in saved where !targetIDs.contains(id) {
             // InputMethodKit may retire a candidate panel asynchronously after
@@ -155,6 +193,15 @@ final class OverlayInputCaptureProtection {
         let id = ObjectIdentifier(window)
         if saved[id] == nil { saved[id] = SavedWindow(window: window, sharing: window.sharingType) }
         if window.sharingType != .none { window.sharingType = .none }
+        // A menu adds its glass backdrop as a child window; cover children already attached.
+        window.childWindows?.forEach(protect)
+    }
+
+    /// A child attached to the overlay or to a window protected with it (a menu's backdrop is
+    /// attached after the menu is ordered in, while menu tracking delivers no app updates).
+    fileprivate func didAddChild(_ child: NSWindow, to parent: NSWindow) {
+        guard enabled, parent === overlay || saved[ObjectIdentifier(parent)] != nil else { return }
+        protect(child)
     }
 
     private func restore(_ id: ObjectIdentifier) {
@@ -193,7 +240,8 @@ private enum InputPanelOrdering {
     private static let install: Void = {
         let pairs: [(Selector, Selector)] = [
             (#selector(NSWindow.order(_:relativeTo:)), #selector(NSWindow.lc_inputOrder(_:relativeTo:))),
-            (#selector(NSWindow.orderFrontRegardless), #selector(NSWindow.lc_inputOrderFrontRegardless))
+            (#selector(NSWindow.orderFrontRegardless), #selector(NSWindow.lc_inputOrderFrontRegardless)),
+            (#selector(NSWindow.addChildWindow(_:ordered:)), #selector(NSWindow.lc_inputAddChildWindow(_:ordered:)))
         ]
         for (original, replacement) in pairs {
             guard let first = class_getInstanceMethod(NSWindow.self, original),
@@ -219,6 +267,10 @@ private enum InputPanelOrdering {
     static func didOrderOut(_ window: NSWindow) {
         controllers.forEach { $0.value?.didOrderOut(window) }
     }
+
+    static func didAddChild(_ child: NSWindow, to parent: NSWindow) {
+        controllers.forEach { $0.value?.didAddChild(child, to: parent) }
+    }
 }
 
 private extension NSWindow {
@@ -232,6 +284,11 @@ private extension NSWindow {
     @objc func lc_inputOrderFrontRegardless() {
         InputPanelOrdering.willOrder(self)
         lc_inputOrderFrontRegardless()
+    }
+
+    @objc func lc_inputAddChildWindow(_ child: NSWindow, ordered place: NSWindow.OrderingMode) {
+        lc_inputAddChildWindow(child, ordered: place)
+        InputPanelOrdering.didAddChild(child, to: self)
     }
 }
 

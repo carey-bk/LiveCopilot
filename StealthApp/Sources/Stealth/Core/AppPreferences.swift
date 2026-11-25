@@ -48,21 +48,31 @@ enum LiveSpeechLanguage: String, Codable, CaseIterable, Identifiable {
 }
 
 enum AppBackground: String, Codable, CaseIterable, Identifiable {
-    case glass, frosted, white
+    // Display order, most see-through first. Raw values are what settings store; never rename them.
+    case liquidGlass, glass, frosted, white
     var id: String { rawValue }
-    var usesLightAppearance: Bool { self != .glass }
+    /// Liquid Glass needs macOS 26; earlier systems offer the other three.
+    static var available: [AppBackground] {
+        if #available(macOS 26, *) { return allCases }
+        return [.glass, .frosted, .white]
+    }
+    /// What is actually drawn: a saved Liquid Glass choice falls back to glass before macOS 26.
+    var effective: AppBackground { Self.available.contains(self) ? self : .glass }
+    var usesLightAppearance: Bool { effective != .glass && effective != .liquidGlass }
     var label: String {
         switch self {
-        case .glass: return "Translucent glass"
+        case .glass: return "Frosted glass"
         case .frosted: return "Soft frosted"
         case .white: return "Solid white"
+        case .liquidGlass: return "Liquid Glass"
         }
     }
     var detail: String {
         switch self {
-        case .glass: return "Translucent glass lets more of your desktop show through."
+        case .glass: return "Frosted glass blurs what is behind the window and lets more of it show through; follows light and dark mode."
         case .frosted: return "Soft frosted keeps a hint of the background with a light veil for clearer text."
         case .white: return "Solid white keeps dark text readable over any wallpaper."
+        case .liquidGlass: return "Liquid Glass uses the macOS 26 material, refracting and adapting to what is behind the window."
         }
     }
 }

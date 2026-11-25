@@ -66,7 +66,7 @@ struct OnboardingCapabilityBadge: View {
     let language: AppLanguage
     private var color: Color {
         switch status {
-        case .ready: return .green
+        case .ready: return LC.success
         default: return .secondary
         }
     }

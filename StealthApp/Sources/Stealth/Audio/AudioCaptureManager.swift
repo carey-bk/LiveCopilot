@@ -89,6 +89,18 @@ final class AudioCaptureManager: NSObject, ObservableObject {
         }
     }
 
+    /// ScreenCaptureKit's first query in a process took about 2 s on a first Start. Asking for the
+    /// shareable content ahead of time (no stream, no recording indicator) warms it. Only with an
+    /// existing Screen Recording grant, so it never prompts.
+    func prewarm() {
+        guard testStreamFactory == nil, !isCapturing, CGPreflightScreenCaptureAccess() else { return }
+        Task.detached(priority: .utility) {
+            let started = ProcessInfo.processInfo.systemUptime
+            _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+            DebugLog.log(String(format: "AUDIO prewarm %.0f ms", (ProcessInfo.processInfo.systemUptime - started) * 1000))
+        }
+    }
+
     func start(sessionID: UUID = UUID()) async {
         guard !isCapturing else { return }
         let revision = UUID(); captureRevision = revision

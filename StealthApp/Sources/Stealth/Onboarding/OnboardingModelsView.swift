@@ -201,10 +201,9 @@ struct OnboardingModelsView: View {
             Text(b("Chinese + English · Auto", "中英混合 · 自动识别"))
                 .help(b("Recognition language", "识别语言"))
         case .apple:
-            Picker(b("Language", "识别语言"), selection: $coordinator.settings.appleSpeechLanguage) {
-                Text(b("Chinese", "普通话")).tag(AppleSpeechLanguage.chinese)
-                Text(b("English", "英语")).tag(AppleSpeechLanguage.english)
-            }.fixedSize().disabled(!editable).accessibilityIdentifier("onboarding-recognition-language")
+            AppleSpeechLanguagePicker(language: $coordinator.settings.appleSpeechLanguage, manager: apple,
+                                      interfaceLanguage: coordinator.settings.language, title: b("Language", "识别语言"))
+                .fixedSize().disabled(!editable).accessibilityIdentifier("onboarding-recognition-language")
         case .openAI:
             LiveSpeechLanguagePicker(language: $coordinator.settings.liveSpeechLanguage,
                                      interfaceLanguage: coordinator.settings.language, compact: true).fixedSize().disabled(!editable)

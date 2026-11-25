@@ -5,6 +5,7 @@ import Combine
 final class AppCoordinator: ObservableObject {
     let transcript = TranscriptStore()
     let translation = TranscriptTranslationStore()
+    let levels = AudioLevelStore()
     private var translationCredentialReference: CredentialReference?
     /// Test-only factory to observe which translation provider/credential is active during key changes.
     internal var testTranslationProviderFactory: ((_ liveKey: String?, _ analysisKey: String?) throws -> any ReasoningProvider)?
@@ -42,6 +43,8 @@ final class AppCoordinator: ObservableObject {
         let createdAt: Date
         let store: SuggestionStore
         var viewed: Bool
+        /// The other side added to the question, so this answer covers both parts.
+        var merged = false
     }
     @Published private(set) var answerRevision = 0
     @Published private(set) var answers: [AnswerRecord] = []
@@ -50,6 +53,16 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var queuedQuestionCount = 0
     @Published private(set) var skippedQuestionCount = 0
     private var questions = QuestionCoordinator()
+    /// The other side's current question turn: it lasts until you speak (or, in person, a short gap).
+    private var questionTurn: (speaker: Speaker?, answerID: UUID, lastQuestionAt: Date)?
+    private var lastOwnSpeechAt: Date?
+    /// Answers whose question was extended and answered again; kept in history.
+    private var supersededAnswerIDs = Set<UUID>()
+    private var mergedAnswerIDs = Set<UUID>()
+    /// A completed answer can still be updated for this long while you have not spoken.
+    var turnQuietSeconds: TimeInterval = 15
+    /// In person (one shared microphone) or with the microphone off, a turn is only a short gap between questions.
+    var roomTurnSeconds: TimeInterval = 8
     private var queueWake: Task<Void, Never>?
     private var answerTimeout: Task<Void, Never>?
     private var activeStore: SuggestionStore?
@@ -91,14 +104,17 @@ final class AppCoordinator: ObservableObject {
                 let store = SuggestionStore(); store.prepare(question: item.query)
                 sessionAnswerIDs.insert(item.answerID)
                 answers.append(AnswerRecord(id: item.answerID, questionID: item.id, automatic: true, sourceFragmentID: item.sourceID,
-                                            createdAt: item.receivedAt, store: store, viewed: false))
+                                            createdAt: item.receivedAt, store: store, viewed: false, merged: mergedAnswerIDs.contains(item.answerID)))
             }
         }
         answerRevision &+= 1
     }
     private func drainQuestions() {
         queueWake?.cancel(); queueWake = nil
-        guard !answerIsRunning, isRunning, settings.automaticSuggestions, !isShuttingDown, speakingSources.isEmpty else { return }
+        // Waits while the other side is still talking, not while you are: you may be filling the
+        // pause or starting your answer, and the suggestion should already be on its way.
+        guard !answerIsRunning, isRunning, settings.automaticSuggestions, !isShuttingDown,
+              speakingSources.subtracting([.you]).isEmpty else { return }
         if let item = questions.take() {
             queuedQuestionCount = questions.pending.count; skippedQuestionCount = questions.droppedCount
             request(query: item.query, mode: .reply, speaker: item.speaker, delegationID: item.delegationID,
@@ -139,7 +155,12 @@ final class AppCoordinator: ObservableObject {
             self.statusMessage = ServiceGuide.text("Laya unavailable — manual generation remains available. Check Live services settings.", "Laya 暂不可用，仍可手动生成回答。请检查“实时服务”设置。", self.settings.language)
         }
         gate.onEvent = { [weak self] event in self?.recordLaya(event) }
-        gate.onDecision = { [weak self] score in self?.layaLastScore = score }
+        gate.onDecision = { [weak self] score in
+            guard let self else { return }
+            self.layaLastScore = score
+            // Numbers only: why an automatic answer did or did not follow is otherwise lost on quit.
+            DebugLog.log(String(format: "laya.score value=%.3f threshold=%.2f", score, self.settings.layaThreshold))
+        }
         gate.onTrace = { trace, stage in DebugLog.log(trace.logLine(stage)) }
         return gate
     }()
@@ -228,7 +249,8 @@ final class AppCoordinator: ObservableObject {
     private var flowSources: [Speaker] = []
     private var audioCheckTask: Task<Void, Never>?
     let isMock: Bool
-    private let settingsDefaults: UserDefaults
+    /// `.standard` in the real app; an isolated suite in mock and preview runs.
+    let settingsDefaults: UserDefaults
     private(set) var knowledge: KnowledgeIndex?
     private var systemLive: (any LiveProvider)?
     private var micLive: (any LiveProvider)?
@@ -299,7 +321,7 @@ final class AppCoordinator: ObservableObject {
             if oldValue.automaticSuggestions != settings.automaticSuggestions ||
                 oldValue.scenario != settings.scenario ||
                 oldValue.mode != settings.mode || oldValue.listeningService != settings.listeningService {
-                questions.clear(); queueWake?.cancel(); queuedQuestionCount = 0
+                questions.clear(); questionTurn = nil; queueWake?.cancel(); queuedQuestionCount = 0
                 // Release a loaded Laya once nothing selects it. Configuration changes while idle
                 // must not cancel model installation or warmup, so only a finished load is released.
                 invalidateAutomaticTrigger(releaseRuntime: !layaSelected && (isRunning || laya.isReady))
@@ -366,18 +388,28 @@ final class AppCoordinator: ObservableObject {
         // A late microphone echo final is diagnostic only. Keep the decision for the
         // remote question visible, including below-threshold and duplicate decisions.
         if ![.ownSpeechStarted, .ownSpeechEnded, .otherSpeechStarted, .otherSpeechEnded, .inputReceived, .received, .predictionStarted, .predictionCompleted, .discarded, .candidateRetired, .predictionRetired, .echoIgnored, .echoHeld].contains(event) { layaGateStatus = event }
-        if !isMock { LayaGateDiagnostics.record(event) }
+        if !isMock {
+            LayaGateDiagnostics.record(event)
+            if [.dispatched, .belowThreshold, .ownSpeech, .ownTranscript, .candidateRetired, .predictionRetired, .staleCandidate,
+                .duplicate, .expired, .busy, .echoHeld, .echoIgnored].contains(event) { DebugLog.log("laya.event \(event.rawValue)") }
+        }
     }
     @Published private(set) var layaLastScore: Double?
     @Published var knowledgeDocuments: [KnowledgeDocument] = []
-    @Published var isIndexing = false
+    @Published var isIndexing = false {
+        didSet {
+            if isIndexing { indexingFinishedAt = nil }
+            else if oldValue { indexingFinishedAt = Date() }
+        }
+    }
+    /// When the last indexing run ended; Knowledge collapses a successful run's status after a moment.
+    @Published private(set) var indexingFinishedAt: Date?
     @Published private(set) var indexingProgress = 0.0
     @Published private(set) var indexingDocumentCount = 0
     @Published private(set) var indexingCompletedDocumentCount = 0
     @Published private(set) var indexingDocumentID: String?
     @Published private(set) var indexingSucceeded = false
     @Published var knowledgeMessage = ""
-    @Published var includeConversation = true
     @Published var micEnabled = true
     @Published private(set) var conversationGeneration = UUID()
     var onHotkeysChanged: (() -> Void)?
@@ -482,6 +514,18 @@ final class AppCoordinator: ObservableObject {
             }
         }.store(in: &cancellables)
         sessions.$lastError.compactMap { $0 }.sink { [weak self] message in self?.statusMessage = message }.store(in: &cancellables)
+        $isRunning.removeDuplicates().sink { [weak self] running in
+            guard let self else { return }
+            // Meter sampling runs only while listening; idle overlays do no periodic work.
+            if running {
+                self.levels.start { [weak self] in
+                    guard let self else { return (0, 0) }
+                    return (self.micFlow.level(), self.systemFlow.level())
+                }
+            } else {
+                self.levels.stop()
+            }
+        }.store(in: &cancellables)
         laya.$state.dropFirst().sink { [weak self] _ in
             // Published sends before mutation; read readiness on the next actor turn.
             Task { @MainActor [weak self] in
@@ -532,7 +576,7 @@ final class AppCoordinator: ObservableObject {
     /// at once when automatic suggestions or the local transcriber are turned off.
     private var layaSelected: Bool { settings.automaticSuggestions && usesLaya }
     private func invalidateAutomaticTrigger(releaseRuntime: Bool = true) {
-        questions.clear(); syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
+        questions.clear(); questionTurn = nil; syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
         questionTask?.cancel(); questionTask = nil; pendingAutomatic = nil
         layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil; lastLayaPartialSubmissionAt = 0
         layaLastScore = nil
@@ -552,7 +596,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
     private func manualIntervention() {
-        questions.clear(); syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
+        questions.clear(); questionTurn = nil; syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
         pendingAutomatic = nil; questionTask?.cancel(); questionTask = nil
         layaGate.manualIntervention()
     }
@@ -596,7 +640,7 @@ final class AppCoordinator: ObservableObject {
         guard isMock || (speaker == .them ? systemAudio.isCapturing : mic.isCapturing) else { recordLaya(.captureInactive); return }
         if speaker == .you {
             layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil
-            layaGate.manualIntervention(); recordLaya(.ownTranscript); return
+            layaGate.ownTranscript(); recordLaya(.ownTranscript); return
         }
         // Very short ASR previews are often noise or an unfinished syllable.
         // They must not retire a complete question while the pause timer runs.
@@ -808,6 +852,15 @@ final class AppCoordinator: ObservableObject {
     }
     var knowledgeNeedsReindex: Bool {
         knowledgeDocuments.contains { $0.embeddingModel != settings.selectedEmbeddingIdentity }
+    }
+    /// Re-checks downloaded models so Settings shows current readiness without visiting each page.
+    /// Results already known are shown meanwhile; nothing is downloaded.
+    func refreshModelReadiness() async {
+        if settings.listeningService == .apple { await appleSpeech.refresh(settings.appleSpeechLanguage) }
+        localModels.refresh()
+        if settings.embeddingService == .local, localModels.installed.contains(.embedding) {
+            await localModels.verifyEmbeddingIfNeeded()
+        }
     }
     func verifyEmbeddingIfNeeded() async {
         if settings.embeddingService == .local { await localModels.verifyEmbeddingIfNeeded() }
@@ -1051,11 +1104,12 @@ final class AppCoordinator: ObservableObject {
             flowSources = []
             statusMessage = "Starting audio capture…"
             // Acquire permissions/capture first; never leave paid sockets open after a capture failure.
-            if settings.mode == .remote { await systemAudio.start(sessionID: epoch) }
-            guard liveEpoch == epoch, !isShuttingDown else {
-                await systemAudio.stop(); mic.stop(); sessionStartedAt = nil; return
-            }
-            if micEnabled || settings.mode == .inPerson { await mic.start(sessionID: epoch) }
+            // System audio and the microphone start side by side: a cold first start of each took
+            // seconds, and in sequence the waits added up.
+            let wantsSystem = settings.mode == .remote, wantsMic = micEnabled || settings.mode == .inPerson
+            async let systemStarted: Void = wantsSystem ? systemAudio.start(sessionID: epoch) : ()
+            async let micStarted: Void = wantsMic ? mic.start(sessionID: epoch) : ()
+            _ = await (systemStarted, micStarted)
             guard liveEpoch == epoch, !isShuttingDown else {
                 await systemAudio.stop(); mic.stop(); sessionStartedAt = nil; return
             }
@@ -1078,6 +1132,13 @@ final class AppCoordinator: ObservableObject {
             scheduleAudioCheck(epoch: epoch)
             statusMessage = systemAudio.lastError ?? mic.lastError ?? (settings.listeningService.isLocal ? "Loading local speech model…" : "Connecting Live…")
         } catch { statusMessage = error.localizedDescription; sessionStartedAt = nil }
+    }
+    /// Brings up ScreenCaptureKit and the microphone input ahead of the first Start, without
+    /// capturing anything. Each manager skips it without a permission already granted.
+    func prewarmCapture() {
+        guard !isMock, !isRunning, !isTransitioning else { return }
+        if settings.mode == .remote { systemAudio.prewarm() }
+        if micEnabled || settings.mode == .inPerson { mic.prewarm() }
     }
     var activeProfessionalTerms: [String] {
         guard settings.professionalTermsEnabled else { return [] }
@@ -1116,6 +1177,7 @@ final class AppCoordinator: ObservableObject {
             // Possible speaker echo: neither shown as You nor allowed to retire the pending question.
             if speaker == .them || speaker == .room { noteFarEndText(text) }
             if speaker == .you, echoGuardApplies, !text.isEmpty, !confirmOwnTurn(text: text) { holdOwnTurn(); return }
+            if speaker == .you, !text.isEmpty { lastOwnSpeechAt = Date() }
             transcript.setPartial(text, speaker: speaker)
             translation.updatePreview(text, speaker: speaker)
             if !text.isEmpty { setQuestionState(QuestionPhase.forming.rawValue); flow(for: speaker).notePartial() }
@@ -1130,6 +1192,7 @@ final class AppCoordinator: ObservableObject {
                 return
             }
             guard conversation.append(fragment) else { return }
+            if speaker == .you { lastOwnSpeechAt = Date() }
             flow(for: speaker).noteTranscript()
             transcript.ingest(fragment)
             translation.update(lines: transcript.lines)
@@ -1142,7 +1205,7 @@ final class AppCoordinator: ObservableObject {
             if activeDelegations.count > 400 { activeDelegations = [id] }
             pendingAutomatic = (speaker, id, Date().addingTimeInterval(25))
             scheduleAutomatic()
-        case .ready: if !isMock { CaptureDiagnostics.record(.speechReady, details: .init(speaker: speaker.rawValue, readyMS: recognition(for: speaker)?.readyMS)) }; speechRuntime = .ready; statusMessage = "Listening · \(settings.mode.rawValue) · \(speaker.rawValue) ready"
+        case .ready: if !isMock { CaptureDiagnostics.record(.speechReady, details: .init(speaker: speaker.rawValue, readyMS: recognition(for: speaker)?.readyMS)) }; speechRuntime = .ready; statusMessage = "Listening · \(settings.mode.rawValue)"
         case .status(let message): statusMessage = message
         case .failed(let message):
             if !isMock { CaptureDiagnostics.record(.speechFailed, details: .init(speaker: speaker.rawValue, failure: recognition(for: speaker)?.failure)) }
@@ -1211,7 +1274,6 @@ final class AppCoordinator: ObservableObject {
         else { speakingSources.remove(speaker); if pendingAutomatic != nil { scheduleAutomatic() } }
         if usesLaya, isRunning { layaGate.setSpeaking(active, speaker: speaker) }
         if !active {
-            if settings.continuousQuestionPolicy == .complete { questions.postponeUntilQuiet() }
             drainQuestions()
         }
     }
@@ -1243,20 +1305,26 @@ final class AppCoordinator: ObservableObject {
         let assessment = echo.assess(from: start, to: end ?? now, now: now)
         let recent = farEndTexts.filter { $0.at >= start - 1 }.map(\.text)
         let repeatsFarEnd = text.flatMap { EchoText.similarity($0, to: recent) }.map { $0 >= EchoText.echoSimilarity } ?? false
-        // While the far end is audible, a held turn whose words repeat it stays held: a few frames
-        // louder than the predicted replay (a longer room tail, noise) must not promote a replayed
-        // question to the user's speech. A final is judged on its whole window below instead.
-        if !final, assessment.systemActive, repeatsFarEnd, assessment.isEcho || assessment.echoPathKnown { return .echo }
-        if assessment.isOwn { return .own }
-        guard assessment.systemActive else { return assessment.isEcho ? .echo : .unknown }
-        if repeatsFarEnd, assessment.isEcho || assessment.echoPathKnown {
+        // While the far end is audible, words that repeat it are replay: a few frames louder than
+        // the predicted replay (a longer room tail, noise) must not promote a replayed question to
+        // the user's speech. Only a final whose audio is clearly the user's (for example quoting the
+        // far end after it stopped) is kept.
+        if assessment.systemActive, repeatsFarEnd, assessment.isEcho || assessment.echoPathKnown {
+            if final, assessment.isStronglyOwn { return .own }
             if final { echo.note { $0.textEchoFinals += 1 } }
             return .echo
         }
+        if assessment.isOwn { return .own }
+        guard assessment.systemActive else { return assessment.isEcho ? .echo : .unknown }
         if assessment.isEcho { return .echo }
         // Long previews allow a three-token ASR lag. Short, distinct interruptions
         // must not wait for nine tokens; acoustic echo evidence above still takes precedence.
-        if let text, !final, now - start >= Self.ownTurnLeadIn + 0.4 {
+        // Different words alone are not enough: two recognizers can transcribe one replay quite
+        // differently (mixed languages, homophones). The audio must not lean towards replay, and
+        // once speaker echo is known in this room it must show some of the user's own voice.
+        // Headphones (no echo, undecided frames) still confirm on words.
+        if let text, !final, now - start >= Self.ownTurnLeadIn + 0.4,
+           assessment.echoMS <= assessment.ownMS, !assessment.echoPathKnown || assessment.ownMS > 0 {
             let tokens = EchoText.tokens(text)
             if tokens.count >= 2,
                let similarity = EchoText.similarity(tokens.count >= EchoText.minimumOwnTokens + 3 ? tokens.dropLast(3).joined(separator: " ") : text, to: recent), similarity <= EchoText.ownSimilarity {
@@ -1568,7 +1636,7 @@ final class AppCoordinator: ObservableObject {
         mockTask?.cancel(); mockTask = nil
         sessionStartedAt = nil // The completed round was archived above.
         isRunning = false
-        translation.resetSession(); conversation.reset(); transcript.clear(); suggestion.reset(); answers.removeAll(); selectedAnswerID = nil
+        translation.resetSession(); conversation.reset(); transcript.clear(); suggestion.reset(); answers.removeAll(); selectedAnswerID = nil; supersededAnswerIDs = []; mergedAnswerIDs = []; questionTurn = nil; lastOwnSpeechAt = nil
         activeDelegations = []; speakingSources = []
         questionState = QuestionPhase.listening.rawValue
         settings.overlayAutoHeight = true
@@ -1861,9 +1929,10 @@ final class AppCoordinator: ObservableObject {
         if activeDeltaBuffer === buffer { activeDeltaBuffer = nil }
     }
 
-    func askText(_ query: String) { manualIntervention(); request(query: query, mode: .reply, useContext: includeConversation) }
+    func askText(_ query: String) { manualIntervention(); request(query: query, mode: .reply, useContext: settings.includeConversation) }
     func cancelAnswer() {
         manualIntervention()
+        questionTurn = nil
         finalizeAnswerBuffer(activeDeltaBuffer)
         activeStore?.mark(.cancelled); activeStore?.interrupt()
         if let store = activeStore { publishAnswer(requestID, store: store) }
@@ -1876,8 +1945,18 @@ final class AppCoordinator: ObservableObject {
                          delegationID: String? = nil, useContext: Bool = true,
                          automatic: Bool = false, contextOverride: String? = nil, pipelineTrace: PipelineTrace? = nil, languageQuestion: String? = nil, scheduled: QuestionCoordinator.Candidate? = nil) {
         if automatic && scheduled == nil {
-            questions.enqueue(query: query, context: contextOverride ?? conversation.context(), speaker: speaker,
-                              delegationID: delegationID, trace: pipelineTrace, sourceID: conversation.latestFragmentID(speaker: speaker), policy: settings.continuousQuestionPolicy)
+            let now = Date()
+            let continuing = continuesTurn(speaker: speaker, now: now)
+            // Nothing of theirs is waiting, so the addition extends the answer already started or shown.
+            let anchor = continuing && !questions.hasPending(from: speaker)
+                ? questionTurn.flatMap { turn in answers.first { $0.id == turn.answerID } } : nil
+            let outcome = questions.enqueue(query: query, context: contextOverride ?? conversation.context(), speaker: speaker,
+                                            delegationID: delegationID, trace: pipelineTrace, sourceID: conversation.latestFragmentID(speaker: speaker),
+                                            continuesTurn: continuing, previousQuery: anchor?.store.question, now: now)
+            if case .queued(let answerID, let merged) = outcome {
+                if merged { mergedAnswerIDs.insert(answerID); if let anchor { supersede(anchor) } }
+                questionTurn = (speaker, answerID, now)
+            }
             conversation.begin(query, speaker: speaker, now: Date())
             queuedQuestionCount = questions.pending.count; skippedQuestionCount = questions.droppedCount
             syncQueuedAnswers()
@@ -1895,18 +1974,27 @@ final class AppCoordinator: ObservableObject {
         sessionAnswerIDs.insert(id)
         let output = answers.first(where: { $0.id == id })?.store ?? SuggestionStore()
         activeStore = output; answerIsRunning = true
-        let show = !automatic || selectedAnswerID == nil
+        // An answer that replaces the one being read takes the foreground.
+        let show = !automatic || (selectedAnswerID.map(supersededAnswerIDs.contains) ?? true)
         if !answers.contains(where: { $0.id == id }) {
             answers.append(AnswerRecord(id: id, questionID: scheduled?.id ?? UUID(), automatic: automatic, sourceFragmentID: scheduled?.sourceID,
-                                        createdAt: Date(), store: output, viewed: show))
+                                        createdAt: Date(), store: output, viewed: show, merged: mergedAnswerIDs.contains(id)))
         }
         if show {
             selectedAnswerID = id
             if let index = answers.firstIndex(where: { $0.id == id }) { answers[index].viewed = true }
         }
         let context = useContext ? (contextOverride ?? conversation.context()) : ""
-        let previous = useContext && conversation.previousQuestion != query ? conversation.previousQuestion : nil
-        let normalized = RetrievalQuery.formulate(question: query, context: context, previousQuestion: previous)
+        // Earlier suggested answers travel with the transcript (same switch): the user may have
+        // said them aloud even when the microphone transcript missed or garbled them.
+        let priorAnswers = useContext && mode == .reply ? recentPriorAnswers(excluding: id) : []
+        // The previous question is the last one that was actually answered. The conversation's own
+        // record is set when a question is queued, so for automatic answers it was the current one.
+        // A merged question already contains the earlier part, so it is not repeated as "previous".
+        let merged = scheduled?.baseQuery != nil
+        let previous = useContext ? (priorAnswers.last?.question ?? (!merged && conversation.previousQuestion != query ? conversation.previousQuestion : nil)) : nil
+        let lastAnswerMarkdown = useContext && mode == .reply ? lastCompletedAnswerText(excluding: id) : nil
+        let normalized = RetrievalQuery.formulate(question: query, context: context, previousQuestion: previous, previousAnswer: lastAnswerMarkdown)
         if scheduled == nil { conversation.begin(query, speaker: speaker, now: Date()) }
         questionState = conversation.phase.rawValue
         output.begin(mode: mode, question: query)
@@ -1977,13 +2065,18 @@ final class AppCoordinator: ObservableObject {
                 output.retrievalMS = Int((ProcessInfo.processInfo.systemUptime - started) * 1000)
                 output.mark(.ragComplete)
                 if settings.knowledgeMode == .knowledgeBaseOnly && sources.isEmpty {
-                    let missing = settings.bilingualAnswers
-                        ? AnswerLanguage.chinese.missingEvidence(question: query) + "\n" + AnswerLanguage.english.missingEvidence(question: query)
-                        : settings.answerLanguage.missingEvidence(question: languageQuestion ?? query)
+                    // Written locally without a model call: add the other built-in language when it is a chosen translation.
+                    let question = languageQuestion ?? query
+                    let chinese = settings.answerLanguage.localFallbackIsChinese(question: question)
+                    var missing = settings.answerLanguage.missingEvidence(question: question)
+                    let translations = settings.effectiveTranslationLanguages
+                    if chinese && translations.contains(.english) { missing += "\n" + AnswerLanguage.english.missingEvidence(question: question) }
+                    if !chinese && translations.contains(where: \.isChinese) { missing += "\n" + AnswerLanguage.chinese.missingEvidence(question: question) }
                     output.appendDelta(missing)
                 } else {
                     var answer = AnswerRequest(query: normalized, conversation: context, scenario: settings.scenario, sources: sources, mode: mode,
-                                               knowledgeMode: settings.knowledgeMode, answerLanguage: settings.answerLanguage, bilingualAnswers: settings.bilingualAnswers, additionalAnswerInstructions: settings.additionalAnswerInstructions, languageQuestion: languageQuestion)
+                                               knowledgeMode: settings.knowledgeMode, answerLanguage: settings.answerLanguage, translationLanguages: settings.effectiveTranslationLanguages, additionalAnswerInstructions: settings.additionalAnswerInstructions, languageQuestion: languageQuestion,
+                                               recentAnswers: priorAnswers)
                     answer.onStreamProgress = { [weak self] stage, time in
                         guard let coordinator = self else { return }
                         await MainActor.run {
@@ -2034,6 +2127,47 @@ final class AppCoordinator: ObservableObject {
             self.layaGate.retryPending()
         }
     }
+    /// The other side is still adding to its question: same speaker, you have not spoken since,
+    /// and its answer is waiting, running, or finished moments ago. In person all voices share
+    /// one microphone, and with the microphone off you cannot be heard, so there only the gap
+    /// since the last question counts.
+    private func continuesTurn(speaker: Speaker?, now: Date) -> Bool {
+        guard settings.continuousQuestionPolicy == .update, speaker != .you,
+              let turn = questionTurn, turn.speaker == speaker else { return false }
+        // Without your own microphone the app cannot hear you answer: only the gap counts.
+        if speaker == .room || !(isMock || mic.isCapturing) { return now.timeIntervalSince(turn.lastQuestionAt) <= roomTurnSeconds }
+        if let own = lastOwnSpeechAt, own >= turn.lastQuestionAt { return false }
+        guard let record = answers.first(where: { $0.id == turn.answerID }) else { return questions.hasPending(from: speaker) }
+        guard !record.store.isLoading, record.store.state != .queued, let done = record.store.completedAt else { return true }
+        return now.timeIntervalSince(done) <= turnQuietSeconds
+    }
+    /// The question this answer was for has been extended: stop it if it is still running and
+    /// point to the combined answer. It stays in history and navigation.
+    private func supersede(_ record: AnswerRecord) {
+        supersededAnswerIDs.insert(record.id)
+        let note = ServiceGuide.text("The question continued; both parts are answered together in the next answer.",
+                                     "对方补充了问题，已合并到下一条回答。", settings.language)
+        if record.store.isLoading, requestID == record.id {
+            finalizeAnswerBuffer(activeDeltaBuffer)
+            record.store.mark(.cancelled); record.store.interrupt(note)
+            requestID = UUID(); answerTask?.cancel(); answerTimeout?.cancel(); answerIsRunning = false
+            activeStore = nil
+        } else {
+            record.store.warning = note
+        }
+        publishAnswer(record.id, store: record.store)
+    }
+    /// Completed suggested answers (reply mode) before `id`, oldest first, at most three. A completed
+    /// answer that was later merged still counts: it was shown, and may already have been said.
+    private func completedReplies(excluding id: UUID) -> [AnswerRecord] {
+        answers.filter { $0.id != id && $0.store.mode == .reply && $0.store.state == .completed && !$0.store.text.isEmpty }
+            .sorted { $0.createdAt < $1.createdAt }
+            .suffix(3).map { $0 }
+    }
+    private func recentPriorAnswers(excluding id: UUID) -> [PriorAnswer] {
+        completedReplies(excluding: id).compactMap { PriorAnswer(question: $0.store.question, markdown: $0.store.text) }
+    }
+    private func lastCompletedAnswerText(excluding id: UUID) -> String? { completedReplies(excluding: id).last?.store.text }
     private func startIndexMigration() {
         let includeRemote = settings.embeddingService == .local
         guard !isMock, !isIndexing, !isShuttingDown, let knowledge,

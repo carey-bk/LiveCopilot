@@ -18,7 +18,8 @@ struct ReleaseVersion: Comparable, Codable, Hashable, CustomStringConvertible {
               let patch = Int(group(3) ?? "0"), major < 10_000 else { return nil }
         self.major = major; self.minor = minor; self.patch = patch; prerelease = group(4)
     }
-    var description: String { "\(major).\(minor).\(patch)" }
+    /// Releases from 2.11 on are MAJOR.MINOR; older tags with a non-zero patch keep it.
+    var description: String { patch == 0 ? "\(major).\(minor)" : "\(major).\(minor).\(patch)" }
     var display: String { "v" + description }
     var isStable: Bool { prerelease == nil }
     static func < (lhs: Self, rhs: Self) -> Bool {

@@ -168,41 +168,161 @@ final class LayaCoordinatorTests: XCTestCase {
         await app.shutdown()
     }
 
-    func testContinuousQueuePoliciesAndRevision() throws {
+    func testContinuousQueueTurnsRevisionAndMigration() throws {
         var queue = QuestionCoordinator()
         let now = Date()
-        func add(_ text: String, _ seconds: Double, _ source: String, _ policy: ContinuousQuestionPolicy = .smart) {
+        @discardableResult
+        func add(_ text: String, _ seconds: Double, _ source: String, turn: Bool = false, previous: String? = nil) -> QuestionCoordinator.Outcome {
             queue.enqueue(query: text, context: "", speaker: .them, delegationID: nil, trace: nil,
-                          sourceID: source, policy: policy, now: now.addingTimeInterval(seconds))
+                          sourceID: source, continuesTurn: turn, previousQuery: previous, now: now.addingTimeInterval(seconds))
         }
         add("Why use RAG?", 0, "a")
-        XCTAssertEqual(queue.take(now: now)?.query, "Why use RAG?", "Default must not wait for merge window")
+        XCTAssertEqual(queue.take(now: now)?.query, "Why use RAG?", "The first question never waits")
+        // A new turn stays separate, even when the words are related.
         add("Compared to vector search, what are its benefits?", 1, "b")
-        XCTAssertTrue(queue.pending[0].query.contains("Why use RAG?"))
+        XCTAssertEqual(queue.pending[0].query, "Compared to vector search, what are its benefits?")
         add("Compared to vector search, what are its limitations?", 1.1, "b")
         XCTAssertEqual(queue.pending.count, 1, "ASR revision must not add a request")
         XCTAssertTrue(queue.pending[0].query.contains("limitations"))
+        XCTAssertEqual(add("Compared to vector search, what are its limitations?", 1.2, "z"), .duplicate)
         add("What is your salary expectation?", 2, "c")
-        XCTAssertEqual(queue.pending.count, 2)
-        XCTAssertEqual(queue.pending[1].query, "What is your salary expectation?")
-        add("What is your salary expectation?", 2.1, "d")
         XCTAssertEqual(queue.pending.count, 2)
         add("Describe a conflict", 3, "e"); add("Explain TCP", 4, "f")
         XCTAssertEqual(queue.pending.count, 3); XCTAssertEqual(queue.droppedCount, 1)
-        XCTAssertNil(queue.take(now: now.addingTimeInterval(35)))
-        queue.clear(); add("Why use RAG?", 0, "a", .complete)
-        XCTAssertNil(queue.take(now: now)); XCTAssertNotNil(queue.take(now: now.addingTimeInterval(1.3)))
-        queue.clear(); add("Why use RAG?", 0, "a", .fast); _ = queue.take(now: now)
-        add("Compared to vector search?", 1, "b", .fast)
-        XCTAssertEqual(queue.pending[0].query, "Compared to vector search?")
-        let old = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
-        XCTAssertEqual(old.continuousQuestionPolicy, .smart)
-        var saved = old; saved.continuousQuestionPolicy = .complete
-        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(saved)).continuousQuestionPolicy, .complete)
+        XCTAssertNil(queue.take(now: now.addingTimeInterval(35)), "Stale questions expire")
+        // Same turn, nothing started: the addition joins the waiting question, whatever its words.
+        queue.clear(); add("你介绍一下自己", 0, "a")
+        guard case .queued(_, let merged) = add("另外你为什么离职？", 1, "b", turn: true) else { return XCTFail() }
+        XCTAssertTrue(merged); XCTAssertEqual(queue.pending.count, 1)
+        XCTAssertEqual(queue.pending[0].query, "你介绍一下自己\n另外你为什么离职？")
+        add("另外你为什么想离职？", 1.2, "b")
+        XCTAssertEqual(queue.pending[0].query, "你介绍一下自己\n另外你为什么想离职？", "A revision keeps the merged first part")
+        // Same turn, first question already answering: the caller passes it as previousQuery.
+        queue.clear(); add("Why use RAG?", 0, "a"); _ = queue.take(now: now)
+        add("And how does it scale?", 1, "b", turn: true, previous: "Why use RAG?")
+        XCTAssertEqual(queue.pending.map(\.query), ["Why use RAG?\nAnd how does it scale?"])
+        // Separate turn ignores previousQuery.
+        queue.clear(); add("Why use RAG?", 0, "a"); _ = queue.take(now: now)
+        guard case .queued(_, false) = add("And how does it scale?", 1, "b", previous: "Why use RAG?") else { return XCTFail() }
+        // Settings: two options; saved values from earlier versions map onto them.
+        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8)).continuousQuestionPolicy, .update)
+        for (saved, expected) in [("fast", ContinuousQuestionPolicy.separate), ("smart", .update), ("complete", .update), ("separate", .separate), ("update", .update), ("unknown", .update)] {
+            let data = try JSONSerialization.data(withJSONObject: ["continuousQuestionPolicy": saved])
+            XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: data).continuousQuestionPolicy, expected, saved)
+        }
+        var settings = AppSettings(); settings.continuousQuestionPolicy = .separate
+        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings)).continuousQuestionPolicy, .separate)
+    }
+    /// Same turn: the other side adds to its question while the first answer streams.
+    @MainActor func testAdditionBeforeYouSpeakUpdatesTheRunningAnswer() async {
+        let reasoning = CountingLayaReasoning(); reasoning.hold = true
+        let app = make(reasoning); await app.start()
+        XCTAssertEqual(app.settings.continuousQuestionPolicy, .update)
+        final(app, text: "Why use RAG?", id: "a")
+        await pause(1)
+        let firstID = app.selectedAnswerID
+        final(app, text: "And how would you scale it?", id: "b", offset: 2000)
+        await pause(1)
+        XCTAssertEqual(reasoning.requests.count, 2, "The running answer stops and the combined question starts")
+        XCTAssertEqual(reasoning.requests[1].query.question, "Why use RAG? And how would you scale it?")
+        XCTAssertTrue(reasoning.requests[1].recentAnswers.isEmpty, "An unfinished answer is not context")
+        let first = app.answers.first { $0.id == firstID }
+        XCTAssertEqual(first?.store.state, .interrupted)
+        XCTAssertNotNil(first?.store.warning, "The replaced answer says where it went")
+        XCTAssertNotEqual(app.selectedAnswerID, firstID, "The combined answer takes the foreground")
+        XCTAssertEqual(app.answers.last?.merged, true)
+        XCTAssertEqual(app.answers.count, 2, "The replaced answer stays in history")
+        reasoning.hold = false; reasoning.finishHeld(); await pause(0.3)
+        XCTAssertEqual(reasoning.requests.count, 2)
+        await app.shutdown()
+    }
+    /// Same turn after the first answer finished: it is written again, still carrying that answer.
+    @MainActor func testAdditionAfterAnswerFinishedUpdatesItAndKeepsItAsContext() async {
+        let reasoning = CountingLayaReasoning()
+        reasoning.answerText = "## 建议回答\n我从零**自建社群 160+ 用户沉淀**。"
+        let app = make(reasoning); await app.start()
+        final(app, text: "谈谈你的社群运营经历", id: "q1")
+        await pause(1)
+        let firstID = app.selectedAnswerID
+        XCTAssertEqual(app.answers.first?.store.state, .completed)
+        final(app, text: "你怎么实现的 160+ 这个数字", id: "q2", offset: 6000)
+        await pause(1)
+        XCTAssertEqual(reasoning.requests.count, 2)
+        let second = reasoning.requests[1]
+        XCTAssertEqual(second.query.question, "谈谈你的社群运营经历 你怎么实现的 160+ 这个数字")
+        XCTAssertTrue(second.input.contains("自建社群 160+ 用户沉淀"), "A shown answer may have been said; it stays context")
+        XCTAssertEqual(app.answers.first { $0.id == firstID }?.store.state, .completed)
+        XCTAssertNotNil(app.answers.first { $0.id == firstID }?.store.warning)
+        XCTAssertNotEqual(app.selectedAnswerID, firstID)
+        await app.shutdown()
+    }
+    /// You spoke: the next question is a new turn and builds on the previous answer.
+    @MainActor func testQuestionAfterYouSpeakIsANewAnswer() async {
+        let reasoning = CountingLayaReasoning()
+        reasoning.answerText = "## 建议回答\n我从零**自建社群 160+ 用户沉淀**。"
+        let app = make(reasoning); await app.start()
+        final(app, text: "谈谈你的社群运营经历", id: "q1")
+        await pause(1)
+        let firstID = app.selectedAnswerID
+        final(app, text: "我从零自建社群，沉淀了一百六十多个用户。", id: "me", speaker: .you, offset: 3000)
+        await pause(0.3)
+        final(app, text: "你怎么实现的 160+ 这个数字", id: "q2", offset: 6000)
+        await pause(1)
+        XCTAssertEqual(reasoning.requests.count, 2)
+        let second = reasoning.requests[1]
+        XCTAssertEqual(second.query.question, "你怎么实现的 160+ 这个数字")
+        XCTAssertEqual(second.recentAnswers.map(\.question), ["谈谈你的社群运营经历"])
+        XCTAssertNil(app.answers.first { $0.id == firstID }?.store.warning)
+        XCTAssertEqual(app.answers.last?.merged, false)
+        await app.shutdown()
+    }
+    /// A finished answer left alone past the quiet window starts a new turn.
+    @MainActor func testQuestionLongAfterTheAnswerIsANewAnswer() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning); await app.start()
+        app.turnQuietSeconds = 0.3
+        final(app, text: "Why use RAG?", id: "a")
+        await pause(1)
+        final(app, text: "And how would you scale it?", id: "b", offset: 4000)
+        await pause(1)
+        XCTAssertEqual(reasoning.requests.map(\.query.question), ["Why use RAG?", "And how would you scale it?"])
+        await app.shutdown()
+    }
+    /// "Answer separately" never merges, even within one turn.
+    @MainActor func testSeparatePolicyNeverMerges() async {
+        let reasoning = CountingLayaReasoning(); reasoning.hold = true
+        let app = make(reasoning); await app.start()
+        app.settings.continuousQuestionPolicy = .separate
+        final(app, text: "Why use RAG?", id: "a")
+        await pause(1)
+        final(app, text: "And how would you scale it?", id: "b", offset: 2000)
+        await pause(1)
+        XCTAssertEqual(reasoning.requests.count, 1, "The running answer continues")
+        reasoning.hold = false; reasoning.finishHeld(); await pause(0.5)
+        XCTAssertEqual(reasoning.requests.map(\.query.question), ["Why use RAG?", "And how would you scale it?"])
+        XCTAssertFalse(app.answers.contains(where: \.merged))
+        await app.shutdown()
+    }
+    /// In person every voice is one microphone: only the gap between questions decides.
+    @MainActor func testInPersonTurnUsesTheGapOnly() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning); await app.start()
+        app.roomTurnSeconds = 1.5
+        final(app, text: "谈谈你的项目经历", id: "a", speaker: .room)
+        await pause(1)
+        final(app, text: "重点讲讲你负责的部分", id: "b", speaker: .room, offset: 2000)
+        await pause(1)
+        XCTAssertEqual(reasoning.requests.last?.query.question, "谈谈你的项目经历 重点讲讲你负责的部分", "Within the gap: merged")
+        await pause(1.6)
+        final(app, text: "你为什么想换工作", id: "c", speaker: .room, offset: 9000)
+        await pause(1)
+        XCTAssertEqual(reasoning.requests.last?.query.question, "你为什么想换工作", "After the gap: a new answer")
+        await app.shutdown()
     }
     @MainActor func testContinuousQuestionsPreserveForegroundAndAllowNavigation() async {
         let reasoning = CountingLayaReasoning(); reasoning.hold = true
         let app = make(reasoning); await app.start()
+        app.settings.continuousQuestionPolicy = .separate
         final(app, text: "Why use RAG?", id: "a")
         await pause(1)
         let firstID = app.selectedAnswerID
@@ -219,7 +339,10 @@ final class LayaCoordinatorTests: XCTestCase {
         XCTAssertEqual(app.unreadAnswerCount, 1)
         app.showNextAnswer()
         XCTAssertTrue(app.suggestion.question.contains("benefits"))
-        XCTAssertTrue(app.suggestion.question.contains("Why use RAG?"))
+        // The first question was already being answered, so the follow-up is not merged into it;
+        // it is answered next with the first answer as context.
+        XCTAssertFalse(app.suggestion.question.contains("Why use RAG?"))
+        XCTAssertEqual(reasoning.requests[1].recentAnswers.map(\.question), ["Why use RAG?"])
         if app.answers.count == 2 { XCTAssertNotEqual(app.answers[0].questionID, app.answers[1].questionID) }
         if let id = app.previousAnswerID { app.selectAnswer(id) }
         XCTAssertEqual(app.selectedAnswerID, firstID)
@@ -258,6 +381,8 @@ final class LayaCoordinatorTests: XCTestCase {
     @MainActor func testFirstAnswerLatencyAndIndependentQuestion() async {
         let reasoning = CountingLayaReasoning()
         let app = make(reasoning); await app.start()
+        // Two questions with nothing said in between would be one turn; this checks them as separate answers.
+        app.settings.continuousQuestionPolicy = .separate
         let start = Date()
         final(app, text: "Could you explain the caching policy?", id: "latency-a")
         while reasoning.requests.isEmpty && Date().timeIntervalSince(start) < 1 { await pause(0.01) }
@@ -314,10 +439,12 @@ final class LayaCoordinatorTests: XCTestCase {
         await pause(0.5)
         let longHeight = window.frame.height
         XCTAssertGreaterThan(longHeight, shortHeight)
-        XCTAssertLessThanOrEqual(longHeight, 900)
+        XCTAssertLessThanOrEqual(longHeight, (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900, "Grows only as far as the screen")
         XCTAssertEqual(window.frame.maxY, top, accuracy: 1)
         try snapshot("long")
         await app.resetConversation(); await pause(0.4)
+        // Under a loaded test host the throttled resize can land later; wait for it, bounded.
+        for _ in 0..<16 where abs(window.frame.height - emptyHeight) > 2 { await pause(0.1) }
         XCTAssertEqual(window.frame.height, emptyHeight, accuracy: 2, "Reset must shrink to the empty content again")
         let manualHeight = emptyHeight + 80
         window.setFrame(NSRect(x: window.frame.minX, y: top - manualHeight, width: window.frame.width, height: manualHeight), display: true)
@@ -396,12 +523,15 @@ final class LayaCoordinatorTests: XCTestCase {
     }
     @MainActor func testStylePreferencesReachAutomaticAndManualRequests() async throws {
         var defaults = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
-        XCTAssertFalse(defaults.bilingualAnswers); XCTAssertEqual(defaults.additionalAnswerInstructions, "")
-        defaults.bilingualAnswers = true; defaults.additionalAnswerInstructions = "Use short sentences."
+        XCTAssertFalse(defaults.answerTranslationEnabled); XCTAssertEqual(defaults.additionalAnswerInstructions, "")
+        defaults.answerTranslationEnabled = true; defaults.answerTranslationLanguages = [.japanese, .english]
+        defaults.additionalAnswerInstructions = "Use short sentences."
         let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(defaults))
-        XCTAssertTrue(decoded.bilingualAnswers); XCTAssertEqual(decoded.additionalAnswerInstructions, defaults.additionalAnswerInstructions)
+        XCTAssertTrue(decoded.answerTranslationEnabled); XCTAssertEqual(decoded.answerTranslationLanguages, [.japanese, .english])
+        XCTAssertEqual(decoded.additionalAnswerInstructions, defaults.additionalAnswerInstructions)
         let reasoning = CountingLayaReasoning(); let app = make(reasoning)
-        app.settings.bilingualAnswers = true; app.settings.additionalAnswerInstructions = defaults.additionalAnswerInstructions
+        app.settings.answerTranslationEnabled = true; app.settings.answerTranslationLanguages = [.japanese, .english]
+        app.settings.additionalAnswerInstructions = defaults.additionalAnswerInstructions
         await app.start()
         final(app, text: "Could you explain retrieval design?")
         await pause(0.7)
@@ -409,7 +539,7 @@ final class LayaCoordinatorTests: XCTestCase {
         await pause(0.2)
         XCTAssertEqual(reasoning.requests.count, 2)
         for request in reasoning.requests {
-            XCTAssertTrue(request.instructions.contains("Chinese sentence immediately followed"))
+            XCTAssertTrue(request.instructions.contains("one line per translation, in this order: Japanese, English"))
             XCTAssertTrue(request.instructions.contains("Use short sentences."))
         }
         XCTAssertEqual(app.answers.count, 2)
@@ -419,23 +549,26 @@ final class LayaCoordinatorTests: XCTestCase {
         XCTAssertTrue(app.sessions.sessions.contains { $0.plainText.contains("retrieval design") })
         await app.shutdown()
     }
-    func testSensitivityPresetsKeepThresholdSemanticsAndPersistence() throws {
-        let levels = JevSensitivity.allCases
-        XCTAssertEqual(levels.count, 5)
-        for (less, more) in zip(levels, levels.dropFirst()) {
-            XCTAssertGreaterThan(less.threshold, more.threshold, "Higher sensitivity must require a lower score")
-        }
-        XCTAssertEqual(JevSensitivity.medium.threshold, AppSettings().layaThreshold)
-        XCTAssertEqual(JevSensitivity.nearest(to: 0.83), .medium)
-        XCTAssertEqual(JevSensitivity.nearest(to: 0.99), .low)
-        XCTAssertEqual(JevSensitivity.nearest(to: .nan), .medium)
-        for level in levels {
-            var settings = AppSettings(); settings.layaThreshold = level.threshold
+    func testThresholdDetentsDefaultAndPersistence() throws {
+        XCTAssertEqual(JevThreshold.values, [0.65, 0.75, 0.80, 0.85, 0.90])
+        XCTAssertEqual(AppSettings().layaThreshold, 0.80, "New installs default to 0.80")
+        XCTAssertEqual(JevThreshold.snapped(0.83), 0.85)
+        XCTAssertEqual(JevThreshold.snapped(0.99), 0.90)
+        XCTAssertEqual(JevThreshold.snapped(.nan), 0.80)
+        XCTAssertEqual(JevThreshold.index(0.65), 0); XCTAssertEqual(JevThreshold.index(0.90), 4)
+        XCTAssertEqual(JevThreshold.text(0.9), "0.90")
+        for value in JevThreshold.values {
+            var settings = AppSettings(); settings.layaThreshold = value
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
-            XCTAssertEqual(restored.layaThreshold, [0.50, 0.80, 0.95].contains(level.threshold) ? level.threshold : 0.80)
+            XCTAssertEqual(restored.layaThreshold, value)
         }
-        XCTAssertFalse(LayaTriggerDecision.evaluate(score: 0.7, threshold: JevSensitivity.low.threshold).shouldTrigger)
-        XCTAssertTrue(LayaTriggerDecision.evaluate(score: 0.7, threshold: JevSensitivity.high.threshold).shouldTrigger)
+        // Values saved by older builds move to the nearest detent.
+        for (saved, expected) in [(0.50, 0.65), (0.65, 0.65), (0.80, 0.80), (0.90, 0.90), (0.95, 0.90)] {
+            let data = try JSONSerialization.data(withJSONObject: ["layaThreshold": saved])
+            XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: data).layaThreshold, expected)
+        }
+        XCTAssertFalse(LayaTriggerDecision.evaluate(score: 0.78, threshold: 0.80).shouldTrigger)
+        XCTAssertTrue(LayaTriggerDecision.evaluate(score: 0.78, threshold: 0.75).shouldTrigger)
     }
     @MainActor func testRenderCompactJevSettingsPreservesExistingThreshold() async throws {
         let root = URL(fileURLWithPath: "/tmp/jev-settings-qa")
@@ -769,6 +902,52 @@ final class LayaCoordinatorTests: XCTestCase {
         await app.shutdown()
     }
 
+    /// Two recognizers can transcribe one replay quite differently (mixed languages, homophones).
+    /// Replayed audio whose words differ from the far end's text must stay held, not retire the question.
+    @MainActor func testReplayWithDifferentRecognizedWordsStaysHeld() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning)
+        await app.start()
+        let far = SyntheticTalk.speech(seed: 1, seconds: 4)
+        feedEcho(app, far: far, mic: SyntheticTalk.echo(far, delay: 0.12, gain: 0.1, count: far.count))
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
+        app.receiveMockEvent(.partialTranscript("Please introduce your most recent project"), speaker: .them)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        await pause(0.5)
+        app.receiveMockEvent(.partialTranscript("Lease in reduce yo mows recent pro jet"), speaker: .you)
+        XCTAssertTrue(app.transcript.partialYou.isEmpty, "replay with differently recognized words is not the user")
+        XCTAssertEqual(app.echo.snapshot.textOwnConfirms, 0)
+        XCTAssertGreaterThan(app.echo.snapshot.heldTurns, 0)
+        final(app, text: "Please introduce your most recent project", id: "them")
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        await pause(1.0)
+        XCTAssertEqual(reasoning.requests.count, 1, "the question is still answered")
+        await app.shutdown()
+    }
+
+    /// Automatic answers: the follow-up sees the previous draft and the previous question. The
+    /// queue marks a question as previous when it is queued, which used to hide it from itself.
+    @MainActor func testAutomaticFollowUpSeesPreviousAnswerAndQuestion() async {
+        let reasoning = CountingLayaReasoning()
+        reasoning.answerText = "## 建议回答\n我从零**自建社群 160+ 用户沉淀**。"
+        let app = make(reasoning)
+        await app.start()
+        final(app, text: "谈谈你的社群运营经历", id: "q1")
+        await pause(1.0)
+        XCTAssertEqual(reasoning.requests.count, 1)
+        final(app, text: "我从零自建社群，沉淀了一百六十多个用户。", id: "me", speaker: .you, offset: 3000)
+        await pause(0.3)
+        final(app, text: "你怎么实现的 160+ 这个数字", id: "q2", offset: 6000)
+        await pause(1.0)
+        XCTAssertEqual(reasoning.requests.count, 2)
+        let second = reasoning.requests[1]
+        XCTAssertTrue(second.input.contains("自建社群 160+ 用户沉淀"))
+        XCTAssertTrue(second.instructions.contains("Never ask the other side what it means"))
+        XCTAssertTrue(second.query.semantic.contains("Previous question: 谈谈你的社群运营经历"))
+        await app.shutdown()
+    }
+
     func testEchoMonitorLockFreeAssessMatchesReferenceUnderConcurrentObserve() {
         let rate = SyntheticTalk.rate
         let base: TimeInterval = 100.0
@@ -1091,6 +1270,85 @@ final class LayaCoordinatorTests: XCTestCase {
         XCTAssertEqual(unwrappedA.stopCount, 1)
     }
 
+    /// Filling the pause right after a question ("嗯，好的，我想一下") must not cancel it, and the
+    /// answer starts while you are still talking.
+    @MainActor func testTalkingRightAfterAQuestionKeepsIt() async {
+        var dispatched = 0
+        let gate = LayaTriggerController(predict: { _, _ in try await Task.sleep(nanoseconds: 200_000_000); return 0.95 },
+                                         onTrigger: { _ in dispatched += 1; return true })
+        gate.configure(enabled: true, threshold: 0.8, cooldown: 0)
+        gate.setSpeaking(true, speaker: .them); gate.setSpeaking(false, speaker: .them)
+        gate.submit(.init(text: "请你介绍一下你最近做的一个项目", context: "", speaker: .them, isFinal: true, sourceID: "a"))
+        await pause(0.05)
+        gate.setSpeaking(true, speaker: .you); gate.ownTranscript()
+        await pause(0.8)
+        XCTAssertEqual(dispatched, 1, "dispatched while you are still talking")
+        // Your speech started first; their final transcript arrives a moment later.
+        dispatched = 0; gate.reset(); gate.configure(enabled: true, threshold: 0.8, cooldown: 0)
+        gate.setSpeaking(true, speaker: .them); gate.setSpeaking(false, speaker: .them)
+        await pause(0.3)
+        gate.setSpeaking(true, speaker: .you)
+        await pause(0.5)
+        gate.submit(.init(text: "请你介绍一下你最近做的一个项目", context: "", speaker: .them, isFinal: true, sourceID: "b"))
+        await pause(0.8)
+        XCTAssertEqual(dispatched, 1, "a late final of the question you are filling in after is still answered")
+        // An own transcript without a speech-start event behaves the same.
+        dispatched = 0; gate.reset(); gate.configure(enabled: true, threshold: 0.8, cooldown: 0)
+        gate.submit(.init(text: "Why did you choose RAG?", context: "", speaker: .them, isFinal: true, sourceID: "c"))
+        gate.ownTranscript()
+        await pause(0.8)
+        XCTAssertEqual(dispatched, 1)
+    }
+    /// Starting to talk well after their question means you are answering it yourself.
+    @MainActor func testTalkingLaterStillCancelsAPendingQuestion() async {
+        var dispatched = 0
+        let gate = LayaTriggerController(predict: { _, _ in try await Task.sleep(nanoseconds: 3_600_000_000); return 0.95 },
+                                         onTrigger: { _ in dispatched += 1; return true })
+        gate.configure(enabled: true, threshold: 0.8, cooldown: 0)
+        gate.setSpeaking(true, speaker: .them); gate.setSpeaking(false, speaker: .them)
+        gate.submit(.init(text: "请你介绍一下你最近做的一个项目", context: "", speaker: .them, isFinal: true, sourceID: "a"))
+        await pause(LayaTriggerController.ownSpeechGrace + 0.3)
+        gate.setSpeaking(true, speaker: .you)
+        await pause(0.8)
+        XCTAssertEqual(dispatched, 0)
+    }
+    /// The full path: their question, then you fill the pause at once. The answer is generated
+    /// while you talk and is not delayed until you stop.
+    @MainActor func testFillerRightAfterQuestionStillGetsAnAnswer() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning); await app.start()
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
+        final(app, text: "请你介绍一下你最近做的一个项目", id: "q")
+        await pause(0.05)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        app.receiveMockEvent(.partialTranscript("嗯，好的，这个问题我想一下"), speaker: .you)
+        await pause(1.2)
+        XCTAssertEqual(reasoning.requests.count, 1, "answered while you are still talking")
+        final(app, text: "嗯，好的，这个问题我想一下", id: "me", speaker: .you, offset: 1500)
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        await pause(0.5)
+        XCTAssertEqual(reasoning.requests.count, 1)
+        XCTAssertEqual(app.answers.first?.store.state, .completed)
+        await app.shutdown()
+    }
+    /// GPT-Live-1 path: a reply you begin right after the question is not "already answered".
+    func testOwnReplyRightAfterQuestionIsNotAlreadyAnswered() {
+        let now = Date()
+        func state(ownStartsAfter seconds: Double) -> ConversationState {
+            var state = ConversationState()
+            _ = state.append(.init(id: "q", speaker: .them, text: "请你介绍一下你最近做的一个项目", startMS: 0, endMS: 2000, receivedAt: now))
+            // Your two-second filler started `seconds` after their question arrived.
+            _ = state.append(.init(id: "me", speaker: .you, text: "嗯，好的，这个问题我想一下", startMS: 3000, endMS: 5000,
+                                   receivedAt: now.addingTimeInterval(seconds + 2)))
+            return state
+        }
+        var soon = state(ownStartsAfter: 0.5)
+        XCTAssertNotNil(soon.candidate(speaker: .them, now: now.addingTimeInterval(3), cooldown: 0))
+        var later = state(ownStartsAfter: ConversationState.ownReplyGrace + 1)
+        XCTAssertNil(later.candidate(speaker: .them, now: now.addingTimeInterval(7), cooldown: 0))
+        XCTAssertEqual(later.phase, .answered)
+    }
     @MainActor func testInterruptionReportsWhetherItRetiredAQuestionOrAJudgement() async {
         var events: [LayaGateEvent] = []
         var dispatched = 0
@@ -1098,6 +1356,8 @@ final class LayaCoordinatorTests: XCTestCase {
                                          onTrigger: { _ in dispatched += 1; return true })
         gate.onEvent = { events.append($0) }
         gate.configure(enabled: true, threshold: 0.5, cooldown: 0)
+        // Talking over the other side while it is still speaking interrupts its question.
+        gate.setSpeaking(true, speaker: .them)
         gate.submit(.init(text: "Please introduce your project", context: "", speaker: .them, isFinal: true, sourceID: "a"))
         await pause(0.1)
         XCTAssertTrue(events.contains(.predictionStarted))
@@ -1210,8 +1470,11 @@ final class LayaCoordinatorTests: XCTestCase {
     @MainActor func testOwnSpeechAndManualQuestionInvalidatePendingAutomaticAnswer() async {
         let reasoning = CountingLayaReasoning(), app = make(reasoning)
         await app.start()
+        // You talk over the other side before it has finished.
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
         final(app, text: "How does the deployment process work?")
         app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
         await pause()
         XCTAssertTrue(reasoning.requests.isEmpty)
         app.receiveMockEvent(.speechActivity(false), speaker: .you)
@@ -1378,6 +1641,7 @@ final class LayaCoordinatorTests: XCTestCase {
         let reasoning = CountingLayaReasoning(); reasoning.hold = true
         let app = make(reasoning) { text, context in try await runtime.predict(text: text, context: context) }
         await app.start()
+        app.settings.continuousQuestionPolicy = .separate
         final(app, text: "我做过检索系统、语音助手和数据处理三个项目。", id: "background", speaker: .you)
         let start = Date()
         final(app, text: "第一个项目仔细讲一下吧", id: "first", offset: 2000)

@@ -98,11 +98,15 @@ struct LayaTriggerInput: Equatable, Sendable {
         let throttle: TimeInterval
         let quiet: TimeInterval
         let expiry: TimeInterval
+        /// Talking within this long after the other side stops does not cancel their question.
+        let ownSpeechGrace: TimeInterval
 
-        init(throttle: TimeInterval = 0.35, quiet: TimeInterval = 0.5, expiry: TimeInterval = 25) {
+        init(throttle: TimeInterval = 0.35, quiet: TimeInterval = 0.5, expiry: TimeInterval = 25,
+             ownSpeechGrace: TimeInterval = LayaTriggerController.ownSpeechGrace) {
             self.throttle = Self.valid(throttle, fallback: 0.35)
             self.quiet = Self.valid(quiet, fallback: 0.5)
             self.expiry = Self.valid(expiry, fallback: 25)
+            self.ownSpeechGrace = Self.valid(ownSpeechGrace, fallback: LayaTriggerController.ownSpeechGrace)
         }
 
         fileprivate static func valid(_ value: TimeInterval, fallback: TimeInterval) -> TimeInterval {
@@ -129,6 +133,9 @@ struct LayaTriggerInput: Equatable, Sendable {
         var score: Double?
         var deferred = false
         var trace = PipelineTrace()
+        /// You began talking right after this question ended (a filler while waiting, or the
+        /// start of your answer). That does not cancel it; it is answered anyway.
+        var allowOwnSpeech = false
     }
 
     private struct Flight {
@@ -148,6 +155,14 @@ struct LayaTriggerInput: Equatable, Sendable {
     private var candidate: Candidate?
     private var flight: Flight?
     private var speaking = Set<Speaker>()
+    /// When the other side last stopped speaking.
+    private var otherSpeechEndAt: TimeInterval?
+    /// While you talk: until when a final transcript of their just-finished question is still accepted.
+    private var ownToleranceUntil: TimeInterval?
+    /// Default grace: talking within this long after the other side stops does not cancel their question.
+    nonisolated static let ownSpeechGrace: TimeInterval = 3
+    /// Extra time for their final transcript to arrive after you started talking.
+    static let finalTranscriptLag: TimeInterval = 3
     private var lastActivityAt: TimeInterval = 0
     private var lastSpeechEndAt: TimeInterval?
     private var lastPredictionAt: TimeInterval?
@@ -193,15 +208,13 @@ struct LayaTriggerInput: Equatable, Sendable {
         guard enabled else { wait(.disabled); return }
         let key = Self.key(for: input.text)
         guard !key.isEmpty else { wait(.emptyInput); return }
-        if input.speaker == .you {
-            // A transcript can arrive without a separate speech-start notification.
-            invalidateCurrent(rememberCurrent: true)
-            wait(.ownTranscript)
-            return
-        }
+        if input.speaker == .you { ownTranscript(); return }
+        let now0 = Self.now
+        let tolerated = ownToleranceUntil.map { now0 <= $0 } ?? false
         // Preserve stale replay protection. Only a distinct committed ASR event can
         // distinguish a genuinely repeated question from the suppressed old delivery.
-        guard !speaking.contains(.you) else {
+        // Their question finishing just as you start talking is still accepted.
+        guard !speaking.contains(.you) || (tolerated && input.isFinal) else {
             if input.isFinal, let sourceID = input.sourceID {
                 suppressedSources[key] = sourceID
                 if suppressedSources.count > 128, let oldest = suppressedSources.keys.first { suppressedSources.removeValue(forKey: oldest) }
@@ -225,7 +238,8 @@ struct LayaTriggerInput: Equatable, Sendable {
                 candidate = Candidate(id: nextID, key: key, input: input,
                                       expiresAt: current.expiresAt,
                                       finalAt: current.finalAt ?? (input.isFinal ? now : nil),
-                                      deferred: current.deferred, trace: current.trace)
+                                      deferred: current.deferred, trace: current.trace,
+                                      allowOwnSpeech: current.allowOwnSpeech || (speaking.contains(.you) && tolerated))
                 if input.isFinal && !current.input.isFinal {
                     candidate?.trace.mark(.asrStable, at: now)
                     if let trace = candidate?.trace { onTrace?(trace, .asrStable) }
@@ -259,7 +273,8 @@ struct LayaTriggerInput: Equatable, Sendable {
         nextID &+= 1
         candidate = Candidate(id: nextID, key: key, input: input,
                               expiresAt: now + timing.expiry, finalAt: input.isFinal ? now : nil,
-                              trace: PipelineTrace(origin: min(now, lastSpeechEndAt ?? now)))
+                              trace: PipelineTrace(origin: min(now, lastSpeechEndAt ?? now)),
+                              allowOwnSpeech: speaking.contains(.you) && tolerated)
         if input.isFinal {
             candidate?.trace.mark(.asrStable, at: now)
             if let trace = candidate?.trace { onTrace?(trace, .asrStable) }
@@ -281,7 +296,19 @@ struct LayaTriggerInput: Equatable, Sendable {
         else { changed = speaking.remove(speaker) != nil }
         guard changed else { return }
         if active { lastSpeechEndAt = nil }
-        if active, speaker == .you { invalidateCurrent(rememberCurrent: true); wait(.ownSpeech) }
+        if !active, speaker != .you { otherSpeechEndAt = Self.now }
+        if active, speaker == .you {
+            if let until = toleranceUntil() {
+                // Right after their question: a filler or the start of an answer keeps it alive.
+                ownToleranceUntil = until
+                candidate?.allowOwnSpeech = true
+                wait(.ownSpeech)
+            } else {
+                ownToleranceUntil = nil
+                invalidateCurrent(rememberCurrent: true); wait(.ownSpeech)
+            }
+        }
+        if !active, speaker == .you { ownToleranceUntil = nil }
         lastActivityAt = Self.now
         dispatchTask?.cancel()
         dispatchTask = nil
@@ -291,6 +318,8 @@ struct LayaTriggerInput: Equatable, Sendable {
             if let trace = candidate?.trace { onTrace?(trace, .questionEnd) }
             attemptDispatch()
         }
+        // A question kept through your talking does not wait for you to stop.
+        else if speaker == .you, candidate?.allowOwnSpeech == true { attemptDispatch() }
     }
 
     /// Ends the current lifecycle, including deduplication and cooldown history.
@@ -301,6 +330,8 @@ struct LayaTriggerInput: Equatable, Sendable {
         handled.removeAll()
         handledOrder.removeAll()
         speaking.removeAll()
+        otherSpeechEndAt = nil
+        ownToleranceUntil = nil
         lastActivityAt = 0
         lastSpeechEndAt = nil
         lastPredictionAt = nil
@@ -311,6 +342,36 @@ struct LayaTriggerInput: Equatable, Sendable {
     /// Retires both the visible revision and any older prediction still completing.
     func manualIntervention() {
         invalidateCurrent(rememberCurrent: true)
+    }
+
+    /// Your own words were transcribed. Right after the other side's question they do not
+    /// cancel it; later they mean you are answering by yourself.
+    func ownTranscript() {
+        if candidate?.allowOwnSpeech == true || (ownToleranceUntil.map { Self.now <= $0 } ?? false) {
+            wait(.ownTranscript); return
+        }
+        if !speaking.contains(.you), let until = toleranceUntil() {
+            // A transcript can arrive without a separate speech-start notification.
+            ownToleranceUntil = until
+            candidate?.allowOwnSpeech = true
+            wait(.ownTranscript); return
+        }
+        invalidateCurrent(rememberCurrent: true)
+        wait(.ownTranscript)
+    }
+
+    /// The other side has stopped (or its question is already final) within the grace period:
+    /// returns how long their final transcript is still accepted. Nil while they are still talking.
+    private func toleranceUntil() -> TimeInterval? {
+        guard !speaking.contains(where: { $0 != .you }) else { return nil }
+        let questionFinal = candidate.flatMap { $0.input.speaker == .you ? nil : $0.finalAt }
+        guard let reference = [otherSpeechEndAt, questionFinal].compactMap({ $0 }).max(),
+              Self.now - reference <= timing.ownSpeechGrace else { return nil }
+        return reference + timing.ownSpeechGrace + Self.finalTranscriptLag
+    }
+    /// You talking blocks this candidate unless it was allowed to continue.
+    private func ownSpeechBlocks(_ current: Candidate?) -> Bool {
+        speaking.contains(.you) && current?.allowOwnSpeech != true
     }
 
     /// Call when answer generation becomes available. A busy callback is never polled
@@ -389,7 +450,7 @@ struct LayaTriggerInput: Equatable, Sendable {
     }
 
     private func startPredictionIfNeeded() {
-        guard !expireIfNeeded(), enabled, !speaking.contains(.you),
+        guard !expireIfNeeded(), enabled, !ownSpeechBlocks(candidate),
               var current = candidate, !current.attempted, predictionTask == nil else { return }
         let interval = current.input.isFinal ? min(timing.throttle, 0.05) : timing.throttle
         let delay = (lastPredictionAt.map { $0 + interval } ?? Self.now) - Self.now
@@ -436,7 +497,7 @@ struct LayaTriggerInput: Equatable, Sendable {
         flight = nil
         predictionTask = nil
         guard !cancelled, generation == request.generation, enabled,
-              !speaking.contains(.you), !expireIfNeeded(), candidate?.id == request.id else {
+              !ownSpeechBlocks(candidate), !expireIfNeeded(), candidate?.id == request.id else {
             onEvent?(.discarded)
             startPredictionIfNeeded()
             return
@@ -467,11 +528,12 @@ struct LayaTriggerInput: Equatable, Sendable {
         dispatchTask?.cancel()
         dispatchTask = nil
         guard !expireIfNeeded(), enabled, !dispatching, let current = candidate else { return }
-        guard !speaking.contains(.you), current.input.speaker != .you else { wait(.ownSpeech); return }
+        guard !ownSpeechBlocks(current), current.input.speaker != .you else { wait(.ownSpeech); return }
         guard let score = current.score else { if current.attempted { wait(.predicting) }; return }
         guard LayaTriggerDecision.evaluate(score: score, threshold: threshold).shouldTrigger else { wait(.belowThreshold); return }
         guard current.input.isFinal, let finalAt = current.finalAt else { wait(.waitingFinal); return }
-        guard speaking.isEmpty else { wait(.waitingSilence); return }
+        // Only the other side still talking delays it; your own talking was already allowed above.
+        guard speaking.subtracting([.you]).isEmpty else { wait(.waitingSilence); return }
         guard !current.deferred else { wait(.busy); return }
         guard !handled.contains(current.key) else { wait(.duplicate); return }
         // A final ASR segment already includes endpoint silence. Requests with a

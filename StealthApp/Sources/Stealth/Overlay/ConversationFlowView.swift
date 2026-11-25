@@ -63,8 +63,10 @@ struct ConversationFlowView: View {
                 LCScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
                         if coordinator.answers.isEmpty {
-                            Text(b("Ask above, or start listening to receive suggestions.", "在上方输入问题，或开始监听以获取回答。"))
-                                .font(.callout).foregroundStyle(.secondary).padding(.vertical, 8)
+                            LCEmptyState(systemImage: "sparkles", title: b("Answers appear here", "回答会出现在这里"),
+                                         message: b("Ask above, or start listening to receive suggestions.", "在上方输入问题，或开始监听以获取回答。"),
+                                         compact: true)
+                                .padding(.vertical, 8)
                         }
                         ForEach(coordinator.answers) { record in
                             AnswerMessageView(record: record, store: record.store, language: coordinator.settings.language, fontSize: fontSize)
@@ -98,7 +100,8 @@ struct ConversationFlowView: View {
                 }
             }
             .onPreferenceChange(ConversationContentHeightKey.self, perform: onContentHeight)
-            .onAppear { scrollController.scheduleScrollToBottom(proxy: proxy) }
+            // The empty state reads from the top; bottom-anchoring it would cut off its title.
+            .onAppear { if !coordinator.answers.isEmpty { scrollController.scheduleScrollToBottom(proxy: proxy) } }
             .onDisappear { scrollController.cancel() }
             .onChange(of: coordinator.answerRevision) { _, _ in
                 if scrollController.state.followsLatest {
@@ -185,6 +188,10 @@ struct AnswerMessageView: View {
                 HStack(spacing: 6) {
                     LCPill(text: record.automatic ? b("Automatic suggestion", "自动建议") : b("Manual question", "手动提问"),
                            tone: record.automatic ? .pink : .accent, systemImage: record.automatic ? "waveform" : "text.bubble")
+                    if record.merged {
+                        LCPill(text: b("Addition merged", "已合并补充"), tone: .neutral, systemImage: "arrow.triangle.merge")
+                            .accessibilityIdentifier("answer-merged")
+                    }
                     Spacer()
                     Text(record.createdAt, style: .time).font(.caption2).foregroundStyle(.secondary).monospacedDigit()
                 }
@@ -195,14 +202,15 @@ struct AnswerMessageView: View {
                 .overlay(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous).strokeBorder(LC.accent.opacity(0.12)))
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 6) {
-                    if store.isLoading { ProgressView().controlSize(.mini) }
                     LCPill(text: status, tone: statusTone)
                     Spacer()
                     if !store.text.isEmpty {
-                        Button(t("Copy")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(AnswerEmphasis.plainText(store.text, streaming: store.isLoading), forType: .string) }
-                            .font(.caption2).buttonStyle(.borderless)
+                        CopyAnswerButton(label: t("Copy"), copiedLabel: b("Copied", "已复制")) {
+                            AnswerEmphasis.plainText(store.text, streaming: store.isLoading)
+                        }
                     }
                 }
+                if store.isLoading { LCProgressLine().transition(.opacity) }
                 if store.isLoading && store.text.isEmpty { Text(t(store.waitingMessage)).font(.caption).foregroundStyle(.secondary) }
                 ForEach(Array(SuggestionParser.sections(store.text).enumerated()), id: \.offset) { _, section in
                     if Self.isEvidence(section.title) {
@@ -218,17 +226,17 @@ struct AnswerMessageView: View {
                 if let warning = store.warning { Text(t(warning)).font(.caption).foregroundStyle(LC.warning) }
                 if let error = store.error { Text(t(error)).font(.caption).foregroundStyle(LC.danger).textSelection(.enabled) }
                 if !store.citedSources.isEmpty {
-                    DisclosureGroup(t("Sources")) {
-                        VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(t("Sources")).font(LC.Typo.micro).foregroundStyle(.secondary)
+                        LCFlowLayout(spacing: 6) {
                             ForEach(store.citedSources, id: \.index) { citation in
-                                Text("[S\(citation.index)] \(citation.source.chunk.displayLabel(language: language))")
-                                    .font(.caption.bold()).textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                CitationChip(index: citation.index, chunk: citation.source.chunk, language: language)
                             }
-                        }.padding(.top, 4)
-                    }.font(.caption)
+                        }
+                    }.padding(.top, 2)
                 }
             }.padding(.horizontal, 10)
+            .lcAnimation(LC.Motion.standard, value: store.isLoading)
         }.accessibilityIdentifier("answer-card-" + record.id.uuidString)
     }
 }
@@ -306,11 +314,15 @@ struct HighlightedAnswerText: NSViewRepresentable {
         context.coordinator.lastKey = (content, fontSize, streaming, isDark)
         let parsed = AnswerEmphasis.parsed(content, streaming: streaming)
         let result = NSMutableAttributedString(string: "")
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = (fontSize * 0.32).rounded()
+        paragraph.paragraphSpacing = (fontSize * 0.45).rounded()
         for run in parsed.runs {
             let strong = run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
             var attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: fontSize, weight: strong ? .semibold : .regular),
-                .foregroundColor: NSColor.labelColor
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraph
             ]
             if run.inlinePresentationIntent?.contains(.code) == true {
                 attributes[.font] = NSFont.monospacedSystemFont(ofSize: fontSize, weight: strong ? .semibold : .regular)
@@ -324,6 +336,14 @@ struct HighlightedAnswerText: NSViewRepresentable {
             let phrase = String(parsed[run.range].characters)
             if strong { attributes[CrayonLayoutManager.mark] = isDark }
             result.append(NSAttributedString(string: phrase, attributes: attributes))
+        }
+        if streaming && result.length > 0 {
+            // A thin caret marks where text is still arriving.
+            result.append(NSAttributedString(string: " ▍", attributes: [
+                .font: NSFont.systemFont(ofSize: fontSize * 0.9, weight: .light),
+                .foregroundColor: NSColor(LC.accent).withAlphaComponent(0.7),
+                .paragraphStyle: paragraph
+            ]))
         }
         if view.textStorage?.isEqual(to: result) != true {
             view.textStorage?.setAttributedString(result)
@@ -403,5 +423,70 @@ private final class CrayonLayoutManager: NSLayoutManager {
         textures.totalCostLimit = 4 * 1024 * 1024
         textures.setObject(image, forKey: key, cost: w*h*4)
         return image
+    }
+}
+
+
+/// Copies the answer and confirms with a checkmark for a moment.
+private struct CopyAnswerButton: View {
+    let label: String
+    let copiedLabel: String
+    let text: () -> String
+    @State private var copied = false
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text(), forType: .string)
+            copied = true
+            Task { try? await Task.sleep(nanoseconds: 1_400_000_000); copied = false }
+        } label: {
+            Label(copied ? copiedLabel : label, systemImage: copied ? "checkmark" : "doc.on.doc")
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(LCButtonStyle(kind: copied ? .ghost : .secondary, compact: true))
+        .lcAnimation(LC.Motion.quick, value: copied)
+        .help(label)
+    }
+}
+
+/// [S1] source pill; click shows the cited excerpt.
+private struct CitationChip: View {
+    let index: Int
+    let chunk: SourceChunk
+    let language: AppLanguage
+    @State private var showing = false
+    var body: some View {
+        Button { showing.toggle() } label: {
+            HStack(spacing: 5) {
+                Text("S\(index)").font(LC.Typo.micro.weight(.bold)).foregroundStyle(LC.accent)
+                Text(chunk.documentName).font(LC.Typo.caption).lineLimit(1).truncationMode(.middle)
+                if let page = chunk.page {
+                    Text(language.usesChinese ? "第 \(page) 页" : "p.\(page)").font(LC.Typo.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 8).frame(height: 22)
+            .frame(maxWidth: 240)
+            .background(LC.fillSubtle, in: Capsule())
+            .overlay(Capsule().strokeBorder(LC.hairline))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .lcHoverable(radius: 11)
+        .help(chunk.displayLabel(language: language))
+        .accessibilityLabel("S\(index) " + chunk.displayLabel(language: language))
+        .popover(isPresented: $showing, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    LCPill(text: "S\(index)", tone: .accent)
+                    Text(chunk.displayLabel(language: language)).font(LC.Typo.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+                LCScrollView {
+                    Text(chunk.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .font(LC.Typo.callout).lineSpacing(3).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(maxHeight: 220)
+            }
+            .padding(14).frame(width: 340)
+        }
     }
 }

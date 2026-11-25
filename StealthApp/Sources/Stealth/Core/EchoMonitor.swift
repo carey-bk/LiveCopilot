@@ -16,6 +16,8 @@ final class EchoMonitor: @unchecked Sendable {
 
     struct Assessment: Equatable {
         var echoMS = 0, ownMS = 0, unclearMS = 0
+        /// Of `ownMS`, frames far louder than any replay the far end could produce (see `clearOwnExcessDB`).
+        var clearOwnMS = 0
         /// Any system audio above the activity level near the assessed interval.
         var systemActive = false
         /// No system audio has arrived for a second: there is nothing to compare with.
@@ -26,7 +28,22 @@ final class EchoMonitor: @unchecked Sendable {
         /// Enough microphone speech that the far end cannot explain (a silent far end included),
         /// and not outweighed by replay, or no reference at all. Scattered misjudged frames in a long
         /// replay therefore do not add up to the user's speech.
-        var isOwn: Bool { referenceAbsent || (ownMS >= EchoMonitor.ownEvidenceMS && 2 * ownMS >= echoMS) }
+        ///
+        /// Once this room's speaker-to-microphone path is known and the far end is audible, replay is
+        /// proven possible here, so own evidence must at least match the replay: a third of loud
+        /// frames in a replayed question (speaker and room colouring) no longer passes as the user.
+        ///
+        /// Talking over the far end (double talk) leaves its replay in every pause between your
+        /// syllables, so the ratio alone held real speech until the far end stopped. Frames far
+        /// louder than the predicted replay are the user, whatever the ratio.
+        var isOwn: Bool {
+            if referenceAbsent { return true }
+            guard ownMS >= EchoMonitor.ownEvidenceMS else { return false }
+            if clearOwnMS >= EchoMonitor.ownEvidenceMS { return true }
+            return systemActive && echoPathKnown ? ownMS >= echoMS : 2 * ownMS >= echoMS
+        }
+        /// Own evidence clearly outweighing replay; required to keep words that repeat the far end.
+        var isStronglyOwn: Bool { referenceAbsent || (ownMS >= EchoMonitor.ownEvidenceMS && ownMS >= 2 * echoMS) }
         /// Mostly far-end replay.
         var isEcho: Bool { !referenceAbsent && systemActive && echoMS >= EchoMonitor.echoEvidenceMS && echoMS > 2 * ownMS }
         var verdict: Verdict { isOwn ? .own : isEcho ? .echo : .unclear }
@@ -50,6 +67,12 @@ final class EchoMonitor: @unchecked Sendable {
         var bestCorrelationPercent: Int?, bestLagMS: Int?
         /// Largest delivery delay after capture, per source: how late each stream reaches the app.
         var systemDelayMSMax = 0, micDelayMSMax = 0
+        /// Speech-level microphone time by verdict, and why frames counted as the user: the far end
+        /// was silent, or the frame was louder than the predicted replay.
+        var echoFrameMS = 0, unclearFrameMS = 0, ownSilentFarEndMS = 0, ownLouderMS = 0
+        /// Of `ownLouderMS`, by how far the frame exceeded the predicted replay: 4–8 dB, 8–12 dB,
+        /// and 12 dB or more (clearly the user). Shows how far double talk and replay separate.
+        var ownExcess4to8MS = 0, ownExcess8to12MS = 0, ownClearMS = 0
     }
 
     static let frameSeconds = 0.02
@@ -71,11 +94,21 @@ final class EchoMonitor: @unchecked Sendable {
     static let systemActiveDB: Float = -50
     /// Microphone frames this far above the predicted echo are the user; at most this far, echo.
     static let ownExcessDB: Float = 4
+    /// At least this far above the predicted echo is beyond what room colouring of a replay
+    /// reaches; such frames are the user even while the far end talks.
+    static let clearOwnExcessDB: Float = 12
     static let echoExcessDB: Float = 2
     static let reverb = 0.4
     static let reverbDecayDBPerSecond: Float = 75
 
-    private struct Frame { let sequence: UInt64; let time: TimeInterval; let db: Float; var classified = false; var verdict: Verdict? }
+    private struct Frame {
+        let sequence: UInt64; let time: TimeInterval; let db: Float
+        var classified = false; var verdict: Verdict?
+        /// Own because the far end was silent at every plausible delay (diagnostics only).
+        var farEndSilent = false
+        /// How far an own frame exceeded the predicted echo, when the far end was audible.
+        var excess: Float?
+    }
     private struct Track {
         var frames: [Frame] = []
         var sum = 0.0, count = 0
@@ -85,6 +118,9 @@ final class EchoMonitor: @unchecked Sendable {
     private var filter = (0.0, 0.0, 0.0, 0.0, 0.0)
 
     private let lock = NSLock()
+    /// Serializes `assess` callers only. Without it, an overlapping caller could commit an older
+    /// snapshot's floor, path and votes over a newer one. Capture threads never take this lock.
+    private let classifyLock = NSLock()
     private var sessionGeneration: UInt64 = 0
     private var nextFrameSequence: UInt64 = 0
     private var frameSamples = 320
@@ -159,6 +195,7 @@ final class EchoMonitor: @unchecked Sendable {
     /// Microphone verdict durations for frames captured in `start...end`, judged only as far as
     /// the system reference has arrived (it is delivered later than the microphone).
     func assess(from start: TimeInterval, to requestedEnd: TimeInterval, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Assessment {
+        classifyLock.lock(); defer { classifyLock.unlock() }
         // 1. Short lock: snapshot value-type state so real-time audio threads are never blocked
         //    by the multi-lag correlation loops below.
         var state = lock.withLock {
@@ -194,8 +231,26 @@ final class EchoMonitor: @unchecked Sendable {
                     if state.micFrames[snapIndex].sequence == seq,
                        !mic.frames[index].classified,
                        state.micFrames[snapIndex].classified {
+                        let frame = state.micFrames[snapIndex]
                         mic.frames[index].classified = true
-                        mic.frames[index].verdict = state.micFrames[snapIndex].verdict
+                        mic.frames[index].verdict = frame.verdict
+                        mic.frames[index].farEndSilent = frame.farEndSilent
+                        mic.frames[index].excess = frame.excess
+                        let ms = Int(Self.frameSeconds * 1000)
+                        switch frame.verdict {
+                        case .echo: counters.echoFrameMS += ms
+                        case .unclear: counters.unclearFrameMS += ms
+                        case .own:
+                            if frame.farEndSilent { counters.ownSilentFarEndMS += ms } else {
+                                counters.ownLouderMS += ms
+                                if let excess = frame.excess {
+                                    if excess >= Self.clearOwnExcessDB { counters.ownClearMS += ms }
+                                    else if excess >= 8 { counters.ownExcess8to12MS += ms }
+                                    else { counters.ownExcess4to8MS += ms }
+                                }
+                            }
+                        case nil: break
+                        }
                     }
                 }
                 floorDB = state.floorDB
@@ -269,7 +324,9 @@ final class EchoMonitor: @unchecked Sendable {
             for frame in micFrames where frame.time >= start && frame.time <= end {
                 switch frame.verdict {
                 case .echo: result.echoMS += frameMS
-                case .own: result.ownMS += frameMS
+                case .own:
+                    result.ownMS += frameMS
+                    if (frame.excess ?? 0) >= EchoMonitor.clearOwnExcessDB { result.clearOwnMS += frameMS }
                 case .unclear: result.unclearMS += frameMS
                 case nil: break
                 }
@@ -282,13 +339,16 @@ final class EchoMonitor: @unchecked Sendable {
             let frame = micFrames[index]
             let t = frame.time
             // Far end silent at every plausible delay (reverberation included): nothing to echo.
-            guard systemPeak(from: t - (EchoMonitor.lags.last ?? 0) - EchoMonitor.reverb, to: t - (EchoMonitor.lags.first ?? 0)) > EchoMonitor.systemActiveDB else { return .own }
+            guard systemPeak(from: t - (EchoMonitor.lags.last ?? 0) - EchoMonitor.reverb, to: t - (EchoMonitor.lags.first ?? 0)) > EchoMonitor.systemActiveDB else {
+                micFrames[index].farEndSilent = true
+                return .own
+            }
             if index % 5 == 0 { learnPath(at: index) }
             if let path, t - path.updatedAt < EchoMonitor.pathLifetime {
                 // Energy the far end can explain at this delay, with a reverberation decay. Speech
                 // clearly louder than that is the user, including over the far end (double talk).
                 let excess = frame.db - (predictedEcho(at: t - path.lag) + path.gainDB)
-                if excess > EchoMonitor.ownExcessDB { return .own }
+                if excess > EchoMonitor.ownExcessDB { micFrames[index].excess = excess; return .own }
                 return excess <= EchoMonitor.echoExcessDB ? .echo : .unclear
             }
             // No echo path observed yet (for example headphones): only a strong contour match decides.
@@ -318,7 +378,9 @@ final class EchoMonitor: @unchecked Sendable {
             // A path needs repeated matches at one delay (±20 ms), most of the recent ones; unrelated
             // speech scatters its lags.
             let buckets = lagVotes.map { Int(($0 * 50).rounded()) }
-            guard let mode = Set(buckets).max(by: { a, b in
+            // Candidates in ascending order so a tie always resolves to the shorter delay: a Set's
+            // iteration order is randomized per instance, which made the learned delay vary.
+            guard let mode = Set(buckets).sorted().max(by: { a, b in
                 buckets.filter { abs($0 - a) <= 1 }.count < buckets.filter { abs($0 - b) <= 1 }.count
             }) else { return }
             let agreeing = buckets.filter { abs($0 - mode) <= 1 }.count
@@ -387,6 +449,27 @@ final class EchoMonitor: @unchecked Sendable {
     }
 }
 
+extension EchoMonitor.Counters {
+    /// Journal records written before a counter existed still decode; missing counters read as zero.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func int(_ key: CodingKeys) throws -> Int { try c.decodeIfPresent(Int.self, forKey: key) ?? 0 }
+        self.init()
+        heldTurns = try int(.heldTurns); confirmedTurns = try int(.confirmedTurns)
+        ignoredFinals = try int(.ignoredFinals); unclearFinals = try int(.unclearFinals)
+        textEchoFinals = try int(.textEchoFinals); textOwnConfirms = try int(.textOwnConfirms)
+        confirmedTurnEchoFinals = try int(.confirmedTurnEchoFinals); confirmMSMax = try int(.confirmMSMax)
+        pathLagMS = try c.decodeIfPresent(Int.self, forKey: .pathLagMS)
+        pathGainDB = try c.decodeIfPresent(Int.self, forKey: .pathGainDB)
+        bestCorrelationPercent = try c.decodeIfPresent(Int.self, forKey: .bestCorrelationPercent)
+        bestLagMS = try c.decodeIfPresent(Int.self, forKey: .bestLagMS)
+        systemDelayMSMax = try int(.systemDelayMSMax); micDelayMSMax = try int(.micDelayMSMax)
+        echoFrameMS = try int(.echoFrameMS); unclearFrameMS = try int(.unclearFrameMS)
+        ownSilentFarEndMS = try int(.ownSilentFarEndMS); ownLouderMS = try int(.ownLouderMS)
+        ownExcess4to8MS = try int(.ownExcess4to8MS); ownExcess8to12MS = try int(.ownExcess8to12MS); ownClearMS = try int(.ownClearMS)
+    }
+}
+
 /// How much of a microphone transcript repeats what the far end's recognizer heard. Only used
 /// together with timing: the far end must have been audible during the microphone turn, and
 /// acoustic evidence of the user's own voice always wins, so a user who repeats or quotes the other
@@ -398,11 +481,12 @@ enum EchoText {
     static let ownSimilarity = 0.3
     static let minimumOwnTokens = 6
 
-    /// CJK text compares character bigrams; other text compares lowercased words.
+    /// Chinese and Japanese text (no spaces between words) compares character bigrams; other
+    /// text, Korean included, compares lowercased words.
     static func tokens(_ text: String) -> [String] {
         let kept = text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) || $0 == " " }
         let cleaned = String(String.UnicodeScalarView(kept))
-        let cjk = cleaned.unicodeScalars.filter { (0x3400...0x9FFF).contains($0.value) || (0xF900...0xFAFF).contains($0.value) }
+        let cjk = cleaned.unicodeScalars.filter { (0x3400...0x9FFF).contains($0.value) || (0xF900...0xFAFF).contains($0.value) || (0x3040...0x30FF).contains($0.value) }
         if cjk.count * 2 >= cleaned.unicodeScalars.filter({ $0 != " " }).count, cjk.count >= 2 {
             let characters = Array(cleaned.replacingOccurrences(of: " ", with: ""))
             return characters.count < 2 ? characters.map(String.init) : (0..<(characters.count - 1)).map { String(characters[$0...$0 + 1]) }

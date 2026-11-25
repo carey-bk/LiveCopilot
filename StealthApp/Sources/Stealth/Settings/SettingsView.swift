@@ -18,7 +18,11 @@ struct SettingsView: View {
     @ObservedObject var updates: AppUpdateController
     @StateObject var permissions: OnboardingPermissions
     @State var showDiagnostics = false
+    @StateObject var stars = GitHubStarCount()
+    /// Set 5 s after a successful import; hides the finished progress bar and status line.
+    @State var importStatusCollapsed = false
     @State var page = SettingsPage.overview
+    @Namespace var sidebarSelection
     @State var serviceRole = 0
     @State var baseURL = ""
     @State var apiPath = ""
@@ -33,31 +37,42 @@ struct SettingsView: View {
     func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, coordinator.settings.language) }
     var locked: Bool { coordinator.isRunning || coordinator.isTransitioning }
 
+    static let pageInset: CGFloat = 28
+
     var body: some View {
         HStack(spacing: 0) {
-            sidebar
-            Rectangle().fill(LC.hairline).frame(width: 1).ignoresSafeArea(edges: .top)
+            sidebarPanel
             VStack(alignment: .leading, spacing: 18) {
-                UpdateBanner(updates: updates, language: coordinator.settings.language, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
-                LCPageHeader(breadcrumb: ["LiveCopilot", groupTitle(page.group)], title: pageTitle(page), subtitle: pageSubtitle(page))
+                VStack(alignment: .leading, spacing: 18) {
+                    UpdateBanner(updates: updates, language: coordinator.settings.language, isBusy: coordinator.isRunning || coordinator.isTransitioning || coordinator.answerIsRunning)
+                    HStack(alignment: .top) {
+                        LCPageHeader(breadcrumb: ["LiveCopilot", groupTitle(page.group)], title: pageTitle(page), subtitle: pageSubtitle(page))
+                        Spacer(minLength: 12)
+                        if page == .overview { guideButtons }
+                    }
+                }.padding(.horizontal, Self.pageInset)
+                // Scrolling pages span the full detail width and inset their content instead, so the
+                // overlay scroll bar runs along the window edge rather than over cards and controls.
                 switch page {
-                case .overview: LCScrollView { overview }
-                case .general: LCScrollView { general }
-                case .modesAndScenarios: LCScrollView { modesAndScenarios }
-                case .services: LCScrollView { services }
+                case .overview: LCScrollView(horizontalInset: Self.pageInset) { overview }
+                case .general: LCScrollView(horizontalInset: Self.pageInset) { general }
+                case .modesAndScenarios: LCScrollView(horizontalInset: Self.pageInset) { modesAndScenarios }
+                case .services: LCScrollView(horizontalInset: Self.pageInset) { services }
                 case .knowledge: knowledge
                 case .history: HistoryView(coordinator: coordinator).lcCard(padding: 0).clipShape(RoundedRectangle(cornerRadius: LC.Radius.card, style: .continuous))
-                case .shortcuts: LCScrollView { shortcuts }
-                case .about: LCScrollView { about }
+                        .padding(.horizontal, Self.pageInset)
+                case .shortcuts: LCScrollView(horizontalInset: Self.pageInset) { shortcuts }
+                case .about: LCScrollView(horizontalInset: Self.pageInset) { about }
                 }
-            }.padding(.horizontal, 28).padding(.top, 24).padding(.bottom, page == .history ? 20 : 0)
+            }.padding(.top, 24).padding(.bottom, page == .history ? 20 : 0)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background { LC.canvas.ignoresSafeArea() }
         }
         .frame(minWidth: 860, idealWidth: 920, minHeight: 620, idealHeight: 700)
-        .background { LC.canvas.ignoresSafeArea() }
         .toggleStyle(TrailingSwitchStyle())
         .environment(\.locale, coordinator.settings.language.locale)
         .onAppear { loadCustomDraft(); answerInstructionsDraft = coordinator.settings.additionalAnswerInstructions }
+        .task { await coordinator.refreshModelReadiness() }
         .onChange(of: updates.managementRequest) { _, _ in page = .about }
         .sheet(isPresented: $showDiagnostics) { DiagnosticFeedbackView(settings: coordinator.settings) }
         .sheet(isPresented: $showOpenAIKey) {
@@ -69,10 +84,53 @@ struct SettingsView: View {
         }
     }
 
+    /// macOS 26 and later: the sidebar floats as a Liquid Glass pane over the page canvas, as in
+    /// System Settings. Earlier systems, Intel Macs and Reduce Transparency keep the sidebar material.
+    @ViewBuilder private var sidebarPanel: some View {
+        if #available(macOS 26, *), !WindowBackgroundView.usesLightweightSurface() {
+            // The window buttons and the wordmark stay on the plain canvas; the glass panel starts
+            // below the wordmark so it never runs under the traffic lights.
+            VStack(alignment: .leading, spacing: 10 + Self.brandLift) {
+                sidebarBrand
+                sidebarNavigation
+                    .padding(.top, 8)
+                    .background {
+                        Rectangle().fill(.clear)
+                            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    }
+                    .padding([.horizontal, .bottom], 8)
+            }
+            .frame(width: 208)
+            .modifier(SidebarKeys(step: step))
+            .background { LC.canvas.ignoresSafeArea() }
+        } else {
+            sidebar
+                .background { LCVisualEffect(material: .sidebar).ignoresSafeArea() }
+                // Drawn over the sidebar material. A separate 1 pt column had no backing in this
+                // translucent window, so the desktop showed through as a dark line.
+                .overlay(alignment: .trailing) {
+                    Rectangle().fill(LC.hairline).frame(width: 0.5).ignoresSafeArea(edges: .top).allowsHitTesting(false)
+                }
+        }
+    }
+
     private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 18 + Self.brandLift) {
+            sidebarBrand
+            sidebarNavigation
+        }.frame(width: 208)
+        .modifier(SidebarKeys(step: step))
+    }
+
+    /// The wordmark sits on the page breadcrumb's line; the navigation below keeps its position.
+    private static let brandLift: CGFloat = 22
+    private var sidebarBrand: some View {
+        AppBrandTitle(iconSize: 26, titleSize: 18)
+            .padding(.horizontal, 18).padding(.top, 40 - Self.brandLift)
+    }
+
+    private var sidebarNavigation: some View {
         VStack(alignment: .leading, spacing: 18) {
-            AppBrandTitle(iconSize: 26, titleSize: 18)
-                .padding(.horizontal, 18).padding(.top, 40)
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(SettingsPage.Group.allCases, id: \.self) { group in
                     VStack(alignment: .leading, spacing: 3) {
@@ -80,19 +138,28 @@ struct SettingsView: View {
                         ForEach(SettingsPage.allCases.filter { $0.group == group }) { item in
                             Button { page = item } label: {
                                 LCSidebarItem(title: pageTitle(item), systemImage: item.icon, selected: page == item,
-                                              badge: item == .knowledge && !coordinator.knowledgeDocuments.isEmpty ? "\(coordinator.knowledgeDocuments.count)" : nil)
+                                              badge: item == .knowledge && !coordinator.knowledgeDocuments.isEmpty ? "\(coordinator.knowledgeDocuments.count)" : nil,
+                                              selection: sidebarSelection)
                             }.buttonStyle(.plain).accessibilityIdentifier("settings-" + item.id)
                         }
                     }
                 }
             }.padding(.horizontal, 10)
+            .lcAnimation(LC.Motion.standard, value: page)
             Spacer()
             HStack(spacing: 8) {
                 LCStatusDot(tone: coordinator.isRunning ? .success : .neutral, pulsing: coordinator.isRunning)
                 Text(coordinator.isRunning ? b("Listening", "正在监听") : (coordinator.isMock ? t("MOCK — no API calls") : AppInfo.display))
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }.padding(18)
-        }.frame(width: 208)
+        }
+    }
+
+    private func step(_ offset: Int) -> KeyPress.Result {
+        let pages = SettingsPage.allCases
+        guard let index = pages.firstIndex(of: page), pages.indices.contains(index + offset) else { return .ignored }
+        page = pages[index + offset]
+        return .handled
     }
 
     func pageTitle(_ page: SettingsPage) -> String { page == .overview ? b("Overview", "概览") : t(page.rawValue) }
@@ -139,5 +206,17 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .shortcuts: return "keyboard"
         case .about: return "info.circle"
         }
+    }
+}
+
+/// Up and down arrows move between pages once the sidebar has keyboard focus.
+private struct SidebarKeys: ViewModifier {
+    let step: (Int) -> KeyPress.Result
+    func body(content: Content) -> some View {
+        content
+            .focusable()
+            .focusEffectDisabled()
+            .onKeyPress(.upArrow) { step(-1) }
+            .onKeyPress(.downArrow) { step(1) }
     }
 }

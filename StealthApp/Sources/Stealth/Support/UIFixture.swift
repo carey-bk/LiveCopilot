@@ -5,10 +5,11 @@ import Foundation
 /// Debug-only, mock-only launch arguments that put the UI into reproducible states for
 /// before/after screenshot comparison. Content is synthetic; writes stay in the mock data directory.
 ///
-///     --mock --ui-preview --ui-fixture listening|streaming|answered|session|error|notice
+///     --mock --ui-preview --ui-fixture listening|streaming|answered|merged|session|error|notice
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
-///     --ui-settings-page <SettingsPage case name>   --ui-open-history
+///     --ui-tip <OverlayTourState.Step case>   --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-laya-threshold 0.85   --ui-continuous update|separate   --ui-open-history   --ui-answer-only
+///     --ui-query <typed question>   --ui-question-only   --ui-transcript-collapsed   --ui-transcript-lines n   --ui-translations japanese,english   --ui-transcript-translation   --ui-scroll-end
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
 enum UIFixture {
@@ -20,6 +21,10 @@ enum UIFixture {
     private static func flag(_ name: String) -> Bool { AppPaths.isMock && arguments.contains(name) }
 
     static var state: String? { value("--ui-fixture") }
+    /// Text placed in the overlay's question field, for the multi-line input state.
+    /// Services tab to open with `--ui-settings-page services`: 0 speech, 1 triggers, 2 indexing, 3 answers.
+    static var serviceRole: Int { value("--ui-service-role").flatMap(Int.init) ?? 0 }
+    static var query: String? { value("--ui-query")?.replacingOccurrences(of: "\\n", with: "\n") }
 
     /// Holds the mock answer half-way so the streaming state can be captured.
     static var reasoning: (any ReasoningProvider)? { state == "streaming" ? PausedReasoningProvider() : nil }
@@ -27,8 +32,19 @@ enum UIFixture {
     static func apply(to coordinator: AppCoordinator, openSettings: (SettingsPage) -> Void, openHistory: () -> Void) async {
         guard AppPaths.isMock else { return }
         if flag("--ui-dark") { NSApp.appearance = NSAppearance(named: .darkAqua) }
+        // The mock preferences suite persists between runs, so every run states the layout explicitly.
+        coordinator.settingsDefaults.set(flag("--ui-answer-only"), forKey: "overlayAnswerOnly")
+        coordinator.settings.includeConversation = !flag("--ui-question-only")
+        coordinator.settingsDefaults.set(flag("--ui-transcript-collapsed"), forKey: "overlayTranscriptCollapsed")
+        coordinator.settings.transcriptExpandedLines = value("--ui-transcript-lines").flatMap(Int.init) ?? 6
+        // Mock settings persist between runs, so the translation state is set on every launch.
+        let translations = value("--ui-translations")?.split(separator: ",").compactMap { TranslationLanguage(rawValue: String($0)) } ?? []
+        coordinator.settings.answerTranslationEnabled = !translations.isEmpty
+        coordinator.settings.answerTranslationLanguages = translations
         if let raw = value("--ui-listening-service"), let service = ListeningService(rawValue: raw) { coordinator.settings.listeningService = service }
         if let raw = value("--ui-laya-idle"), let seconds = TimeInterval(raw) { coordinator.layaIdleReleaseSeconds = seconds }
+        if let raw = value("--ui-laya-threshold"), let threshold = Double(raw) { coordinator.settings.layaThreshold = JevThreshold.snapped(threshold) }
+        if let raw = value("--ui-continuous"), let policy = ContinuousQuestionPolicy(rawValue: raw) { coordinator.settings.continuousQuestionPolicy = policy }
         if let raw = value("--ui-background"), let background = AppBackground(rawValue: raw) { coordinator.settings.background = background }
         if let raw = value("--ui-language"), let language = AppLanguage(rawValue: raw) { coordinator.settings.language = language }
         if let raw = value("--ui-text-size"), let size = Double(raw) {
@@ -44,9 +60,17 @@ enum UIFixture {
         switch state {
         case "listening":
             await listen(coordinator, automatic: false)
+            coordinator.levels.applyFixture(you: 0.55, them: 0.8)
         case "streaming", "answered":
             coordinator.settings.automaticSuggestions = true
             await listen(coordinator, automatic: true)
+        case "merged":
+            // The other side adds to its question before you speak: the answer is written again.
+            await listen(coordinator, automatic: true)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            coordinator.receiveMockEvent(.transcript(.init(id: "fixture-addition", speaker: .them, text: "And how does it hold up under peak load?",
+                                                         startMS: 4_000, endMS: 5_000, receivedAt: Date())), speaker: .them)
+            coordinator.receiveMockEvent(.delegation(id: "fixture-addition", offsetMS: 5_000), speaker: .them)
         case "session":
             // Records one synthetic session into mock history, then stops listening.
             await listen(coordinator, automatic: true)
@@ -57,6 +81,11 @@ enum UIFixture {
             await coordinator.start()
             try? await Task.sleep(nanoseconds: 400_000_000)
             coordinator.receiveMockEvent(.failed("Download the selected speech model and VAD in Services first."), speaker: .them)
+        case "starting":
+            // Holds the listen button in its start-up state, as during a cold audio-device start.
+            coordinator.settings.mode = .remote
+            coordinator.isTransitioning = true
+            coordinator.statusMessage = "Starting audio capture…"
         case "notice":
             await listen(coordinator, automatic: false)
             coordinator.applyFixtureCaptureNotice(AppCoordinator.systemAudioMissingNotice)
@@ -64,11 +93,17 @@ enum UIFixture {
             break
         }
 
+        if flag("--ui-transcript-translation") { coordinator.setTranscriptTranslation(.english) }
+        if let raw = value("--ui-tip"), let step = OverlayTourState.Step.order.first(where: { String(describing: $0) == raw }) {
+            coordinator.onboarding.replayTips()
+            for _ in 0..<step.position { coordinator.onboarding.advanceTip() }
+        }
         if let raw = value("--ui-settings-page"),
            let page = SettingsPage.allCases.first(where: { String(describing: $0) == raw }) {
             openSettings(page)
         }
         if flag("--ui-open-history") { openHistory() }
+        if flag("--ui-gallery") { DesignGallery.open() }
         if let folder = value("--ui-snapshot") {
             await snapshot(into: URL(fileURLWithPath: folder), coordinator: coordinator)
         }
@@ -82,6 +117,20 @@ enum UIFixture {
         try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let prefix = value("--ui-snapshot-name") ?? (state ?? "app")
+        if flag("--ui-scroll-end") {
+            // Show the end of long settings pages: scroll the tallest scroll view of each titled window to its bottom.
+            func scrollViews(_ view: NSView) -> [NSScrollView] {
+                ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrollViews)
+            }
+            for window in NSApp.windows where window.isVisible && !window.title.isEmpty {
+                guard let scroll = (window.contentView.map(scrollViews) ?? []).max(by: { $0.frame.height < $1.frame.height }),
+                      let document = scroll.documentView else { continue }
+                let bottom = document.isFlipped ? max(0, document.bounds.height - scroll.contentView.bounds.height) : 0
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: bottom))
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+        }
         for window in NSApp.windows where window.isVisible && window.frame.width > 40 {
             guard let view = window.contentView?.superview ?? window.contentView,
                   let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }

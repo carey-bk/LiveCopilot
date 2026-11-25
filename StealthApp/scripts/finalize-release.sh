@@ -7,7 +7,7 @@ python3 "$(dirname "$0")/release-version.py" --check-dmg "$DMG"
 NAME="$(basename "$DMG")"
 VERSION="${NAME#LiveCopilot-}"
 VERSION="${VERSION%-macOS-universal.dmg}"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Unexpected DMG filename' >&2; exit 1; }
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+$ ]] || { echo 'Unexpected DMG filename' >&2; exit 1; }
 codesign --verify --strict "$DMG"
 xcrun stapler validate "$DMG"
 spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"

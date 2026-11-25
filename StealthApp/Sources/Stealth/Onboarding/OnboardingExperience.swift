@@ -2,7 +2,12 @@ import Foundation
 
 /// Guidance is independent of setup completion and never changes runtime readiness.
 struct OverlayTourState: Codable, Equatable {
-    enum Step: Int, Codable, CaseIterable { case start, answer, visibility, captureExclusion }
+    /// Raw values are stored, so new steps are appended; `order` is the sequence shown.
+    enum Step: Int, Codable, CaseIterable {
+        case start, answer, visibility, captureExclusion, transcript, tools, composer, window
+        static let order: [Step] = [.start, .transcript, .answer, .tools, .composer, .window, .visibility, .captureExclusion]
+        var position: Int { Self.order.firstIndex(of: self) ?? 0 }
+    }
     enum Disposition: String, Codable { case pending, active, finished, dismissed }
     static let defaultsKey = "livecopilot.overlay-tour.v1"
     var step = Step.start
@@ -11,7 +16,7 @@ struct OverlayTourState: Codable, Equatable {
     mutating func enterOverlay() { if disposition == .pending { disposition = .active } }
     mutating func advance() {
         guard disposition == .active else { return }
-        if let next = Step(rawValue: step.rawValue + 1) { step = next }
+        if step.position + 1 < Step.order.count { step = Step.order[step.position + 1] }
         else { disposition = .finished }
     }
     mutating func replay() { step = .start; disposition = .active }

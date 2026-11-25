@@ -70,14 +70,14 @@ import Foundation
 
         init(score: Double? = nil, throttle: TimeInterval = 0.02,
              quiet: TimeInterval = 0.04, expiry: TimeInterval = 1,
-             cooldown: TimeInterval = 0, threshold: Double = 0.8) {
+             cooldown: TimeInterval = 0, threshold: Double = 0.8, ownSpeechGrace: TimeInterval = 3) {
             let predictor = Predictor(), sink = Sink()
             predictor.automaticScore = score
             self.predictor = predictor
             self.sink = sink
             controller = LayaTriggerController(predict: { try await predictor.predict($0, $1) },
                                                onTrigger: { sink.receive($0) },
-                                               timing: .init(throttle: throttle, quiet: quiet, expiry: expiry))
+                                               timing: .init(throttle: throttle, quiet: quiet, expiry: expiry, ownSpeechGrace: ownSpeechGrace))
             controller.onDecision = { sink.decisions.append($0) }
             controller.onError = { sink.errors.append($0) }
             controller.configure(enabled: true, threshold: threshold, cooldown: cooldown)
@@ -289,6 +289,9 @@ import Foundation
 
         try await check("own speech invalidates an in-flight result and stale final replays") {
             let h = Harness(); defer { h.close() }
+            // Talking over the other side while it is still speaking (talking right after it
+            // stops keeps its question; see the grace-period check).
+            h.controller.setSpeaking(true, speaker: .them)
             h.controller.submit(input("Question before my answer"))
             try await until("initial prediction") { h.predictor.calls.count == 1 }
             h.controller.setSpeaking(true, speaker: .you)
@@ -296,6 +299,7 @@ import Foundation
             h.predictor.finish(0)
             try await pause(0.06)
             h.controller.setSpeaking(false, speaker: .you)
+            h.controller.setSpeaking(false, speaker: .them)
             h.controller.submit(input("Question before my answer"))
             h.controller.submit(input("Overlapping external question"))
             try await pause(0.06)
@@ -307,9 +311,11 @@ import Foundation
         }
 
         try await check("own transcript without a speech event invalidates cached and in-flight work") {
-            let h = Harness(); defer { h.close() }
+            // Your transcript arrives after the grace period: you answered it yourself.
+            let h = Harness(ownSpeechGrace: 0.02); defer { h.close() }
             h.controller.submit(input("Question already answered aloud"))
             try await until("initial prediction") { h.predictor.calls.count == 1 }
+            try await pause(0.05)
             h.controller.submit(input("My answer", speaker: .you))
             h.predictor.finish(0)
             h.controller.retryPending()

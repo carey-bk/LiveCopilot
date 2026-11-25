@@ -97,7 +97,7 @@ struct DiagnosticFeedbackView: View {
             Text(b("GitHub Issues are public and require a GitHub account. Review this summary before opening GitHub; you submit it yourself in the browser. No audio, conversation, documents, credentials or raw logs are included.", "GitHub Issue 公开可见，需要 GitHub 账号。请先预览摘要，再到浏览器中自行提交。报告不含录音、对话、知识库、密钥或原始日志。"))
                 .font(.callout)
             LCScrollView { Text(report.isEmpty ? b("Preparing report…", "正在生成报告…") : report).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-            if !error.isEmpty { Text(error).foregroundStyle(.red) }
+            if !error.isEmpty { Text(error).foregroundStyle(LC.danger) }
             Button(b("Export detailed ZIP for private support…", "导出详细 ZIP，私下反馈（推荐）…")) { showDetailed = true }
                 .accessibilityIdentifier("diagnostics-detailed")
             HStack {

@@ -34,6 +34,8 @@ final class AudioFlowMonitor: @unchecked Sendable {
     private var chunks = 0
     private var audibleChunks = 0
     private var peak: Int32 = 0
+    private var lastChunkPeak: Int32 = 0
+    private var lastChunkAt: TimeInterval = -1
     private var partials = 0
     private var transcripts = 0
     private var speechStartedAt: TimeInterval?
@@ -48,6 +50,7 @@ final class AudioFlowMonitor: @unchecked Sendable {
         self.sampleRate = sampleRate > 0 ? sampleRate : 16_000
         startedAt = clock(); firstAudioAt = nil
         samples = 0; chunks = 0; audibleChunks = 0; peak = 0
+        lastChunkPeak = 0; lastChunkAt = -1
         partials = 0; transcripts = 0; speechStartedAt = nil
         latencyCount = 0; latencySum = 0; latencyMax = 0
     }
@@ -69,6 +72,17 @@ final class AudioFlowMonitor: @unchecked Sendable {
         samples += pcm.count / 2; chunks += 1
         if chunkPeak > Int32(Self.audibleThreshold) { audibleChunks += 1 }
         peak = max(peak, chunkPeak)
+        lastChunkPeak = chunkPeak; lastChunkAt = now
+    }
+
+    /// Loudness of the most recent chunk, 0...1 over -55...-10 dBFS, for a live meter.
+    /// Returns 0 when no chunk arrived in the last 0.35 s, so a stalled source reads as silent.
+    func level() -> Double {
+        let now = clock()
+        lock.lock(); let value = lastChunkPeak, at = lastChunkAt; lock.unlock()
+        guard at >= 0, now - at < 0.35, value > 0 else { return 0 }
+        let dbfs = 20 * log10(Double(value) / 32_768)
+        return min(1, max(0, (dbfs + 55) / 45))
     }
 
     /// A new onset replaces one that never produced text (a cough, or speech below recognition).

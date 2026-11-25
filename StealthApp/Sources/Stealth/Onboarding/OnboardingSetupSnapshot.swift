@@ -110,7 +110,7 @@ struct OnboardingSetupSnapshot {
             speechStatus = i.localStatus(.streamingSpeech, runtime: i.speechRuntime)
             if !state.prefersTyping { addLocal(.streamingSpeech, name: speechName) }
         case .apple:
-            speechName = "Apple · " + ServiceGuide.text(settings.appleSpeechLanguage == .chinese ? "Mandarin" : "English", settings.appleSpeechLanguage == .chinese ? "普通话" : "英语", settings.language)
+            speechName = "Apple · " + ServiceGuide.text(settings.appleSpeechLanguage.names.en, settings.appleSpeechLanguage.names.zh, settings.language)
             speechStatus = .apple(available: i.appleAvailable, installed: i.appleInstalled, busy: i.appleBusy, verified: i.appleChecked)
             if i.appleFailed && !i.appleInstalled { speechStatus = .downloadFailed }
             if i.appleChecked && i.appleInstalled && !i.appleBusy {

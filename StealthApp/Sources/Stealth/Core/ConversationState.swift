@@ -62,10 +62,18 @@ struct ConversationState {
         return String(rows.map { "\($0.0.rawValue): \($0.1)" }.joined(separator: "\n").suffix(limit))
     }
 
+    /// Talking within this long after their question arrived (a filler while waiting, or the start
+    /// of your answer) does not count as having answered it yourself.
+    static let ownReplyGrace: TimeInterval = 3
+    /// When your words began: arrival minus their duration (both from the same recognizer).
+    private static func ownSpeechStart(_ fragment: TranscriptFragment) -> Date {
+        fragment.receivedAt.addingTimeInterval(-Double(max(0, fragment.endMS - fragment.startMS)) / 1000)
+    }
     mutating func candidate(speaker: Speaker, now: Date, cooldown: TimeInterval, force: Bool = false, semanticDetection: Bool = false) -> String? {
         guard let last = fragments.last(where: { $0.speaker == speaker }) else { phase = .waiting; return nil }
         if !force, speaker == .them,
-           let you = fragments.last(where: { $0.speaker == .you }), you.receivedAt > last.receivedAt {
+           let you = fragments.last(where: { $0.speaker == .you }), you.receivedAt > last.receivedAt,
+           Self.ownSpeechStart(you) > last.receivedAt + Self.ownReplyGrace {
             phase = .answered; return nil
         }
         let eligible = candidateFragments(speaker: speaker, now: now, force: force)
