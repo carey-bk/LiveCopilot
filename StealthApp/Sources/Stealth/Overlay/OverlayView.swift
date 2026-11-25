@@ -137,8 +137,11 @@ struct OverlayView: View {
                 .onboardingHighlight(onboarding.visibleTip == .transcript)
             Spacer()
             Button { showTranslation.toggle() } label: {
-                Label(translation.enabled ? (translation.busy ? "… " : "") + translation.target.rawValue : b("Translate", "翻译"), systemImage: "character.bubble")
+                Label(translation.enabled ? (translation.busy ? "… " : "") + translation.target.rawValue : b("Translate", "翻译"),
+                      systemImage: translation.enabled ? "character.bubble.fill" : "character.bubble")
             }.buttonStyle(.borderless).font(.caption)
+                // Blue while transcript translation is on; warning color if it stopped working.
+                .foregroundStyle(translation.enabled ? (translation.failed ? LC.warning : LC.accent) : Color.secondary)
                 .accessibilityIdentifier("transcript-translation")
                 .onboardingHighlight(onboarding.visibleTip == .transcript)
                 .popover(isPresented: $showTranslation) {

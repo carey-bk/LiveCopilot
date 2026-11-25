@@ -144,7 +144,7 @@ enum TranslationLanguage: String, Codable, CaseIterable, Identifiable {
         return """
         Translation lines are enabled (\(list)). Follow explicit user style and format preferences above when they conflict; otherwise use this format.
         For each sentence in the spoken answer, write the sentence in the response language, then immediately below it one line per translation, in this order: \(names.joined(separator: ", ")).
-        Skip a translation when the sentence is already in that language: never repeat the sentence as its own "translation" (a Chinese answer gets no Chinese line). Keep each sentence and its translations together; never split the answer into separate whole-language blocks.
+        Skip a translation when the sentence is already in that language. Keep each sentence and its translations together; never split the answer into separate whole-language blocks.
         Translate faithfully and naturally, as something the user could say aloud. Keep names, numbers, units and technical terms; carry **bold** over to the matching phrase in each translation. Do not label translation lines with language names.
         Headings stay in the response language only. Evidence and notes remain a separate, untranslated section.
         """
@@ -162,30 +162,18 @@ enum QuestionScope {
 }
 
 /// Display cleanup for model output: horizontal rules are dropped (the notes section has its own
-/// divider), and a line that repeats an earlier line of the same paragraph is dropped (a
-/// "translation" into the answer's own language). While streaming, an unfinished last line that
-/// so far only repeats an earlier line, or is the start of a rule, is held back.
+/// divider). While streaming, an unfinished last line that is only the start of a rule is held back.
 enum AnswerCleanup {
     static func cleaned(_ text: String, streaming: Bool) -> String {
         var lines = text.components(separatedBy: "\n")
         let unfinished = streaming ? lines.popLast() : nil
-        var kept: [String] = [], block: [String] = []
-        for line in lines {
-            let key = normalized(line)
-            if key.isEmpty { block = []; kept.append(line); continue }
-            if isRule(line) || block.contains(key) { continue }
-            block.append(key); kept.append(line)
-        }
+        var kept = lines.filter { !isRule($0) }
         if let unfinished {
-            let key = normalized(unfinished)
+            let key = unfinished.filter { !$0.isWhitespace }
             let partialRule = !key.isEmpty && Set(key).count == 1 && "-*_".contains(key.first!)
-            if !partialRule && !(key.count > 0 && block.contains { $0.hasPrefix(key) }) { kept.append(unfinished) }
-            else { kept.append("") }
+            kept.append(partialRule ? "" : unfinished)
         }
         return kept.joined(separator: "\n")
-    }
-    private static func normalized(_ line: String) -> String {
-        line.replacingOccurrences(of: "**", with: "").filter { !$0.isWhitespace }
     }
     private static func isRule(_ line: String) -> Bool {
         line.range(of: #"^\s*([-*_])(\s*\1){2,}\s*$"#, options: .regularExpression) != nil
