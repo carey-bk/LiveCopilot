@@ -53,8 +53,8 @@ extension SettingsView {
                 }
                 // Third-party input methods draw their candidate window in their own process, which
                 // no app can exclude from capture; the built-in ones show it inside LiveCopilot.
-                Label(b("To hide the input method's candidates too, type with a built-in macOS input method. Third-party ones (such as WeChat or Sogou) show their own candidate window, which LiveCopilot cannot hide.",
-                        "如需输入法候选框也一并隐藏，请使用系统自带输入法。微信、搜狗等第三方输入法的候选框由输入法自己显示，LiveCopilot 无法隐藏。"),
+                Label(b("To hide the input method's candidates too, type with a built-in macOS input method. Third-party input methods show their own candidate window, which LiveCopilot cannot hide.",
+                        "如需输入法候选框也一并隐藏，请使用系统自带输入法。第三方输入法的候选框由输入法自己显示，LiveCopilot 无法隐藏。"),
                       systemImage: "keyboard")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
