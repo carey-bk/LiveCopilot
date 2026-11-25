@@ -184,7 +184,7 @@ extension SettingsView {
     }
     var liveEngineSummary: String {
         switch coordinator.settings.listeningService {
-        case .apple: return b("Built-in macOS recognition, transcribing Chinese or English offline.", "使用 macOS 内置识别能力，离线实时转写中文或英文。")
+        case .apple: return b("Built-in macOS recognition, transcribing the selected language offline: Chinese, English, Japanese, Korean, major European languages and languages of India.", "使用 macOS 内置识别能力，离线实时转写所选语言：中文、英语、日语、韩语、主要欧洲语言和印度语言。")
         case .zipformer: return b("Local Chinese/English streaming with native terminology enhancement, no API fees.", "本地中英双语实时识别，支持原生术语增强，无 API 费用。")
         case .paraformer: return b("Transcribes mixed Chinese and English locally, without API fees.", "支持中英文混合语音转写，本地离线运行，无需 API 费用。")
         case .openAI: return b("Cloud transcription with intelligent detection of complete questions.", "云端实时转写，并智能判断提问是否完整。")
