@@ -51,6 +51,14 @@ extension SettingsView {
                     LCSwitch(title: t("Hide the floating window from meeting screen sharing and recording"), isOn: $coordinator.settings.excludeOverlayFromCapture)
                         .accessibilityIdentifier("exclude-overlay-capture")
                 }
+                // Third-party input methods draw their candidate window in their own process, which
+                // no app can exclude from capture; the built-in ones show it inside LiveCopilot.
+                Label(b("To hide the input method's candidates too, type with a built-in macOS input method. Third-party ones (such as WeChat or Sogou) show their own candidate window, which LiveCopilot cannot hide.",
+                        "如需输入法候选框也一并隐藏，请使用系统自带输入法。微信、搜狗等第三方输入法的候选框由输入法自己显示，LiveCopilot 无法隐藏。"),
+                      systemImage: "keyboard")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("exclude-overlay-capture-input-method")
                 if coordinator.settings.excludeOverlayFromCapture, case .failed = coordinator.overlayCaptureProtection {
                     Label(b("Capture protection is unavailable on this system. The floating window may be recorded.",
                             "当前系统未能启用录制保护，悬浮窗可能被录入。"), systemImage: "exclamationmark.triangle")
