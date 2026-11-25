@@ -232,7 +232,10 @@ final class LayaCoordinatorTests: XCTestCase {
         XCTAssertEqual(app.unreadAnswerCount, 1)
         app.showNextAnswer()
         XCTAssertTrue(app.suggestion.question.contains("benefits"))
-        XCTAssertTrue(app.suggestion.question.contains("Why use RAG?"))
+        // The first question was already being answered, so the follow-up is not merged into it;
+        // it is answered next with the first answer as context.
+        XCTAssertFalse(app.suggestion.question.contains("Why use RAG?"))
+        XCTAssertEqual(reasoning.requests[1].recentAnswers.map(\.question), ["Why use RAG?"])
         if app.answers.count == 2 { XCTAssertNotEqual(app.answers[0].questionID, app.answers[1].questionID) }
         if let id = app.previousAnswerID { app.selectAnswer(id) }
         XCTAssertEqual(app.selectedAnswerID, firstID)
