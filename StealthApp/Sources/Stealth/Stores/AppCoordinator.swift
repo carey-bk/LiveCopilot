@@ -1949,8 +1949,14 @@ final class AppCoordinator: ObservableObject {
             if let index = answers.firstIndex(where: { $0.id == id }) { answers[index].viewed = true }
         }
         let context = useContext ? (contextOverride ?? conversation.context()) : ""
-        let previous = useContext && conversation.previousQuestion != query ? conversation.previousQuestion : nil
-        let normalized = RetrievalQuery.formulate(question: query, context: context, previousQuestion: previous)
+        // Earlier suggested answers travel with the transcript (same switch): the user may have
+        // said them aloud even when the microphone transcript missed or garbled them.
+        let priorAnswers = useContext && mode == .reply ? recentPriorAnswers(excluding: id) : []
+        // The previous question is the last one that was actually answered. The conversation's own
+        // record is set when a question is queued, so for automatic answers it was the current one.
+        let previous = useContext ? (priorAnswers.last?.question ?? (conversation.previousQuestion != query ? conversation.previousQuestion : nil)) : nil
+        let lastAnswerMarkdown = useContext && mode == .reply ? lastCompletedAnswerText(excluding: id) : nil
+        let normalized = RetrievalQuery.formulate(question: query, context: context, previousQuestion: previous, previousAnswer: lastAnswerMarkdown)
         if scheduled == nil { conversation.begin(query, speaker: speaker, now: Date()) }
         questionState = conversation.phase.rawValue
         output.begin(mode: mode, question: query)
@@ -2031,7 +2037,8 @@ final class AppCoordinator: ObservableObject {
                     output.appendDelta(missing)
                 } else {
                     var answer = AnswerRequest(query: normalized, conversation: context, scenario: settings.scenario, sources: sources, mode: mode,
-                                               knowledgeMode: settings.knowledgeMode, answerLanguage: settings.answerLanguage, translationLanguages: settings.effectiveTranslationLanguages, additionalAnswerInstructions: settings.additionalAnswerInstructions, languageQuestion: languageQuestion)
+                                               knowledgeMode: settings.knowledgeMode, answerLanguage: settings.answerLanguage, translationLanguages: settings.effectiveTranslationLanguages, additionalAnswerInstructions: settings.additionalAnswerInstructions, languageQuestion: languageQuestion,
+                                               recentAnswers: priorAnswers)
                     answer.onStreamProgress = { [weak self] stage, time in
                         guard let coordinator = self else { return }
                         await MainActor.run {
@@ -2082,6 +2089,16 @@ final class AppCoordinator: ObservableObject {
             self.layaGate.retryPending()
         }
     }
+    /// Completed suggested answers (reply mode) before `id`, oldest first, at most three.
+    private func completedReplies(excluding id: UUID) -> [AnswerRecord] {
+        answers.filter { $0.id != id && $0.store.mode == .reply && $0.store.state == .completed && !$0.store.text.isEmpty }
+            .sorted { $0.createdAt < $1.createdAt }
+            .suffix(3).map { $0 }
+    }
+    private func recentPriorAnswers(excluding id: UUID) -> [PriorAnswer] {
+        completedReplies(excluding: id).compactMap { PriorAnswer(question: $0.store.question, markdown: $0.store.text) }
+    }
+    private func lastCompletedAnswerText(excluding id: UUID) -> String? { completedReplies(excluding: id).last?.store.text }
     private func startIndexMigration() {
         let includeRemote = settings.embeddingService == .local
         guard !isMock, !isIndexing, !isShuttingDown, let knowledge,

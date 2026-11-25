@@ -178,7 +178,8 @@ final class LayaCoordinatorTests: XCTestCase {
         add("Why use RAG?", 0, "a")
         XCTAssertEqual(queue.take(now: now)?.query, "Why use RAG?", "Default must not wait for merge window")
         add("Compared to vector search, what are its benefits?", 1, "b")
-        XCTAssertTrue(queue.pending[0].query.contains("Why use RAG?"))
+        XCTAssertEqual(queue.pending[0].query, "Compared to vector search, what are its benefits?",
+                       "A follow-up to a question already being answered stays separate; it is answered next with that answer as context")
         add("Compared to vector search, what are its limitations?", 1.1, "b")
         XCTAssertEqual(queue.pending.count, 1, "ASR revision must not add a request")
         XCTAssertTrue(queue.pending[0].query.contains("limitations"))
@@ -195,6 +196,18 @@ final class LayaCoordinatorTests: XCTestCase {
         queue.clear(); add("Why use RAG?", 0, "a", .fast); _ = queue.take(now: now)
         add("Compared to vector search?", 1, "b", .fast)
         XCTAssertEqual(queue.pending[0].query, "Compared to vector search?")
+        // Related questions merge while the first has not started (Complete waits 1.2 s first).
+        queue.clear(); add("Why use RAG?", 0, "a", .complete)
+        add("Compared to vector search, what are its benefits?", 1, "b", .complete)
+        XCTAssertEqual(queue.pending.count, 1)
+        XCTAssertTrue(queue.pending[0].query.contains("Why use RAG?") && queue.pending[0].query.contains("benefits"))
+        // Chinese has no spaces: relatedness comes from shared content character pairs.
+        XCTAssertTrue(QuestionCoordinator.related("你在社群运营里做了哪些事情？", "社群的用户留存你是怎么做的？"))
+        XCTAssertFalse(QuestionCoordinator.related("你怎么看待加班？", "说说你最近读的一本书"))
+        XCTAssertFalse(QuestionCoordinator.related("你为什么选择我们公司？", "你怎么理解这个岗位？"), "question words alone are not a shared topic")
+        queue.clear(); add("你在社群运营里做了哪些事情？", 0, "a", .complete)
+        add("社群的用户留存你是怎么做的？", 1, "b", .complete)
+        XCTAssertEqual(queue.pending.count, 1, "related Chinese questions merge under Complete")
         let old = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
         XCTAssertEqual(old.continuousQuestionPolicy, .smart)
         var saved = old; saved.continuousQuestionPolicy = .complete
@@ -423,24 +436,25 @@ final class LayaCoordinatorTests: XCTestCase {
         await app.shutdown()
     }
     func testThresholdDetentsDefaultAndPersistence() throws {
-        XCTAssertEqual(JevThreshold.values, [0.80, 0.85, 0.90, 0.95])
-        XCTAssertEqual(AppSettings().layaThreshold, 0.90, "New installs default to 0.90")
+        XCTAssertEqual(JevThreshold.values, [0.65, 0.75, 0.80, 0.85, 0.90])
+        XCTAssertEqual(AppSettings().layaThreshold, 0.80, "New installs default to 0.80")
         XCTAssertEqual(JevThreshold.snapped(0.83), 0.85)
-        XCTAssertEqual(JevThreshold.snapped(0.99), 0.95)
-        XCTAssertEqual(JevThreshold.snapped(.nan), 0.90)
+        XCTAssertEqual(JevThreshold.snapped(0.99), 0.90)
+        XCTAssertEqual(JevThreshold.snapped(.nan), 0.80)
+        XCTAssertEqual(JevThreshold.index(0.65), 0); XCTAssertEqual(JevThreshold.index(0.90), 4)
         XCTAssertEqual(JevThreshold.text(0.9), "0.90")
         for value in JevThreshold.values {
             var settings = AppSettings(); settings.layaThreshold = value
             let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
             XCTAssertEqual(restored.layaThreshold, value)
         }
-        // Presets saved by older builds: 0.50 and 0.65 become the lowest detent, 0.80 is kept.
-        for (saved, expected) in [(0.50, 0.80), (0.65, 0.80), (0.80, 0.80), (0.95, 0.95)] {
+        // Values saved by older builds move to the nearest detent.
+        for (saved, expected) in [(0.50, 0.65), (0.65, 0.65), (0.80, 0.80), (0.90, 0.90), (0.95, 0.90)] {
             let data = try JSONSerialization.data(withJSONObject: ["layaThreshold": saved])
             XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: data).layaThreshold, expected)
         }
-        XCTAssertFalse(LayaTriggerDecision.evaluate(score: 0.88, threshold: 0.90).shouldTrigger)
-        XCTAssertTrue(LayaTriggerDecision.evaluate(score: 0.88, threshold: 0.85).shouldTrigger)
+        XCTAssertFalse(LayaTriggerDecision.evaluate(score: 0.78, threshold: 0.80).shouldTrigger)
+        XCTAssertTrue(LayaTriggerDecision.evaluate(score: 0.78, threshold: 0.75).shouldTrigger)
     }
     @MainActor func testRenderCompactJevSettingsPreservesExistingThreshold() async throws {
         let root = URL(fileURLWithPath: "/tmp/jev-settings-qa")
@@ -795,6 +809,26 @@ final class LayaCoordinatorTests: XCTestCase {
         app.receiveMockEvent(.speechActivity(false), speaker: .you)
         await pause(1.0)
         XCTAssertEqual(reasoning.requests.count, 1, "the question is still answered")
+        await app.shutdown()
+    }
+
+    /// Automatic answers: the follow-up sees the previous draft and the previous question. The
+    /// queue marks a question as previous when it is queued, which used to hide it from itself.
+    @MainActor func testAutomaticFollowUpSeesPreviousAnswerAndQuestion() async {
+        let reasoning = CountingLayaReasoning()
+        reasoning.answerText = "## 建议回答\n我从零**自建社群 160+ 用户沉淀**。"
+        let app = make(reasoning)
+        await app.start()
+        final(app, text: "谈谈你的社群运营经历", id: "q1")
+        await pause(1.0)
+        XCTAssertEqual(reasoning.requests.count, 1)
+        final(app, text: "你怎么实现的 160+ 这个数字", id: "q2", offset: 6000)
+        await pause(1.0)
+        XCTAssertEqual(reasoning.requests.count, 2)
+        let second = reasoning.requests[1]
+        XCTAssertTrue(second.input.contains("自建社群 160+ 用户沉淀"))
+        XCTAssertTrue(second.instructions.contains("Never ask the other side what it means"))
+        XCTAssertTrue(second.query.semantic.contains("Previous question: 谈谈你的社群运营经历"))
         await app.shutdown()
     }
 

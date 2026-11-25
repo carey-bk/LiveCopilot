@@ -43,12 +43,15 @@ struct QuestionCoordinator {
         }
         var item = Candidate(sourceID: sourceID, utterance: query, baseQuery: nil, query: query, context: context, speaker: speaker, delegationID: delegationID,
                              trace: trace, receivedAt: now, readyAt: now.addingTimeInterval(policy == .complete ? 1.2 : 0))
+        // Merge only into a question whose answer has not started. Once it is answering, the
+        // follow-up stays separate and is answered next with that answer as context; merging
+        // would answer the first question twice.
         if policy != .fast, let previous = recent.last, previous.speaker == speaker,
+           pending.contains(where: { $0.id == previous.id }),
            now.timeIntervalSince(previous.receivedAt) <= (policy == .complete ? 5 : 3),
            Self.related(previous.query, query) {
             item.baseQuery = previous.query
             item.query = String((previous.query + "\n" + query).suffix(6000))
-            // Only replace work that has not started. Never cancel a streaming answer.
             pending.removeAll { $0.id == previous.id }
         }
         recent.append(item)
@@ -73,7 +76,24 @@ struct QuestionCoordinator {
         let b = next.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         if ["相比", "那它", "它的", "其中", "具体来说", "进一步", "那这个", "为什么这样", "what about its", "how does it", "why is that", "compared to", "and how", "and why"].contains(where: b.hasPrefix) { return true }
         let stop: Set<String> = ["what", "how", "why", "does", "the", "you", "your", "could", "would", "explain", "please", "with", "that", "this", "which", "have", "about"]
-        func words(_ s: String) -> Set<String> { Set(s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 && !stop.contains($0) }) }
-        return !words(previous).intersection(words(next)).isEmpty
+        func words(_ s: String) -> Set<String> { Set(s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 2 && !stop.contains($0) && !$0.contains(where: isCJK) }) }
+        if !words(previous).intersection(words(next)).isEmpty { return true }
+        // Chinese has no spaces, so the word test above never matches it: compare content bigrams.
+        return !cjkBigrams(previous).intersection(cjkBigrams(next)).isEmpty
+    }
+    private static func isCJK(_ c: Character) -> Bool { c.unicodeScalars.allSatisfy { (0x3400...0x9FFF).contains($0.value) } }
+    /// Adjacent Chinese character pairs that carry content: pairs with a pronoun, particle or
+    /// question word ("你是", "怎么", "这个") are dropped, since any two questions share those.
+    static func cjkBigrams(_ text: String) -> Set<String> {
+        let function = Set("你我他她它们的是了在吗呢吧啊么怎什哪些这那个一有没不能会要和与及或就都也还很请问说讲谈下样为")
+        var result = Set<String>()
+        for run in text.split(whereSeparator: { !isCJK($0) }) {
+            let chars = Array(run)
+            guard chars.count >= 2 else { continue }
+            for i in 0..<(chars.count - 1) where !function.contains(chars[i]) && !function.contains(chars[i + 1]) {
+                result.insert(String(chars[i...i + 1]))
+            }
+        }
+        return result
     }
 }

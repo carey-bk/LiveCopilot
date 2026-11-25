@@ -6,10 +6,11 @@ extension JevThreshold {
     static func description(_ value: Double, _ language: AppLanguage) -> String {
         let b = { (en: String, zh: String) in ServiceGuide.text(en, zh, language) }
         switch snapped(value) {
-        case 0.80: return b("Answers readily, including looser questions; may trigger more often.", "更积极：较模糊的提问也会回答，可能多一些误触发。")
-        case 0.85: return b("Leans toward answering; occasional false triggers.", "偏积极：多数提问都会回答，偶尔误触发。")
-        case 0.90: return b("Balances answering promptly with avoiding false triggers.", "兼顾及时回答与避免误触发。")
-        default: return b("Answers only clear, complete questions. Fewest false triggers.", "更严格：只在问题清楚完整时回答，误触发最少。")
+        case 0.65: return b("Answers most readily, including loose or partial questions; triggers most often.", "最积极：较模糊或没说完的提问也会回答，误触发最多。")
+        case 0.75: return b("Answers readily, including looser questions; may trigger more often.", "偏积极：较模糊的提问也会回答，可能多一些误触发。")
+        case 0.80: return b("Balances answering promptly with avoiding false triggers.", "兼顾及时回答与避免误触发。")
+        case 0.85: return b("Leans toward clear questions; fewer false triggers.", "偏严格：多数清楚的提问会回答，误触发较少。")
+        default: return b("Answers only clear, complete questions; some real questions may be missed.", "最严格：只在问题清楚完整时回答，部分真实提问可能不触发。")
         }
     }
 }
@@ -78,7 +79,7 @@ struct JevSettingsView: View {
         case .complete: return b("Wait briefly for follow-ups before answering.", "短暂等待后续补充，再生成完整回答。")
         }
     }
-    /// Four detents (0.80–0.95); the current value is shown large beside the title while dragging.
+    /// Five detents (0.65–0.90); the current value is shown large beside the title while dragging.
     private var thresholdSlider: some View {
         let value = coordinator.settings.layaThreshold
         return VStack(alignment: .leading, spacing: 8) {
@@ -92,9 +93,10 @@ struct JevSettingsView: View {
                     Text(b("Recommended", "推荐")).font(.caption).foregroundStyle(.secondary)
                 }
             }
-            Slider(value: Binding(get: { JevThreshold.snapped(coordinator.settings.layaThreshold) },
-                                  set: { coordinator.settings.layaThreshold = JevThreshold.snapped($0) }),
-                   in: JevThreshold.range, step: 0.05) {
+            // Steps are uneven (0.65 to 0.75, then 0.05 apart), so the slider moves by detent index.
+            Slider(value: Binding(get: { Double(JevThreshold.index(coordinator.settings.layaThreshold)) },
+                                  set: { coordinator.settings.layaThreshold = JevThreshold.values[min(JevThreshold.values.count - 1, max(0, Int($0.rounded())))] }),
+                   in: 0...Double(JevThreshold.values.count - 1), step: 1) {
                 Text(b("Trigger threshold", "触发阈值"))
             } minimumValueLabel: { Text(b("Readier", "积极")).font(.caption).foregroundStyle(.secondary) }
               maximumValueLabel: { Text(b("Stricter", "严格")).font(.caption).foregroundStyle(.secondary) }

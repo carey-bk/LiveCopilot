@@ -12,6 +12,20 @@ private final class PolicyReasoner: ReasoningProvider, @unchecked Sendable {
     }
 }
 
+/// Returns scripted answers in order; records every request.
+private final class ScriptedReasoner: ReasoningProvider, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [AnswerRequest] = []
+    let script: [String]
+    init(_ script: [String]) { self.script = script }
+    var requests: [AnswerRequest] { lock.withLock { values } }
+    func stream(_ request: AnswerRequest) -> AsyncThrowingStream<String, Error> {
+        let index = lock.withLock { values.append(request); return values.count - 1 }
+        let text = script[min(index, script.count - 1)]
+        return AsyncThrowingStream { c in c.yield(text); c.finish() }
+    }
+}
+
 private struct DelayedTranslationReasoner: ReasoningProvider {
     func stream(_ request: AnswerRequest) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
@@ -140,6 +154,78 @@ final class HybridLanguageTests: XCTestCase {
                               emitMockConversation: false, mockDefaults: defaults,
                               mockKnowledgeDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(name))
     }
+    @MainActor private func scriptedApp(_ reasoner: ScriptedReasoner) -> AppCoordinator {
+        let name = "LiveCopilot-Prior-Tests-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: name)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        return AppCoordinator(mock: true, layaPredictor: { _, _ in 0.96 }, mockReasoning: reasoner,
+                              emitMockConversation: false, mockDefaults: defaults,
+                              mockKnowledgeDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(name))
+    }
+    private static let communityAnswer = """
+    ## 建议回答
+    我之前负责过社群运营，从零**自建社群 160+ 用户沉淀**，主要靠内容活动和老用户推荐。
+    ## 依据与补充
+    这一段只是示例说明。[S1]
+    """
+
+    /// A follow-up about a number from the previous suggested answer must see that answer, so the
+    /// model continues from it instead of asking what the number means.
+    @MainActor func testFollowUpSeesPreviousSuggestedAnswer() async throws {
+        let reasoner = ScriptedReasoner([Self.communityAnswer, "## 建议回答\n第二个回答。"])
+        let app = scriptedApp(reasoner)
+        app.settings.includeConversation = true
+        app.askText("谈谈你的社群运营经历"); await settled(app)
+        app.askText("你怎么实现的 160+ 这个数字"); await settled(app)
+        XCTAssertEqual(reasoner.requests.count, 2)
+        let first = reasoner.requests[0], second = reasoner.requests[1]
+        XCTAssertTrue(first.recentAnswers.isEmpty)
+        XCTAssertFalse(first.input.contains("Recent suggested answers"))
+        XCTAssertEqual(second.recentAnswers.map(\.question), ["谈谈你的社群运营经历"])
+        XCTAssertTrue(second.input.contains("Recent suggested answers"))
+        XCTAssertTrue(second.input.contains("自建社群 160+ 用户沉淀"), "the previous draft reaches the model")
+        XCTAssertFalse(second.input.contains("示例说明"), "evidence notes are not part of the spoken draft")
+        XCTAssertFalse(second.input.contains("**"))
+        XCTAssertTrue(second.instructions.contains("Never ask the other side what it means"))
+        XCTAssertTrue(second.instructions.contains("do not add new specific data without evidence"))
+        XCTAssertTrue(second.query.followUp)
+        XCTAssertTrue(second.query.lexical.contains("160+"), "retrieval carries the previous answer's figure")
+        XCTAssertTrue(second.query.semantic.contains("Previous question: 谈谈你的社群运营经历"))
+        await app.shutdown()
+    }
+
+    @MainActor func testQuestionOnlyModeSendsNoPreviousAnswers() async throws {
+        let reasoner = ScriptedReasoner([Self.communityAnswer, "## 建议回答\n第二个回答。"])
+        let app = scriptedApp(reasoner)
+        app.settings.includeConversation = false
+        app.askText("谈谈你的社群运营经历"); await settled(app)
+        app.askText("你怎么实现的 160+ 这个数字"); await settled(app)
+        XCTAssertEqual(reasoner.requests.count, 2)
+        let second = reasoner.requests[1]
+        XCTAssertTrue(second.recentAnswers.isEmpty)
+        XCTAssertFalse(second.input.contains("Recent suggested answers"))
+        XCTAssertFalse(second.input.contains("自建社群"))
+        XCTAssertFalse(second.instructions.contains("Never ask the other side what it means"))
+        await app.shutdown()
+    }
+
+    func testPriorAnswerSpokenTextAndKeyTerms() {
+        let spoken = PriorAnswer.spoken(Self.communityAnswer)
+        XCTAssertTrue(spoken.contains("自建社群 160+ 用户沉淀")); XCTAssertFalse(spoken.contains("示例")); XCTAssertFalse(spoken.contains("[S1]"))
+        XCTAssertLessThanOrEqual(PriorAnswer.spoken(String(repeating: "长", count: 3000)).count, PriorAnswer.maximumCharacters + 1)
+        let terms = PriorAnswer.keyTerms(Self.communityAnswer)
+        XCTAssertTrue(terms.contains("自建社群 160+ 用户沉淀")); XCTAssertTrue(terms.contains("160+"))
+        XCTAssertTrue(PriorAnswer.references("160+ 怎么来的", terms: terms), "a repeated figure marks a follow-up without a pronoun")
+        XCTAssertFalse(PriorAnswer.references("你为什么离职", terms: terms))
+        let english = PriorAnswer.keyTerms("## Suggested answer\nWe cut p95 latency by **40%** after moving to Redis Streams. The team then shipped it.")
+        XCTAssertTrue(english.contains("40%")); XCTAssertTrue(english.contains("Redis Streams")); XCTAssertTrue(english.contains("p95"))
+        XCTAssertFalse(english.contains("We")); XCTAssertFalse(english.contains("The"))
+        let query = RetrievalQuery.formulate(question: "160+ 怎么来的", context: "", previousQuestion: "谈谈你的社群运营经历", previousAnswer: Self.communityAnswer)
+        XCTAssertTrue(query.followUp); XCTAssertTrue(query.lexical.contains("160+"))
+        let unrelated = RetrievalQuery.formulate(question: "你为什么离职", context: "", previousQuestion: "谈谈你的社群运营经历", previousAnswer: Self.communityAnswer)
+        XCTAssertFalse(unrelated.followUp); XCTAssertFalse(unrelated.lexical.contains("160"))
+    }
+
     @MainActor private func settled(_ app: AppCoordinator) async {
         for _ in 0..<100 {
             try? await Task.sleep(nanoseconds: 20_000_000)
