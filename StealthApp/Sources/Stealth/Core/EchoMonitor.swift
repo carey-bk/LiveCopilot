@@ -16,6 +16,8 @@ final class EchoMonitor: @unchecked Sendable {
 
     struct Assessment: Equatable {
         var echoMS = 0, ownMS = 0, unclearMS = 0
+        /// Of `ownMS`, frames far louder than any replay the far end could produce (see `clearOwnExcessDB`).
+        var clearOwnMS = 0
         /// Any system audio above the activity level near the assessed interval.
         var systemActive = false
         /// No system audio has arrived for a second: there is nothing to compare with.
@@ -30,9 +32,14 @@ final class EchoMonitor: @unchecked Sendable {
         /// Once this room's speaker-to-microphone path is known and the far end is audible, replay is
         /// proven possible here, so own evidence must at least match the replay: a third of loud
         /// frames in a replayed question (speaker and room colouring) no longer passes as the user.
+        ///
+        /// Talking over the far end (double talk) leaves its replay in every pause between your
+        /// syllables, so the ratio alone held real speech until the far end stopped. Frames far
+        /// louder than the predicted replay are the user, whatever the ratio.
         var isOwn: Bool {
             if referenceAbsent { return true }
             guard ownMS >= EchoMonitor.ownEvidenceMS else { return false }
+            if clearOwnMS >= EchoMonitor.ownEvidenceMS { return true }
             return systemActive && echoPathKnown ? ownMS >= echoMS : 2 * ownMS >= echoMS
         }
         /// Own evidence clearly outweighing replay; required to keep words that repeat the far end.
@@ -63,6 +70,9 @@ final class EchoMonitor: @unchecked Sendable {
         /// Speech-level microphone time by verdict, and why frames counted as the user: the far end
         /// was silent, or the frame was louder than the predicted replay.
         var echoFrameMS = 0, unclearFrameMS = 0, ownSilentFarEndMS = 0, ownLouderMS = 0
+        /// Of `ownLouderMS`, by how far the frame exceeded the predicted replay: 4–8 dB, 8–12 dB,
+        /// and 12 dB or more (clearly the user). Shows how far double talk and replay separate.
+        var ownExcess4to8MS = 0, ownExcess8to12MS = 0, ownClearMS = 0
     }
 
     static let frameSeconds = 0.02
@@ -84,6 +94,9 @@ final class EchoMonitor: @unchecked Sendable {
     static let systemActiveDB: Float = -50
     /// Microphone frames this far above the predicted echo are the user; at most this far, echo.
     static let ownExcessDB: Float = 4
+    /// At least this far above the predicted echo is beyond what room colouring of a replay
+    /// reaches; such frames are the user even while the far end talks.
+    static let clearOwnExcessDB: Float = 12
     static let echoExcessDB: Float = 2
     static let reverb = 0.4
     static let reverbDecayDBPerSecond: Float = 75
@@ -93,6 +106,8 @@ final class EchoMonitor: @unchecked Sendable {
         var classified = false; var verdict: Verdict?
         /// Own because the far end was silent at every plausible delay (diagnostics only).
         var farEndSilent = false
+        /// How far an own frame exceeded the predicted echo, when the far end was audible.
+        var excess: Float?
     }
     private struct Track {
         var frames: [Frame] = []
@@ -220,11 +235,20 @@ final class EchoMonitor: @unchecked Sendable {
                         mic.frames[index].classified = true
                         mic.frames[index].verdict = frame.verdict
                         mic.frames[index].farEndSilent = frame.farEndSilent
+                        mic.frames[index].excess = frame.excess
                         let ms = Int(Self.frameSeconds * 1000)
                         switch frame.verdict {
                         case .echo: counters.echoFrameMS += ms
                         case .unclear: counters.unclearFrameMS += ms
-                        case .own: if frame.farEndSilent { counters.ownSilentFarEndMS += ms } else { counters.ownLouderMS += ms }
+                        case .own:
+                            if frame.farEndSilent { counters.ownSilentFarEndMS += ms } else {
+                                counters.ownLouderMS += ms
+                                if let excess = frame.excess {
+                                    if excess >= Self.clearOwnExcessDB { counters.ownClearMS += ms }
+                                    else if excess >= 8 { counters.ownExcess8to12MS += ms }
+                                    else { counters.ownExcess4to8MS += ms }
+                                }
+                            }
                         case nil: break
                         }
                     }
@@ -300,7 +324,9 @@ final class EchoMonitor: @unchecked Sendable {
             for frame in micFrames where frame.time >= start && frame.time <= end {
                 switch frame.verdict {
                 case .echo: result.echoMS += frameMS
-                case .own: result.ownMS += frameMS
+                case .own:
+                    result.ownMS += frameMS
+                    if (frame.excess ?? 0) >= EchoMonitor.clearOwnExcessDB { result.clearOwnMS += frameMS }
                 case .unclear: result.unclearMS += frameMS
                 case nil: break
                 }
@@ -322,7 +348,7 @@ final class EchoMonitor: @unchecked Sendable {
                 // Energy the far end can explain at this delay, with a reverberation decay. Speech
                 // clearly louder than that is the user, including over the far end (double talk).
                 let excess = frame.db - (predictedEcho(at: t - path.lag) + path.gainDB)
-                if excess > EchoMonitor.ownExcessDB { return .own }
+                if excess > EchoMonitor.ownExcessDB { micFrames[index].excess = excess; return .own }
                 return excess <= EchoMonitor.echoExcessDB ? .echo : .unclear
             }
             // No echo path observed yet (for example headphones): only a strong contour match decides.
@@ -440,6 +466,7 @@ extension EchoMonitor.Counters {
         systemDelayMSMax = try int(.systemDelayMSMax); micDelayMSMax = try int(.micDelayMSMax)
         echoFrameMS = try int(.echoFrameMS); unclearFrameMS = try int(.unclearFrameMS)
         ownSilentFarEndMS = try int(.ownSilentFarEndMS); ownLouderMS = try int(.ownLouderMS)
+        ownExcess4to8MS = try int(.ownExcess4to8MS); ownExcess8to12MS = try int(.ownExcess8to12MS); ownClearMS = try int(.ownClearMS)
     }
 }
 

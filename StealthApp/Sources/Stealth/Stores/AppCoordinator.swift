@@ -1104,11 +1104,12 @@ final class AppCoordinator: ObservableObject {
             flowSources = []
             statusMessage = "Starting audio capture…"
             // Acquire permissions/capture first; never leave paid sockets open after a capture failure.
-            if settings.mode == .remote { await systemAudio.start(sessionID: epoch) }
-            guard liveEpoch == epoch, !isShuttingDown else {
-                await systemAudio.stop(); mic.stop(); sessionStartedAt = nil; return
-            }
-            if micEnabled || settings.mode == .inPerson { await mic.start(sessionID: epoch) }
+            // System audio and the microphone start side by side: a cold first start of each took
+            // seconds, and in sequence the waits added up.
+            let wantsSystem = settings.mode == .remote, wantsMic = micEnabled || settings.mode == .inPerson
+            async let systemStarted: Void = wantsSystem ? systemAudio.start(sessionID: epoch) : ()
+            async let micStarted: Void = wantsMic ? mic.start(sessionID: epoch) : ()
+            _ = await (systemStarted, micStarted)
             guard liveEpoch == epoch, !isShuttingDown else {
                 await systemAudio.stop(); mic.stop(); sessionStartedAt = nil; return
             }
@@ -1131,6 +1132,13 @@ final class AppCoordinator: ObservableObject {
             scheduleAudioCheck(epoch: epoch)
             statusMessage = systemAudio.lastError ?? mic.lastError ?? (settings.listeningService.isLocal ? "Loading local speech model…" : "Connecting Live…")
         } catch { statusMessage = error.localizedDescription; sessionStartedAt = nil }
+    }
+    /// Brings up ScreenCaptureKit and the microphone input ahead of the first Start, without
+    /// capturing anything. Each manager skips it without a permission already granted.
+    func prewarmCapture() {
+        guard !isMock, !isRunning, !isTransitioning else { return }
+        if settings.mode == .remote { systemAudio.prewarm() }
+        if micEnabled || settings.mode == .inPerson { mic.prewarm() }
     }
     var activeProfessionalTerms: [String] {
         guard settings.professionalTermsEnabled else { return [] }

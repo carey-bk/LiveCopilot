@@ -37,6 +37,19 @@ final class MicCaptureManager: ObservableObject {
 
     init() {}
 
+    /// The first audio engine of a process spends seconds bringing up the input device (measured
+    /// 4.7 s on a first Start, 0.1 s afterwards). Doing that ahead of time, without starting any
+    /// input, makes the first Start as quick as later ones. Skipped without microphone permission
+    /// (no prompt) and for a Bluetooth default input, where opening it could switch a headset into
+    /// its lower-quality call profile.
+    func prewarm() {
+        guard testStartHandler == nil, !isCapturing,
+              AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
+              !AudioDevices.defaultInputIsBluetooth() else { return }
+        let core = self.core
+        Task.detached(priority: .utility) { await core.run { $0.prewarm() } }
+    }
+
     /// Follows configuration changes of the engine that is currently running.
     private func observe(_ engine: MicEngine.EngineRef) {
         engineRevision = UUID()
@@ -234,6 +247,14 @@ private final class MicEngine: @unchecked Sendable {
         engine?.stop()
     }
 
+    /// Reads the input format of a throwaway engine; no tap is installed and nothing is started.
+    func prewarm() {
+        guard engine == nil else { return }
+        let started = ProcessInfo.processInfo.systemUptime
+        let format = AVAudioEngine().inputNode.outputFormat(forBus: 0)
+        DebugLog.log(String(format: "MIC prewarm %.0f ms (input %.0f Hz)", (ProcessInfo.processInfo.systemUptime - started) * 1000, format.sampleRate))
+    }
+
     private func removeTap() {
         guard tapInstalled, let engine else { return }
         engine.inputNode.removeTap(onBus: 0)
@@ -295,5 +316,24 @@ private final class MicSessionGate: @unchecked Sendable {
         defer { lock.unlock() }
         guard active else { return }
         body()
+    }
+}
+
+import CoreAudio
+
+enum AudioDevices {
+    /// Whether the system default input device is a Bluetooth (or Bluetooth LE) device.
+    static func defaultInputIsBluetooth() -> Bool {
+        var device = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice,
+                                                 mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr,
+              device != 0 else { return false }
+        var transport = UInt32(0)
+        size = UInt32(MemoryLayout<UInt32>.size)
+        address.mSelector = kAudioDevicePropertyTransportType
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &transport) == noErr else { return false }
+        return transport == kAudioDeviceTransportTypeBluetooth || transport == kAudioDeviceTransportTypeBluetoothLE
     }
 }

@@ -593,6 +593,23 @@ enum CoreChecks {
             let both = monitor(system: far, mic: doubleTalk)
             try expect(both.assess(from: 100.5, to: 102.9, now: 103).isEcho, "echo before the user spoke not recognized")
             try expect(both.assess(from: 102.6, to: 104.0, now: 104.0).isOwn, "barge-in over the far end not recognized within 1 s")
+            // Short replies over a far end that keeps talking: the replay fills every pause, so own
+            // frames are outnumbered, but they are far louder than any replay. Still the user.
+            var replies = echoOnly
+            for (n, at) in [2.0, 4.0].enumerated() {
+                let burst = SyntheticTalk.speech(seed: UInt64(10 + n), seconds: 0.2)
+                for i in burst.indices { replies[Int(at * rate) + i] += burst[i] }
+            }
+            let short = monitor(system: far, mic: replies).assess(from: 100.5, to: 105.5, now: 105.8)
+            try expect(short.ownMS < short.echoMS, "fixture should be outnumbered by replay \(short)")
+            try expect(short.isOwn, "short replies over a talking far end held as echo \(short)")
+            // Room colouring: stretches of replay 6 dB louder than predicted are not the user.
+            var coloured = echoOnly
+            for start in stride(from: Int(1.0 * rate), to: coloured.count, by: Int(0.3 * rate)) {
+                for i in start..<min(coloured.count, start + Int(0.1 * rate)) { coloured[i] *= 2 }
+            }
+            let colouredReplay = monitor(system: far, mic: coloured).assess(from: 100.5, to: 105.5, now: 106.5)
+            try expect(!colouredReplay.isOwn, "coloured replay counted as own speech \(colouredReplay)")
             // Far end silent (the user repeats its words afterwards), or headphones: own speech.
             let silent = [Float](repeating: 0, count: far.count)
             try expect(monitor(system: silent, mic: far).assess(from: 100.5, to: 105.5, now: 106).isOwn, "speech with a silent far end not own")

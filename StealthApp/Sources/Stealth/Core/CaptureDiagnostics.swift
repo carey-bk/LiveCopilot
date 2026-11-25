@@ -148,7 +148,7 @@ enum CaptureDiagnostics {
             if let lag = e.pathLagMS, let gain = e.pathGainDB { fields.append("echo_lag_ms=\(lag) echo_gain_db=\(gain)") }
             if let corr = e.bestCorrelationPercent, let lag = e.bestLagMS { fields.append("echo_best_corr=\(corr) echo_best_lag_ms=\(lag)") }
             fields.append("delivery_ms_max_system=\(e.systemDelayMSMax) delivery_ms_max_mic=\(e.micDelayMSMax)")
-            fields.append("echo_frames_ms=\(e.echoFrameMS) unclear_frames_ms=\(e.unclearFrameMS) own_silent_far_end_ms=\(e.ownSilentFarEndMS) own_louder_ms=\(e.ownLouderMS)")
+            fields.append("echo_frames_ms=\(e.echoFrameMS) unclear_frames_ms=\(e.unclearFrameMS) own_silent_far_end_ms=\(e.ownSilentFarEndMS) own_louder_ms=\(e.ownLouderMS) own_excess_4_8_ms=\(e.ownExcess4to8MS) own_excess_8_12_ms=\(e.ownExcess8to12MS) own_clear_ms=\(e.ownClearMS)")
         }
         line += " " + fields.joined(separator: " ")
         return line
