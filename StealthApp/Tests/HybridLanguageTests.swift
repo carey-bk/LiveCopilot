@@ -434,6 +434,8 @@ final class HybridLanguageTests: XCTestCase {
     @MainActor func testManualAndJevShareLanguageAndKnowledgeSnapshotsAcrossTurns() async {
         let reasoner = PolicyReasoner(), app = app(reasoner)
         app.settings.listeningService = .paraformer; app.settings.automaticSuggestions = true
+        // Each question is checked as its own answer; without "you" speaking they would be one turn.
+        app.settings.continuousQuestionPolicy = .separate
         await app.start()
         for (index, text) in ["请解释什么是缓存？", "Could you explain TCP congestion control?", "Can you explain 缓存失效 in English?"].enumerated() {
             app.receiveMockEvent(.transcript(.init(id: "turn-\(index)", speaker: .them, text: text,

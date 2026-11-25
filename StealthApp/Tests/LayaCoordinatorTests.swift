@@ -381,6 +381,8 @@ final class LayaCoordinatorTests: XCTestCase {
     @MainActor func testFirstAnswerLatencyAndIndependentQuestion() async {
         let reasoning = CountingLayaReasoning()
         let app = make(reasoning); await app.start()
+        // Two questions with nothing said in between would be one turn; this checks them as separate answers.
+        app.settings.continuousQuestionPolicy = .separate
         let start = Date()
         final(app, text: "Could you explain the caching policy?", id: "latency-a")
         while reasoning.requests.isEmpty && Date().timeIntervalSince(start) < 1 { await pause(0.01) }
