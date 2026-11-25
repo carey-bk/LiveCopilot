@@ -5,10 +5,10 @@ import Foundation
 /// Debug-only, mock-only launch arguments that put the UI into reproducible states for
 /// before/after screenshot comparison. Content is synthetic; writes stay in the mock data directory.
 ///
-///     --mock --ui-preview --ui-fixture listening|streaming|answered|session|error|notice
+///     --mock --ui-preview --ui-fixture listening|streaming|answered|merged|session|error|notice
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
-///     --ui-tip <OverlayTourState.Step case>   --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-laya-threshold 0.85   --ui-continuous fast|smart|complete   --ui-open-history   --ui-answer-only
+///     --ui-tip <OverlayTourState.Step case>   --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-laya-threshold 0.85   --ui-continuous update|separate   --ui-open-history   --ui-answer-only
 ///     --ui-query <typed question>   --ui-question-only   --ui-transcript-collapsed   --ui-transcript-lines n   --ui-translations japanese,english   --ui-scroll-end
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
@@ -64,6 +64,13 @@ enum UIFixture {
         case "streaming", "answered":
             coordinator.settings.automaticSuggestions = true
             await listen(coordinator, automatic: true)
+        case "merged":
+            // The other side adds to its question before you speak: the answer is written again.
+            await listen(coordinator, automatic: true)
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            coordinator.receiveMockEvent(.transcript(.init(id: "fixture-addition", speaker: .them, text: "And how does it hold up under peak load?",
+                                                         startMS: 4_000, endMS: 5_000, receivedAt: Date())), speaker: .them)
+            coordinator.receiveMockEvent(.delegation(id: "fixture-addition", offsetMS: 5_000), speaker: .them)
         case "session":
             // Records one synthetic session into mock history, then stops listening.
             await listen(coordinator, automatic: true)

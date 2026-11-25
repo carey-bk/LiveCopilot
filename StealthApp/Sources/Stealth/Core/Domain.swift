@@ -39,7 +39,7 @@ struct AppSettings: Codable, Equatable {
     var scenario = ScenarioProfile.interview
     var automaticSuggestions = true
     var layaThreshold = JevThreshold.standard
-    var continuousQuestionPolicy = ContinuousQuestionPolicy.smart
+    var continuousQuestionPolicy = ContinuousQuestionPolicy.update
     /// Each answer sentence is followed by its translation into `answerTranslationLanguages`.
     var answerTranslationEnabled = false
     /// Chosen translation languages in order; empty means the default for the interface language.
@@ -131,7 +131,7 @@ struct AppSettings: Codable, Equatable {
             answerTranslationLanguages = [.english, .simplifiedChinese]
         }
         additionalAnswerInstructions = String((try c.decodeIfPresent(String.self, forKey: .additionalAnswerInstructions) ?? "").prefix(4000))
-        continuousQuestionPolicy = try c.decodeIfPresent(ContinuousQuestionPolicy.self, forKey: .continuousQuestionPolicy) ?? .smart
+        continuousQuestionPolicy = try c.decodeIfPresent(ContinuousQuestionPolicy.self, forKey: .continuousQuestionPolicy) ?? .update
         let threshold = try c.decodeIfPresent(Double.self, forKey: .layaThreshold) ?? layaThreshold
         layaThreshold = JevThreshold.snapped(threshold)
         recapEnabled = try c.decodeIfPresent(Bool.self, forKey: .recapEnabled) ?? recapEnabled

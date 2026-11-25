@@ -188,6 +188,10 @@ struct AnswerMessageView: View {
                 HStack(spacing: 6) {
                     LCPill(text: record.automatic ? b("Automatic suggestion", "自动建议") : b("Manual question", "手动提问"),
                            tone: record.automatic ? .pink : .accent, systemImage: record.automatic ? "waveform" : "text.bubble")
+                    if record.merged {
+                        LCPill(text: b("Addition merged", "已合并补充"), tone: .neutral, systemImage: "arrow.triangle.merge")
+                            .accessibilityIdentifier("answer-merged")
+                    }
                     Spacer()
                     Text(record.createdAt, style: .time).font(.caption2).foregroundStyle(.secondary).monospacedDigit()
                 }

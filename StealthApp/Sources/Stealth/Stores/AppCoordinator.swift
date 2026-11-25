@@ -43,6 +43,8 @@ final class AppCoordinator: ObservableObject {
         let createdAt: Date
         let store: SuggestionStore
         var viewed: Bool
+        /// The other side added to the question, so this answer covers both parts.
+        var merged = false
     }
     @Published private(set) var answerRevision = 0
     @Published private(set) var answers: [AnswerRecord] = []
@@ -51,6 +53,16 @@ final class AppCoordinator: ObservableObject {
     @Published private(set) var queuedQuestionCount = 0
     @Published private(set) var skippedQuestionCount = 0
     private var questions = QuestionCoordinator()
+    /// The other side's current question turn: it lasts until you speak (or, in person, a short gap).
+    private var questionTurn: (speaker: Speaker?, answerID: UUID, lastQuestionAt: Date)?
+    private var lastOwnSpeechAt: Date?
+    /// Answers whose question was extended and answered again; kept in history.
+    private var supersededAnswerIDs = Set<UUID>()
+    private var mergedAnswerIDs = Set<UUID>()
+    /// A completed answer can still be updated for this long while you have not spoken.
+    var turnQuietSeconds: TimeInterval = 15
+    /// In person (one shared microphone) or with the microphone off, a turn is only a short gap between questions.
+    var roomTurnSeconds: TimeInterval = 8
     private var queueWake: Task<Void, Never>?
     private var answerTimeout: Task<Void, Never>?
     private var activeStore: SuggestionStore?
@@ -92,7 +104,7 @@ final class AppCoordinator: ObservableObject {
                 let store = SuggestionStore(); store.prepare(question: item.query)
                 sessionAnswerIDs.insert(item.answerID)
                 answers.append(AnswerRecord(id: item.answerID, questionID: item.id, automatic: true, sourceFragmentID: item.sourceID,
-                                            createdAt: item.receivedAt, store: store, viewed: false))
+                                            createdAt: item.receivedAt, store: store, viewed: false, merged: mergedAnswerIDs.contains(item.answerID)))
             }
         }
         answerRevision &+= 1
@@ -306,7 +318,7 @@ final class AppCoordinator: ObservableObject {
             if oldValue.automaticSuggestions != settings.automaticSuggestions ||
                 oldValue.scenario != settings.scenario ||
                 oldValue.mode != settings.mode || oldValue.listeningService != settings.listeningService {
-                questions.clear(); queueWake?.cancel(); queuedQuestionCount = 0
+                questions.clear(); questionTurn = nil; queueWake?.cancel(); queuedQuestionCount = 0
                 // Release a loaded Laya once nothing selects it. Configuration changes while idle
                 // must not cancel model installation or warmup, so only a finished load is released.
                 invalidateAutomaticTrigger(releaseRuntime: !layaSelected && (isRunning || laya.isReady))
@@ -561,7 +573,7 @@ final class AppCoordinator: ObservableObject {
     /// at once when automatic suggestions or the local transcriber are turned off.
     private var layaSelected: Bool { settings.automaticSuggestions && usesLaya }
     private func invalidateAutomaticTrigger(releaseRuntime: Bool = true) {
-        questions.clear(); syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
+        questions.clear(); questionTurn = nil; syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
         questionTask?.cancel(); questionTask = nil; pendingAutomatic = nil
         layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil; lastLayaPartialSubmissionAt = 0
         layaLastScore = nil
@@ -581,7 +593,7 @@ final class AppCoordinator: ObservableObject {
         }
     }
     private func manualIntervention() {
-        questions.clear(); syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
+        questions.clear(); questionTurn = nil; syncQueuedAnswers(); queueWake?.cancel(); queuedQuestionCount = 0; skippedQuestionCount = 0
         pendingAutomatic = nil; questionTask?.cancel(); questionTask = nil
         layaGate.manualIntervention()
     }
@@ -1154,6 +1166,7 @@ final class AppCoordinator: ObservableObject {
             // Possible speaker echo: neither shown as You nor allowed to retire the pending question.
             if speaker == .them || speaker == .room { noteFarEndText(text) }
             if speaker == .you, echoGuardApplies, !text.isEmpty, !confirmOwnTurn(text: text) { holdOwnTurn(); return }
+            if speaker == .you, !text.isEmpty { lastOwnSpeechAt = Date() }
             transcript.setPartial(text, speaker: speaker)
             translation.updatePreview(text, speaker: speaker)
             if !text.isEmpty { setQuestionState(QuestionPhase.forming.rawValue); flow(for: speaker).notePartial() }
@@ -1168,6 +1181,7 @@ final class AppCoordinator: ObservableObject {
                 return
             }
             guard conversation.append(fragment) else { return }
+            if speaker == .you { lastOwnSpeechAt = Date() }
             flow(for: speaker).noteTranscript()
             transcript.ingest(fragment)
             translation.update(lines: transcript.lines)
@@ -1249,7 +1263,6 @@ final class AppCoordinator: ObservableObject {
         else { speakingSources.remove(speaker); if pendingAutomatic != nil { scheduleAutomatic() } }
         if usesLaya, isRunning { layaGate.setSpeaking(active, speaker: speaker) }
         if !active {
-            if settings.continuousQuestionPolicy == .complete { questions.postponeUntilQuiet() }
             drainQuestions()
         }
     }
@@ -1612,7 +1625,7 @@ final class AppCoordinator: ObservableObject {
         mockTask?.cancel(); mockTask = nil
         sessionStartedAt = nil // The completed round was archived above.
         isRunning = false
-        translation.resetSession(); conversation.reset(); transcript.clear(); suggestion.reset(); answers.removeAll(); selectedAnswerID = nil
+        translation.resetSession(); conversation.reset(); transcript.clear(); suggestion.reset(); answers.removeAll(); selectedAnswerID = nil; supersededAnswerIDs = []; mergedAnswerIDs = []; questionTurn = nil; lastOwnSpeechAt = nil
         activeDelegations = []; speakingSources = []
         questionState = QuestionPhase.listening.rawValue
         settings.overlayAutoHeight = true
@@ -1908,6 +1921,7 @@ final class AppCoordinator: ObservableObject {
     func askText(_ query: String) { manualIntervention(); request(query: query, mode: .reply, useContext: settings.includeConversation) }
     func cancelAnswer() {
         manualIntervention()
+        questionTurn = nil
         finalizeAnswerBuffer(activeDeltaBuffer)
         activeStore?.mark(.cancelled); activeStore?.interrupt()
         if let store = activeStore { publishAnswer(requestID, store: store) }
@@ -1920,8 +1934,18 @@ final class AppCoordinator: ObservableObject {
                          delegationID: String? = nil, useContext: Bool = true,
                          automatic: Bool = false, contextOverride: String? = nil, pipelineTrace: PipelineTrace? = nil, languageQuestion: String? = nil, scheduled: QuestionCoordinator.Candidate? = nil) {
         if automatic && scheduled == nil {
-            questions.enqueue(query: query, context: contextOverride ?? conversation.context(), speaker: speaker,
-                              delegationID: delegationID, trace: pipelineTrace, sourceID: conversation.latestFragmentID(speaker: speaker), policy: settings.continuousQuestionPolicy)
+            let now = Date()
+            let continuing = continuesTurn(speaker: speaker, now: now)
+            // Nothing of theirs is waiting, so the addition extends the answer already started or shown.
+            let anchor = continuing && !questions.hasPending(from: speaker)
+                ? questionTurn.flatMap { turn in answers.first { $0.id == turn.answerID } } : nil
+            let outcome = questions.enqueue(query: query, context: contextOverride ?? conversation.context(), speaker: speaker,
+                                            delegationID: delegationID, trace: pipelineTrace, sourceID: conversation.latestFragmentID(speaker: speaker),
+                                            continuesTurn: continuing, previousQuery: anchor?.store.question, now: now)
+            if case .queued(let answerID, let merged) = outcome {
+                if merged { mergedAnswerIDs.insert(answerID); if let anchor { supersede(anchor) } }
+                questionTurn = (speaker, answerID, now)
+            }
             conversation.begin(query, speaker: speaker, now: Date())
             queuedQuestionCount = questions.pending.count; skippedQuestionCount = questions.droppedCount
             syncQueuedAnswers()
@@ -1939,10 +1963,11 @@ final class AppCoordinator: ObservableObject {
         sessionAnswerIDs.insert(id)
         let output = answers.first(where: { $0.id == id })?.store ?? SuggestionStore()
         activeStore = output; answerIsRunning = true
-        let show = !automatic || selectedAnswerID == nil
+        // An answer that replaces the one being read takes the foreground.
+        let show = !automatic || (selectedAnswerID.map(supersededAnswerIDs.contains) ?? true)
         if !answers.contains(where: { $0.id == id }) {
             answers.append(AnswerRecord(id: id, questionID: scheduled?.id ?? UUID(), automatic: automatic, sourceFragmentID: scheduled?.sourceID,
-                                        createdAt: Date(), store: output, viewed: show))
+                                        createdAt: Date(), store: output, viewed: show, merged: mergedAnswerIDs.contains(id)))
         }
         if show {
             selectedAnswerID = id
@@ -1954,7 +1979,9 @@ final class AppCoordinator: ObservableObject {
         let priorAnswers = useContext && mode == .reply ? recentPriorAnswers(excluding: id) : []
         // The previous question is the last one that was actually answered. The conversation's own
         // record is set when a question is queued, so for automatic answers it was the current one.
-        let previous = useContext ? (priorAnswers.last?.question ?? (conversation.previousQuestion != query ? conversation.previousQuestion : nil)) : nil
+        // A merged question already contains the earlier part, so it is not repeated as "previous".
+        let merged = scheduled?.baseQuery != nil
+        let previous = useContext ? (priorAnswers.last?.question ?? (!merged && conversation.previousQuestion != query ? conversation.previousQuestion : nil)) : nil
         let lastAnswerMarkdown = useContext && mode == .reply ? lastCompletedAnswerText(excluding: id) : nil
         let normalized = RetrievalQuery.formulate(question: query, context: context, previousQuestion: previous, previousAnswer: lastAnswerMarkdown)
         if scheduled == nil { conversation.begin(query, speaker: speaker, now: Date()) }
@@ -2089,7 +2116,38 @@ final class AppCoordinator: ObservableObject {
             self.layaGate.retryPending()
         }
     }
-    /// Completed suggested answers (reply mode) before `id`, oldest first, at most three.
+    /// The other side is still adding to its question: same speaker, you have not spoken since,
+    /// and its answer is waiting, running, or finished moments ago. In person all voices share
+    /// one microphone, and with the microphone off you cannot be heard, so there only the gap
+    /// since the last question counts.
+    private func continuesTurn(speaker: Speaker?, now: Date) -> Bool {
+        guard settings.continuousQuestionPolicy == .update, speaker != .you,
+              let turn = questionTurn, turn.speaker == speaker else { return false }
+        // Without your own microphone the app cannot hear you answer: only the gap counts.
+        if speaker == .room || !(isMock || mic.isCapturing) { return now.timeIntervalSince(turn.lastQuestionAt) <= roomTurnSeconds }
+        if let own = lastOwnSpeechAt, own >= turn.lastQuestionAt { return false }
+        guard let record = answers.first(where: { $0.id == turn.answerID }) else { return questions.hasPending(from: speaker) }
+        guard !record.store.isLoading, record.store.state != .queued, let done = record.store.completedAt else { return true }
+        return now.timeIntervalSince(done) <= turnQuietSeconds
+    }
+    /// The question this answer was for has been extended: stop it if it is still running and
+    /// point to the combined answer. It stays in history and navigation.
+    private func supersede(_ record: AnswerRecord) {
+        supersededAnswerIDs.insert(record.id)
+        let note = ServiceGuide.text("The question continued; both parts are answered together in the next answer.",
+                                     "对方补充了问题，已合并到下一条回答。", settings.language)
+        if record.store.isLoading, requestID == record.id {
+            finalizeAnswerBuffer(activeDeltaBuffer)
+            record.store.mark(.cancelled); record.store.interrupt(note)
+            requestID = UUID(); answerTask?.cancel(); answerTimeout?.cancel(); answerIsRunning = false
+            activeStore = nil
+        } else {
+            record.store.warning = note
+        }
+        publishAnswer(record.id, store: record.store)
+    }
+    /// Completed suggested answers (reply mode) before `id`, oldest first, at most three. A completed
+    /// answer that was later merged still counts: it was shown, and may already have been said.
     private func completedReplies(excluding id: UUID) -> [AnswerRecord] {
         answers.filter { $0.id != id && $0.store.mode == .reply && $0.store.state == .completed && !$0.store.text.isEmpty }
             .sorted { $0.createdAt < $1.createdAt }

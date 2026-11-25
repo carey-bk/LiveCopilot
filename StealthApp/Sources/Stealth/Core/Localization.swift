@@ -60,9 +60,8 @@ enum L10n {
 
         "Use a comfortable conversation height with fixed voice and input areas. Drag an edge to resize; answers scroll independently.": "使用适合会话阅读的窗口高度，语音区和输入区固定；可拖动边缘调整大小，回答独立滚动。",
 
-        "Fast response": "快速响应",
-        "Smart merging": "智能合并",
-        "Complete question first": "完整提问优先",
+        "Update the answer": "更新当前回答",
+        "Answer separately": "另起一条回答",
         "Check key": "检测密钥",
         ServiceHTTPFailure.Kind.authentication.message: "API 密钥被拒绝，可能无效、已过期或被撤销。请更换密钥，并确认服务商与地域匹配。",
         ServiceHTTPFailure.Kind.billing.message: "API 余额或额度不足，请检查是否尚未充值、余额已用完、额度已过期或达到用量上限。",

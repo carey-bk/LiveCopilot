@@ -67,9 +67,8 @@ struct JevSettingsView: View {
     /// Short enough for a segmented control in a half-width card; the description below gives the detail.
     private func shortLabel(_ policy: ContinuousQuestionPolicy) -> String {
         switch policy {
-        case .fast: return b("Fast", "快速响应")
-        case .smart: return b("Merge", "智能合并")
-        case .complete: return b("Wait", "完整优先")
+        case .update: return b("Update answer", "更新当前回答")
+        case .separate: return b("New answer", "另起一条回答")
         }
     }
     /// Shows one of several descriptions while keeping the height of the longest, so the card
@@ -88,9 +87,8 @@ struct JevSettingsView: View {
     }
     private func continuousQuestionDescription(_ policy: ContinuousQuestionPolicy) -> String {
         switch policy {
-        case .fast: return b("Respond to each clear request as soon as possible.", "回应意图明确后，尽快分别回答。")
-        case .smart: return b("Keep the first answer fast; merge related follow-ups.", "首答保持快速，相关补充问题智能合并。")
-        case .complete: return b("Wait briefly for follow-ups before answering.", "短暂等待后续补充，再生成完整回答。")
+        case .update: return b("Until you speak, their additions are merged and the answer is written again.", "你开口前，对方的补充会合并进来，重新回答。")
+        case .separate: return b("Each question gets its own answer, building on the previous one.", "每个提问各自回答，后一条会参考前一条回答。")
         }
     }
     /// Five detents (0.65–0.90); the current value is shown large beside the title while dragging.
@@ -135,13 +133,14 @@ struct JevSettingsView: View {
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
                 LCSettingsCard(b("Continuous questions", "连续提问处理"), systemImage: "text.bubble") {
+                    Text(b("When they add to a question", "对方补充提问时")).font(.callout).foregroundStyle(.secondary)
                     choice(b("Continuous questions", "连续提问处理"), selection: $coordinator.settings.continuousQuestionPolicy,
                            options: ContinuousQuestionPolicy.allCases.map { ($0, shortLabel($0)) })
                         .accessibilityIdentifier("continuous-question-policy")
                     reservingLongest(ContinuousQuestionPolicy.allCases.map(continuousQuestionDescription),
                                      showing: ContinuousQuestionPolicy.allCases.firstIndex(of: coordinator.settings.continuousQuestionPolicy) ?? 0,
                                      identifier: "continuous-question-description")
-                    Label(b("Previous answers are always kept.", "历史回答始终保留，不会被覆盖。"), systemImage: "clock.arrow.circlepath")
+                    Label(b("Earlier versions stay in history.", "被替换的回答保留在历史记录中。"), systemImage: "clock.arrow.circlepath")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
