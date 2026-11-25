@@ -1296,9 +1296,11 @@ final class AppCoordinator: ObservableObject {
         // Long previews allow a three-token ASR lag. Short, distinct interruptions
         // must not wait for nine tokens; acoustic echo evidence above still takes precedence.
         // Different words alone are not enough: two recognizers can transcribe one replay quite
-        // differently (mixed languages, homophones), so the audio must also lean towards the user.
+        // differently (mixed languages, homophones). The audio must not lean towards replay, and
+        // once speaker echo is known in this room it must show some of the user's own voice.
+        // Headphones (no echo, undecided frames) still confirm on words.
         if let text, !final, now - start >= Self.ownTurnLeadIn + 0.4,
-           assessment.ownMS > 0, assessment.ownMS >= assessment.echoMS {
+           assessment.echoMS <= assessment.ownMS, !assessment.echoPathKnown || assessment.ownMS > 0 {
             let tokens = EchoText.tokens(text)
             if tokens.count >= 2,
                let similarity = EchoText.similarity(tokens.count >= EchoText.minimumOwnTokens + 3 ? tokens.dropLast(3).joined(separator: " ") : text, to: recent), similarity <= EchoText.ownSimilarity {
