@@ -454,11 +454,12 @@ enum EchoText {
     static let ownSimilarity = 0.3
     static let minimumOwnTokens = 6
 
-    /// CJK text compares character bigrams; other text compares lowercased words.
+    /// Chinese and Japanese text (no spaces between words) compares character bigrams; other
+    /// text, Korean included, compares lowercased words.
     static func tokens(_ text: String) -> [String] {
         let kept = text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) || $0 == " " }
         let cleaned = String(String.UnicodeScalarView(kept))
-        let cjk = cleaned.unicodeScalars.filter { (0x3400...0x9FFF).contains($0.value) || (0xF900...0xFAFF).contains($0.value) }
+        let cjk = cleaned.unicodeScalars.filter { (0x3400...0x9FFF).contains($0.value) || (0xF900...0xFAFF).contains($0.value) || (0x3040...0x30FF).contains($0.value) }
         if cjk.count * 2 >= cleaned.unicodeScalars.filter({ $0 != " " }).count, cjk.count >= 2 {
             let characters = Array(cleaned.replacingOccurrences(of: " ", with: ""))
             return characters.count < 2 ? characters.map(String.init) : (0..<(characters.count - 1)).map { String(characters[$0...$0 + 1]) }

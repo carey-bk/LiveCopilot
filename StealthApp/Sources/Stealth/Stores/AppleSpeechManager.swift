@@ -8,6 +8,13 @@ import Combine
     @Published private(set) var failedLanguage: AppleSpeechLanguage?
     var downloadFailed: Bool { failedLanguage != nil }
     @Published private(set) var message = ""
+    /// Languages offered by this Mac; nil until loaded, when pickers show every known language.
+    @Published private(set) var supported: Set<AppleSpeechLanguage>?
+    func loadSupported() async {
+        guard supported == nil else { return }
+        let languages = await AppleSpeechSupport.supportedLanguages()
+        if !languages.isEmpty { supported = languages }
+    }
     private var task: Task<Void, Never>?
     private var revision = UUID()
     var available: Bool { AppleSpeechSupport.available }

@@ -176,10 +176,17 @@ extension SettingsView {
         LCPill(text: coordinator.settings.automaticSuggestions ? b("Auto answers on", "自动建议已开") : b("Auto answers off", "自动建议已关"),
                tone: coordinator.settings.automaticSuggestions ? .accent : .neutral).fixedSize()
     }
+    private var speechDetail: String {
+        let settings = coordinator.settings
+        if settings.listeningService == .apple {
+            return b(settings.appleSpeechLanguage.names.en, settings.appleSpeechLanguage.names.zh) + b(" · on this Mac", " · 本机运行")
+        }
+        return settings.listeningService.isLocal ? b("Runs on this Mac · no API fees", "在本机运行 · 无 API 费用") : b("Cloud · usage-based", "云端 · 按量计费")
+    }
     private func speechTile(_ entry: SettingsReadiness.Entry) -> some View {
         LCStatTile(title: b("Speech", "语音识别"),
                    value: t(coordinator.settings.listeningService.label),
-                   detail: entry.reason ?? (coordinator.settings.listeningService.isLocal ? b("Runs on this Mac · no API fees", "在本机运行 · 无 API 费用") : b("Cloud · usage-based", "云端 · 按量计费")),
+                   detail: entry.reason ?? speechDetail,
                    systemImage: "waveform", tone: .accent, badge: entry.badge(coordinator.settings.language)) {
             overviewLink(b("Configure", "去设置")) { open(.speech) }
         }

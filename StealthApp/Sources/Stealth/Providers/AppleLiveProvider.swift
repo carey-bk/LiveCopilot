@@ -8,6 +8,12 @@ enum AppleSpeechSupport {
         if #available(macOS 26, *) { return SpeechTranscriber.isAvailable }
         return false
     }
+    /// Languages this Mac's SpeechTranscriber supports (downloaded or not); empty before macOS 26.
+    static func supportedLanguages() async -> Set<AppleSpeechLanguage> {
+        guard #available(macOS 26, *), available else { return [] }
+        let ids = Set(await SpeechTranscriber.supportedLocales.map { $0.identifier(.bcp47) })
+        return Set(AppleSpeechLanguage.allCases.filter { ids.contains($0.bcp47) })
+    }
     static func installed(_ language: AppleSpeechLanguage) async -> Bool {
         guard #available(macOS 26, *), available,
               let locale = await SpeechTranscriber.supportedLocale(equivalentTo: Locale(identifier: language.rawValue)) else { return false }

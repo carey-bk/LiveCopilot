@@ -20,6 +20,25 @@ private final class CaptureSharingPanel: NSPanel {
 }
 
 final class NativeTests: XCTestCase {
+    func testAppleSpeechLanguagesKeepSavedValuesAndNames() throws {
+        XCTAssertEqual(AppleSpeechLanguage.chinese.rawValue, "zh_CN")
+        XCTAssertEqual(AppleSpeechLanguage.english.rawValue, "en_US")
+        XCTAssertEqual(AppleSpeechLanguage.cantoneseHongKong.bcp47, "zh-HK")
+        XCTAssertEqual(Set(AppleSpeechLanguage.allCases.map(\.rawValue)).count, AppleSpeechLanguage.allCases.count)
+        for language in AppleSpeechLanguage.allCases {
+            XCTAssertFalse(language.names.en.isEmpty); XCTAssertFalse(language.names.zh.isEmpty)
+            var settings = AppSettings(); settings.appleSpeechLanguage = language
+            let restored = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+            XCTAssertEqual(restored.appleSpeechLanguage, language)
+        }
+        let saved = try JSONSerialization.data(withJSONObject: ["appleSpeechLanguage": "en_US"])
+        XCTAssertEqual(try JSONDecoder().decode(AppSettings.self, from: saved).appleSpeechLanguage, .english)
+        XCTAssertEqual(AppSettings().appleSpeechLanguage, .chinese)
+        // Japanese has no spaces between words: replay is compared by character pairs.
+        XCTAssertEqual(EchoText.tokens("最近のプロジェクト"), ["最近", "近の", "のプ", "プロ", "ロジ", "ジェ", "ェク", "クト"])
+        XCTAssertEqual(EchoText.similarity("最近のプロジェクト", to: ["最近のプロジェクトについて"]), 1)
+    }
+
     func testSettingsReadinessReportsWhatIsMissing() {
         var ready = SettingsReadiness.Inputs()
         ready.listeningService = .apple; ready.appleSpeechInstalled = true

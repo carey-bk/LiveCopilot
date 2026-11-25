@@ -43,10 +43,9 @@ extension SettingsView {
                 Divider()
                 LCSettingsRow(b("Recognition language", "识别语言")) {
                     if coordinator.settings.listeningService == .apple {
-                        Picker(b("Recognition language", "识别语言"), selection: $coordinator.settings.appleSpeechLanguage) {
-                            Text(b("Mandarin Chinese", "普通话")).tag(AppleSpeechLanguage.chinese)
-                            Text(b("English (US)", "英语（美国）")).tag(AppleSpeechLanguage.english)
-                        }.labelsHidden().fixedSize().disabled(locked || coordinator.appleSpeech.busy).accessibilityIdentifier("apple-speech-language")
+                        AppleSpeechLanguagePicker(language: $coordinator.settings.appleSpeechLanguage, manager: coordinator.appleSpeech,
+                                                  interfaceLanguage: coordinator.settings.language, title: b("Recognition language", "识别语言"))
+                            .labelsHidden().fixedSize().disabled(locked || coordinator.appleSpeech.busy).accessibilityIdentifier("apple-speech-language")
                     } else {
                         LiveSpeechLanguagePicker(language: $coordinator.settings.liveSpeechLanguage,
                                                  interfaceLanguage: coordinator.settings.language, compact: true).labelsHidden().fixedSize().disabled(locked)
@@ -63,7 +62,7 @@ extension SettingsView {
                     }
                 }
                 if coordinator.settings.listeningService == .apple {
-                    Text(b("Only the selected language is recognized. Use Zipformer for mixed Chinese and English.", "仅识别所选语言，不自动切换中英文；混合语言建议使用 Zipformer。"))
+                    Text(b("Only the selected language is recognized; words in other languages are often lost. Use Zipformer for mixed Chinese and English. A new language downloads once, then works offline.", "仅识别所选语言，夹杂的其他语言常会识别不出；中英混合建议使用 Zipformer。新语言首次使用需下载一次，之后可离线运行。"))
                         .font(.caption).foregroundStyle(.secondary)
                 } else if coordinator.settings.listeningService == .openAI {
                     Text(b("Language options guide recognition without restricting the languages recognized.", "语言选项仅影响识别偏好，不限制实际识别语言。"))
