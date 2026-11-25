@@ -742,8 +742,12 @@ enum CoreChecks {
             try expect(state.phase == .followUp, "follow-up state")
         }
         try check("already answered remote question and force fallback") {
+            // Starting to talk within the grace period is a filler or the start of an answer: still answered.
+            var quick = ConversationState(); _ = quick.append(f("What is the sample size?", id: "q"))
+            _ = quick.append(f("Um, let me think.", id: "a", speaker: .you, start: 600, at: now.addingTimeInterval(1)))
+            try expect(quick.candidate(speaker: .them, now: now, cooldown: 0) != nil, "filler right after the question cancelled it")
             var state = ConversationState(); _ = state.append(f("What is the sample size?", id: "q"))
-            _ = state.append(f("128 samples.", id: "a", speaker: .you, at: now.addingTimeInterval(1)))
+            _ = state.append(f("128 samples.", id: "a", speaker: .you, start: 5000, at: now.addingTimeInterval(ConversationState.ownReplyGrace + 1.5)))
             try expect(state.candidate(speaker: .them, now: now, cooldown: 0) == nil && state.phase == .answered, "answered question repeated")
             try expect(state.candidate(speaker: .them, now: now, cooldown: 0, force: true) != nil, "manual override blocked")
         }

@@ -111,7 +111,10 @@ final class AppCoordinator: ObservableObject {
     }
     private func drainQuestions() {
         queueWake?.cancel(); queueWake = nil
-        guard !answerIsRunning, isRunning, settings.automaticSuggestions, !isShuttingDown, speakingSources.isEmpty else { return }
+        // Waits while the other side is still talking, not while you are: you may be filling the
+        // pause or starting your answer, and the suggestion should already be on its way.
+        guard !answerIsRunning, isRunning, settings.automaticSuggestions, !isShuttingDown,
+              speakingSources.subtracting([.you]).isEmpty else { return }
         if let item = questions.take() {
             queuedQuestionCount = questions.pending.count; skippedQuestionCount = questions.droppedCount
             request(query: item.query, mode: .reply, speaker: item.speaker, delegationID: item.delegationID,
@@ -637,7 +640,7 @@ final class AppCoordinator: ObservableObject {
         guard isMock || (speaker == .them ? systemAudio.isCapturing : mic.isCapturing) else { recordLaya(.captureInactive); return }
         if speaker == .you {
             layaPartialTask?.cancel(); layaPartialTask = nil; pendingLayaPartial = nil
-            layaGate.manualIntervention(); recordLaya(.ownTranscript); return
+            layaGate.ownTranscript(); recordLaya(.ownTranscript); return
         }
         // Very short ASR previews are often noise or an unfinished syllable.
         // They must not retire a complete question while the pause timer runs.

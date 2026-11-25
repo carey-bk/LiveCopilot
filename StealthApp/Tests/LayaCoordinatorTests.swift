@@ -1268,6 +1268,85 @@ final class LayaCoordinatorTests: XCTestCase {
         XCTAssertEqual(unwrappedA.stopCount, 1)
     }
 
+    /// Filling the pause right after a question ("嗯，好的，我想一下") must not cancel it, and the
+    /// answer starts while you are still talking.
+    @MainActor func testTalkingRightAfterAQuestionKeepsIt() async {
+        var dispatched = 0
+        let gate = LayaTriggerController(predict: { _, _ in try await Task.sleep(nanoseconds: 200_000_000); return 0.95 },
+                                         onTrigger: { _ in dispatched += 1; return true })
+        gate.configure(enabled: true, threshold: 0.8, cooldown: 0)
+        gate.setSpeaking(true, speaker: .them); gate.setSpeaking(false, speaker: .them)
+        gate.submit(.init(text: "请你介绍一下你最近做的一个项目", context: "", speaker: .them, isFinal: true, sourceID: "a"))
+        await pause(0.05)
+        gate.setSpeaking(true, speaker: .you); gate.ownTranscript()
+        await pause(0.8)
+        XCTAssertEqual(dispatched, 1, "dispatched while you are still talking")
+        // Your speech started first; their final transcript arrives a moment later.
+        dispatched = 0; gate.reset(); gate.configure(enabled: true, threshold: 0.8, cooldown: 0)
+        gate.setSpeaking(true, speaker: .them); gate.setSpeaking(false, speaker: .them)
+        await pause(0.3)
+        gate.setSpeaking(true, speaker: .you)
+        await pause(0.5)
+        gate.submit(.init(text: "请你介绍一下你最近做的一个项目", context: "", speaker: .them, isFinal: true, sourceID: "b"))
+        await pause(0.8)
+        XCTAssertEqual(dispatched, 1, "a late final of the question you are filling in after is still answered")
+        // An own transcript without a speech-start event behaves the same.
+        dispatched = 0; gate.reset(); gate.configure(enabled: true, threshold: 0.8, cooldown: 0)
+        gate.submit(.init(text: "Why did you choose RAG?", context: "", speaker: .them, isFinal: true, sourceID: "c"))
+        gate.ownTranscript()
+        await pause(0.8)
+        XCTAssertEqual(dispatched, 1)
+    }
+    /// Starting to talk well after their question means you are answering it yourself.
+    @MainActor func testTalkingLaterStillCancelsAPendingQuestion() async {
+        var dispatched = 0
+        let gate = LayaTriggerController(predict: { _, _ in try await Task.sleep(nanoseconds: 3_600_000_000); return 0.95 },
+                                         onTrigger: { _ in dispatched += 1; return true })
+        gate.configure(enabled: true, threshold: 0.8, cooldown: 0)
+        gate.setSpeaking(true, speaker: .them); gate.setSpeaking(false, speaker: .them)
+        gate.submit(.init(text: "请你介绍一下你最近做的一个项目", context: "", speaker: .them, isFinal: true, sourceID: "a"))
+        await pause(LayaTriggerController.ownSpeechGrace + 0.3)
+        gate.setSpeaking(true, speaker: .you)
+        await pause(0.8)
+        XCTAssertEqual(dispatched, 0)
+    }
+    /// The full path: their question, then you fill the pause at once. The answer is generated
+    /// while you talk and is not delayed until you stop.
+    @MainActor func testFillerRightAfterQuestionStillGetsAnAnswer() async {
+        let reasoning = CountingLayaReasoning()
+        let app = make(reasoning); await app.start()
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
+        final(app, text: "请你介绍一下你最近做的一个项目", id: "q")
+        await pause(0.05)
+        app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        app.receiveMockEvent(.partialTranscript("嗯，好的，这个问题我想一下"), speaker: .you)
+        await pause(1.2)
+        XCTAssertEqual(reasoning.requests.count, 1, "answered while you are still talking")
+        final(app, text: "嗯，好的，这个问题我想一下", id: "me", speaker: .you, offset: 1500)
+        app.receiveMockEvent(.speechActivity(false), speaker: .you)
+        await pause(0.5)
+        XCTAssertEqual(reasoning.requests.count, 1)
+        XCTAssertEqual(app.answers.first?.store.state, .completed)
+        await app.shutdown()
+    }
+    /// GPT-Live-1 path: a reply you begin right after the question is not "already answered".
+    func testOwnReplyRightAfterQuestionIsNotAlreadyAnswered() {
+        let now = Date()
+        func state(ownStartsAfter seconds: Double) -> ConversationState {
+            var state = ConversationState()
+            _ = state.append(.init(id: "q", speaker: .them, text: "请你介绍一下你最近做的一个项目", startMS: 0, endMS: 2000, receivedAt: now))
+            // Your two-second filler started `seconds` after their question arrived.
+            _ = state.append(.init(id: "me", speaker: .you, text: "嗯，好的，这个问题我想一下", startMS: 3000, endMS: 5000,
+                                   receivedAt: now.addingTimeInterval(seconds + 2)))
+            return state
+        }
+        var soon = state(ownStartsAfter: 0.5)
+        XCTAssertNotNil(soon.candidate(speaker: .them, now: now.addingTimeInterval(3), cooldown: 0))
+        var later = state(ownStartsAfter: ConversationState.ownReplyGrace + 1)
+        XCTAssertNil(later.candidate(speaker: .them, now: now.addingTimeInterval(7), cooldown: 0))
+        XCTAssertEqual(later.phase, .answered)
+    }
     @MainActor func testInterruptionReportsWhetherItRetiredAQuestionOrAJudgement() async {
         var events: [LayaGateEvent] = []
         var dispatched = 0
@@ -1275,6 +1354,8 @@ final class LayaCoordinatorTests: XCTestCase {
                                          onTrigger: { _ in dispatched += 1; return true })
         gate.onEvent = { events.append($0) }
         gate.configure(enabled: true, threshold: 0.5, cooldown: 0)
+        // Talking over the other side while it is still speaking interrupts its question.
+        gate.setSpeaking(true, speaker: .them)
         gate.submit(.init(text: "Please introduce your project", context: "", speaker: .them, isFinal: true, sourceID: "a"))
         await pause(0.1)
         XCTAssertTrue(events.contains(.predictionStarted))
@@ -1387,8 +1468,11 @@ final class LayaCoordinatorTests: XCTestCase {
     @MainActor func testOwnSpeechAndManualQuestionInvalidatePendingAutomaticAnswer() async {
         let reasoning = CountingLayaReasoning(), app = make(reasoning)
         await app.start()
+        // You talk over the other side before it has finished.
+        app.receiveMockEvent(.speechActivity(true), speaker: .them)
         final(app, text: "How does the deployment process work?")
         app.receiveMockEvent(.speechActivity(true), speaker: .you)
+        app.receiveMockEvent(.speechActivity(false), speaker: .them)
         await pause()
         XCTAssertTrue(reasoning.requests.isEmpty)
         app.receiveMockEvent(.speechActivity(false), speaker: .you)
