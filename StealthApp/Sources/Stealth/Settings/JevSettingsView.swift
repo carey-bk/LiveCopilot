@@ -6,11 +6,11 @@ extension JevThreshold {
     static func description(_ value: Double, _ language: AppLanguage) -> String {
         let b = { (en: String, zh: String) in ServiceGuide.text(en, zh, language) }
         switch snapped(value) {
-        case 0.65: return b("Answers most readily, including loose or partial questions; triggers most often.", "最积极：较模糊或没说完的提问也会回答，误触发最多。")
-        case 0.75: return b("Answers readily, including looser questions; may trigger more often.", "偏积极：较模糊的提问也会回答，可能多一些误触发。")
-        case 0.80: return b("Balances answering promptly with avoiding false triggers.", "兼顾及时回答与避免误触发。")
-        case 0.85: return b("Leans toward clear questions; fewer false triggers.", "偏严格：多数清楚的提问会回答，误触发较少。")
-        default: return b("Answers only clear, complete questions; some real questions may be missed.", "最严格：只在问题清楚完整时回答，部分真实提问可能不触发。")
+        case 0.65: return b("Readiest: answers even unfinished questions; most false triggers.", "最积极：没说完的提问也会回答，误触发最多。")
+        case 0.75: return b("Ready: answers looser questions too; a few more false triggers.", "偏积极：较模糊的提问也会回答，误触发稍多。")
+        case 0.80: return b("Recommended: balances prompt answers against false triggers.", "推荐：兼顾及时回答与避免误触发。")
+        case 0.85: return b("Stricter: answers clear questions; fewer false triggers.", "偏严格：提问清楚才回答，误触发较少。")
+        default: return b("Strictest: complete questions only; some may be missed.", "最严格：只答完整的提问，可能漏掉一些。")
         }
     }
 }
@@ -72,14 +72,29 @@ struct JevSettingsView: View {
         case .complete: return b("Wait", "完整优先")
         }
     }
-    private var continuousQuestionDescription: String {
-        switch coordinator.settings.continuousQuestionPolicy {
+    /// Shows one of several descriptions while keeping the height of the longest, so the card
+    /// does not change height as the selection moves.
+    private func reservingLongest(_ texts: [String], showing index: Int, identifier: String) -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(texts.indices, id: \.self) { i in
+                Text(texts[i]).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .opacity(i == index ? 1 : 0)
+                    .accessibilityHidden(i != index)
+                    .accessibilityIdentifier(i == index ? identifier : "")
+            }
+        }
+    }
+    private func continuousQuestionDescription(_ policy: ContinuousQuestionPolicy) -> String {
+        switch policy {
         case .fast: return b("Respond to each clear request as soon as possible.", "回应意图明确后，尽快分别回答。")
         case .smart: return b("Keep the first answer fast; merge related follow-ups.", "首答保持快速，相关补充问题智能合并。")
         case .complete: return b("Wait briefly for follow-ups before answering.", "短暂等待后续补充，再生成完整回答。")
         }
     }
     /// Five detents (0.65–0.90); the current value is shown large beside the title while dragging.
+    /// The header keeps one fixed layout; "Recommended" lives in the 0.80 description so nothing reflows.
     private var thresholdSlider: some View {
         let value = coordinator.settings.layaThreshold
         return VStack(alignment: .leading, spacing: 8) {
@@ -89,9 +104,6 @@ struct JevSettingsView: View {
                 Text(JevThreshold.text(value)).font(.title3.weight(.semibold)).monospacedDigit().foregroundStyle(LC.accent)
                     .contentTransition(.numericText()).lcAnimation(LC.Motion.quick, value: value)
                     .accessibilityIdentifier("laya-threshold-value")
-                if JevThreshold.snapped(value) == JevThreshold.standard {
-                    Text(b("Recommended", "推荐")).font(.caption).foregroundStyle(.secondary)
-                }
             }
             // Steps are uneven (0.65 to 0.75, then 0.05 apart), so the slider moves by detent index.
             Slider(value: Binding(get: { Double(JevThreshold.index(coordinator.settings.layaThreshold)) },
@@ -104,9 +116,8 @@ struct JevSettingsView: View {
                 .disabled(coordinator.isTestingLaya)
                 .accessibilityValue(JevThreshold.text(value))
                 .accessibilityIdentifier("laya-threshold")
-            Text(JevThreshold.description(value, coordinator.settings.language)).font(.callout).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("laya-sensitivity-level")
+            reservingLongest(JevThreshold.values.map { JevThreshold.description($0, coordinator.settings.language) },
+                             showing: JevThreshold.index(value), identifier: "laya-sensitivity-level")
         }
     }
     var body: some View {
@@ -127,9 +138,9 @@ struct JevSettingsView: View {
                     choice(b("Continuous questions", "连续提问处理"), selection: $coordinator.settings.continuousQuestionPolicy,
                            options: ContinuousQuestionPolicy.allCases.map { ($0, shortLabel($0)) })
                         .accessibilityIdentifier("continuous-question-policy")
-                    Text(continuousQuestionDescription).font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("continuous-question-description")
+                    reservingLongest(ContinuousQuestionPolicy.allCases.map(continuousQuestionDescription),
+                                     showing: ContinuousQuestionPolicy.allCases.firstIndex(of: coordinator.settings.continuousQuestionPolicy) ?? 0,
+                                     identifier: "continuous-question-description")
                     Label(b("Previous answers are always kept.", "历史回答始终保留，不会被覆盖。"), systemImage: "clock.arrow.circlepath")
                         .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)

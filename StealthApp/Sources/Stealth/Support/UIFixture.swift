@@ -8,7 +8,7 @@ import Foundation
 ///     --mock --ui-preview --ui-fixture listening|streaming|answered|session|error|notice
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
-///     --ui-tip <OverlayTourState.Step case>   --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-open-history   --ui-answer-only
+///     --ui-tip <OverlayTourState.Step case>   --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-laya-threshold 0.85   --ui-continuous fast|smart|complete   --ui-open-history   --ui-answer-only
 ///     --ui-query <typed question>   --ui-question-only   --ui-transcript-collapsed   --ui-transcript-lines n   --ui-translations japanese,english   --ui-scroll-end
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
@@ -43,6 +43,8 @@ enum UIFixture {
         coordinator.settings.answerTranslationLanguages = translations
         if let raw = value("--ui-listening-service"), let service = ListeningService(rawValue: raw) { coordinator.settings.listeningService = service }
         if let raw = value("--ui-laya-idle"), let seconds = TimeInterval(raw) { coordinator.layaIdleReleaseSeconds = seconds }
+        if let raw = value("--ui-laya-threshold"), let threshold = Double(raw) { coordinator.settings.layaThreshold = JevThreshold.snapped(threshold) }
+        if let raw = value("--ui-continuous"), let policy = ContinuousQuestionPolicy(rawValue: raw) { coordinator.settings.continuousQuestionPolicy = policy }
         if let raw = value("--ui-background"), let background = AppBackground(rawValue: raw) { coordinator.settings.background = background }
         if let raw = value("--ui-language"), let language = AppLanguage(rawValue: raw) { coordinator.settings.language = language }
         if let raw = value("--ui-text-size"), let size = Double(raw) {
