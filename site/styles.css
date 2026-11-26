@@ -123,7 +123,12 @@ html[lang=en] .hero h1 span + span { margin-top: .08em }
 .demo-bar button[hidden] { display: none }
 .demo-bar button:hover { background: #ffffff18 }
 .demo-bar svg { width: 13px; height: 13px }
-.demo-info { margin: 8px 2px 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: #11141b; color: #aab2c1; font-size: 12px; line-height: 1.55; text-align: left }
+/* About-this-demo note: a small popover that opens upward over the window, so the hero's
+   clipping (overflow: hidden) never cuts it off below the demo bar. */
+.demo-info { position: absolute; z-index: 6; right: 2px; bottom: 44px; width: min(300px, calc(100% - 4px)); margin: 0; padding: 10px 12px; border: 1px solid #ffffff24; border-radius: 10px;
+  background: rgba(17, 20, 27, .96); box-shadow: 0 14px 34px -10px #000c; color: #c3c9d6; font-size: 12px; line-height: 1.6; text-align: left;
+  -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); animation: fade .18s ease both }
+.demo-info[hidden] { display: none }
 
 /* ---------- Product UI (LiveCopilot 2.11 overlay) ----------
    Tokens follow DesignSystem.swift and OverlayView.swift: 14pt padding, 16pt panel radius, 10pt row gap,
@@ -513,7 +518,6 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
   .hero .actions, .hero .mirrors { justify-content: center }
   .stage { max-width: 740px; margin: auto; width: 100% }
   .device { margin-left: -4% }
-  .demo-info { max-width: 364px; margin-left: auto }
   .spotlight { grid-template-columns: minmax(0, 1fr); gap: 36px }
   .spotlight-visual { max-width: 560px }
   .steps { grid-template-columns: minmax(0, 1fr); max-width: 560px; margin-inline: auto; gap: 48px }

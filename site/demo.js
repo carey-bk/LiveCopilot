@@ -273,10 +273,12 @@
   }
   bindFold(fold, p, L, () => { follow(); setTimeout(follow, 360); syncSoon(); });
   copy.addEventListener("click", () => { copyLabel.textContent = L.copied; setTimeout(() => copyLabel.textContent = L.copy, 1400); });
-  $("info").addEventListener("click", () => {
-    const info = $("demo-info"), open = info.hidden;
-    info.hidden = !open; $("info").setAttribute("aria-expanded", open);
-  });
+  // About-this-demo popover: the button toggles it; Escape or a click elsewhere closes it.
+  const infoButton = $("info"), info = $("demo-info");
+  const setInfo = open => { info.hidden = !open; infoButton.setAttribute("aria-expanded", open); };
+  infoButton.addEventListener("click", () => setInfo(info.hidden));
+  document.addEventListener("click", e => { if (!info.hidden && !info.contains(e.target) && !infoButton.contains(e.target)) setInfo(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !info.hidden) { setInfo(false); infoButton.focus(); } });
 
   // Keep the true-scale copy on the laptop screen identical to the close-up.
   function sync() {
