@@ -133,8 +133,8 @@ final class AppUpdateTests: XCTestCase {
     func testPlainReleaseNotesDoNotLoadHTMLOrExternalResources() {
         let notes = UpdateRelease.plainNotes("<script>bad()</script><h2>新版</h2><ul><li>改进 &amp; 修复</li></ul><img src='https://invalid.test/tracking'>")
         XCTAssertEqual(notes, "新版\n改进 & 修复")
-        XCTAssertEqual(UpdateRelease.officialPage.host, "github.com")
-        XCTAssertEqual(UpdateRelease.officialPage.path, "/carey-bk/LiveCopilot/releases")
+        XCTAssertEqual(UpdateRelease.officialPage.host, "carey-bk.github.io")
+        XCTAssertEqual(UpdateRelease.officialPage.fragment, "download")
     }
     func testNoUpdateResultIsChineseAndOnlyShowsPublicVersion() {
         let app = AppUpdateController(mock: true, version: "2.2.2")

@@ -45,7 +45,8 @@ struct UpdateRelease: Codable, Equatable {
     let supportsInAppInstall: Bool
     var display: String { version.display }
     // Never execute or open an arbitrary URL from cached or remote notes.
-    static let officialPage = URL(string: "https://github.com/carey-bk/LiveCopilot/releases")!
+    /// The website's download section: GitHub plus netdisk mirrors that work where GitHub does not.
+    static let officialPage = URL(string: "https://carey-bk.github.io/LiveCopilot/#download")!
     static func plainNotes(_ html: String?) -> String {
         guard let html else { return "查看本次更新的功能改进与问题修复。" }
         let source = String(html.prefix(32_000))

@@ -9,13 +9,13 @@ enum UpdateCopy {
         "正在验证并准备更新…": "Verifying and preparing the update…", "更新已就绪，可以重启并安装": "Update ready. Restart to install.",
         "更新已就绪，结束当前任务后可安装": "Update ready. Install after the current task finishes.", "正在安装更新…": "Installing update…",
         "更新失败，请稍后重试": "Update failed. Try again later.", "请先结束监听、索引或模型准备，再检查更新。": "Finish listening, indexing or model setup before checking for updates.",
-        "更新服务暂不可用，请前往官方发布页。": "The update service is unavailable. Visit the release page.",
+        "更新服务暂不可用，请前往官网下载页。": "The update service is unavailable. Visit the download page.",
         "检查或更新失败，请检查网络后重试。": "Checking or updating failed. Check your network and try again.",
         "暂时无法确认最新正式版本，请稍后重试。": "Couldn't confirm the latest release. Try again later.",
         "更新失败，请检查网络或稍后重试。": "Update failed. Check your network or try again later.",
         "更新由 Mac App Store 提供": "Updates are provided by the Mac App Store",
         "取消下载": "Cancel download", "更新内容": "What's new", "重启并更新": "Restart and update", "下载更新": "Download update",
-        "官方发布页": "Release page", "前往官方发布页下载": "Download from the release page",
+        "官网下载页": "Download page", "前往官网下载": "Download from the website",
         "当前任务进行中，结束后可检查和安装更新。": "A task is running. Check and install updates after it finishes.",
         "自动检查更新": "Check for updates automatically", "后台静默检查，下载与重启由你确认。": "Checks quietly in the background. You confirm downloads and restarts.",
         "上次检查：": "Last checked: ", "查看更新": "View update", "稍后提醒": "Remind me later", "下载新版本": "Download new version", "好": "OK",
@@ -89,9 +89,9 @@ struct UpdateSettingsView: View {
                             .disabled(!updates.canInstall || !updates.canCheck).buttonStyle(LCButtonStyle(kind: .primary))
                             .accessibilityIdentifier("download-update")
                     }
-                    Link(release.supportsInAppInstall ? u("官方发布页") : u("前往官方发布页下载"), destination: UpdateRelease.officialPage)
+                    Link(release.supportsInAppInstall ? u("官网下载页") : u("前往官网下载"), destination: UpdateRelease.officialPage)
                 }
-            } else if updates.phase == .failed { Link(u("官方发布页"), destination: UpdateRelease.officialPage) }
+            } else if updates.phase == .failed { Link(u("官网下载页"), destination: UpdateRelease.officialPage) }
             if updates.blockingReason() != nil { Text(u("当前任务进行中，结束后可检查和安装更新。")).font(LC.Typo.caption).foregroundStyle(.secondary) }
             Divider()
             HStack(alignment: .top) {
