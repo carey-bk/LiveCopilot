@@ -6,6 +6,20 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>LiveCopilot</title>
         <item>
+            <title>2.12</title>
+            <pubDate>Thu, 26 Nov 2026 17:18:35 +0800</pubDate>
+            <link>https://carey-bk.github.io/LiveCopilot/</link>
+            <sparkle:version>20261126.082352</sparkle:version>
+            <sparkle:shortVersionString>2.12</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <description><![CDATA[<h2>中文</h2><ul><li>修复：回答较多时，悬浮窗可能卡死几分钟、无法点击（2.10 和 2.11 都受影响）。</li><li>悬浮窗的使用提示改为区域高亮：提示指向的位置保持明亮，其余区域变暗。</li><li>重做「关于 → 反馈问题」：选择问题类型和大约发生时间，软件会把运行日志、卡顿记录和 macOS 系统报告打包成 ZIP（每一项都能预览、也能取消），并打开一封已附上 ZIP 的邮件，你确认后发送给作者。不包含录音、对话、回答、资料或密钥。</li><li>软件卡住超过 3 秒时，会自动记录卡在哪里，反馈时一并打包，方便定位问题。</li><li>应用内更新优先连接 GitHub，连不上时自动改用香港镜像。</li><li>更新失败时的「官网下载页」链接，改为打开官网下载区：GitHub、百度网盘、夸克网盘。</li><li>本地模型去掉「复制诊断信息」按钮，自检结果会随反馈包一起提交。</li><li>悬浮窗的转写区显示最近 200 行，完整转写保存在历史记录中。</li></ul><h2>English</h2><ul><li>Fixed: with many answers, the overlay could freeze for minutes and stop responding (affected 2.10 and 2.11).</li><li>Overlay tips now light up what they point at and dim the rest of the window.</li><li>Redesigned About → Report a problem: choose what happened and roughly when, and LiveCopilot packs the app log, freeze records and macOS system reports into a ZIP (each part can be previewed or left out), then opens an email to the author with the ZIP attached for you to send. No audio, conversation, answers, documents or keys are included.</li><li>When the app stops responding for more than 3 seconds, it records where it was stuck, and the record goes into the feedback ZIP.</li><li>In-app updates try GitHub first and switch to a Hong Kong mirror when GitHub cannot be reached.</li><li>When an update fails, the download page link opens the website's download section: GitHub, Baidu Netdisk and Quark Netdisk.</li><li>Local models no longer have a Copy diagnostics button; self-check results go into the feedback ZIP.</li><li>The overlay transcript shows the latest 200 lines; the full transcript is kept in History.</li></ul>]]></description>
+            <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot-2.12-macOS-universal.dmg" length="538440900" type="application/octet-stream" sparkle:edSignature="mSkeVT/SSoGETJlyj2lHypquPa+Ida1brwRLDsSn6IbZLNtbmGSXnqwyYHPcEPX4BqAZGZgUiiNsH6Tb52CJDQ=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot20261126.082352-20261126.014847.delta" sparkle:deltaFrom="20261126.014847" length="2135102" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="I5SpjQRFyk3E3OTy/EyqltFfJF2jAtBQqYjHp15l51pCYkTEMHkbNVU0gu91cg+3BfRqixKW/JJWJw8hzkEsDQ=="/>
+                <enclosure url="https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot20261126.082352-20261123.154357.delta" sparkle:deltaFrom="20261123.154357" length="3732154" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="tjdBrd7zqIW61aHjosN9ZymrYBfI9YmyaqIHTC5VduhQL9qdJL56dOi+e6AlU8WVC8EPbyofWmOc7VRDGp6MAQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>2.11</title>
             <pubDate>Thu, 26 Nov 2026 10:36:38 +0800</pubDate>
             <link>https://carey-bk.github.io/LiveCopilot/</link>
@@ -29,19 +43,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
 ]]></description>
             <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.10.0/LiveCopilot-2.10.0-macOS-universal.dmg" length="537509485" type="application/octet-stream" sparkle:edSignature="B0LOf1UdWbaNzoPWciWSQOVUGuBbGI6ku2lwdY6WF94Qya+1B3oR48sgCa0aWJFVRxWaoYZJNKr+p5Qn+3gwCQ=="/>
         </item>
-        <item>
-            <title>2.9.2</title>
-            <pubDate>Fri, 20 Nov 2026 12:57:40 +0800</pubDate>
-            <link>https://carey-bk.github.io/LiveCopilot/</link>
-            <sparkle:version>20261120.043744</sparkle:version>
-            <sparkle:shortVersionString>2.9.2</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <description><![CDATA[<html><body><p>LiveCopilot 2.9.2</p><p>中文</p><p>改进会话历史保存。磁盘写入失败后可重试，保留随后追加的追问和回答。连续重置同一场会话只生成一条历史。</p><p>改进麦克风切换、远程音频采集超时和云端连接关闭后的清理，减少停止或重新开始监听时的状态异常。</p><p>减少长会话中的转写刷新和音频回调等待。Intel Mac 上的悬浮窗使用更轻量的背景，降低视频会议期间的合成负担。</p><p>改进知识库文本编码处理、大文档分段、本地向量模型回退及翻译服务错误处理。</p><p>English</p><p>Session history can recover from a failed disk write and retain follow-up questions and answers. Repeated resets archive the session once.</p><p>Improved microphone switching and cleanup after system audio capture timeouts or unexpected cloud disconnects.</p><p>Reduced transcript refreshes and audio callback contention during long sessions. The overlay uses a lighter background on Intel Macs during video calls.</p><p>Improved document decoding, large-document indexing, local embedding fallback, and translation error handling.</p></body></html>]]></description>
-            <enclosure url="https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.2/LiveCopilot-2.9.2-macOS-universal.dmg" length="39376188" type="application/octet-stream" sparkle:edSignature="XZ+KuM5eufBj6ypdPwbIAn8r7UAMYF98dIrBwkOm7eZAyA/AQBKcJyA7Y42j+gSj0bsRXVW0OdrrhpJAg6jRCQ=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: 776qTzrPTgHnxKvNpJlwNtKLd8XvC6EKt5spCM7XALuDEZ5254DaSnjwYo+b9g9/SNw1N0TC9AyaT7xHrboHBg==
-length: 11581
+edSignature: ikWt/rLTxNJBbyHCqD421t2NM7QB/gvSzr9fxwv51mTkj/GjUmdIzSl9lGZkRWdykLzFUPFTC4a7hVvDapQLCg==
+length: 13590
 -->

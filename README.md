@@ -8,13 +8,13 @@
 
 A native macOS assistant for interviews, meetings and academic discussions. LiveCopilot transcribes speech, retrieves relevant passages from your documents and streams answer suggestions in a floating window. You can also type a question without starting the microphone.
 
-[Download 2.11](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.11) · [Product website](https://carey-bk.github.io/LiveCopilot/en/) · [Release notes](docs/releases/2.11.md)
+[Download 2.12](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.12) · [Product website](https://carey-bk.github.io/LiveCopilot/en/) · [Release notes](docs/releases/2.12.md)
 
 ## Download and requirements
 
-**2.11 · 538 MB · Universal macOS app · Developer ID signed and Apple notarized**
+**2.12 · 538 MB · Universal macOS app · Developer ID signed and Apple notarized**
 
-[Download DMG from GitHub](https://github.com/carey-bk/LiveCopilot/releases/download/v2.11/LiveCopilot-2.11-macOS-universal.dmg) · [Baidu Netdisk mirror](https://pan.baidu.com/s/1oMcGKhPmuOY7KXkb4NiTVQ?pwd=0211) (code `0211`) · [Quark Netdisk mirror](https://pan.quark.cn/s/6523b5a535e1) · [Release page and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.11)
+[Download DMG from GitHub](https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot-2.12-macOS-universal.dmg) · [Release page and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.12) · Netdisk mirrors are listed on the [product website](https://carey-bk.github.io/LiveCopilot/en/#download).
 
 | Component | Requirement |
 |---|---|
@@ -25,17 +25,17 @@ A native macOS assistant for interviews, meetings and academic discussions. Live
 
 The installer **includes the Arctic retrieval model and the Laya trigger model**, so searching your documents and automatic triggering need no model download. The optional local speech models are downloaded in the setup guide or Settings → Services: Zipformer about **200 MB**, Paraformer about **238 MB**; on macOS 26, Apple on-device speech needs no LiveCopilot download. No separate Python, Ollama or Docker installation is needed. Local models use disk space and your Mac's memory and compute.
 
-Open the DMG, drag LiveCopilot into Applications and launch it there. Existing users can choose **LiveCopilot → Check for Updates…** in the application menu: 2.10.0 downloads a 3.4 MB delta, older versions the full installer. Normal upgrades preserve settings, API keys, documents and history. Documents indexed with the earlier BGE-M3 model are re-indexed with Arctic automatically when their original files are available.
+Open the DMG, drag LiveCopilot into Applications and launch it there. Existing users can choose **LiveCopilot → Check for Updates…** in the application menu: 2.11 downloads a 2.1 MB delta and 2.10.0 a 3.7 MB delta; older versions download the full installer. From 2.12, updates switch to a Hong Kong mirror when GitHub cannot be reached. Normal upgrades preserve settings, API keys, documents and history. Documents indexed with the earlier BGE-M3 model are re-indexed with Arctic automatically when their original files are available.
 
-## What’s new in 2.11?
+## What’s new in 2.12?
 
-- Redesigned Settings: Overview tells you whether listening can start and what still needs setting up; option cards for modes and scenarios; a status dot on each Services tab.
-- Overlay: one-line listening status, a six-line question field with an optional recent-conversation context, four backgrounds (Liquid Glass on macOS 26), and automatic sizing down to the bottom of the screen.
-- Continuous questions can update the current answer or start a separate one; answers can add sentence-by-sentence translations into up to three languages.
-- Automatic answers: a five-step sensitivity slider; speaking right after a question no longer cancels it; your speech is transcribed while the other side is talking; a stricter echo guard.
-- Faster start, menus and system input-method candidates hidden from screen sharing, 31 Apple on-device speech languages, and automatic cleanup of old BGE and Laya files after upgrading.
+- Fixed: with many answers, the overlay could freeze for minutes (affected 2.10 and 2.11).
+- Overlay tips light up what they point at and dim the rest of the window.
+- Report a problem packs the app log, freeze records and macOS reports into a ZIP you can review, then opens an email to the author with it attached. When the app stops responding for more than 3 seconds, it records where it was stuck.
+- In-app updates try GitHub first and switch to a Hong Kong mirror when GitHub cannot be reached; the download page link opens the website's download section.
+- The setup guide's answer-service step fits without scrolling; the built-in Arctic model no longer shows download wording.
 
-Full notes: [docs/releases/2.11.md](docs/releases/2.11.md).
+Full notes: [docs/releases/2.12.md](docs/releases/2.12.md).
 
 ## Start your first conversation
 

@@ -8,13 +8,13 @@
 
 面向面試、會議和學術答辯的原生 macOS 助手。LiveCopilot 即時轉錄語音，檢索個人文件中的相關資料，並在懸浮窗中串流呈現回答建議。也可以不開麥，直接輸入問題。
 
-[下載 2.11](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.11) · [產品介紹](https://carey-bk.github.io/LiveCopilot/zh-Hant/) · [版本說明](docs/releases/2.11.md)
+[下載 2.12](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.12) · [產品介紹](https://carey-bk.github.io/LiveCopilot/zh-Hant/) · [版本說明](docs/releases/2.12.md)
 
 ## 下載與使用要求
 
-**2.11 · 安裝檔 538 MB · macOS 通用版本 · Developer ID 簽名與 Apple 公證**
+**2.12 · 安裝檔 538 MB · macOS 通用版本 · Developer ID 簽名與 Apple 公證**
 
-[從 GitHub 下載安裝檔](https://github.com/carey-bk/LiveCopilot/releases/download/v2.11/LiveCopilot-2.11-macOS-universal.dmg) · [百度網盤備用下載](https://pan.baidu.com/s/1oMcGKhPmuOY7KXkb4NiTVQ?pwd=0211)（提取碼 `0211`） · [夸克網盤備用下載](https://pan.quark.cn/s/6523b5a535e1) · [GitHub 發佈頁與驗證值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.11)
+[從 GitHub 下載安裝檔](https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot-2.12-macOS-universal.dmg) · [GitHub 發佈頁與驗證值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.12) · 網盤備用下載見[產品介紹頁](https://carey-bk.github.io/LiveCopilot/zh-Hant/#download)。
 
 | 功能 | 使用要求 |
 |---|---|
@@ -25,17 +25,17 @@
 
 安裝檔**已內建 Arctic 檢索模型和 Laya 自動觸發模型**，檢索資料和自動觸發都無需另外下載模型。本地語音識別模型可在首次引導或「設定 → 服務」中按需下載：Zipformer 約 **200 MB**、Paraformer 約 **238 MB**；macOS 26 上的 Apple 本機語音識別無需透過 LiveCopilot 下載。無需另外安裝 Python、Ollama 或 Docker。本地模型會佔用磁碟空間以及本機記憶體和計算資源。
 
-打開 DMG，將 LiveCopilot 拖入「應用程式」後啟動。已有使用者可以從應用程式選單選擇「LiveCopilot → 檢查更新…」：2.10.0 只需下載 3.4 MB 的增量更新，更早的版本下載完整安裝檔。正常升級保留設定、API Key、文件和歷史；以舊 BGE-M3 模型建立的資料索引，在原檔案仍在時會自動以 Arctic 重建。
+打開 DMG，將 LiveCopilot 拖入「應用程式」後啟動。已有使用者可以從應用程式選單選擇「LiveCopilot → 檢查更新…」：2.11 只需下載 2.1 MB、2.10.0 只需下載 3.7 MB 的增量更新，更早的版本下載完整安裝檔。從 2.12 起，連不上 GitHub 時更新會自動改用香港鏡像。正常升級保留設定、API Key、文件和歷史；以舊 BGE-M3 模型建立的資料索引，在原檔案仍在時會自動以 Arctic 重建。
 
-## 2.11 更新了什麼？
+## 2.12 更新了什麼？
 
-- 設定全面改版：「概覽」直接告訴你能否開始監聽、還缺哪項設定；模式與場景改為選項卡片；「服務」每個分頁帶狀態點。
-- 懸浮視窗：監聽狀態合併為一行；提問框最多六行，可選附帶近期對話；四種背景（液態玻璃需要 macOS 26）；自動伸縮可延伸到螢幕底部。
-- 對方補充提問時可更新目前回答或另起一則；回答可逐句附譯文，最多三種語言。
-- 自動回答：五段觸發靈敏度；對方剛問完你就開口不再取消回答；對方說話時你的話也會即時轉寫；回聲判斷更嚴格。
-- 開始監聽更快；分享螢幕時選單和系統輸入法候選框一併隱藏；Apple 本機語音識別支援 31 種語言；升級後自動清理舊 BGE 與 Laya 檔案。
+- 修復：回答較多時懸浮視窗可能卡死幾分鐘（2.10 和 2.11 都受影響）。
+- 懸浮視窗的使用提示改為區域高亮：提示指向的位置保持明亮，其餘區域變暗。
+- 「回報問題」會把執行日誌、卡頓記錄和系統報告打包成可預覽的 ZIP，並開啟一封已附上 ZIP 的郵件寄給作者；軟體卡住超過 3 秒時會自動記錄卡在哪裡。
+- 應用程式內更新優先連線 GitHub，連不上時自動改用香港鏡像；更新失敗時的連結改為官網下載區。
+- 新手引導的回答服務頁不再超出視窗；內建的 Arctic 模型不再顯示下載說明。
 
-完整說明：[docs/releases/2.11.md](docs/releases/2.11.md)。
+完整說明：[docs/releases/2.12.md](docs/releases/2.12.md)。
 
 ## 開始第一次對話
 

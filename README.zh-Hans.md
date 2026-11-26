@@ -8,13 +8,13 @@
 
 面向面试、会议和学术答辩的原生 macOS 助手。LiveCopilot 实时转写语音，检索个人文档中的相关资料，并在悬浮窗中流式呈现回答建议。也可以不开麦，直接输入问题。
 
-[下载 2.11](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.11) · [产品介绍](https://carey-bk.github.io/LiveCopilot/) · [版本说明](docs/releases/2.11.md)
+[下载 2.12](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.12) · [产品介绍](https://carey-bk.github.io/LiveCopilot/) · [版本说明](docs/releases/2.12.md)
 
 ## 下载与使用要求
 
-**2.11 · 安装包 538 MB · macOS 通用版本 · Developer ID 签名与 Apple 公证**
+**2.12 · 安装包 538 MB · macOS 通用版本 · Developer ID 签名与 Apple 公证**
 
-[从 GitHub 下载安装包](https://github.com/carey-bk/LiveCopilot/releases/download/v2.11/LiveCopilot-2.11-macOS-universal.dmg) · [百度网盘备用下载](https://pan.baidu.com/s/1oMcGKhPmuOY7KXkb4NiTVQ?pwd=0211)（提取码 `0211`） · [夸克网盘备用下载](https://pan.quark.cn/s/6523b5a535e1) · [GitHub 发布页与校验值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.11)
+[从 GitHub 下载安装包](https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot-2.12-macOS-universal.dmg) · [GitHub 发布页与校验值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.12) · 网盘备用下载见[产品介绍页](https://carey-bk.github.io/LiveCopilot/#download)。
 
 | 功能 | 使用要求 |
 |---|---|
@@ -25,17 +25,17 @@
 
 安装包**已内置 Arctic 检索模型和 Laya 自动触发模型**，检索资料和自动触发都无需另外下载模型。本地语音识别模型可在首次引导或「设置 → 服务」中按需下载：Zipformer 约 **200 MB**、Paraformer 约 **238 MB**；macOS 26 上的 Apple 本地语音识别无需通过 LiveCopilot 下载。无需另外安装 Python、Ollama 或 Docker。本地模型会占用磁盘空间以及本机内存和计算资源。
 
-打开 DMG，将 LiveCopilot 拖入「应用程序」后启动。已有用户可以从应用菜单选择「LiveCopilot → 检查更新…」：2.10.0 只需下载 3.4 MB 的增量包，更早的版本下载完整安装包。正常升级保留配置、API Key、文档和历史；用旧 BGE-M3 模型建立的资料索引，在原文件仍在时会自动用 Arctic 重建。
+打开 DMG，将 LiveCopilot 拖入「应用程序」后启动。已有用户可以从应用菜单选择「LiveCopilot → 检查更新…」：2.11 只需下载 2.1 MB、2.10.0 只需下载 3.7 MB 的增量包，更早的版本下载完整安装包。从 2.12 起，连不上 GitHub 时更新会自动改用香港镜像。正常升级保留配置、API Key、文档和历史；用旧 BGE-M3 模型建立的资料索引，在原文件仍在时会自动用 Arctic 重建。
 
-## 2.11 更新了什么？
+## 2.12 更新了什么？
 
-- 设置全面改版：「概览」直接告诉你能否开始监听、还差哪项设置；模式与场景改为选项卡片；「服务」每个标签带状态点。
-- 悬浮窗：监听状态合并为一行；提问框最多六行，可选附带近期对话；四种背景（液态玻璃需要 macOS 26）；自动伸缩可延伸到屏幕底部。
-- 对方补充提问时可更新当前回答或另起一条；回答可逐句附译文，最多三种语言。
-- 自动回答：五档触发灵敏度；对方刚问完你就开口不再取消回答；对方说话时你的话也会实时转写；回声判断更严格。
-- 开始监听更快；共享屏幕时菜单和系统输入法候选框一并隐藏；Apple 本地语音识别支持 31 种语言；升级后自动清理旧 BGE 与 Laya 文件。
+- 修复：回答较多时悬浮窗可能卡死几分钟（2.10 和 2.11 都受影响）。
+- 悬浮窗的使用提示改为区域高亮：提示指向的位置保持明亮，其余区域变暗。
+- 「反馈问题」会把运行日志、卡顿记录和系统报告打包成可预览的 ZIP，并打开一封已附上 ZIP 的邮件发给作者；软件卡住超过 3 秒时会自动记录卡在哪里。
+- 应用内更新优先连接 GitHub，连不上时自动改用香港镜像；更新失败时的链接改为官网下载区。
+- 新手引导的回答服务页不再超出窗口；内置的 Arctic 模型不再显示下载说明。
 
-完整说明：[docs/releases/2.11.md](docs/releases/2.11.md)。
+完整说明：[docs/releases/2.12.md](docs/releases/2.12.md)。
 
 ## 开始第一次对话
 
