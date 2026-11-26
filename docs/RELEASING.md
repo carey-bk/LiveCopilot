@@ -143,9 +143,17 @@ The public-version gate compares numeric major/minor/patch components, accepts h
 
 After both the app and DMG are notarized, stapled, and finalized, place the final DMG and a matching HTML fragment with release notes in a dedicated update staging directory. Do not re-sign or re-staple the DMG after generating its update signature.
 
+### Delta updates (2.11 and later)
+
+Sparkle installs from a small binary delta when the user's installed version has one, and falls back to the full DMG when it does not or the delta fails to apply. The bundled Arctic and Laya models rarely change, so a delta is a few MB instead of the full ~540 MB DMG (2.10.0 → 2.11: 3.4 MB), which keeps update traffic on the Hong Kong bucket small. New downloads still use the full DMG.
+
+- Put the **previous** release's final DMG in the staging directory next to the new one (reusing the preceding feed's staging directory does this). It must be byte-identical to the published file: check its SHA-256 against the previous `site/download.json` before generating. `generate_appcast` builds a delta from each older DMG present, up to `--maximum-deltas`, and names it `LiveCopilotNEWBUILD-OLDBUILD.delta`.
+- Before uploading, verify each delta with `python3 StealthApp/scripts/verify-delta.py OLD.dmg NEW.dmg FILE.delta`. It applies the delta to the old app and requires an exact, signed, notarized copy of the new app.
+- Upload the `.delta` files to the **same** versioned OSS directory as the new DMG (the feed's `--download-url-prefix`), verify their SHA-256 and anonymous download, and only then deploy the feed. A delta listed in the feed but missing on OSS only costs a failed attempt before the full download, but do not rely on that.
+
 ```bash
 StealthApp/build/SparkleTools/bin/generate_appcast \
-  --account LiveCopilot --maximum-deltas 0 \
+  --account LiveCopilot --maximum-deltas 3 --delta-compression lzma \
   --download-url-prefix https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/vVERSION/ \
   --link https://carey-bk.github.io/LiveCopilot/ --embed-release-notes \
   /absolute/path/to/update-staging
