@@ -4,6 +4,14 @@
   "sha256": "251e63b4512b4eb1b9cfacd8e32e1f49a9aea88eea5de858bb8f6cac6b27aa0a",
   "size": 538159936,
   "backups": [
-    {"name": "baidu", "url": "https://pan.baidu.com/s/1oMcGKhPmuOY7KXkb4NiTVQ?pwd=0211", "code": "0211"}
+    {
+      "name": "baidu",
+      "url": "https://pan.baidu.com/s/1oMcGKhPmuOY7KXkb4NiTVQ?pwd=0211",
+      "code": "0211"
+    },
+    {
+      "name": "quark",
+      "url": "https://pan.quark.cn/s/6523b5a535e1"
+    }
   ]
 }
