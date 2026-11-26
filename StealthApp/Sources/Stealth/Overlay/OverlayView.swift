@@ -100,6 +100,12 @@ struct OverlayView: View {
             .padding(14)
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
         }
+        .overlayPreferenceValue(OnboardingSpotlightKey.self) { items in
+            OverlaySpotlight(items: onboarding.visibleTip == nil ? [] : items)
+                .id(onboarding.visibleTip)
+                .transition(.opacity)
+        }
+        .lcAnimation(LC.Motion.quick, value: onboarding.visibleTip)
         .background { WindowBackgroundView(style: coordinator.settings.background, isOverlay: true) }
         .clipShape(RoundedRectangle(cornerRadius: LC.Radius.panel))
         .preferredColorScheme(coordinator.settings.background.usesLightAppearance ? .light : nil)
@@ -164,6 +170,7 @@ struct OverlayView: View {
             Text(b("Translation failed. Reopen Translation to retry; original text is retained.", "翻译失败，请重新开启翻译重试；原文已保留。")).font(.caption2).foregroundStyle(LC.warning)
         }
         transcriptView
+            .onboardingHighlight(onboarding.visibleTip == .transcript)
         Divider()
     }
     private var top: some View {

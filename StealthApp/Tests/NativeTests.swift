@@ -2476,3 +2476,25 @@ final class OverlayAuxiliaryCaptureTests: XCTestCase {
         XCTAssertTrue(off.allSatisfy { $0 == .readOnly }, "with hiding off the overlay's menus are shareable")
     }
 }
+
+final class OverlaySpotlightLayoutTests: XCTestCase {
+    func testAdjacentTargetsMergeAndDistantOnesStayApart() {
+        let row = (0..<7).map { SpotlightTarget(rect: CGRect(x: CGFloat($0) * 30, y: 0, width: 24, height: 24)) }
+        XCTAssertEqual(SpotlightLayout.holes(row).map(\.rect), [CGRect(x: 0, y: 0, width: 204, height: 24)])
+        let apart = [SpotlightTarget(rect: CGRect(x: 0, y: 0, width: 40, height: 20)),
+                     SpotlightTarget(rect: CGRect(x: 200, y: 0, width: 40, height: 20)),
+                     SpotlightTarget(rect: CGRect(x: 0, y: 100, width: 40, height: 20))]
+        XCTAssertEqual(SpotlightLayout.holes(apart).count, 3)
+        // Rows stacked within the gap merge vertically, like the transcript header and its list.
+        let stacked = [SpotlightTarget(rect: CGRect(x: 0, y: 0, width: 300, height: 16)),
+                       SpotlightTarget(rect: CGRect(x: 0, y: 22, width: 300, height: 120))]
+        XCTAssertEqual(SpotlightLayout.holes(stacked).map(\.rect), [CGRect(x: 0, y: 0, width: 300, height: 142)])
+    }
+    func testCardsAreKeptAsIsAndNeverMerged() {
+        let card = SpotlightTarget(rect: CGRect(x: 0, y: 0, width: 300, height: 80), card: true)
+        let button = SpotlightTarget(rect: CGRect(x: 0, y: 84, width: 40, height: 20))
+        let holes = SpotlightLayout.holes([button, card])
+        XCTAssertEqual(holes.first, card)
+        XCTAssertEqual(holes.count, 2)
+    }
+}

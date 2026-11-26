@@ -14,7 +14,8 @@ struct OverlayFirstUseTip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text(title).font(.system(size: 12, weight: .semibold))
+                Label(title, systemImage: "lightbulb").font(.system(size: 12, weight: .semibold))
+                    .labelStyle(OverlayTipTitleStyle())
                 Spacer(minLength: 4)
                 Text("\(step.position + 1) / \(OverlayTourState.Step.order.count)").font(.caption2).foregroundStyle(.secondary)
                 Button(b("Dismiss tips", "跳过提示")) { store.dismissTips() }
@@ -32,8 +33,9 @@ struct OverlayFirstUseTip: View {
                     .font(.caption).accessibilityIdentifier("overlay-tip-next")
             }
         }.padding(11).frame(maxWidth: .infinity, alignment: .leading)
-            .background(LC.accent.opacity(0.09), in: RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous).strokeBorder(LC.accent.opacity(0.16)))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: LC.Radius.control + 2, style: .continuous).strokeBorder(LC.hairline))
+            .onboardingSpotlightCard()
             .accessibilityElement(children: .contain).accessibilityIdentifier("overlay-first-use-tip")
     }
     private var title: String {
@@ -90,8 +92,93 @@ struct OverlayFirstUseTip: View {
     }
 }
 
+private struct OverlayTipTitleStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) { configuration.icon.foregroundStyle(LC.accent); configuration.title }
+    }
+}
+
+/// One place an overlay tip points at, in the overlay's coordinate space.
+struct SpotlightTarget: Equatable {
+    var rect: CGRect
+    /// The tip card itself: kept clear of the dimming, without a highlight ring.
+    var card = false
+}
+
+enum SpotlightLayout {
+    /// Merges targets that touch or sit within `gap` points of each other, so a row of buttons
+    /// reads as one lit area instead of many small boxes. Cards are never merged.
+    static func holes(_ targets: [SpotlightTarget], gap: CGFloat = 10) -> [SpotlightTarget] {
+        var cards = targets.filter(\.card), merged = targets.filter { !$0.card && !$0.rect.isEmpty }.map(\.rect)
+        var changed = true
+        while changed {
+            changed = false
+            outer: for i in merged.indices {
+                for j in merged.indices where j > i {
+                    if merged[i].insetBy(dx: -gap / 2, dy: -gap / 2).intersects(merged[j].insetBy(dx: -gap / 2, dy: -gap / 2)) {
+                        merged[i] = merged[i].union(merged[j]); merged.remove(at: j); changed = true
+                        break outer
+                    }
+                }
+            }
+        }
+        cards.append(contentsOf: merged.sorted { ($0.minY, $0.minX) < ($1.minY, $1.minX) }.map { SpotlightTarget(rect: $0) })
+        return cards
+    }
+}
+
+struct OnboardingSpotlightKey: PreferenceKey {
+    struct Item { let anchor: Anchor<CGRect>; let card: Bool }
+    static var defaultValue: [Item] = []
+    static func reduce(value: inout [Item], nextValue: () -> [Item]) { value.append(contentsOf: nextValue()) }
+}
+
+/// Dims the overlay around the current tip's targets. Purely visual: every control stays usable.
+struct OverlaySpotlight: View {
+    let items: [OnboardingSpotlightKey.Item]
+    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        GeometryReader { proxy in
+            let holes = SpotlightLayout.holes(items.map { item in
+                let rect = proxy[item.anchor]
+                return SpotlightTarget(rect: item.card ? rect : rect.insetBy(dx: -5, dy: -4), card: item.card)
+            })
+            if holes.contains(where: { !$0.card }) {
+                ZStack(alignment: .topLeading) {
+                    Path { path in
+                        path.addRect(CGRect(origin: .zero, size: proxy.size))
+                        for hole in holes { path.addRoundedRect(in: hole.rect, cornerSize: Self.corner(hole), style: .continuous) }
+                    }
+                    .fill(Color.black.opacity(colorScheme == .dark ? 0.42 : 0.26), style: FillStyle(eoFill: true))
+                    ForEach(Array(holes.enumerated()).filter { !$0.element.card }, id: \.offset) { _, hole in
+                        RoundedRectangle(cornerRadius: Self.corner(hole).width, style: .continuous)
+                            .strokeBorder(LC.accent.opacity(0.55), lineWidth: 1)
+                            .shadow(color: LC.accent.opacity(0.45), radius: 6)
+                            .frame(width: hole.rect.width, height: hole.rect.height)
+                            .offset(x: hole.rect.minX, y: hole.rect.minY)
+                    }
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+    private static func corner(_ hole: SpotlightTarget) -> CGSize {
+        let radius = hole.card ? LC.Radius.control + 2 : min(hole.rect.height / 2, 10)
+        return CGSize(width: radius, height: radius)
+    }
+}
+
 extension View {
+    /// Marks this view as a target of the current overlay tip; `OverlaySpotlight` lights it up.
     func onboardingHighlight(_ active: Bool) -> some View {
-        overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(active ? LC.accent : .clear, lineWidth: 2).padding(-3).allowsHitTesting(false))
+        transformAnchorPreference(key: OnboardingSpotlightKey.self, value: .bounds) { value, anchor in
+            if active { value.append(.init(anchor: anchor, card: false)) }
+        }
+    }
+    func onboardingSpotlightCard() -> some View {
+        transformAnchorPreference(key: OnboardingSpotlightKey.self, value: .bounds) { value, anchor in
+            value.append(.init(anchor: anchor, card: true))
+        }
     }
 }
