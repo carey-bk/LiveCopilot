@@ -8,36 +8,39 @@
 
 A native macOS assistant for interviews, meetings and academic discussions. LiveCopilot transcribes speech, retrieves relevant passages from your documents and streams answer suggestions in a floating window. You can also type a question without starting the microphone.
 
-[Download 2.9.2](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.2) · [Product website](https://carey-bk.github.io/LiveCopilot/en/) · [Release notes](docs/releases/2.9.2.md)
+[Download 2.11](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.11) · [Product website](https://carey-bk.github.io/LiveCopilot/en/) · [Release notes](docs/releases/2.11.md)
 
 ## Download and requirements
 
-**2.9.2 · 39.38 MB · Universal macOS app · Developer ID signed and Apple notarized**
+**2.11 · 538 MB · Universal macOS app · Developer ID signed and Apple notarized**
 
-[Download DMG — Hong Kong mirror](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.2/LiveCopilot-2.9.2-macOS-universal.dmg) · [GitHub download and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.2)
+[Download DMG from GitHub](https://github.com/carey-bk/LiveCopilot/releases/download/v2.11/LiveCopilot-2.11-macOS-universal.dmg) · [Baidu Netdisk mirror](https://pan.baidu.com/s/1oMcGKhPmuOY7KXkb4NiTVQ?pwd=0211) (code `0211`) · [Release page and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.11)
 
 | Component | Requirement |
 |---|---|
 | Application | macOS 14 or later; Apple Silicon or Intel |
-| Local Laya automatic triggering | Apple Silicon; downloaded separately |
+| Local Laya automatic triggering | Apple Silicon; model included |
 | Apple local speech | macOS 26 or later, supported hardware and language |
 | AI answers | Your own API key for a supported analysis service |
 
-The small installer **does not contain Laya weights**. Download the models you choose in the setup guide or Settings → Services. No separate Python, Ollama or Docker installation is needed. Approximate downloads: Zipformer + VAD **200 MB**, BGE-M3 **635 MB**, Laya and its runtime **767 MB**. Installed models require additional disk space and use your Mac's memory and compute.
+The installer **includes the Arctic retrieval model and the Laya trigger model**, so searching your documents and automatic triggering need no model download. The optional local speech models are downloaded in the setup guide or Settings → Services: Zipformer about **200 MB**, Paraformer about **238 MB**; on macOS 26, Apple on-device speech needs no LiveCopilot download. No separate Python, Ollama or Docker installation is needed. Local models use disk space and your Mac's memory and compute.
 
-Open the DMG, drag LiveCopilot into Applications and launch it there. Existing users can choose **LiveCopilot → Check for Updates…** in the application menu. Normal upgrades preserve settings, API keys, documents and history; updating Laya requires a separate model download.
+Open the DMG, drag LiveCopilot into Applications and launch it there. Existing users can choose **LiveCopilot → Check for Updates…** in the application menu: 2.10.0 downloads a 3.4 MB delta, older versions the full installer. Normal upgrades preserve settings, API keys, documents and history. Documents indexed with the earlier BGE-M3 model are re-indexed with Arctic automatically when their original files are available.
 
-## What’s new in 2.9.2?
+## What’s new in 2.11?
 
-- Session history can recover from a failed disk write and retain follow-up questions and answers. Repeated resets archive the session once.
-- Improved microphone switching and cleanup after system audio capture timeouts or unexpected cloud disconnects.
-- Reduced transcript refreshes and audio callback contention during long sessions. The overlay uses a lighter background on Intel Macs during video calls.
-- Improved document decoding, large-document indexing, local embedding fallback, and translation error handling.
+- Redesigned Settings: Overview tells you whether listening can start and what still needs setting up; option cards for modes and scenarios; a status dot on each Services tab.
+- Overlay: one-line listening status, a six-line question field with an optional recent-conversation context, four backgrounds (Liquid Glass on macOS 26), and automatic sizing down to the bottom of the screen.
+- Continuous questions can update the current answer or start a separate one; answers can add sentence-by-sentence translations into up to three languages.
+- Automatic answers: a five-step sensitivity slider; speaking right after a question no longer cancels it; your speech is transcribed while the other side is talking; a stricter echo guard.
+- Faster start, menus and system input-method candidates hidden from screen sharing, 31 Apple on-device speech languages, and automatic cleanup of old BGE and Laya files after upgrading.
+
+Full notes: [docs/releases/2.11.md](docs/releases/2.11.md).
 
 ## Start your first conversation
 
-1. **Install and open the setup guide.** The six-step guide walks you through choosing an input mode, preparing models and testing your answer service. The guide can be reopened from General settings.
-2. **Prepare speech and local models.** For Chinese/English, start with Zipformer. Use the recommended local BGE-M3 for document retrieval without an OpenAI key and Laya for automatic triggering on Apple Silicon. Download only what you need.
+1. **Install and open the setup guide.** The six-step guide walks you through choosing an input mode, preparing speech recognition and testing your answer service. The guide can be reopened from Overview in Settings.
+2. **Prepare speech recognition.** On macOS 26, Apple on-device speech is the default. For Chinese/English you can also download the local Zipformer. Arctic for document retrieval and Laya for automatic triggering on Apple Silicon are already included.
 3. **Connect your analysis service.** Choose OpenAI, DeepSeek, Qwen, GLM, Kimi or a compatible streaming Chat Completions endpoint, then save your API key.
 4. **Add context if needed.** Import PDF, Markdown, TXT or DOCX into Knowledge. Scanned PDFs need OCR first. Rebuild document indexes after changing the embedding model.
 5. **Listen or type.** In-person mode uses the microphone; remote-meeting mode captures system audio with an optional microphone. Grant the relevant macOS permissions. You can also type with listening off.
@@ -50,11 +53,11 @@ Open the DMG, drag LiveCopilot into Applications and launch it there. Existing u
 | Stage | Available services | What leaves your Mac? |
 |---|---|---|
 | Speech recognition | Local Zipformer, Paraformer or Apple; OpenAI Live | Local recognition stays on-device. OpenAI Live sends audio to OpenAI. |
-| Document indexing and retrieval | Local BGE-M3 or OpenAI Embeddings | BGE-M3 runs locally. OpenAI Embeddings receives indexing/query text; retrieval storage remains local. |
+| Document indexing and retrieval | Local Arctic (included) or OpenAI Embeddings | Arctic runs locally. OpenAI Embeddings receives indexing/query text; retrieval storage remains local. |
 | Automatic response triggering | Local Laya for local speech; OpenAI Live's semantic delegation | Laya's decision runs on-device. Cloud speech follows its provider's data handling. |
 | Answer generation and automatic titles | Your selected analysis API | Relevant question/conversation text and selected evidence; automatic titles use session Q&A context. |
 
-For example, **Zipformer + BGE-M3 + DeepSeek** keeps speech recognition and indexing local and uses DeepSeek for answers. That combination does not require an OpenAI key. Local processing has no API usage fee; cloud services may charge your account.
+For example, **Zipformer + Arctic + DeepSeek** keeps speech recognition and indexing local and uses DeepSeek for answers. That combination does not require an OpenAI key. Local processing has no API usage fee; cloud services may charge your account.
 
 ## Privacy and practical limits
 
@@ -76,7 +79,7 @@ xcodebuild -project StealthApp/LiveCopilot.xcodeproj -scheme LiveCopilot \
   -configuration Debug -derivedDataPath StealthApp/build CODE_SIGNING_ALLOWED=NO test
 ```
 
-A clean checkout builds the small app without fetching Laya weights. Native runtime dependencies are checksum-pinned. Debug uses a separate bundle identifier. Mock checks need no API key or paid requests. Distribution signing and notarization are separate steps; follow the release guide before packaging.
+Model weights are not stored in Git: release packaging stages the bundled Arctic and Laya models from a local asset folder and checks them before signing. Native runtime dependencies are checksum-pinned. Debug uses a separate bundle identifier. Mock checks need no API key or paid requests. Distribution signing and notarization are separate steps; follow the release guide before packaging.
 
 | Documentation | Purpose |
 |---|---|
@@ -86,7 +89,7 @@ A clean checkout builds the small app without fetching Laya weights. Native runt
 | [Release guide](docs/RELEASING.md) | Signing, notarization, packaging and updates |
 | [Report an issue](https://github.com/carey-bk/LiveCopilot/issues) | Include app/macOS versions and model diagnostics; omit keys and private conversation text |
 
-Technical documentation is maintained in English. These three README editions describe the same release; the app's interface languages remain Simplified Chinese and English.
+Technical documentation is maintained in English. These three README editions describe the same release; the app's interface is available in English, Simplified Chinese and Traditional Chinese.
 
 ## Credits and license
 
