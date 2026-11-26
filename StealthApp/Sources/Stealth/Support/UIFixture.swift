@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import SwiftUI
 import Foundation
 
 /// Debug-only, mock-only launch arguments that put the UI into reproducible states for
@@ -8,7 +9,7 @@ import Foundation
 ///     --mock --ui-preview --ui-fixture listening|streaming|answered|merged|session|error|notice|stress [--ui-stress-answers n]
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
-///     --ui-tip <OverlayTourState.Step case>   --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-laya-threshold 0.85   --ui-continuous update|separate   --ui-open-history   --ui-answer-only
+///     --ui-tip <OverlayTourState.Step case>   --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-laya-threshold 0.85   --ui-continuous update|separate   --ui-open-history   --ui-feedback   --ui-answer-only
 ///     --ui-query <typed question>   --ui-question-only   --ui-transcript-collapsed   --ui-transcript-lines n   --ui-translations japanese,english   --ui-transcript-translation   --ui-scroll-end
 ///     --ui-snapshot <folder> [--ui-snapshot-name n] [--ui-snapshot-delay s] [--ui-snapshot-quit]
 @MainActor
@@ -130,6 +131,12 @@ enum UIFixture {
         }
         if flag("--ui-open-history") { openHistory() }
         if flag("--ui-gallery") { DesignGallery.open() }
+        if flag("--ui-feedback") {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 680), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            window.title = "Feedback"; window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: FeedbackView(coordinator: coordinator))
+            window.center(); window.makeKeyAndOrderFront(nil)
+        }
         if let folder = value("--ui-snapshot") {
             await snapshot(into: URL(fileURLWithPath: folder), coordinator: coordinator)
         }

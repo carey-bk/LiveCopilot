@@ -32,7 +32,7 @@ extension SettingsView {
                 .accessibilityIdentifier("about-guide")
 
                 Button { showDiagnostics = true } label: {
-                    AboutTile(title: b("Report a problem", "反馈问题"), detail: b("Create a diagnostic report to share privately", "生成诊断报告，私下发送给作者")) {
+                    AboutTile(title: b("Report a problem", "反馈问题"), detail: b("Packs diagnostics into a ZIP and emails it to the author", "自动打包诊断信息，用邮件发给作者")) {
                         LCIconTile(systemImage: "ladybug", tone: .pink, size: 34)
                     } accessory: { EmptyView() }
                 }

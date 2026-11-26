@@ -13,7 +13,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / 'site'
 OUTPUT = ROOT / '_site'
 BASE = 'https://carey-bk.github.io/LiveCopilot/'
-ASSETS = ['styles.css', 'demo.js']
+# support.json: the feedback address the app reads first (it falls back to a built-in one).
+ASSETS = ['styles.css', 'demo.js', 'support.json']
 download = json.loads((SOURCE / 'download.json').read_text())
 github_download = download['github_url']
 

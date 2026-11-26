@@ -107,7 +107,7 @@ extension SettingsView {
                 }
                 if coordinator.settings.embeddingService == .local {
                     Divider()
-                    Button(b("Check local model / copy diagnostics", "检查本地模型 / 复制诊断信息")) {
+                    Button(b("Check local model", "检查本地模型")) {
                         page = Self.knowledgeModelDiagnosticsTarget.page
                         serviceRole = Self.knowledgeModelDiagnosticsTarget.serviceRole.rawValue
                     }

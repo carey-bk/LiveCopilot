@@ -76,53 +76,60 @@ enum DiagnosticReport {
         \(recentCrashes())
         """
     }
+    /// Memory, swap, disk and display state at export time. Numbers only.
+    static func systemState(displays: Int) -> String {
+        var stats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let vm = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count) }
+        }
+        let page = UInt64(vm_kernel_page_size)
+        func mb(_ pages: natural_t) -> String { String(UInt64(pages) * page / 1_048_576) }
+        var swap = xsw_usage(); var swapSize = MemoryLayout<xsw_usage>.size
+        let hasSwap = sysctlbyname("vm.swapusage", &swap, &swapSize, nil, 0) == 0
+        var pressure: Int32 = 0; var pressureSize = MemoryLayout<Int32>.size
+        let hasPressure = sysctlbyname("kern.memorystatus_vm_pressure_level", &pressure, &pressureSize, nil, 0) == 0
+        var info = task_vm_info_data_t()
+        var infoCount = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let task = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(infoCount)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &infoCount) }
+        }
+        let disk = (try? URL(fileURLWithPath: NSHomeDirectory()).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?.volumeAvailableCapacityForImportantUsage
+        let pressureName = [1: "normal", 2: "warning", 4: "critical"][Int(pressure)] ?? String(pressure)
+        return """
+        ### System state at export
+        Time zone: \(TimeZone.current.identifier)
+        System uptime hours: \(Int(ProcessInfo.processInfo.systemUptime / 3600))
+        Memory pressure: \(hasPressure ? pressureName : "unknown")
+        Memory MB: \(vm == KERN_SUCCESS ? "free \(mb(stats.free_count)) active \(mb(stats.active_count)) inactive \(mb(stats.inactive_count)) wired \(mb(stats.wire_count)) compressed \(mb(stats.compressor_page_count))" : "unknown")
+        Swap MB: \(hasSwap ? "used \(swap.xsu_used / 1_048_576) of \(swap.xsu_total / 1_048_576)" : "unknown")
+        App footprint MB: \(task == KERN_SUCCESS ? String(info.phys_footprint / 1_048_576) : "unknown")
+        Free disk GB: \(disk.map { String($0 / 1_000_000_000) } ?? "unknown")
+        Displays: \(displays)
+        Default input is Bluetooth: \(AudioDevices.defaultInputIsBluetooth())
+        """
+    }
+    /// Which services and options are chosen; whether keys exist, never the keys. Endpoint host only.
+    static func serviceSettings(_ settings: AppSettings, hasLiveKey: Bool, hasAnalysisKey: Bool) -> String {
+        let endpoint = (try? settings.compatibleEndpoint())?.host ?? "none"
+        return """
+        ### Settings (no keys)
+        Scenario: \(settings.scenario.rawValue)
+        Answer service: \(settings.reasoningService.rawValue) · model \(settings.reasoningService == .compatible ? settings.compatibleModel : settings.reasoningService == .deepSeek ? settings.deepSeekModel : settings.reasoningModel)
+        Compatible endpoint host: \(endpoint)
+        Live key saved: \(hasLiveKey) · analysis key saved: \(hasAnalysisKey)
+        Embedding service: \(settings.embeddingService.rawValue)
+        Answer language: \(settings.answerLanguage.rawValue) · translations: \(settings.effectiveTranslationLanguages.map(\.rawValue).joined(separator: ","))
+        Include recent conversation: \(settings.includeConversation)
+        Continuous questions: \(settings.continuousQuestionPolicy.rawValue)
+        Overlay background: \(settings.background.rawValue) · hidden from capture: \(settings.excludeOverlayFromCapture)
+        Interface language: \(settings.language.rawValue)
+        """
+    }
     static func issueURL(report: String) -> URL? {
         var url = URLComponents(string: "https://github.com/carey-bk/LiveCopilot/issues/new")!
         url.queryItems = [.init(name: "title", value: "[Bug] LiveCopilot feedback"),
                           .init(name: "body", value: "## What happened / 发生了什么\n\n## Steps / 复现步骤\n\n" + report)]
         return url.url
-    }
-}
-
-struct DiagnosticFeedbackView: View {
-    let settings: AppSettings
-    @Environment(\.dismiss) private var dismiss
-    @State private var report = ""
-    @State private var error = ""
-    @State private var showDetailed = false
-    private func b(_ en: String, _ zh: String) -> String { ServiceGuide.text(en, zh, settings.language) }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(b("Send feedback", "反馈问题")).font(.title2)
-            Text(b("GitHub Issues are public and require a GitHub account. Review this summary before opening GitHub; you submit it yourself in the browser. No audio, conversation, documents, credentials or raw logs are included.", "GitHub Issue 公开可见，需要 GitHub 账号。请先预览摘要，再到浏览器中自行提交。报告不含录音、对话、知识库、密钥或原始日志。"))
-                .font(.callout)
-            LCScrollView { Text(report.isEmpty ? b("Preparing report…", "正在生成报告…") : report).font(.system(.caption, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-            if !error.isEmpty { Text(error).foregroundStyle(LC.danger) }
-            Button(b("Export detailed ZIP for private support…", "导出详细 ZIP，私下反馈（推荐）…")) { showDetailed = true }
-                .accessibilityIdentifier("diagnostics-detailed")
-            HStack {
-                Button(b("Export summary TXT…", "导出摘要 TXT…")) { export() }.disabled(report.isEmpty)
-                Button(b("Open GitHub feedback", "在 GitHub 反馈")) {
-                    guard let url = DiagnosticReport.issueURL(report: report), NSWorkspace.shared.open(url) else {
-                        error = b("Could not open browser. Export the report and visit the project's Issues page.", "无法打开浏览器，请导出报告并访问项目 Issues 页面。"); return
-                    }
-                }.disabled(report.isEmpty).accessibilityIdentifier("diagnostics-github")
-                Spacer()
-                Button(b("Close", "关闭")) { dismiss() }
-            }
-        }.padding(24).frame(width: 680, height: 520)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .preferredColorScheme(.light)
-            .sheet(isPresented: $showDetailed) { DetailedDiagnosticView(report: report, language: settings.language) }
-            .task {
-                let snapshot = settings
-                report = await Task.detached(priority: .utility) { DiagnosticReport.make(settings: snapshot) }.value
-            }
-    }
-    private func export() {
-        let panel = NSSavePanel(); panel.nameFieldStringValue = "LiveCopilot-diagnostics.txt"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try report.write(to: url, atomically: true, encoding: .utf8) }
-        catch { self.error = b("Could not save report. Choose another location.", "无法保存报告，请选择其他位置。") }
     }
 }

@@ -52,20 +52,94 @@ enum DiagnosticBundle {
         }
         return Scan(crashes: crashes, status: "Matched reports: \(crashes.count); unavailable folders (including optional Retired): \(unavailable); skipped/unreadable candidates: \(skipped). Most recent 5 matching reports only. Missing reports do not rule out a crash; macOS may generate them after a delay. Raw reports can belong to older builds.")
     }
-    static func write(to target: URL, report: String, journal: Data, notes: String, crashes: [Crash]) throws {
+    /// A macOS report about this app: crash (.ips), hang (.hang), spin (.spin) or resource (.diag).
+    struct SystemReport: Identifiable, Sendable {
+        let id: String
+        let name: String
+        let date: Date
+        let data: Data
+        var kind: String {
+            switch (name as NSString).pathExtension {
+            case "hang": return "hang"
+            case "spin": return "spin"
+            case "diag": return name.contains("cpu_resource") ? "cpu" : "resource"
+            default: return "crash"
+            }
+        }
+        var preview: String { String(decoding: data.prefix(120_000), as: UTF8.self) }
+    }
+
+    static let reportExtensions: Set<String> = ["ips", "hang", "spin", "diag"]
+
+    /// Text reports (.hang/.spin/.diag) name the process in a "Process:" or "Command:" header line.
+    static func textReportBelongsToApp(_ data: Data) -> Bool {
+        let head = String(decoding: data.prefix(8192), as: UTF8.self)
+        return head.split(separator: "\n").contains { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("Process:") || trimmed.hasPrefix("Command:") else { return false }
+            let value = trimmed.drop(while: { $0 != ":" }).dropFirst().trimmingCharacters(in: .whitespaces)
+            return ["LiveCopilot", "LiveCopilot Dev", "livecopilot-inference"].contains { value == $0 || value.hasPrefix($0 + " ") }
+        }
+    }
+
+    /// Reports from this app modified within `window` of `date`, newest first, at most `limit`.
+    static func systemReports(near date: Date, window: TimeInterval = 72 * 3600, limit: Int = 10, roots: [URL] = [
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/DiagnosticReports"),
+        URL(fileURLWithPath: "/Library/Logs/DiagnosticReports")
+    ]) -> [SystemReport] {
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey]
+        var candidates: [(URL, Date)] = []
+        for root in roots {
+            for folder in [root, root.appendingPathComponent("Retired")] {
+                guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: Array(keys)) else { continue }
+                for file in files where reportExtensions.contains(file.pathExtension) {
+                    guard ["LiveCopilot", "livecopilot-inference"].contains(where: file.lastPathComponent.hasPrefix),
+                          let values = try? file.resourceValues(forKeys: keys), values.isRegularFile == true,
+                          values.isSymbolicLink != true, let size = values.fileSize, size <= 10_000_000,
+                          let modified = values.contentModificationDate, abs(modified.timeIntervalSince(date)) <= window else { continue }
+                    candidates.append((file, modified))
+                }
+            }
+        }
+        var reports: [SystemReport] = []
+        var names = Set<String>()
+        for (url, modified) in candidates.sorted(by: { $0.1 > $1.1 }) {
+            guard !names.contains(url.lastPathComponent), let data = try? Data(contentsOf: url) else { continue }
+            let belongs = url.pathExtension == "ips" ? (parse(data).map(belongsToApp) ?? false) : textReportBelongsToApp(data)
+            guard belongs else { continue }
+            names.insert(url.lastPathComponent)
+            reports.append(SystemReport(id: url.lastPathComponent, name: url.lastPathComponent, date: modified, data: data))
+            if reports.count == limit { break }
+        }
+        return reports
+    }
+
+    static let readme = """
+    LiveCopilot feedback bundle, created on the user's Mac after they reviewed its contents.
+    It contains no audio, transcript, answers, documents or credentials. system-reports/ holds
+    macOS crash, hang and resource reports for LiveCopilot, which can include usernames and paths.
+    stalls/ holds main-thread stacks sampled while the app was unresponsive. Match image UUIDs
+    against the exact build before symbolicating offsets. Worker exits may be intentional
+    cancellation; correlate PID, stage and time.
+
+    """
+
+    /// Writes `files` (relative path → bytes) plus README.txt and SHA256.json into a ZIP at `target`.
+    static func write(to target: URL, files input: [String: Data]) throws {
         let fm = FileManager.default
-        let work = fm.temporaryDirectory.appendingPathComponent("LiveCopilot-support-" + UUID().uuidString)
+        let work = fm.temporaryDirectory.appendingPathComponent("LiveCopilot-feedback-" + UUID().uuidString)
         try fm.createDirectory(at: work, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? fm.removeItem(at: work) }
-        let folder = work.appendingPathComponent("LiveCopilot-support")
+        let folder = work.appendingPathComponent(target.deletingPathExtension().lastPathComponent)
         try fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        var files: [String: Data] = ["summary.txt": Data(report.utf8), "events.json": journal,
-            "reproduction.txt": Data(String(notes.prefix(12_000)).utf8),
-            "README.txt": Data("Private diagnostic bundle. Raw .ips files can contain usernames, paths and process information. Review before sharing privately. No audio, transcript, documents, credentials or general debug log were deliberately collected. A missing clean-exit marker is not proof of a crash. Match crash image UUIDs against the exact build's dSYM before symbolication. Worker exits may be intentional cancellation; correlate PID, stage and time.\n".utf8)]
-        for (index, crash) in crashes.prefix(5).enumerated() { files["crash-\(index + 1).ips"] = crash.data }
+        var files = input
+        files["README.txt"] = Data(readme.utf8)
         var hashes: [String: String] = [:]
         for (name, bytes) in files {
+            // Relative names only; never write outside the bundle folder.
+            guard !name.hasPrefix("/"), !name.split(separator: "/").contains("..") else { continue }
             let file = folder.appendingPathComponent(name)
+            try fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try bytes.write(to: file, options: .atomic)
             try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
             hashes[name] = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()

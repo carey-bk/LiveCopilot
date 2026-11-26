@@ -2553,3 +2553,48 @@ final class MainThreadSamplerTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: folder.appendingPathComponent(names.last!), encoding: .utf8), "report 6")
     }
 }
+
+final class FeedbackBundleTests: XCTestCase {
+    func testSupportAddressComesFromTheWebsiteJSONOrFallsBack() {
+        XCTAssertEqual(SupportContact.email(from: Data(#"{"feedbackEmail": " new@example.com "}"#.utf8)), "new@example.com")
+        XCTAssertNil(SupportContact.email(from: Data(#"{"feedbackEmail": "not an address"}"#.utf8)))
+        XCTAssertNil(SupportContact.email(from: Data("<html>".utf8)))
+        XCTAssertTrue(SupportContact.isValid(SupportContact.defaultEmail))
+    }
+    func testTextReportsMatchOnlyThisApp() {
+        XCTAssertTrue(DiagnosticBundle.textReportBelongsToApp(Data("Date/Time: 2026-11-26\nCommand:         LiveCopilot\nPath: /Applications\n".utf8)))
+        XCTAssertTrue(DiagnosticBundle.textReportBelongsToApp(Data("Process:         LiveCopilot [3946]\n".utf8)))
+        XCTAssertFalse(DiagnosticBundle.textReportBelongsToApp(Data("Process:         LiveCopilotHelperX [1]\nCommand: Zoom\n".utf8)))
+    }
+    func testSystemReportsNearTheChosenTimeAreCollected() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let now = Date()
+        func write(_ name: String, _ text: String, age: TimeInterval) throws {
+            let url = root.appendingPathComponent(name)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            try fm.setAttributes([.modificationDate: now.addingTimeInterval(-age)], ofItemAtPath: url.path)
+        }
+        try write("LiveCopilot_2026-11-26-010647_mac.cpu_resource.diag", "Command:          LiveCopilot\n", age: 3600)
+        try write("LiveCopilot_2026-11-20-010647_mac.hang", "Process: LiveCopilot [1]\n", age: 6 * 86_400)
+        try write("Zoom_2026-11-26-010647_mac.hang", "Process: zoom.us [1]\n", age: 60)
+        let reports = DiagnosticBundle.systemReports(near: now, roots: [root])
+        XCTAssertEqual(reports.map(\.name), ["LiveCopilot_2026-11-26-010647_mac.cpu_resource.diag"])
+        XCTAssertEqual(reports.first?.kind, "cpu")
+    }
+    func testZipContainsNestedFilesAndChecksums() throws {
+        let fm = FileManager.default
+        let folder = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: folder) }
+        let zip = folder.appendingPathComponent("LiveCopilot-feedback-test.zip")
+        try DiagnosticBundle.write(to: zip, files: ["summary.txt": Data("s".utf8), "stalls/stall-1.txt": Data("t".utf8), "../escape.txt": Data("x".utf8)])
+        let list = Process(); list.executableURL = URL(fileURLWithPath: "/usr/bin/zipinfo"); list.arguments = ["-1", zip.path]
+        let pipe = Pipe(); list.standardOutput = pipe; try list.run(); list.waitUntilExit()
+        let names = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        for expected in ["summary.txt", "stalls/stall-1.txt", "README.txt", "SHA256.json"] { XCTAssertTrue(names.contains(expected), expected) }
+        XCTAssertFalse(names.contains("escape.txt"))
+    }
+}

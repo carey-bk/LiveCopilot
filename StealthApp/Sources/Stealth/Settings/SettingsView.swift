@@ -74,7 +74,7 @@ struct SettingsView: View {
         .onAppear { loadCustomDraft(); answerInstructionsDraft = coordinator.settings.additionalAnswerInstructions }
         .task { await coordinator.refreshModelReadiness() }
         .onChange(of: updates.managementRequest) { _, _ in page = .about }
-        .sheet(isPresented: $showDiagnostics) { DiagnosticFeedbackView(settings: coordinator.settings) }
+        .sheet(isPresented: $showDiagnostics) { FeedbackView(coordinator: coordinator) }
         .sheet(isPresented: $showOpenAIKey) {
             VStack(alignment: .leading, spacing: 18) {
                 Text(t("Manage OpenAI credential")).font(.title2)

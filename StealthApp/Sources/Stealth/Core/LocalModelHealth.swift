@@ -12,9 +12,9 @@ struct LocalModelHealth: Sendable {
         switch stage {
         case .ready: return english ? "Self-check passed. If a document still shows an old error, open Knowledge and click Re-index." : "自检通过，可以离线使用。如果文档仍显示以前的错误，请到知识库点击“重建索引”。"
         case .files: return english ? "Model files are missing, unreadable or damaged. Click Download again. Your documents will be kept." : "模型文件缺失、无法读取或已损坏。请点击“重新下载”，知识库文档会保留。"
-        case .runtime: return english ? "The app's inference component cannot start. Reinstall the latest complete LiveCopilot app. If it persists, copy diagnostics and send them to support." : "应用的推理组件无法启动。请重新安装最新版完整 LiveCopilot 应用；若仍失败，请复制诊断信息发给支持人员。"
-        case .memory: return english ? "Not enough inference memory. Close other large apps, then click Run self-check. If it persists, copy diagnostics for support." : "推理内存分配失败。请关闭其他占内存的应用，再点击“运行自检”；若仍失败，请复制诊断信息发给支持人员。"
-        case .load, .inference, .interrupted: return english ? "Files passed verification, but local inference failed. Restart LiveCopilot and run self-check again. If it persists, copy diagnostics for support; repeated downloads are unlikely to help." : "模型文件校验通过，但本地推理未成功。请重启 LiveCopilot 后再次运行自检；若仍失败，请复制诊断信息发给支持人员，不必反复下载模型。"
+        case .runtime: return english ? "The app's inference component cannot start. Reinstall the latest complete LiveCopilot app. If it persists, send a report from About → Report a problem." : "应用的推理组件无法启动。请重新安装最新版完整 LiveCopilot 应用；若仍失败，请在「关于 → 反馈问题」中发送诊断包。"
+        case .memory: return english ? "Not enough inference memory. Close other large apps, then click Run self-check. If it persists, send a report from About → Report a problem." : "推理内存分配失败。请关闭其他占内存的应用，再点击“运行自检”；若仍失败，请在「关于 → 反馈问题」中发送诊断包。"
+        case .load, .inference, .interrupted: return english ? "Files passed verification, but local inference failed. Restart LiveCopilot and run self-check again. If it persists, send a report from About → Report a problem; repeated downloads are unlikely to help." : "模型文件校验通过，但本地推理未成功。请重启 LiveCopilot 后再次运行自检；若仍失败，请在「关于 → 反馈问题」中发送诊断包，不必反复下载模型。"
         }
     }
     func diagnostic(kind: LocalModelKind) -> String {

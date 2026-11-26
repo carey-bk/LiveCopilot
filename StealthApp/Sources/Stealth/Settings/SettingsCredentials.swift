@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 struct LocalModelCard: View {
     var compact = false
     @State private var confirmRemoval = false
-    @State private var copiedDiagnostics = false
     @ObservedObject var manager: LocalModelManager
     let kind: LocalModelKind
     let language: AppLanguage
@@ -59,18 +58,12 @@ struct LocalModelCard: View {
             } else {
                 HStack(spacing: 10) {
                     if !kind.isBundled {
-                    Button(t(manager.installed.contains(kind) ? "Download again" : "Download model")) { copiedDiagnostics = false; manager.install(kind) }
+                    Button(t(manager.installed.contains(kind) ? "Download again" : "Download model")) { manager.install(kind) }
                         .disabled(locked || manager.downloading != nil).accessibilityIdentifier("download-" + kind.rawValue)
                     }
                     if manager.installed.contains(kind) {
-                        Button(ServiceGuide.text("Run self-check", "运行自检", language)) { copiedDiagnostics = false; manager.runSelfCheck(kind) }
+                        Button(ServiceGuide.text("Run self-check", "运行自检", language)) { manager.runSelfCheck(kind) }
                             .disabled(locked || manager.downloading != nil).accessibilityIdentifier("selfcheck-" + kind.rawValue)
-                        if let report = manager.health[kind] {
-                            Button(copiedDiagnostics ? (ServiceGuide.text("Copied", "已复制", language)) : (ServiceGuide.text("Copy diagnostics", "复制诊断信息", language))) {
-                                NSPasteboard.general.clearContents()
-                                copiedDiagnostics = NSPasteboard.general.setString(report.diagnostic(kind: kind), forType: .string)
-                            }.fixedSize().accessibilityIdentifier("copy-diagnostics-" + kind.rawValue)
-                        }
                         if !kind.isBundled {
                         Button(ServiceGuide.text("Delete local model…", "删除本地模型…", language), role: .destructive) { confirmRemoval = true }
                             .foregroundStyle(LC.danger)
