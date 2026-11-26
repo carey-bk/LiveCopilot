@@ -56,9 +56,10 @@
             <p class="hero-sub">$hero_subtitle_markup</p>
             <div class="actions">
               <a class="btn primary" href="$download_url"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>$download_label</a>
-              <a class="btn secondary" href="https://github.com/carey-bk/LiveCopilot">GitHub <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M7 13 13 7M8 7h5v5" /></svg></a>
+              <a class="btn secondary star" href="https://github.com/carey-bk/LiveCopilot"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" /></svg>$star_label<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.6 2.3 4.7 5.1.7-3.7 3.6.9 5.1L10 14.3l-4.6 2.4.9-5.1L2.6 8l5.1-.7Z" /></svg></a>
             </div>
-            <ul class="meta"><li>$hero_meta</li><li>$hero_cost_markup</li><li><a class="backup-jump" href="#backup-downloads">$backup_hero</a></li></ul>
+            $backup_hero_markup
+            <ul class="meta"><li>$hero_meta</li><li>$hero_cost_markup</li><li>$star_note</li></ul>
           </div>
 
           <div class="stage" id="stage">
@@ -72,56 +73,69 @@
             </div>
 
             <div class="product">
-              <!-- Strings are the 2.7.0 app's own; the conversation and documents are examples. -->
-              <div class="p" id="p" role="group" aria-label="$product_label">
+              <!-- Structure, strings and tokens follow the 2.11 overlay (OverlayView.swift, ConversationFlowView.swift,
+                   DesignSystem.swift); the conversation and documents are examples. Background: Frosted glass, the default. -->
+              <div class="p p-full" id="p" role="group" aria-label="$product_label">
                 <div class="p-header">
                   <span class="p-brand"><img src="${prefix}assets/logo.png" width="21" height="21" alt="" />LiveCopilot</span>
-                  <!-- stop.circle.fill · arrow.clockwise · mic.fill · gearshape · pin.fill (docking off) · minus -->
+                  <span class="p-listen" aria-hidden="true"><svg viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" rx="1.2" fill="currentColor" /></svg>$p_stop</span>
+                  <!-- arrow.clockwise · mic.fill · gearshape · pin.fill (docking on) · rectangle.compress.vertical · minus -->
                   <span class="p-tools" aria-hidden="true">
-                    <svg class="stop" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="currentColor" /><rect x="7" y="7" width="6" height="6" rx="1" fill="#fff" /></svg>
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7a6.5 6.5 0 1 0 .4 5M16 2v5h-5" /></svg>
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="7" y="2" width="6" height="10" rx="3" fill="currentColor" stroke="none" /><path d="M4.5 9a5.5 5.5 0 0 0 11 0M10 15v3M7 18h6" /></svg>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7a6.5 6.5 0 1 0 .4 5M16 2v5h-5" /></svg>
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="7" y="2" width="6" height="10" rx="3" fill="currentColor" stroke="none" /><path d="M4.5 9a5.5 5.5 0 0 0 11 0M10 15v3M7 18h6" /></svg>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
                     <svg class="pinned" viewBox="0 0 20 20"><path d="M7 2h6l-1 6 3 3H5l3-3-1-6Z" fill="currentColor" /><path d="M10 11v7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 10h10" /></svg>
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10h14M10 2v5M8 5l2 2 2-2M10 18v-5M8 15l2-2 2 2" /></svg>
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M5 10h10" /></svg>
                   </span>
                 </div>
-                <p class="p-status">$p_status</p>
-                <!-- Cloud listening (OpenAI Realtime) keeps automatic suggestions but shows no Laya line. -->
-                <div class="p-row p-state"><span id="qstate">$p_ready</span><span class="switch"><span>$p_auto</span><i></i></span></div>
+                <div class="p-statusrow">
+                  <i class="p-dot" aria-hidden="true"></i><span class="p-status">$p_status</span>
+                  <span class="p-meters" aria-hidden="true"><span class="p-meter you">$p_you<i></i><i></i><i></i></span><span class="p-meter them">$p_them<i></i><i></i><i></i></span></span>
+                  <span class="p-scene" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 4.5c2.5 1 5 1 7.5 0v4.2c0 2.4-1.7 4.3-3.75 4.3S2 11.1 2 8.7Z" /><path d="M10.5 7.2c2.5 1 5 1 7.5 0v4.2c0 2.4-1.7 4.3-3.75 4.3S10.5 13.8 10.5 11.4" /><path d="M4.3 7.4h.01M7.2 7.4h.01M4.4 10.4c.8.6 1.9.6 2.7 0M12.8 10.1h.01M15.7 10.1h.01M12.9 13.3c.8-.6 1.9-.6 2.7 0" /></svg>$p_scenario</span>
+                  <kbd class="p-kbd" aria-hidden="true">⌥H</kbd>
+                </div>
                 <div class="p-row p-fold">
                   <button type="button" class="fold" id="fold" aria-expanded="false" aria-controls="viewport"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg><span>$p_expand</span></button>
-                  <!-- Transcript translation is off: the button reads Translate (character.bubble). -->
+                  <!-- Transcript translation is off: character.bubble + Translate. -->
                   <span class="p-lang"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2.5 3.5h11v7.5H8l-3 2.5V11H2.5Z" /><text x="8" y="9.4" font-size="5.6" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">$p_glyph</text></svg>$p_translate</span>
                 </div>
                 <div class="p-transcript" id="viewport"><div class="p-lines" id="lines"><div class="p-utt"><div class="p-line them"><b>$p_them</b><span>$hero_question</span></div></div></div></div>
                 <div class="p-follow"><span class="switch"><span>$p_follow</span><i></i></span></div>
                 <div class="p-rule"></div>
                 <div class="p-actions" id="actions" aria-hidden="true">
-                  <span class="chip"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 3h11v8H7l-3 3v-3H2ZM9 13h4l3 3v-3h2V6h-3" /></svg>$p_reply</span>
+                  <span class="chip primary"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 3h11v8H7l-3 3v-3H2ZM9 13h4l3 3v-3h2V6h-3" /></svg>$p_reply</span>
                   <span class="chip"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="16" height="13" rx="2" /><path d="M5 7h1m2 0h7M5 12h1m2 0h7" /></svg>$p_recap</span>
                   <span class="chip"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 3h16v11h-6l-4 3v-3H2Z" /><path d="M8 7a2 2 0 1 1 3 1.7L10 10m0 2h.01" /></svg>$p_followup</span>
-                  <span class="chip menu"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c2.2 2.3 2.2 12.7 0 15M10 2.5c-2.2 2.3-2.2 12.7 0 15" /></svg>Auto<svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m2 3.5 3 3 3-3" /></svg></span>
+                  <span class="switch p-autos"><span>$p_auto</span><i></i></span>
+                  <span class="menu-chip"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="2.5" y="4" width="3.5" height="12" rx=".8" /><rect x="7" y="2.5" width="3.5" height="13.5" rx=".8" /><path d="m12 4.6 3.3-.9 2.6 11.6-3.3.9Z" /></svg>$p_knowledge<svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m2 3.5 3 3 3-3" /></svg></span>
                 </div>
-                <div class="p-input" aria-hidden="true"><span>$p_input</span><em>$p_ask</em></div>
-                <div class="p-row p-opts" aria-hidden="true"><span class="switch"><span>$p_context</span><i></i></span><span class="chip">$p_knowledge<svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m2 3.5 3 3 3-3" /></svg></span></div>
-                <div class="p-row p-foot" aria-hidden="true"><span>$p_scenario</span><span>⌥H</span></div>
+                <div class="p-composer" aria-hidden="true">
+                  <span class="p-field">
+                    <svg class="spark" viewBox="0 0 20 20" fill="currentColor"><path d="M8 2.5 9.4 6.6 13.5 8 9.4 9.4 8 13.5 6.6 9.4 2.5 8l4.1-1.4ZM14.5 11l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8Z" /></svg>
+                    <span class="ph-text">$p_input</span>
+                    <span class="ctx" title="$p_context"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 3h11v8H7l-3 3v-3H2Z" /><path d="M5 6h5M5 8.3h3.5" stroke-linecap="round" /><path d="M15 6h3v7h-2v3l-3-3H9.5" /></svg></span>
+                    <span class="send"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5v-7M3 5.5l3-3 3 3" /></svg></span>
+                  </span>
+                  <span class="menu-chip"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c2.2 2.3 2.2 12.7 0 15M10 2.5c-2.2 2.3-2.2 12.7 0 15" /></svg>Auto<svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m2 3.5 3 3 3-3" /></svg></span>
+                </div>
                 <div class="p-rule"></div>
                 <div class="p-answer" id="answer">
                   <div class="p-card show done" id="card">
                     <div class="p-q">
-                      <div class="p-q-head"><span><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
-                      <!-- Automatic cards show the speaker's original words (store.question). -->
+                      <div class="p-q-head"><span class="kind auto"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
+                      <!-- Automatic cards show the speaker's original words. -->
                       <p>$hero_question</p>
                     </div>
                     <div class="p-body">
-                      <div class="p-st"><i class="spin"></i><span class="ast">$p_completed</span><button class="copy" type="button">$p_copy</button></div>
+                      <div class="p-st"><span class="ast">$p_completed</span><button class="copy" type="button"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="8" rx="1.3" /><path d="M9.5 4.5V3a1.3 1.3 0 0 0-1.3-1.3H3.3A1.3 1.3 0 0 0 2 3v6.2a1.3 1.3 0 0 0 1.3 1.3h1.2" /></svg><span>$p_copy</span></button></div>
+                      <i class="p-progress" aria-hidden="true"></i>
                       <p class="p-text">$hero_answer_markup</p>
-                      <details class="src show" open><summary>$p_sources</summary><p>$hero_source1</p><p>$hero_source2</p></details>
+                      <div class="src show"><span class="src-label">$p_sources</span><span class="src-chip"><b>S1</b>$hero_chip1</span><span class="src-chip"><b>S2</b>$hero_chip2</span></div>
                     </div>
                   </div>
                 </div>
-                <span class="p-resize" aria-hidden="true">⤡</span>
+                <span class="p-resize" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5V2h3M2 2l3 3M10 7v3H7M10 10 7 7" /></svg></span>
               </div>
               <div class="demo-bar">
                 <span>$demo_note</span>
@@ -147,7 +161,7 @@
               <h3>$nav_transcript</h3>
               <p>$wf_hear</p>
               <div class="p p-frag step-visual" aria-hidden="true">
-                <p class="p-status">$p_status</p>
+                <p class="p-statusrow"><i class="p-dot"></i><span class="p-status">$p_status</span></p>
                 <svg class="wave" viewBox="0 0 120 24" aria-hidden="true"><rect x="0" y="9" width="3" height="6" rx="1.5" /><rect x="6" y="6" width="3" height="12" rx="1.5" /><rect x="12" y="2" width="3" height="20" rx="1.5" /><rect x="18" y="7" width="3" height="10" rx="1.5" /><rect x="24" y="4" width="3" height="16" rx="1.5" /><rect x="30" y="1" width="3" height="22" rx="1.5" /><rect x="36" y="8" width="3" height="8" rx="1.5" /><rect x="42" y="3" width="3" height="18" rx="1.5" /><rect x="48" y="6" width="3" height="12" rx="1.5" /><rect x="54" y="9" width="3" height="6" rx="1.5" /><rect x="60" y="5" width="3" height="14" rx="1.5" /><rect x="66" y="2" width="3" height="20" rx="1.5" /><rect x="72" y="7" width="3" height="10" rx="1.5" /><rect x="78" y="4" width="3" height="16" rx="1.5" /><rect x="84" y="8" width="3" height="8" rx="1.5" /><rect x="90" y="10" width="3" height="4" rx="1.5" /><rect x="96" y="6" width="3" height="12" rx="1.5" /><rect x="102" y="3" width="3" height="18" rx="1.5" /><rect x="108" y="7" width="3" height="10" rx="1.5" /><rect x="114" y="9" width="3" height="6" rx="1.5" /></svg>
                 <div class="p-line them"><b>$p_them</b><span>$workflow_question</span></div>
                 <p class="step-status">$p_ready</p>
@@ -171,10 +185,10 @@
               <h3>$wf_answer_title</h3>
               <p>$wf_answer</p>
               <div class="p p-frag step-visual" aria-hidden="true">
-                <div class="p-q"><div class="p-q-head"><span>$p_auto_card</span><span>10:24</span></div><p>$workflow_question</p></div>
-                <p class="p-st"><span>$p_completed</span><span class="copy">$p_copy</span></p>
+                <div class="p-q"><div class="p-q-head"><span class="kind auto"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div><p>$workflow_question</p></div>
+                <p class="p-st"><span class="ast">$p_completed</span><span class="copy"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="8" rx="1.3" /><path d="M9.5 4.5V3a1.3 1.3 0 0 0-1.3-1.3H3.3A1.3 1.3 0 0 0 2 3v6.2a1.3 1.3 0 0 0 1.3 1.3h1.2" /></svg><span>$p_copy</span></span></p>
                 <p class="p-text">$workflow_answer</p>
-                <p class="step-src">$workflow_source1<br />$workflow_source2</p>
+                <div class="src show step-src"><span class="src-chip"><b>S1</b>$hero_chip1</span><span class="src-chip"><b>S2</b>$hero_chip2</span></div>
               </div>
             </li>
           </ol>
@@ -195,9 +209,9 @@
             </div>
           <figure class="spotlight-visual">
             <div class="tr-stack">
-              <div class="p p-frag tr-window">
+              <div class="p p-frag tr-window expanded">
                 <div class="p-row p-fold">
-                  <button type="button" class="fold" aria-expanded="false" data-expand="$p_expand" data-collapse="$p_collapse"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg><span>$p_expand</span></button>
+                  <button type="button" class="fold" aria-expanded="true" data-expand="$p_expand" data-collapse="$p_collapse"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 7.5 6 4l3.5 3.5" /></svg><span>$p_collapse</span></button>
                   <span class="p-lang on" id="tr-label" data-off="$p_translate"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M2.5 3.5h11v7.5H8l-3 2.5V11H2.5Z" /><text x="8" y="9.4" font-size="5.6" text-anchor="middle" fill="currentColor" stroke="none" font-weight="600">$p_glyph</text></svg><span>$tr_pop_value</span></span>
                 </div>
                 <div class="p-transcript"><div class="p-lines">
@@ -226,9 +240,9 @@
           <div class="engines">
             <h3>$eng_title</h3>
             <dl>
-              <div><dt>Zipformer<span>$eng_local · $eng_default</span></dt><dd><b>$eng_zip_lang</b>$eng_zip</dd></div>
-              <div><dt>Apple Speech<span>$eng_local</span></dt><dd><b>$eng_apple_lang</b>$eng_apple</dd></div>
-              <div><dt>OpenAI Live<span class="cloud">$eng_cloud</span></dt><dd><b>$eng_live_lang</b>$eng_live</dd></div>
+              <div><dt>Apple Speech<span>$eng_local · $eng_default</span></dt><dd><b>$eng_apple_lang</b>$eng_apple</dd></div>
+              <div><dt>Zipformer<span>$eng_local</span></dt><dd><b>$eng_zip_lang</b>$eng_zip</dd></div>
+              <div><dt>OpenAI · GPT-Live-1<span class="cloud">$eng_cloud</span></dt><dd><b>$eng_live_lang</b>$eng_live</dd></div>
             </dl>
             <p class="engines-note">$eng_note<br>$eng_note_laya</p>
           </div>
@@ -253,9 +267,9 @@
             </div>
             <figure class="answer-figure">
               <div class="p p-frag mode-demo">
-                <div class="p-row p-opts"><span class="switch" aria-hidden="true"><span>$p_context</span><i></i></span>
+                <div class="p-row p-opts"><span class="switch" aria-hidden="true"><span>$p_auto</span><i></i></span>
                   <div class="dropdown">
-                    <button type="button" class="chip mode-menu" aria-haspopup="menu" aria-expanded="false" aria-label="$modes_title"><span id="mode-label">$mode_hybrid</span><svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m2 3.5 3 3 3-3" /></svg></button>
+                    <button type="button" class="menu-chip mode-menu" aria-haspopup="menu" aria-expanded="false" aria-label="$modes_title"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="3.5" height="12" rx=".8" /><rect x="7" y="2.5" width="3.5" height="13.5" rx=".8" /><path d="m12 4.6 3.3-.9 2.6 11.6-3.3.9Z" /></svg><span id="mode-label">$mode_hybrid</span><svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m2 3.5 3 3 3-3" /></svg></button>
                     <div class="popup" role="menu" aria-label="$modes_title" hidden><button type="button" role="menuitemradio" aria-checked="false" data-value="general">$mode_general</button><button type="button" role="menuitemradio" aria-checked="true" data-value="hybrid">$mode_hybrid</button><button type="button" role="menuitemradio" aria-checked="false" data-value="kb">$mode_kb</button></div>
                   </div>
                 </div>
@@ -263,36 +277,36 @@
                 <div class="mode-answers">
                   <div class="p-card show done" data-mode="general" hidden>
                     <div class="p-q">
-                      <div class="p-q-head"><span><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
+                      <div class="p-q-head"><span class="kind auto"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
                       <p>$workflow_question</p>
                     </div>
                     <div class="p-body">
-                      <div class="p-st"><span>$p_completed</span><span class="copy">$p_copy</span></div>
+                      <div class="p-st"><span class="ast">$p_completed</span><span class="copy"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="8" rx="1.3" /><path d="M9.5 4.5V3a1.3 1.3 0 0 0-1.3-1.3H3.3A1.3 1.3 0 0 0 2 3v6.2a1.3 1.3 0 0 0 1.3 1.3h1.2" /></svg><span>$p_copy</span></span></div>
                       <p class="p-text">$mode_general_answer</p>
                     </div>
                   </div>
                   <div class="p-card show done" data-mode="hybrid">
                     <div class="p-q">
-                      <div class="p-q-head"><span><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
+                      <div class="p-q-head"><span class="kind auto"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
                       <p>$workflow_question</p>
                     </div>
                     <div class="p-body">
-                      <div class="p-st"><span>$p_completed</span><span class="copy">$p_copy</span></div>
+                      <div class="p-st"><span class="ast">$p_completed</span><span class="copy"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="8" rx="1.3" /><path d="M9.5 4.5V3a1.3 1.3 0 0 0-1.3-1.3H3.3A1.3 1.3 0 0 0 2 3v6.2a1.3 1.3 0 0 0 1.3 1.3h1.2" /></svg><span>$p_copy</span></span></div>
                       <p class="p-text">$workflow_answer</p>
                       <details class="show" open><summary>$p_evidence</summary><p class="plain">$workflow_evidence_text</p></details>
-                      <details class="show" open><summary>$p_sources</summary><p>$workflow_source1</p><p>$workflow_source2</p></details>
+                      <div class="src show"><span class="src-label">$p_sources</span><span class="src-chip"><b>S1</b>$hero_chip1</span><span class="src-chip"><b>S2</b>$hero_chip2</span></div>
                     </div>
                   </div>
                   <div class="p-card show done" data-mode="kb" hidden>
                     <div class="p-q">
-                      <div class="p-q-head"><span><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
+                      <div class="p-q-head"><span class="kind auto"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg>$p_auto_card</span><span>10:24</span></div>
                       <p>$workflow_question</p>
                     </div>
                     <div class="p-body">
-                      <div class="p-st"><span>$p_completed</span><span class="copy">$p_copy</span></div>
+                      <div class="p-st"><span class="ast">$p_completed</span><span class="copy"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="8" rx="1.3" /><path d="M9.5 4.5V3a1.3 1.3 0 0 0-1.3-1.3H3.3A1.3 1.3 0 0 0 2 3v6.2a1.3 1.3 0 0 0 1.3 1.3h1.2" /></svg><span>$p_copy</span></span></div>
                       <p class="p-text">$mode_kb_answer</p>
                       <details class="show" open><summary>$p_evidence</summary><p class="plain">$workflow_evidence_text</p></details>
-                      <details class="show" open><summary>$p_sources</summary><p>$workflow_source1</p><p>$workflow_source2</p></details>
+                      <div class="src show"><span class="src-label">$p_sources</span><span class="src-chip"><b>S1</b>$hero_chip1</span><span class="src-chip"><b>S2</b>$hero_chip2</span></div>
                     </div>
                   </div>
                 </div>
@@ -318,7 +332,8 @@
               </div>
               <div class="p p-frag pairs-visual" id="panel-pairs" role="tabpanel" aria-labelledby="tab-pairs" hidden>
                 <div class="setting-line"><span>$pairs_setting</span><span class="switch"><i></i></span></div>
-                <p class="p-text pairs"><span>$pairs_zh1</span><span class="en">$pairs_en1</span><span>$pairs_zh2</span><span class="en">$pairs_en2</span></p>
+                <div class="pair-langs"><span><b>1</b>English</span><span><b>2</b>日本語</span></div>
+                <p class="p-text pairs"><span>$pairs_zh1</span><span class="en">$pairs_en1</span><span class="en">$pairs_ja1</span><span>$pairs_zh2</span><span class="en">$pairs_en2</span><span class="en">$pairs_ja2</span></p>
               </div>
               <p class="flow-note">$caption_schematic</p>
             </div>
@@ -345,13 +360,13 @@
             <div class="case-answer">
               <div class="p p-frag p-card show done">
                 <div class="p-q">
-                  <div class="p-q-head"><span id="case-kind">$p_auto_card</span><span>10:24</span></div>
+                  <div class="p-q-head"><span class="kind auto" id="case-kind-pill"><svg class="ic-auto viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M2 6v2M4.5 4v6M7 2v10M9.5 4.5v5M12 6v2" /></svg><svg class="ic-manual" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M1.8 2.5h10.4v7H6.5L3.6 12V9.5H1.8Z" /><path d="M4.3 5h5.4M4.3 7h3.5" stroke-linecap="round" /></svg><span id="case-kind">$p_auto_card</span></span><span>10:24</span></div>
                   <p id="case-card-question">$case_question</p>
                 </div>
                 <div class="p-body">
-                  <div class="p-st"><span>$p_completed</span><span class="copy">$p_copy</span></div>
+                  <div class="p-st"><span class="ast">$p_completed</span><span class="copy"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="8" rx="1.3" /><path d="M9.5 4.5V3a1.3 1.3 0 0 0-1.3-1.3H3.3A1.3 1.3 0 0 0 2 3v6.2a1.3 1.3 0 0 0 1.3 1.3h1.2" /></svg><span>$p_copy</span></span></div>
                   <p class="p-text" id="case-answer">$case_answer</p>
-                  <details class="show" open><summary>$p_sources</summary><div id="case-sources">$case_sources_markup</div></details>
+                  <div class="src show"><span class="src-label">$p_sources</span><span class="src-chips" id="case-sources">$case_sources_markup</span></div>
                 </div>
               </div>
             </div>
@@ -381,11 +396,20 @@
             </figure>
             <figure id="history">
               <div class="p history" aria-hidden="true">
-                <span class="search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5" /><path d="m10.5 10.5 3 3" /></svg>$history_search</span>
-                <span class="group">$history_today</span>
-                <span class="item selected"><b>$history_item1</b><small>$history_count1 · 14:20</small></span>
-                <span class="group">$history_earlier</span>
-                <span class="item"><b>$history_item2</b><small>$history_count2</small></span>
+                <div class="history-side">
+                  <span class="search"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5" /><path d="m10.5 10.5 3 3" /></svg>$history_search</span>
+                  <span class="group">$history_today</span>
+                  <span class="item selected"><small>14:20</small><b>$history_item1</b><small>$history_dur1 · $history_count1</small></span>
+                  <span class="group">$history_earlier</span>
+                  <span class="item"><small>$history_when2</small><b>$history_item2</b><small>$history_count2</small></span>
+                </div>
+                <div class="history-detail">
+                  <b class="history-title">$history_item1</b>
+                  <small>14:20 – 14:52 · $history_dur1 · $history_count1</small>
+                  <dl class="history-stats"><div><dt>$hs_duration</dt><dd>$history_dur1</dd></div><div><dt>$hs_questions</dt><dd>6</dd></div><div><dt>$hs_answers</dt><dd>6</dd></div><div><dt>$hs_sources</dt><dd>9</dd></div></dl>
+                  <span class="history-line"><i></i><b>$p_them</b> 14:31</span>
+                  <span class="history-text">$workflow_question</span>
+                </div>
               </div>
               <figcaption><b>$f_history_title</b><span>$f_history_body</span></figcaption>
             </figure>
@@ -399,7 +423,7 @@
             <p>$svc_lead</p>
           </div>
           <dl class="svc-list">
-            <div><dt>$svc_speech_h<span>$svc_local_cloud</span></dt><dd><strong>Zipformer · Paraformer · Apple Speech · GPT-Live-1</strong>$svc_speech_body</dd></div>
+            <div><dt>$svc_speech_h<span>$svc_local_cloud</span></dt><dd><strong>Apple Speech · Zipformer · Paraformer · GPT-Live-1</strong>$svc_speech_body</dd></div>
             <div><dt>$svc_index_h<span>$svc_local_cloud</span></dt><dd><strong>Arctic · OpenAI Embeddings</strong>$svc_index_body</dd></div>
             <div><dt>$svc_answer_h<span class="cloud">$svc_cloud</span></dt><dd><strong>OpenAI · DeepSeek · Qwen · GLM · Kimi · $svc_compatible</strong>$svc_answer_body</dd></div>
           </dl>
@@ -447,9 +471,11 @@
           <p class="download-intro">$install_intro</p>
           <div class="actions">
             <a class="btn primary dark" href="$download_url"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>$download_label</a>
+            <a class="btn secondary star light" href="https://github.com/carey-bk/LiveCopilot"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z" /></svg>$star_label<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="m10 2.6 2.3 4.7 5.1.7-3.7 3.6.9 5.1L10 14.3l-4.6 2.4.9-5.1L2.6 8l5.1-.7Z" /></svg></a>
           </div>
-          <p class="download-meta">$download_meta</p>
           $backup_markup
+          <p class="download-meta">$download_meta</p>
+          <p class="star-note">$star_note</p>
           <p class="guide-links"><a href="$readme_url$guide_anchor">$guide_link</a><a href="$readme_url$requirements_anchor">$requirements_link</a><a href="https://github.com/carey-bk/LiveCopilot/releases">$releases_link</a></p>
         </div>
       </section>
@@ -459,7 +485,7 @@
       <div class="wrap footer-row">
         <a class="brand" href="$home"><img src="${prefix}assets/logo.png" width="28" height="28" alt="" />LiveCopilot</a>
         <div class="footer-links">
-          <a href="https://github.com/carey-bk">$author_link</a><a href="https://github.com/carey-bk/LiveCopilot">GitHub</a><a href="$release_url">$release_link</a><a href="https://github.com/carey-bk/LiveCopilot/blob/main/LICENSE">MIT License</a>
+          <a href="https://github.com/carey-bk">$author_link</a><a href="https://github.com/carey-bk/LiveCopilot">$star_footer</a><a href="$release_url">$release_link</a><a href="https://github.com/carey-bk/LiveCopilot/blob/main/LICENSE">MIT License</a>
         </div>
       </div>
       <p class="wrap footer-credit">$credit_prefix <a href="https://github.com/vortechron/stealth">Stealth</a>. $site_privacy</p>

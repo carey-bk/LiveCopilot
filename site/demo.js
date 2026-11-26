@@ -225,11 +225,16 @@
     panel.setAttribute("aria-labelledby", tab.id);
     $("case-question").textContent = item.question;
     $("case-card-question").textContent = item.question;
-    $("case-kind").textContent = tab.dataset.case === "manual" ? panel.dataset.manual : panel.dataset.auto;
+    const manual = tab.dataset.case === "manual";
+    $("case-kind").textContent = manual ? panel.dataset.manual : panel.dataset.auto;
+    $("case-kind-pill").classList.toggle("auto", !manual);
     $("case-documents").innerHTML = item.documents.map(d => `<span>${escape(d)}</span>`).join("");
     $("case-passage").textContent = item.passage;
     $("case-answer").textContent = item.answer;
-    $("case-sources").innerHTML = item.sources.map(s => `<p>${escape(s)}</p>`).join("");
+    $("case-sources").innerHTML = item.sources.map(s => {
+      const [, badge = "", name = s] = s.match(/^\[(S\d+)\]\s*(.*)$/) || [];
+      return `<span class="src-chip"><b>${escape(badge)}</b>${escape(name)}</span>`;
+    }).join("");
     fadeIn(panel); movePills();
     if (focus) tab.focus();
   }
@@ -256,7 +261,7 @@
   // ---------- Hero: one finite timeline, phrase by phrase, ending on the finished answer ----------
   const L = data.hero, stage = $("stage"), product = document.querySelector(".product"), mini = $("mini");
   const p = $("p"), lines = $("lines"), viewport = $("viewport"), card = $("card"), answer = $("answer");
-  const atext = card.querySelector(".p-text"), ast = card.querySelector(".ast"), src = card.querySelector(".src"), copy = card.querySelector(".copy");
+  const atext = card.querySelector(".p-text"), ast = card.querySelector(".ast"), src = card.querySelector(".src"), copy = card.querySelector(".copy"), copyLabel = copy.querySelector("span");
   const them = lines.querySelector(".p-line b").textContent;
   const fold = $("fold");
 
@@ -267,7 +272,7 @@
     });
   }
   bindFold(fold, p, L, () => { follow(); setTimeout(follow, 360); syncSoon(); });
-  copy.addEventListener("click", () => { copy.textContent = L.copied; setTimeout(() => copy.textContent = L.copy, 1400); });
+  copy.addEventListener("click", () => { copyLabel.textContent = L.copied; setTimeout(() => copyLabel.textContent = L.copy, 1400); });
   $("info").addEventListener("click", () => {
     const info = $("demo-info"), open = info.hidden;
     info.hidden = !open; $("info").setAttribute("aria-expanded", open);
@@ -297,23 +302,27 @@
   function reset() {
     lines.innerHTML = `<p class="p-empty">${escape(L.empty)}</p>`;
     live = null;
-    $("qstate").textContent = L.wait;
-    card.className = "p-card"; atext.textContent = ""; ast.textContent = L.generating;
-    src.className = "src"; src.open = false;
+    p.classList.remove("speaking-them");
+    // Hide the previous answer at once (no fade), so a paused demo never shows a stale card.
+    card.style.transition = "none"; card.className = "p-card"; void card.offsetWidth; card.style.transition = "";
+    atext.textContent = ""; ast.textContent = L.generating;
+    src.className = "src";
     follow(); syncSoon();
   }
   function addAnswer(part) {
     const s = document.createElement("span"); s.className = "ph"; s.textContent = (atext.textContent && english ? " " : "") + part;
     atext.append(s);
   }
-  function complete() { card.classList.add("done"); ast.textContent = L.completed; src.classList.add("show"); src.open = true; }
+  function complete() { card.classList.add("done"); ast.textContent = L.completed; src.classList.add("show"); }
 
   const steps = [], at = (t, fn) => steps.push([t, fn]);
   {
     const join = english ? " " : "", q = L.question;
     let t = 150;
+    // The other side speaks (their meter moves), then the finished question starts an automatic answer.
+    at(t, () => p.classList.add("speaking-them"));
     q.forEach((_, i) => { const text = q.slice(0, i + 1).join(join); at(t, () => setThem(text, true)); t += 420; });
-    at(t, () => { setThem(q.join(join), false); $("qstate").textContent = L.ready; }); t += 320;
+    at(t, () => { setThem(q.join(join), false); p.classList.remove("speaking-them"); }); t += 320;
     at(t, () => card.classList.add("show")); t += 320;
     L.answer.forEach(part => { at(t, () => addAnswer(part)); t += 420; });
     at(t, complete);
@@ -325,18 +334,21 @@
     ghost.removeAttribute("id");
     ghost.className = "p-card show done";
     ghost.querySelector(".p-text").innerHTML = L.answer.map(a => `<span class="ph">${escape(a)}</span>`).join(english ? " " : "");
-    ghost.querySelector(".src").open = true;
     ghost.style.cssText = "position:absolute;inset:0 0 auto;visibility:hidden";
     answer.style.minHeight = "";
     answer.append(ghost);
     answer.style.minHeight = ghost.offsetHeight + "px";
     ghost.remove();
   }
-  // On screens too narrow for the real action row, scale the whole window down slightly
-  // instead of hiding or squeezing any of its buttons.
+  // On screens too narrow for the real action row, chips go title-only as in the app; if that is not
+  // enough, the whole window scales down slightly instead of hiding any of its buttons.
   function fit() {
     p.style.zoom = ""; p.style.width = "";
-    const row = $("actions"), extra = row.scrollWidth - row.clientWidth;
+    // Like the app, chips first drop their icons when the row is tight.
+    const row = $("actions");
+    row.classList.remove("compact");
+    if (row.scrollWidth > row.clientWidth) row.classList.add("compact");
+    const extra = row.scrollWidth - row.clientWidth;
     if (extra > 0) { const w = p.offsetWidth; p.style.width = w + extra + "px"; p.style.zoom = w / (w + extra); }
   }
   addEventListener("resize", fit);

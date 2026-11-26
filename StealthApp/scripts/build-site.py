@@ -56,16 +56,25 @@ def phrases(text, english):
     return ' '.join(parts) if english else '<wbr>'.join(f'<span class="ph">{part}</span>' for part in parts)
 
 
-def backup_links(copy):
-    """Secondary netdisk entries, each with its extraction code next to the link."""
+def source_chip(source):
+    """'[S1] Name · Part' becomes the answer card's S1 source chip."""
+    match = re.match(r'\[(S\d+)\]\s*(.*)', source)
+    badge, name = match.groups() if match else ('', source)
+    return f'<span class="src-chip"><b>{html.escape(badge)}</b>{html.escape(name)}</span>'
+
+
+def backup_links(copy, prefix, label_key, anchor=False):
+    """Secondary netdisk buttons: grey official logo, name, and the extraction code beside it."""
     if not backups:
         return ''
     items = []
     for backup in backups:
         name = html.escape(copy['backup_' + backup['name']])
-        code = html.escape(copy['backup_code'] + ' ' + backup['code']) if backup.get('code') else ''
-        items.append(f'<li><a href="{html.escape(backup["url"], quote=True)}" rel="noopener">{name}</a>' + (f'<span>{code}</span>' if code else '') + '</li>')
-    return f'<div class="backups" id="backup-downloads"><p>{html.escape(copy["backup_label"])}</p><ul>{"".join(items)}</ul></div>'
+        code = f'<span class="code">{html.escape(copy["backup_code"])} {html.escape(backup["code"])}</span>' if backup.get('code') else ''
+        logo = f'<img src="{prefix}assets/netdisk-{backup["name"]}.png" width="16" height="16" alt="" />'
+        items.append(f'<a class="mirror" href="{html.escape(backup["url"], quote=True)}" rel="noopener">{logo}{name}{code}</a>')
+    anchor_id = ' id="backup-downloads"' if anchor else ''
+    return f'<div class="mirrors"{anchor_id}><span class="mirrors-label">{html.escape(copy[label_key])}</span>{"".join(items)}</div>'
 
 
 for language, copy in content.items():
@@ -90,12 +99,16 @@ for language, copy in content.items():
         canonical=BASE + (path + '/' if path else ''),
         demo_examples=json.dumps(sample, ensure_ascii=False).replace('<', '\\u003c'),
         download_url=html.escape(github_download, quote=True),
-        backup_markup=backup_links(copy),
+        backup_markup=backup_links(copy, prefix, 'backup_label', anchor=True),
+        backup_hero_markup=backup_links(copy, prefix, 'backup_hero'),
         # English reads "New in 2.7", so the version badge follows the text there.
         # The pill opens the published release notes.
         pill_markup='<a class="release-pill' + (' end' if english else '') + '" href="' + release_url + '">' + (label + badge if english else badge + label) + '</a>',
         # The settings counter shows the example's real length against the app's 4000-character limit.
         style_count=str(len(copy['style_example'])),
+        # Source chips carry their S1/S2 badge separately, as in the 2.11 answer card.
+        hero_chip1=html.escape(re.sub(r'^\[S\d\]\s*', '', copy['hero_source1'])),
+        hero_chip2=html.escape(re.sub(r'^\[S\d\]\s*', '', copy['hero_source2'])),
         hero_subtitle_markup=phrases(copy['hero_subtitle_phrases'], english),
         hero_cost_markup=phrases(copy['hero_cost_phrases'], english),
         hero_question=html.escape((' ' if english else '').join(hero['question'])),
@@ -104,7 +117,7 @@ for language, copy in content.items():
         case_question=html.escape(case['question']), case_answer=html.escape(case['answer']),
         case_passage_text=html.escape(case['passage']),
         case_documents_markup=''.join(f'<span>{html.escape(name)}</span>' for name in case['documents']),
-        case_sources_markup=''.join(f'<p>{html.escape(source)}</p>' for source in case['sources']),
+        case_sources_markup=''.join(source_chip(source) for source in case['sources']),
     )
     destination = OUTPUT / path
     destination.mkdir(exist_ok=True)

@@ -5,9 +5,9 @@
   --paper: #f4f5f7; --paper-ink: #111318; --paper-muted: #5b6270; --paper-line: #dfe3e9; --card: #fff;
   --accent: #1764ce;
   /* Overlay tokens follow OverlayView.swift: 14pt padding, 16pt radius, 12pt transcript, 14pt answer. */
-  --p-surface: rgba(248, 248, 250, .97); --p-ink: #1d1d1f; --p-muted: #6e6e73; --p-faint: #a1a1a6;
-  --p-rule: rgba(0, 0, 0, .1); --p-fill: rgba(0, 0, 0, .055); --p-green: #28a745; --p-blue: #0a7aff;
-  --p-ts: 12px; --p-as: 13.5px;
+  --p-surface: rgba(244, 245, 248, .86); --p-ink: #1d1d1f; --p-muted: #6e6e73; --p-faint: #a1a1a6;
+  --p-rule: rgba(0, 0, 0, .08); --p-fill: rgba(0, 0, 0, .05); --p-green: #1e9e5a; --p-blue: #1a73e8; --p-pink: #d9488b; --p-red: #d93a3a;
+  --p-ts: 12px; --p-as: 13.5px; --p-row: 18px;
   /* One light source for laptop and overlay: soft key light from above, shared ambient shadow. */
   --shadow-key: 0 34px 60px -26px rgba(0, 0, 0, .78); --shadow-near: 0 12px 24px -12px rgba(0, 0, 0, .5);
   --shadow-paper: 0 24px 48px -28px rgba(20, 30, 50, .28), 0 2px 6px rgba(20, 30, 50, .06);
@@ -51,7 +51,7 @@ p, dd, figcaption { text-wrap: pretty }
   background: radial-gradient(38% 42% at 74% 46%, #3b5fb02e, transparent 70%), radial-gradient(26% 30% at 90% 72%, #b69af81f, transparent 70%), radial-gradient(28% 30% at 16% 30%, #f19bc212, transparent 70%) }
 /* Same width as the nav and the sections below; the copy column hugs its text. */
 .hero-layout { max-width: 1240px; margin: auto; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: clamp(8px, 1vw, 14px); align-items: center }
-.hero-copy { max-width: 370px }
+.hero-copy { max-width: 470px }
 .release-pill { display: inline-flex; align-items: center; gap: 10px; padding: 6px 12px 6px 6px; border: 1px solid #ffffff26; border-radius: 999px; background: #ffffff0a; color: #d6dbe6; font-size: 12.5px; line-height: 1.3 }
 .release-pill b { padding: 3px 8px; border-radius: 999px; background: linear-gradient(100deg, var(--blue), var(--violet) 60%, var(--pink)); color: #0b0d12; font-size: 11.5px }
 .release-pill:hover { border-color: #ffffff45 }
@@ -113,7 +113,7 @@ html[lang=en] .hero h1 span + span { margin-top: .08em }
 .mini { position: absolute; z-index: 2; left: 56%; top: 8%; width: 26%; opacity: .88; pointer-events: none }
 .mini .p { transform-origin: 0 0; transform: scale(var(--mini-scale, .42)); box-shadow: 0 18px 30px -10px #000a }
 /* Laid out at a legibility-adjusted width; the real window's minimum is 400 pt. */
-.product { position: absolute; z-index: 3; right: 0; top: 0; width: clamp(340px, 45cqw, 370px); zoom: var(--pz, 1) }
+.product { position: absolute; z-index: 3; right: 0; top: 0; width: clamp(350px, 48cqw, 400px); zoom: var(--pz, 1) }
 /* Wide screens show the close-up larger; its contents scale together. */
 @media (min-width: 1280px) { .stage { --pz: 1.06 } }
 /* A faint screen-coloured glow ties the close-up to the display it came from. */
@@ -125,75 +125,120 @@ html[lang=en] .hero h1 span + span { margin-top: .08em }
 .demo-bar svg { width: 13px; height: 13px }
 .demo-info { margin: 8px 2px 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: #11141b; color: #aab2c1; font-size: 12px; line-height: 1.55; text-align: left }
 
-/* ---------- Product UI (LiveCopilot 2.7 overlay) ---------- */
-.p { position: relative; padding: 13px 14px; border-radius: 16px; background: var(--p-surface); color: var(--p-ink); border: 1px solid #0000001f;
-  box-shadow: var(--shadow-key), var(--shadow-near), 0 0 0 .5px #ffffff26; font-size: 12px; line-height: 1.45; letter-spacing: normal; text-align: left; -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px) }
+/* ---------- Product UI (LiveCopilot 2.11 overlay) ----------
+   Tokens follow DesignSystem.swift and OverlayView.swift: 14pt padding, 16pt panel radius, 10pt row gap,
+   12pt transcript, 14pt answers; brand blue #1A73E8, pink #D9488B, green #1E9E5A. The window uses
+   Frosted glass, the app's default background: a light system blur over whatever is behind it. */
+.p { position: relative; padding: 12px 14px; border-radius: 16px; background: var(--p-surface); color: var(--p-ink); border: 1px solid #0000001f;
+  box-shadow: var(--shadow-key), var(--shadow-near), 0 0 0 .5px #ffffff26; font-size: 12px; line-height: 1.45; letter-spacing: normal; text-align: left;
+  -webkit-backdrop-filter: blur(30px) saturate(1.6); backdrop-filter: blur(30px) saturate(1.6) }
 .p * { margin: 0 }
-.p-header { display: flex; align-items: center; justify-content: space-between; padding-right: 16px }
-.p-brand { display: flex; align-items: center; gap: 6px; font-family: "Avenir Next", -apple-system, sans-serif; font-weight: 800; font-style: italic; font-size: 15px; letter-spacing: -.4px }
+/* The full window stacks its rows 9px apart; fragments elsewhere lay out their own excerpts. */
+.p-full { display: flex; flex-direction: column; gap: 9px }
+.p svg { display: block; flex: none }
+.p-header { display: flex; align-items: center; gap: 8px; padding-right: 10px }
+.p-brand { display: flex; align-items: center; gap: 6px; margin-right: auto; font-family: "Avenir Next", -apple-system, sans-serif; font-weight: 800; font-style: italic; font-size: 15px; letter-spacing: -.4px; white-space: nowrap }
 .p-brand img { width: 21px; height: 21px }
-.p-tools { display: flex; gap: 10px; color: #6e6e73 }
-.p-tools svg { width: 15px; height: 15px; display: block }
-.p-tools .stop { color: #e5484d }
+/* The listen control is a text pill: gradient "Listen" when idle, red "Stop" while listening. */
+.p-listen { display: inline-flex; align-items: center; gap: 5px; height: 23px; padding: 0 10px; border-radius: 12px; background: #d93a3a21; color: var(--p-red); font-size: 11px; font-weight: 600; white-space: nowrap }
+.p-listen svg { width: 8px; height: 8px }
+.p-tools { display: flex; align-items: center; gap: 1px; color: #6e6e73 }
+.p-tools svg { width: 22px; height: 22px; padding: 4.5px }
 .p-tools .pinned { color: var(--p-blue) }
-.p-status { margin-top: 8px; color: var(--p-muted); font-size: 11px }
+.p-statusrow { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--p-muted); font-size: 10.5px }
+.p-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--p-green); box-shadow: 0 0 0 3px #1e9e5a26; animation: pulse 1.6s ease-in-out infinite }
+.p-status { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.p-meters { display: flex; gap: 8px }
+.p-meter { display: inline-flex; align-items: center; gap: 1.5px; font-size: 10px; white-space: nowrap }
+.p-meter i { width: 2.5px; height: 4px; border-radius: 2px; margin-left: 0; background: currentColor; opacity: .28; transition: height .15s }
+.p-meter i:first-of-type { margin-left: 4px }
+.p-meter.you i { color: var(--p-blue) }
+.p-meter.them i { color: var(--p-pink) }
+/* Bars come alive while someone is speaking (height weights .55, 1, .75 as in the app). */
+.p.speaking-them .p-meter.them i, .p.speaking-you .p-meter.you i { opacity: 1; animation: level .5s ease-in-out infinite alternate }
+.p-meter i:nth-of-type(2) { animation-delay: -.2s !important }
+.p-meter i:nth-of-type(3) { animation-delay: -.35s !important }
+.p-scene { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap }
+.p-scene svg { width: 13px; height: 13px }
+.p-kbd { padding: 1px 5px; border-radius: 4px; background: var(--p-fill); color: var(--p-muted); font: 500 10px -apple-system, sans-serif }
 .p-row { display: flex; align-items: center; justify-content: space-between; gap: 8px }
-.p-state { margin-top: 6px; color: var(--p-muted); font-size: 10.5px }
-.switch { display: inline-flex; align-items: center; gap: 7px; font-size: 10.5px; color: var(--p-ink) }
+.switch { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--p-ink); white-space: nowrap }
 .switch i { position: relative; flex: none; width: 28px; height: 16px; border-radius: 8px; background: var(--p-blue) }
 .switch i::after { content: ""; position: absolute; top: 2px; right: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #0003 }
-.switch.off i { background: #d1d1d6 }
+.switch.off i { background: #0000002e }
 .switch.off i::after { right: auto; left: 2px }
-.p-fold { margin-top: 7px; font-size: 11px; color: var(--p-muted) }
-.fold { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 2px 0; color: var(--p-muted); cursor: pointer; font-size: 11px }
+.p-fold { font-size: 11px; color: var(--p-muted) }
+.fold { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 1px 0; color: var(--p-muted); cursor: pointer; font-size: 11px }
 .fold:hover { color: var(--p-ink) }
 .fold svg { width: 11px; height: 11px }
 .p-lang { display: inline-flex; align-items: center; gap: 5px }
 .p-lang svg { width: 14px; height: 14px }
-/* Collapsed viewport: three transcript lines plus 6pt, as in transcriptViewportHeight. */
-.p-transcript { margin-top: 6px; overflow: hidden; height: calc(var(--p-ts) * 1.5 * 3 + 6px); transition: height .35s ease; position: relative }
-.p.expanded .p-transcript { height: 90px }
+.p-lang.on { color: var(--p-blue) }
+/* Collapsed viewport shows two transcript rows; expanded shows six, the default setting. */
+.p-transcript { overflow: hidden; height: calc(var(--p-row) * 2 + 6px); transition: height .35s ease; position: relative }
+.p.expanded .p-transcript { height: calc(var(--p-row) * 6 + 30px) }
 .p-lines { display: flex; flex-direction: column; gap: 6px; transition: transform .35s ease }
 .p-empty { font-size: var(--p-ts); line-height: 1.5; color: var(--p-muted) }
-.p-utt { display: flex; flex-direction: column; gap: 3px }
-.p-line { display: grid; grid-template-columns: 35px 1fr; gap: 6px; font-size: var(--p-ts); line-height: 1.5 }
-.p-line b { font-size: 11px; font-weight: 700 }
-.p-line.them b { color: var(--p-green) }
-.p-line.tr b, .p-line.tr span { color: var(--p-blue) }
+.p-utt { display: flex; flex-direction: column; gap: 4px }
+.p-line { display: grid; grid-template-columns: 36px 1fr; gap: 8px; align-items: start; font-size: var(--p-ts); line-height: 1.5 }
+/* Speaker labels are tinted pills: You blue, Them / Room pink; translation lines are blue. */
+.p-line b { justify-self: start; min-width: 34px; padding: 0 5px; border-radius: 4px; text-align: center; font-size: 10.5px; font-weight: 600; line-height: 18px; color: var(--p-blue); background: #1a73e81f }
+.p-line.them b { color: var(--p-pink); background: #d9488b1f }
+.p-line.tr b { background: none; color: var(--p-blue) }
+.p-line.tr span { color: var(--p-blue) }
 .p-utt.partial .p-line span { color: var(--p-muted) }
-.p-follow { display: none; justify-content: flex-end; margin-top: 4px }
+.p-follow { display: none; justify-content: flex-end }
 .p.expanded .p-follow { display: flex }
-.p-rule { height: 1px; background: var(--p-rule); margin: 9px 0 }
-.p-actions { display: flex; gap: 5px; align-items: center }
-.chip { display: inline-flex; align-items: center; gap: 4px; height: 25px; padding: 0 6px; border-radius: 7px; background: var(--p-fill); font-size: 10.5px; white-space: nowrap; color: #2c2c2e }
-.chip svg { width: 12px; height: 12px; flex: none }
-.chip.menu { margin-left: auto }
-.chip .chev { width: 9px; height: 9px; opacity: .7 }
-.p-input { display: flex; gap: 8px; margin-top: 9px }
-.p-input span { flex: 1; min-width: 0; height: 27px; display: flex; align-items: center; padding: 0 8px; border: 1px solid #c7c7cc; border-radius: 7px; background: #fff; color: var(--p-faint); font-size: 12px; white-space: nowrap; overflow: hidden }
-.p-input em { font-style: normal; height: 27px; display: flex; align-items: center; padding: 0 11px; border-radius: 7px; background: var(--p-fill); color: var(--p-faint); font-size: 12px }
-.p-opts { margin-top: 6px }
-.p-opts .chip { height: 22px; background: none; padding: 0 2px }
-.p-foot { margin-top: 4px; padding-right: 20px; color: var(--p-muted); font-size: 10.5px }
-.p-foot span:last-child { color: var(--p-faint) }
-/* Conversation flow: question card, status, answer, sources. */
+.p-rule { height: 1px; background: var(--p-rule); margin: 1px 0 }
+.p-actions { display: flex; gap: 6px; align-items: center; min-width: 0 }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 10px; border-radius: 12px; background: var(--p-fill); box-shadow: inset 0 0 0 1px var(--p-rule); font-size: 10.5px; font-weight: 500; white-space: nowrap; color: #2c2c2e }
+.chip svg { width: 12px; height: 12px }
+.chip.primary { color: var(--p-blue); background: #1a73e81f; box-shadow: inset 0 0 0 1px #1a73e838 }
+.p-autos { margin-left: auto }
+.menu-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 7px; background: var(--p-fill); font-size: 10.5px; white-space: nowrap; color: #2c2c2e }
+.menu-chip svg { width: 12px; height: 12px }
+.menu-chip .chev, .chip .chev { width: 9px; height: 9px; opacity: .7 }
+/* Composer: sparkles, the question, the conversation-context button and a round send button,
+   inside a blue-to-pink gradient border; the answer-language menu sits beside it. */
+.p-composer { display: flex; align-items: center; gap: 8px }
+.p-field { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 5px 0 9px; border-radius: 10px; border: 1px solid transparent;
+  background: linear-gradient(#ffffffeb, #ffffffeb) padding-box, linear-gradient(90deg, #1a73e880, #d9488b66) border-box }
+.p-field .spark { width: 12px; height: 12px; color: var(--p-blue) }
+.p-field .ph-text { flex: 1; min-width: 0; color: var(--p-faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.p-field .ctx { display: grid; place-items: center; width: 25px; height: 21px; border-radius: 6px; color: var(--p-blue); background: #1a73e81f }
+.p-field .ctx svg { width: 14px; height: 14px }
+.p-field .send { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; color: #fff; background: #8e8e9359 }
+.p-field .send svg { width: 11px; height: 11px }
+/* Conversation flow: question block, status, answer, sources. */
 .p-answer { position: relative }
 .p-card { opacity: 0; transform: translateY(6px); transition: opacity .3s, transform .3s }
 .p-card.show { opacity: 1; transform: none }
-.p-q { padding: 9px 10px; border-radius: 9px; background: var(--p-fill) }
-.p-q-head { display: flex; justify-content: space-between; color: var(--p-muted); font-size: 10.5px }
-.p-q-head span { display: inline-flex; align-items: center; gap: 5px }
-.p-q-head svg { width: 12px; height: 12px }
-.p-q p { margin-top: 4px; font-size: var(--p-as); font-weight: 600; line-height: 1.4 }
-.p-body { padding: 8px 10px 2px }
-.p-st { display: flex; align-items: center; gap: 6px; color: var(--p-muted); font-size: 10.5px }
-.p-st .spin { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #c7c7cc; border-top-color: #6e6e73; animation: spin .8s linear infinite }
-.p-st .copy { margin-left: auto; border: 0; background: none; padding: 0 2px; color: var(--p-blue); font-size: 10.5px; cursor: pointer; visibility: hidden }
+.p-q { padding: 9px 10px; border-radius: 10px; background: #1a73e80f; box-shadow: inset 0 0 0 1px #1a73e81f }
+.p-q-head { display: flex; justify-content: space-between; align-items: center; color: var(--p-muted); font-size: 10.5px; font-variant-numeric: tabular-nums }
+.p-q-head span { display: inline-flex; align-items: center; gap: 4px }
+.p-q-head svg { width: 11px; height: 11px }
+.p-q-head .kind, .ast, .p-pill { padding: 1px 7px; border-radius: 9px; font-size: 10px; font-weight: 500; line-height: 16px }
+.p-q-head .kind { color: var(--p-blue); background: #1a73e81f }
+.p-q-head .kind.auto { color: var(--p-pink); background: #d9488b1f }
+.p-q p { margin-top: 5px; font-size: var(--p-as); font-weight: 600; line-height: 1.4 }
+.p-body { padding: 8px 10px 0 }
+.p-st { display: flex; align-items: center; gap: 6px; font-size: 10.5px }
+.ast { color: var(--p-blue); background: #1a73e81f }
+.p-card.done .ast { color: var(--p-green); background: #1e9e5a1f }
+.p-st .copy { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; height: 21px; padding: 0 9px; border: 0; border-radius: 11px; background: var(--p-fill); box-shadow: inset 0 0 0 1px var(--p-rule); color: #2c2c2e; font: inherit; font-size: 10.5px; cursor: pointer; visibility: hidden }
+.p-st .copy svg { width: 11px; height: 11px }
 .p-card.done .p-st .copy { visibility: visible }
-.p-card.done .spin { display: none }
-.p-text { margin-top: 6px; font-size: var(--p-as); line-height: 1.55; min-height: 1.55em }
+/* While an answer is written, a thin blue-to-pink line runs under the status. */
+.p-progress { display: block; height: 2px; margin-top: 6px; border-radius: 1px; background: linear-gradient(90deg, var(--p-blue), var(--p-pink)) 0 0 / 40% 100% no-repeat, var(--p-fill); animation: progress 1.2s ease-in-out infinite }
+.p-card.done .p-progress { display: none }
+.p-text { margin-top: 7px; font-size: var(--p-as); line-height: 1.55; min-height: 1.55em }
 .p-text .ph { animation: fade .3s ease both }
-html[lang=en] .p-text .ph { white-space: normal }
+.p-text mark { color: inherit; background: linear-gradient(90deg, #1a73e82e, #d9488b2e) 0 70% / 100% 45% no-repeat }
+.src { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 8px; opacity: 0; transition: opacity .3s }
+.src.show { opacity: 1 }
+.src-label { width: 100%; color: var(--p-muted); font-size: 10px }
+.src-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 21px; padding: 0 8px; border-radius: 11px; background: var(--p-fill); box-shadow: inset 0 0 0 1px var(--p-rule); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.src-chip b { color: var(--p-blue); font-weight: 700 }
 .p details { margin-top: 6px; font-size: 11px; color: #3a3a3c; opacity: 0; transition: opacity .3s }
 .p details.show { opacity: 1 }
 .p summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 5px; min-height: 20px }
@@ -202,7 +247,11 @@ html[lang=en] .p-text .ph { white-space: normal }
 .p details[open] summary::before { transform: rotate(45deg) translate(-1px, -1px) }
 .p details p { padding: 2px 0 0 13px; font-size: 11px; font-weight: 700; line-height: 1.5; color: var(--p-ink) }
 .p details p.plain { font-size: 12px; font-weight: 400 }
-.p-resize { position: absolute; right: 9px; bottom: 6px; color: #8e8e93; font-size: 12px }
+.p-resize { position: absolute; right: 7px; bottom: 6px; color: #8e8e93 }
+.p-resize svg { width: 11px; height: 11px }
+@keyframes pulse { 50% { box-shadow: 0 0 0 5px #1e9e5a0d } }
+@keyframes level { from { height: 3px } to { height: 12px } }
+@keyframes progress { from { background-position: -40% 0, 0 0 } to { background-position: 140% 0, 0 0 } }
 @keyframes spin { to { transform: rotate(1turn) } }
 @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
 
@@ -346,8 +395,11 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
 .pairs-visual { display: grid; gap: 10px; padding: 14px 16px }
 .setting-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 9px; border-bottom: 1px solid var(--p-rule); font-size: 12px }
 .p-text.pairs { margin: 0; display: grid; font-size: 13px; line-height: 1.5 }
-.p-text.pairs .en { margin-bottom: 6px; color: #3a3a3c }
-.p-text.pairs .en:last-child { margin-bottom: 0 }
+.p-text.pairs .en { color: var(--p-muted) }
+.p-text.pairs .en + span:not(.en) { margin-top: 6px }
+.pair-langs { display: flex; gap: 6px }
+.pair-langs span { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 4px; border-radius: 11px; background: #1a73e81f; color: var(--p-blue); font-size: 11px; font-weight: 500 }
+.pair-langs b { display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: var(--p-blue); color: #fff; font-size: 9px }
 
 /* Scenarios: context and answer side by side, no surrounding panel. */
 .case-tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: #e8ebef; margin-bottom: 28px }
@@ -383,13 +435,25 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
 .desk[data-hidden=true] .desk-cursor { left: calc(100% - 14px); opacity: 1; transition: left 1.1s cubic-bezier(.45, 0, .2, 1) .5s, opacity .3s ease .2s }
 .duo .edge-controls { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px }
 .edge-controls > span { display: grid; gap: 3px }
-.history { display: grid; gap: 6px; padding: 12px; font-size: 12px; min-height: 230px; align-content: start }
-.history .search { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border-radius: 7px; background: var(--p-fill); color: var(--p-faint) }
+/* History window (2.10+): session list beside the selected session's counts. */
+.history { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.25fr); padding: 0; font-size: 12px; min-height: 230px; overflow: hidden }
+.history-side { display: grid; gap: 6px; align-content: start; padding: 10px; background: #00000008; border-right: 1px solid var(--p-rule) }
+.history .search { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border-radius: 7px; background: var(--p-fill); color: var(--p-faint); font-size: 11px; white-space: nowrap; overflow: hidden }
 .history .search svg { width: 12px; height: 12px }
-.history .group { margin-top: 4px; color: var(--p-muted); font-size: 11px; font-weight: 600 }
-.history .item { display: grid; gap: 2px; padding: 7px 9px; border-radius: 7px }
-.history .item small { color: var(--p-muted); font-size: 11px }
-.history .item.selected { background: #0a7aff1a }
+.history .group { margin-top: 4px; color: var(--p-muted); font-size: 10.5px; font-weight: 600 }
+.history .item { display: grid; gap: 1px; padding: 7px 8px; border-radius: 8px; font-size: 11.5px; line-height: 1.35 }
+.history .item small { color: var(--p-muted); font-size: 10px }
+.history .item.selected { background: #fff; box-shadow: 0 1px 3px #0000001a }
+.history-detail { display: grid; gap: 4px; align-content: start; padding: 12px 12px 12px 14px; min-width: 0 }
+.history-title { font-size: 13.5px; line-height: 1.3 }
+.history-detail > small { color: var(--p-muted); font-size: 10px }
+.history-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; margin: 8px 0 6px; padding-bottom: 10px; border-bottom: 1px solid var(--p-rule) }
+.history-stats dt { color: var(--p-muted); font-size: 10px }
+.history-stats dd { margin: 0; font-size: 15px; font-weight: 700 }
+.history-line { display: flex; align-items: center; gap: 5px; color: var(--p-muted); font-size: 10px }
+.history-line i { width: 5px; height: 5px; border-radius: 50%; background: var(--p-pink) }
+.history-line b { color: var(--p-pink); font-weight: 600 }
+.history-text { font-size: 11.5px; line-height: 1.45 }
 
 /* Services and privacy: one ruled list, then the privacy statement. */
 .svc-list { margin: 0; border-top: 1px solid var(--paper-line) }
@@ -446,7 +510,7 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
   .hero-layout { grid-template-columns: minmax(0, 1fr); gap: 44px; text-align: center }
   .hero-copy { max-width: 620px; margin: auto }
   .hero-sub { margin-inline: auto }
-  .hero .actions { justify-content: center }
+  .hero .actions, .hero .mirrors { justify-content: center }
   .stage { max-width: 740px; margin: auto; width: 100% }
   .device { margin-left: -4% }
   .demo-info { max-width: 364px; margin-left: auto }
@@ -486,6 +550,8 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
   .hero-sub { font-size: 15px; margin: 14px auto 22px; max-width: 330px }
   .btn { flex: 1 1 auto; justify-content: center; min-height: 50px }
   .hero .actions { max-width: 360px; margin: auto }
+  .hero .mirrors { max-width: 360px; margin: 12px auto 0 }
+  .mirrors-label { width: 100%; text-align: center }
   .meta { font-size: 12px; max-width: 330px; margin: 16px auto 0 }
   .stage { min-height: 0; container-type: normal }
   /* Phones show the overlay alone; the laptop would only shrink it. */
@@ -547,13 +613,26 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
   .whatsnew-list { grid-template-columns: 1fr }
 }
 
-/* Backup downloads: secondary to the GitHub button */
-.backups { margin: 18px auto 0; color: var(--paper-muted); font-size: 13.5px; line-height: 1.6 }
-.backups p { margin: 0 }
-.backups ul { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 20px }
-.backups a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: #1764ce55 }
-.backups span { margin-left: 8px; font-variant-numeric: tabular-nums }
-.backup-jump { color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: #ffffff40 }
+/* Netdisk mirrors: small outlined buttons under the main download, official logos in grey so they
+   keep the page's own colours. The extraction code sits inside the button, next to the name. */
+.mirrors { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px }
+.mirrors-label { color: #8f98a9; font-size: 12.5px; margin-right: 2px }
+.mirror { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid #ffffff2e; background: #ffffff08; color: #d6dbe6; font-weight: 500; white-space: nowrap; transition: background-color .2s, border-color .2s }
+.mirror:hover { background: #ffffff14; border-color: #ffffff47 }
+.mirror img { width: 16px; height: 16px; border-radius: 4px; filter: grayscale(1) contrast(1.25); opacity: .9 }
+.mirror .code { padding-left: 7px; border-left: 1px solid #ffffff26; color: #9aa3b4; font-size: 12px; font-variant-numeric: tabular-nums }
+.download .mirrors { justify-content: center; margin-top: 16px }
+.download .mirrors-label { width: 100%; text-align: center; color: var(--paper-muted) }
+.download .mirror { border-color: #0000001f; background: #fff; color: var(--paper-ink) }
+.download .mirror:hover { border-color: #00000038; background: #fafbfc }
+.download .mirror img { box-shadow: 0 0 0 1px #0000000f }
+.download .mirror .code { border-left-color: #0000001a; color: var(--paper-muted) }
+/* GitHub button asks for a star; no live count, so the page makes no third-party requests. */
+.btn.star svg:last-child { width: 15px; height: 15px; opacity: .8 }
+.btn.star svg:first-child { width: 17px; height: 17px }
+.btn.secondary.light { border-color: #0000002e; background: #fff; color: var(--paper-ink) }
+.btn.secondary.light:hover { background: #f6f7f9 }
+.star-note { margin: 10px 0 0; color: var(--paper-muted); font-size: 13px }
 /* What's new now sits between privacy and download, so it takes the sheet edge. */
 .whatsnew { position: relative; margin-top: -28px; border-radius: 28px 28px 0 0 }
 .whatsnew + .download { margin-top: 0; border-radius: 0; padding-top: 80px }
@@ -561,3 +640,12 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
   .whatsnew { border-radius: 22px 22px 0 0 }
   .whatsnew + .download { padding-top: 64px }
 }
+.src-chips { display: contents }
+.p-q-head .kind.auto .ic-manual, .p-q-head .kind:not(.auto) .ic-auto { display: none }
+.p-actions.compact .chip svg { display: none }
+.p-actions.compact .chip { padding: 0 9px }
+/* Transcript translation on: filled bubble, the language name, in blue. */
+.p-lang.on svg path { fill: currentColor }
+.p-lang.on svg text { fill: #fff }
+.step-visual .p-statusrow { margin: 0 }
+.step-src { margin-top: 2px }

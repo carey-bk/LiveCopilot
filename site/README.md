@@ -24,7 +24,7 @@ links in `download.json` `backups` (Baidu, Quark) are labelled secondary entries
 extraction code shown next to the link. The Hong Kong OSS bucket is not used for first downloads.
 `updates/appcast.xml` belongs to the app's updater and is copied unchanged.
 
-## Page structure (2.7 refresh, November 2026)
+## Page structure (2.11 refresh, November 2026)
 
 Each section is one heading, a short paragraph and its main demonstration. Whitespace and thin
 rules organise the page; borders are kept for real app windows. There are no page-level
@@ -32,17 +32,19 @@ disclosures: model comparisons, prices, endpoints, installation, shortcuts and t
 live in the linked README and `docs/` guides. API keys, charges and cloud data boundaries are
 stated in short sentences where they apply.
 
-1. **Hero** — slogan and download on the left, a static LS Graphics MacBook
-   (`assets/ls-front-hardware.webp`) on the right (stacked, copy first, below 1024 px). The 2.7 overlay rises from the
+1. **Hero** — slogan, the GitHub download, a "Star on GitHub" button (no live count, so no
+   third-party request), small Baidu / Quark netdisk buttons with grey official logos
+   (`assets/netdisk-*.png`) and the extraction code; a static LS Graphics MacBook
+   (`assets/ls-front-hardware.webp`) on the right (stacked, copy first, below 1024 px). The 2.11 overlay rises from the
    screen's right edge as an enlarged close-up (CSS `zoom` on wide screens); a true-scale copy on the
    screen stays in sync with it. Phones (below 720 px) show the overlay alone, without the laptop.
-   The "2.7" pill links to the release notes.
+   The version pill links to the release notes.
 2. **How it works** (`#workflow`) — one screen: speech transcription, finding materials, answering.
    The matching documents light up in turn as step 2 scrolls into view.
-3. **Speech transcription** (`#transcript`, dark, one screen) — the three-line fold in a real overlay
-   excerpt, transcript translation with a working target-language menu (Apply / Stop as in the app,
-   sample sentences in all eight targets), and the speech engines (Zipformer,
-   Apple Speech, OpenAI Live) with their language options.
+3. **Speech transcription** (`#transcript`, dark, one screen) — an expanded real overlay excerpt with
+   transcript translation and a working target-language menu (Apply / Stop as in the app, sample
+   sentences in all eight targets), and the speech engines with Apple Speech first (recommended by
+   the setup guide), then Zipformer and OpenAI · GPT-Live-1; Paraformer is in the note.
 4. **Materials and answers** (`#answers`) — the three knowledge modes as a radio group, synced with
    the overlay's own mode menu, switch the answer card (General has no sources); answer style and
    sentence pairs share one demonstration with a two-option switch. Alternatives share one grid cell,
@@ -65,19 +67,23 @@ Anchors from earlier layouts are redirected by `demo.js` to the section that now
 
 ## Demo behavior
 
-`demo.js` runs one finite hero timeline (about 3.5 s), phrase by phrase: the question is
-transcribed, marked complete, and answered; it ends on the finished answer with Sources open.
+`demo.js` runs one finite hero timeline (about 3.5 s), phrase by phrase: the other side speaks (their
+input meter moves) and the question is transcribed; an automatic answer is generated with the
+progress line and ends Completed with its source chips.
 It pauses when the window leaves the viewport or the page is hidden, and the play control can
 pause, resume, or replay it. Reduced motion keeps the finished state. If the action row cannot
-fit, the whole window scales slightly rather than hiding any button. Nothing is recorded,
+fit, chips first go title-only as in the app, then the whole window scales slightly rather than
+hiding any button. Nothing is recorded,
 submitted, or sent to a model.
 
 ## Product accuracy
 
-Overlay strings, icons and states follow the released 2.7.0 sources (`OverlayView.swift`,
-`ConversationFlowView.swift`, `Localization.swift`); Traditional Chinese interface strings use
+Overlay strings, icons, tokens and states follow the 2.11 sources (`OverlayView.swift`,
+`ConversationFlowView.swift`, `DesignSystem.swift`, `Localization.swift`) and were compared with the
+app's own mock-mode renders (`--mock --ui-preview --ui-fixture … --ui-snapshot`, synthetic content;
+the renders are not kept in Git). The window uses Frosted glass, the app's default background. Traditional Chinese interface strings use
 the app's own `Hans-Hant` transform. Conversations, documents and answers are examples.
-Schematic visuals (document list, history list, edge demo) are labelled as illustrations.
+Schematic visuals (document list, history window, edge demo) are labelled as illustrations.
 Claims are limited to the release: screen-share hiding is optional, off by default and must be
 tested with the meeting app; translation uses the answer service and its API usage. In-app
 updates are not presented as a feature. Default models and endpoints in the answer guide come
