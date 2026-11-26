@@ -61,7 +61,11 @@ struct ConversationFlowView: View {
         ScrollViewReader { proxy in
             ZStack(alignment: .bottomTrailing) {
                 LCScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
+                    // Not LazyVStack: lazy placement re-estimates offscreen answer heights and,
+                    // with a long, selectable answer history, could keep re-running layout inside
+                    // one SwiftUI update (2.10 froze the main thread for minutes). A session holds
+                    // tens of answers at most, so laying them all out once is cheap and exact.
+                    VStack(alignment: .leading, spacing: 18) {
                         if coordinator.answers.isEmpty {
                             LCEmptyState(systemImage: "sparkles", title: b("Answers appear here", "回答会出现在这里"),
                                          message: b("Ask above, or start listening to receive suggestions.", "在上方输入问题，或开始监听以获取回答。"),
@@ -76,8 +80,7 @@ struct ConversationFlowView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(GeometryReader { measured in
-                        // Clamp above the overlay's 1000pt max height so LazyVStack estimate
-                        // jitter on long histories cannot feed back into OverlayView layout.
+                        // Clamp: the window never needs more than this to size itself.
                         Color.clear.preference(key: ConversationContentHeightKey.self, value: min(measured.size.height, 1200))
                     })
                     .background(ConversationScrollObserver { offset, distance, height in

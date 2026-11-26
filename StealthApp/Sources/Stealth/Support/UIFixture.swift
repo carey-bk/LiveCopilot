@@ -5,7 +5,7 @@ import Foundation
 /// Debug-only, mock-only launch arguments that put the UI into reproducible states for
 /// before/after screenshot comparison. Content is synthetic; writes stay in the mock data directory.
 ///
-///     --mock --ui-preview --ui-fixture listening|streaming|answered|merged|session|error|notice
+///     --mock --ui-preview --ui-fixture listening|streaming|answered|merged|session|error|notice|stress [--ui-stress-answers n]
 ///     --ui-background glass|frosted|white   --ui-language english|simplifiedChinese
 ///     --ui-text-size 28   --ui-dark   --ui-seed-knowledge   --ui-onboarding-step <OnboardingStep case>
 ///     --ui-tip <OverlayTourState.Step case>   --ui-settings-page <SettingsPage case name> [--ui-service-role 0-3]   --ui-laya-threshold 0.85   --ui-continuous update|separate   --ui-open-history   --ui-answer-only
@@ -27,7 +27,9 @@ enum UIFixture {
     static var query: String? { value("--ui-query")?.replacingOccurrences(of: "\\n", with: "\n") }
 
     /// Holds the mock answer half-way so the streaming state can be captured.
-    static var reasoning: (any ReasoningProvider)? { state == "streaming" ? PausedReasoningProvider() : nil }
+    static var reasoning: (any ReasoningProvider)? {
+        switch state { case "streaming": return PausedReasoningProvider(); case "stress": return StressReasoningProvider(); default: return nil }
+    }
 
     static func apply(to coordinator: AppCoordinator, openSettings: (SettingsPage) -> Void, openHistory: () -> Void) async {
         guard AppPaths.isMock else { return }
@@ -86,6 +88,30 @@ enum UIFixture {
             coordinator.settings.mode = .remote
             coordinator.isTransitioning = true
             coordinator.statusMessage = "Starting audio capture…"
+        case "stress":
+            // Reproduces the 2.10 overlay freeze: a long answer history scrolled up, then a new
+            // answer that reports its first service event and stays silent for eight seconds.
+            coordinator.settings.includeConversation = false
+            let count = value("--ui-stress-answers").flatMap(Int.init) ?? 22
+            for index in 1...count {
+                coordinator.askText("Question \(index): walk me through a mistake you made and what you changed afterwards?")
+                for _ in 0..<200 where coordinator.answerIsRunning || coordinator.answers.count < index {
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            func scrollViews(_ view: NSView) -> [NSScrollView] {
+                ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(scrollViews)
+            }
+            if let overlay = NSApp.windows.first(where: { $0 is OverlayWindow }),
+               let scroll = (overlay.contentView.map(scrollViews) ?? []).max(by: { ($0.documentView?.bounds.height ?? 0) < ($1.documentView?.bounds.height ?? 0) }),
+               let document = scroll.documentView {
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: document.bounds.height * 0.45))
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            DebugLog.log("stress.fixture slow answer begins answers=\(coordinator.answers.count)")
+            coordinator.askText("[slow] Do you get the data in city security?")
         case "notice":
             await listen(coordinator, automatic: false)
             coordinator.applyFixtureCaptureNotice(AppCoordinator.systemAudioMissingNotice)
@@ -199,6 +225,31 @@ enum UIFixture {
         }
         coordinator.importDocuments(urls)
         for _ in 0..<50 where coordinator.isIndexing { try? await Task.sleep(nanoseconds: 100_000_000) }
+    }
+}
+
+/// Long answers for the stress fixture. A question starting with "[slow]" reports its first
+/// service event and then stays silent, like a model that thinks before writing.
+private struct StressReasoningProvider: ReasoningProvider {
+    func stream(_ request: AnswerRequest) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            let paragraph = "One mistake I made was during my internship, when I started collecting policy information **before we agreed on a format**. A few days later some colleagues recorded their sources and some did not, and the dates and wording were inconsistent, so the data could not be merged. "
+            let text = (0..<5).map { "Point \($0 + 1). " + paragraph }.joined(separator: "\n\n")
+            let slow = request.query.question.hasPrefix("[slow]")
+            let task = Task {
+                if slow {
+                    await request.onStreamProgress?(.firstServiceEvent, ProcessInfo.processInfo.systemUptime)
+                    try? await Task.sleep(nanoseconds: 8_000_000_000)
+                }
+                for part in text.components(separatedBy: " ") {
+                    if Task.isCancelled { break }
+                    continuation.yield(part + " ")
+                    if slow { try? await Task.sleep(nanoseconds: 12_000_000) }
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
 }
 

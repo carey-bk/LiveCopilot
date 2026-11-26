@@ -507,17 +507,21 @@ struct OverlayView: View {
         let rows = CGFloat(transcriptCollapsed ? 2 : coordinator.settings.transcriptExpandedLines)
         return line * rows + (rows - 1) * 6 + 4
     }
+    /// Rows the overlay lays out; the transcript store keeps up to `Config.transcriptLineLimit`.
+    static let visibleTranscriptLines = 200
     private var transcriptView: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 2) {
                 LCScrollView {
-                    LazyVStack(alignment: .leading, spacing: 6) {
+                    // Eager like the answer list (see ConversationFlowView); the overlay keeps the
+                    // latest rows, History keeps the whole transcript.
+                    VStack(alignment: .leading, spacing: 6) {
                         if !transcript.hasContent {
                             Text(coordinator.isRunning ? b("Listening — the conversation appears here.", "正在聆听，对话会显示在这里。")
                                                        : t("Conversation appears here when listening.")).font(.system(size: transcriptSize)).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        ForEach(transcript.lines) { line in
+                        ForEach(transcript.lines.suffix(Self.visibleTranscriptLines)) { line in
                             transcriptRow(line.content, speaker: line.speaker, translated: translation.text(for: line), partial: false)
                                 .transition(.opacity)
                         }
