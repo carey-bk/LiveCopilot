@@ -19,7 +19,9 @@ phrases so lines break only between them. The site needs no frontend packages, e
 fonts, trackers, cookies, audio capture, or model requests. GitHub Pages publishes `_site/`
 through `.github/workflows/pages.yml` when website inputs change on `main`.
 
-The Hong Kong OSS mirror is the primary download; GitHub Releases is the labelled fallback.
+New downloads are free to serve: the GitHub Release asset is the main download, and the netdisk
+links in `download.json` `backups` (Baidu, Quark) are labelled secondary entries with their
+extraction code shown next to the link. The Hong Kong OSS bucket is not used for first downloads.
 `updates/appcast.xml` belongs to the app's updater and is copied unchanged.
 
 ## Page structure (2.7 refresh, November 2026)
@@ -50,7 +52,8 @@ stated in short sentences where they apply.
    (every 2 s the window slides away, then a pointer at the edge brings it back) and the history window.
 7. **Services** (`#services`) — one ruled list of the three steps and a link to `docs/SERVICE_GUIDE.md`.
 8. **Privacy** (`#privacy`, dark) — statement, four facts, data route and boundary note.
-9. **Download** (`#download`) — button, GitHub fallback, one line of version and requirements, and
+9. **What's new** (`#whats-new`) — the current release's highlights from `docs/releases/<version>.md`.
+10. **Download** (`#download`) — GitHub button, netdisk backups, one line of version and requirements, and
    text links to the user guide, requirements and release history.
 
 Past the privacy page the body background and `theme-color` turn light, so browser bars and

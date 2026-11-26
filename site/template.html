@@ -40,7 +40,7 @@
         <div class="languages" aria-label="$language_label">
           <a href="$zh_url" lang="zh-Hans" hreflang="zh-Hans" $zh_current>简</a><a href="$hant_url" lang="zh-Hant" hreflang="zh-Hant" $hant_current>繁</a><a href="$en_url" lang="en" hreflang="en" $en_current>EN</a>
         </div>
-        <a class="nav-download" href="$download_url" data-download-mirror="$mirror_url">$nav_download</a>
+        <a class="nav-download" href="$download_url">$nav_download</a>
         <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="$nav_menu" data-open="$nav_menu" data-close="$menu_close">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 6h14M3 10h14M3 14h14" /></svg>
         </button>
@@ -55,10 +55,10 @@
             <h1 id="hero-heading"><span>$hero_title_a</span><span>$hero_title_b</span></h1>
             <p class="hero-sub">$hero_subtitle_markup</p>
             <div class="actions">
-              <a class="btn primary" href="$download_url" data-download-mirror="$mirror_url"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>$download_label</a>
+              <a class="btn primary" href="$download_url"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>$download_label</a>
               <a class="btn secondary" href="https://github.com/carey-bk/LiveCopilot">GitHub <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M7 13 13 7M8 7h5v5" /></svg></a>
             </div>
-            <ul class="meta"><li>$hero_meta</li><li>$hero_cost_markup</li></ul>
+            <ul class="meta"><li>$hero_meta</li><li>$hero_cost_markup</li><li><a class="backup-jump" href="#backup-downloads">$backup_hero</a></li></ul>
           </div>
 
           <div class="stage" id="stage">
@@ -400,7 +400,7 @@
           </div>
           <dl class="svc-list">
             <div><dt>$svc_speech_h<span>$svc_local_cloud</span></dt><dd><strong>Zipformer · Paraformer · Apple Speech · GPT-Live-1</strong>$svc_speech_body</dd></div>
-            <div><dt>$svc_index_h<span>$svc_local_cloud</span></dt><dd><strong>BGE-M3 · OpenAI Embeddings</strong>$svc_index_body</dd></div>
+            <div><dt>$svc_index_h<span>$svc_local_cloud</span></dt><dd><strong>Arctic · OpenAI Embeddings</strong>$svc_index_body</dd></div>
             <div><dt>$svc_answer_h<span class="cloud">$svc_cloud</span></dt><dd><strong>OpenAI · DeepSeek · Qwen · GLM · Kimi · $svc_compatible</strong>$svc_answer_body</dd></div>
           </dl>
           <p class="svc-link"><a class="text-link" href="https://github.com/carey-bk/LiveCopilot/blob/main/docs/SERVICE_GUIDE.md">$service_guide_link <span aria-hidden="true">↗</span></a></p>
@@ -421,15 +421,35 @@
         </div>
       </section>
 
+      <section class="whatsnew" id="whats-new" aria-labelledby="whats-new-heading">
+        <div class="wrap whatsnew-inner">
+          <p class="eyebrow">$new_eyebrow</p>
+          <h2 id="whats-new-heading">$new_title</h2>
+          <ul class="whatsnew-list">
+            <li><h3>$new_settings_h</h3><p>$new_settings</p></li>
+            <li><h3>$new_overlay_h</h3><p>$new_overlay</p></li>
+            <li><h3>$new_followup_h</h3><p>$new_followup</p></li>
+            <li><h3>$new_translate_h</h3><p>$new_translate</p></li>
+            <li><h3>$new_trigger_h</h3><p>$new_trigger</p></li>
+            <li><h3>$new_start_h</h3><p>$new_start</p></li>
+            <li><h3>$new_share_h</h3><p>$new_share</p></li>
+            <li><h3>$new_speech_h</h3><p>$new_speech</p></li>
+            <li><h3>$new_update_h</h3><p>$new_update</p></li>
+          </ul>
+          <a class="whatsnew-link" href="$release_url">$new_link <span aria-hidden="true">↗</span></a>
+        </div>
+      </section>
+
       <section class="download" id="download" aria-labelledby="download-heading">
         <div class="wrap download-inner">
           <img src="${prefix}assets/logo.png" width="64" height="64" alt="" />
           <h2 id="download-heading">$install_title</h2>
           <p class="download-intro">$install_intro</p>
           <div class="actions">
-            <a class="btn primary dark" href="$download_url" data-download-mirror="$mirror_url"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>$download_label</a>
+            <a class="btn primary dark" href="$download_url"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M4 16h12" /></svg>$download_label</a>
           </div>
           <p class="download-meta">$download_meta</p>
+          $backup_markup
           <p class="guide-links"><a href="$readme_url$guide_anchor">$guide_link</a><a href="$readme_url$requirements_anchor">$requirements_link</a><a href="https://github.com/carey-bk/LiveCopilot/releases">$releases_link</a></p>
         </div>
       </section>

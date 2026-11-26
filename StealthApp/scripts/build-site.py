@@ -16,13 +16,22 @@ BASE = 'https://carey-bk.github.io/LiveCopilot/'
 ASSETS = ['styles.css', 'demo.js']
 download = json.loads((SOURCE / 'download.json').read_text())
 github_download = download['github_url']
-mirror_download = download.get('mirror_url')
-for url in [github_download, mirror_download]:
-    if url is None:
-        continue
+
+
+def public_https(url, allow_query=False):
     parsed = urlsplit(url)
-    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise ValueError('Download URLs must be public HTTPS URLs without credentials, query strings or fragments.')
+    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.fragment or (parsed.query and not allow_query):
+        raise ValueError('Download URLs must be public HTTPS URLs without credentials or fragments.')
+
+
+public_https(github_download)
+# New downloads are free: GitHub is the main source, netdisks are labelled backups.
+# Netdisk share links may carry their extraction code as a query; the code is also shown as text.
+BACKUP_HOSTS = {'baidu': 'pan.baidu.com', 'quark': 'pan.quark.cn'}
+backups = download.get('backups', [])
+for backup in backups:
+    public_https(backup['url'], allow_query=True)
+    assert urlsplit(backup['url']).hostname == BACKUP_HOSTS[backup['name']], 'Backup links must point at their netdisk.'
 version = download['version']
 assert re.fullmatch(r'\d+\.\d+(?:\.\d+)?', version), 'download.json needs a MAJOR.MINOR version (older releases had a patch).'
 assert re.fullmatch(r'[0-9a-f]{64}', download['sha256']), 'download.json needs a SHA-256 digest.'
@@ -47,6 +56,18 @@ def phrases(text, english):
     return ' '.join(parts) if english else '<wbr>'.join(f'<span class="ph">{part}</span>' for part in parts)
 
 
+def backup_links(copy):
+    """Secondary netdisk entries, each with its extraction code next to the link."""
+    if not backups:
+        return ''
+    items = []
+    for backup in backups:
+        name = html.escape(copy['backup_' + backup['name']])
+        code = html.escape(copy['backup_code'] + ' ' + backup['code']) if backup.get('code') else ''
+        items.append(f'<li><a href="{html.escape(backup["url"], quote=True)}" rel="noopener">{name}</a>' + (f'<span>{code}</span>' if code else '') + '</li>')
+    return f'<div class="backups" id="backup-downloads"><p>{html.escape(copy["backup_label"])}</p><ul>{"".join(items)}</ul></div>'
+
+
 for language, copy in content.items():
     english = language == 'en'
     # Version and size come from download.json so the copy cannot drift from the release.
@@ -69,7 +90,7 @@ for language, copy in content.items():
         canonical=BASE + (path + '/' if path else ''),
         demo_examples=json.dumps(sample, ensure_ascii=False).replace('<', '\\u003c'),
         download_url=html.escape(github_download, quote=True),
-        mirror_url=html.escape(mirror_download or "", quote=True),
+        backup_markup=backup_links(copy),
         # English reads "New in 2.7", so the version badge follows the text there.
         # The pill opens the published release notes.
         pill_markup='<a class="release-pill' + (' end' if english else '') + '" href="' + release_url + '">' + (label + badge if english else badge + label) + '</a>',

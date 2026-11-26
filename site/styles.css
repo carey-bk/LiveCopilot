@@ -529,3 +529,35 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
 }
 
 .download .mirror-download { color: var(--paper-ink, #171a20); background: white; border: 1px solid #aab0ba }
+
+/* What's new in this release */
+.whatsnew { background: var(--paper); color: var(--paper-ink); padding: 96px 24px 0 }
+.whatsnew-inner { max-width: 1080px }
+.whatsnew .eyebrow { color: var(--accent); font-weight: 600 }
+.whatsnew h2 { margin: 12px 0 0; font-size: clamp(28px, 3vw, 40px); line-height: 1.2; letter-spacing: -.03em }
+.whatsnew-list { margin: 36px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 32px }
+.whatsnew-list li { padding: 20px 0; border-top: 1px solid var(--paper-line) }
+.whatsnew-list h3 { margin: 0; font-size: 16px; line-height: 1.4 }
+.whatsnew-list p { margin: 6px 0 0; color: var(--paper-muted); font-size: 14px; line-height: 1.7 }
+.whatsnew-link { display: inline-block; margin-top: 12px; color: var(--accent); font-size: 14px }
+.whatsnew-link:hover { text-decoration: underline; text-underline-offset: 3px }
+@media (max-width: 900px) { .whatsnew-list { grid-template-columns: repeat(2, minmax(0, 1fr)) } }
+@media (max-width: 719px) {
+  .whatsnew { padding: 72px 16px 0 }
+  .whatsnew-list { grid-template-columns: 1fr }
+}
+
+/* Backup downloads: secondary to the GitHub button */
+.backups { margin: 18px auto 0; color: var(--paper-muted); font-size: 13.5px; line-height: 1.6 }
+.backups p { margin: 0 }
+.backups ul { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 20px }
+.backups a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: #1764ce55 }
+.backups span { margin-left: 8px; font-variant-numeric: tabular-nums }
+.backup-jump { color: inherit; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: #ffffff40 }
+/* What's new now sits between privacy and download, so it takes the sheet edge. */
+.whatsnew { position: relative; margin-top: -28px; border-radius: 28px 28px 0 0 }
+.whatsnew + .download { margin-top: 0; border-radius: 0; padding-top: 80px }
+@media (max-width: 719px) {
+  .whatsnew { border-radius: 22px 22px 0 0 }
+  .whatsnew + .download { padding-top: 64px }
+}
