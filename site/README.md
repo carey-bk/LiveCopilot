@@ -20,8 +20,8 @@ fonts, trackers, cookies, audio capture, or model requests. GitHub Pages publish
 through `.github/workflows/pages.yml` when website inputs change on `main`.
 
 New downloads are free to serve: the GitHub Release asset is the main download, and the netdisk
-links in `download.json` `backups` (Baidu, Quark) are labelled secondary entries with their
-extraction code shown next to the link. The Hong Kong OSS bucket is not used for first downloads.
+links in `download.json` `backups` (Baidu, Quark) are labelled secondary entries. The Baidu link
+carries its extraction code (`?pwd=`), so no code is shown; add `"code"` to an entry to show one. The Hong Kong OSS bucket is not used for first downloads.
 `updates/appcast.xml` belongs to the app's updater and is copied unchanged.
 
 ## Page structure (2.11 refresh, November 2026)
@@ -34,7 +34,7 @@ stated in short sentences where they apply.
 
 1. **Hero** — slogan, the GitHub download, a "Star on GitHub" button (no live count, so no
    third-party request), small Baidu / Quark netdisk buttons with grey official logos
-   (`assets/netdisk-*.png`) and the extraction code; a static LS Graphics MacBook
+   (`assets/netdisk-*.png`); a static LS Graphics MacBook
    (`assets/ls-front-hardware.webp`) on the right (stacked, copy first, below 1024 px). The 2.11 overlay rises from the
    screen's right edge as an enlarged close-up (CSS `zoom` on wide screens); a true-scale copy on the
    screen stays in sync with it. Phones (below 720 px) show the overlay alone, without the laptop.
