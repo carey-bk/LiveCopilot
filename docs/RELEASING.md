@@ -149,12 +149,13 @@ Sparkle installs from a small binary delta when the user's installed version has
 
 - Put the **previous** release's final DMG in the staging directory next to the new one (reusing the preceding feed's staging directory does this). It must be byte-identical to the published file: check its SHA-256 against the previous `site/download.json` before generating. `generate_appcast` builds a delta from each older DMG present, up to `--maximum-deltas`, and names it `LiveCopilotNEWBUILD-OLDBUILD.delta`.
 - Before uploading, verify each delta with `python3 StealthApp/scripts/verify-delta.py OLD.dmg NEW.dmg FILE.delta`. It applies the delta to the old app and requires an exact, signed, notarized copy of the new app.
-- Upload the `.delta` files to the **same** versioned OSS directory as the new DMG (the feed's `--download-url-prefix`), verify their SHA-256 and anonymous download, and only then deploy the feed. A delta listed in the feed but missing on OSS only costs a failed attempt before the full download, but do not rely on that.
+- Upload the `.delta` files to the **same** release location as the new DMG (2.11: the GitHub Release `vVERSION`; earlier: the versioned OSS directory) (the feed's `--download-url-prefix`), verify their SHA-256 and anonymous download, and only then deploy the feed. A delta listed in the feed but missing there only costs a failed attempt before the full download, but do not rely on that.
+- `generate_appcast` rewrites the enclosure URL of **every** item whose archive is in the staging directory, including the previous release kept there for the delta, to the new `--download-url-prefix` (`--versions` does not prevent this). Afterwards, restore that older item's published URL in `appcast.xml`, re-sign the whole feed with `sign_update --account LiveCopilot appcast.xml`, and check it with `--verify`. Item signatures cover the archive bytes, not the URL, so they stay valid; check each with `sign_update --verify FILE SIGNATURE`.
 
 ```bash
 StealthApp/build/SparkleTools/bin/generate_appcast \
   --account LiveCopilot --maximum-deltas 3 --delta-compression lzma \
-  --download-url-prefix https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/vVERSION/ \
+  --download-url-prefix https://github.com/carey-bk/LiveCopilot/releases/download/vVERSION/ \
   --link https://carey-bk.github.io/LiveCopilot/ --embed-release-notes \
   /absolute/path/to/update-staging
 StealthApp/build/SparkleTools/bin/sign_update --account LiveCopilot --verify \
@@ -165,7 +166,7 @@ python3 StealthApp/scripts/build-site.py
 cmp site/updates/appcast.xml _site/updates/appcast.xml
 ```
 
-Keep the signed appcast bytes unchanged: formatting, templating, or newline conversion invalidates the signature. `build-site.py` copies the feed as bytes. Never hand-edit a signed feed; regenerate it with the signing tool. On later releases reuse the preceding feed in staging so that compatible older releases can be retained where needed.
+Keep the signed appcast bytes unchanged: formatting, templating, or newline conversion invalidates the signature. `build-site.py` copies the feed as bytes. Never hand-edit a signed feed without re-signing it with `sign_update` (see the URL correction above). On later releases reuse the preceding feed in staging so that compatible older releases can be retained where needed.
 
 Publish the matching GitHub Release and verify its assets first. Mirror the identical finalized DMG to Hong Kong OSS, verify its SHA-256 and anonymous download, then generate the signed feed using that versioned OSS URL and deploy the website/feed. Keep GitHub Releases as the manual download fallback. The feed itself remains on GitHub Pages; no IP routing is involved. Check the live feed bytes and download hash, then exercise Check for Updates in the canonical installed release. A source push or local signed feed alone does not establish working public updates. Versions before 2.1 lack Sparkle and require one manual upgrade.
 
