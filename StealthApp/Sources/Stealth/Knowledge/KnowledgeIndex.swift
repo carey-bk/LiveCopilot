@@ -363,24 +363,31 @@ actor KnowledgeIndex {
                 throw CopilotError.message("Unexpected legacy root. Files have been kept.")
             }
         }
+        // Laya's data folder only held the retired Python/MLX runtime (2.9.x and earlier); 2.10+
+        // runs the bundled model. `current` was a symlink into installs/<id>: unlink it, never follow.
         let base = laya.resolvingSymlinksInPath()
-        let current = base.appendingPathComponent("current").resolvingSymlinksInPath()
-        var paths = [models.resolvingSymlinksInPath().appendingPathComponent("bge-m3-q8-v1")]
-        if current.path == base.appendingPathComponent("current").path ||
-           current.deletingLastPathComponent().path == base.appendingPathComponent("installs").path {
-            paths.append(current.appendingPathComponent("venv"))
-        }
-        var count = 0
-        for path in paths where fm.fileExists(atPath: path.path) {
+        let paths = [models.resolvingSymlinksInPath().appendingPathComponent("bge-m3-q8-v1")] +
+            Self.retiredLayaEntries.map { base.appendingPathComponent($0) }
+        let existing = paths.filter { var info = stat(); return lstat($0.path, &info) == 0 }
+        for path in existing {
             // Do not follow a redirected parent or recycle an unrelated target.
-            guard path.resolvingSymlinksInPath().path == path.path,
-                  (try path.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink != true else {
+            guard path.deletingLastPathComponent().resolvingSymlinksInPath().path == path.deletingLastPathComponent().path else {
                 throw CopilotError.message("Unexpected legacy model path. Files have been kept.")
             }
-            try fm.removeItem(at: path)
-            count += 1
+            let link = (try path.resourceValues(forKeys: [.isSymbolicLinkKey])).isSymbolicLink == true
+            guard !link || path.lastPathComponent == "current" else {
+                throw CopilotError.message("Unexpected legacy model path. Files have been kept.")
+            }
         }
-        return count
+        for path in existing { try fm.removeItem(at: path) }
+        if (try? fm.contentsOfDirectory(atPath: base.path))?.isEmpty == true { try? fm.removeItem(at: base) }
+        return existing.count
+    }
+    static let retiredLayaEntries = ["current", "installs", "bootstrap", "downloads"]
+    /// Files from earlier versions that `removeRetiredModels` would delete.
+    static func hasRetiredModels(models: URL, laya: URL) -> Bool {
+        ([models.appendingPathComponent("bge-m3-q8-v1")] + retiredLayaEntries.map { laya.appendingPathComponent($0) })
+            .contains { var info = stat(); return lstat($0.path, &info) == 0 }
     }
 
     func reindex(_ document: KnowledgeDocument, provider: any EmbeddingProvider, progress: (@Sendable (String, Double) async -> Void)? = nil) async throws -> KnowledgeDocument {

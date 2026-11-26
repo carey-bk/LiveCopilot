@@ -41,9 +41,39 @@ final class ModelHealthTests: XCTestCase {
         XCTAssertEqual(records.first?.id,old.id); XCTAssertEqual(records.first?.importedAt,old.importedAt)
         XCTAssertEqual(records.first?.embeddingModel,arctic.model); XCTAssertEqual(records.first?.localPath,old.localPath)
         XCTAssertEqual(chunks.first?.vector.count,768)
+        XCTAssertTrue(KnowledgeIndex.hasRetiredModels(models: models, laya: laya))
         let removed = try await db.removeRetiredModels(models: models, laya: laya)
-        XCTAssertEqual(removed,2); XCTAssertFalse(fm.fileExists(atPath: weights.path)); XCTAssertFalse(fm.fileExists(atPath: venv.path))
+        // bge-m3-q8-v1, the `current` symlink and installs/ (weights and venv of the old MLX runtime).
+        XCTAssertEqual(removed,3); XCTAssertFalse(fm.fileExists(atPath: weights.path)); XCTAssertFalse(fm.fileExists(atPath: venv.path))
+        XCTAssertFalse(fm.fileExists(atPath: laya.path), "An emptied Laya data folder is removed")
+        XCTAssertFalse(KnowledgeIndex.hasRetiredModels(models: models, laya: laya))
+        let again = try await db.removeRetiredModels(models: models, laya: laya)
+        XCTAssertEqual(again, 0)
         XCTAssertEqual(try Data(contentsOf: original),contents)
+    }
+    func testRetiredModelCleanupKeepsUnrelatedAndRedirectedFiles() async throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        let db = try KnowledgeIndex(directory: root.appendingPathComponent("knowledge"))
+        let models = root.appendingPathComponent("Models"), laya = root.appendingPathComponent("Laya")
+        let arctic = models.appendingPathComponent("arctic-m-v2-int8"), note = laya.appendingPathComponent("keep.txt")
+        for dir in [arctic, laya.appendingPathComponent("bootstrap/abc"), laya.appendingPathComponent("downloads")] {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        try "keep".write(to: note, atomically: true, encoding: .utf8)
+        // installs/ redirected elsewhere: nothing may be deleted, including the other entries.
+        let elsewhere = root.appendingPathComponent("elsewhere")
+        try fm.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+        try fm.createSymbolicLink(at: laya.appendingPathComponent("installs"), withDestinationURL: elsewhere)
+        do { _ = try await db.removeRetiredModels(models: models, laya: laya); XCTFail("Followed a redirected entry") }
+        catch { XCTAssertTrue(fm.fileExists(atPath: laya.appendingPathComponent("bootstrap/abc").path)) }
+        XCTAssertTrue(fm.fileExists(atPath: elsewhere.path))
+        try fm.removeItem(at: laya.appendingPathComponent("installs"))
+        let cleaned = try await db.removeRetiredModels(models: models, laya: laya)
+        XCTAssertEqual(cleaned, 2)
+        XCTAssertTrue(fm.fileExists(atPath: arctic.path)); XCTAssertTrue(fm.fileExists(atPath: note.path))
+        XCTAssertFalse(fm.fileExists(atPath: laya.appendingPathComponent("bootstrap").path))
     }
     func testBundledArcticSelfCheck() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

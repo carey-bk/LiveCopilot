@@ -2170,19 +2170,37 @@ final class AppCoordinator: ObservableObject {
     private func lastCompletedAnswerText(excluding id: UUID) -> String? { completedReplies(excluding: id).last?.store.text }
     private func startIndexMigration() {
         let includeRemote = settings.embeddingService == .local
-        guard !isMock, !isIndexing, !isShuttingDown, let knowledge,
-              knowledgeDocuments.contains(where: { $0.embeddingModel != LocalModelKind.embeddingIdentity && (includeRemote || $0.embeddingModel.hasPrefix("local:")) }) else { return }
+        guard !isMock, !isIndexing, !isShuttingDown, let knowledge else { return }
+        let needsMigration = knowledgeDocuments.contains(where: { $0.embeddingModel != LocalModelKind.embeddingIdentity && (includeRemote || $0.embeddingModel.hasPrefix("local:")) })
+        let hasRetired = KnowledgeIndex.hasRetiredModels(models: localModels.root, laya: laya.root)
+        guard needsMigration || hasRetired else { return }
         isIndexing = true
         knowledgeTask = Task {
             defer { isIndexing = false; knowledgeTask = nil }
-            let provider = LocalEmbeddingProvider(directory: LocalModelKind.embedding.location(in: localModels.root))
-            defer { provider.close() }
-            do {
-                let pending = try await knowledge.migrateToArctic(provider: provider, includeRemote: includeRemote)
-                knowledgeMessage = pending.isEmpty ? "Arctic index migration complete." : "Original file or retry required: " + pending.joined(separator: ", ")
-            } catch { knowledgeMessage = error.localizedDescription }
-            await refreshKnowledge()
+            if needsMigration {
+                let provider = LocalEmbeddingProvider(directory: LocalModelKind.embedding.location(in: localModels.root))
+                do {
+                    let pending = try await knowledge.migrateToArctic(provider: provider, includeRemote: includeRemote)
+                    knowledgeMessage = pending.isEmpty ? "Arctic index migration complete." : "Original file or retry required: " + pending.joined(separator: ", ")
+                } catch { knowledgeMessage = error.localizedDescription }
+                provider.close()
+                await refreshKnowledge()
+            }
+            if hasRetired { await removeRetiredModelsAfterMigration(knowledge, includeRemote: includeRemote) }
         }
+    }
+
+    /// Deletes the BGE model and the old Python/MLX Laya runtime left by 2.9.x and earlier, once
+    /// the bundled models check out and every index uses Arctic. Otherwise keeps them quietly: a
+    /// document still waiting for its original file keeps the old files until a later launch.
+    private func removeRetiredModelsAfterMigration(_ knowledge: KnowledgeIndex, includeRemote: Bool) async {
+        guard !Task.isCancelled, !isShuttingDown,
+              LocalModelKind.embedding.isInstalled(in: localModels.root), laya.isInstalled,
+              let removed = try? await knowledge.removeRetiredModels(models: localModels.root, laya: laya.root, includeRemote: includeRemote),
+              removed > 0 else { return }
+        knowledgeMessage = knowledgeMessage == "Arctic index migration complete."
+            ? "Arctic index migration complete. Model files left by earlier versions were removed."
+            : "Model files left by earlier versions were removed."
     }
 
     func cleanRetiredModels() {
