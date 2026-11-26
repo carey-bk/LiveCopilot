@@ -2598,3 +2598,33 @@ final class FeedbackBundleTests: XCTestCase {
         XCTAssertFalse(names.contains("escape.txt"))
     }
 }
+
+final class UpdateSourceTests: XCTestCase {
+    func testMirrorIsChosenForADayAndThenGitHubAgain() throws {
+        let suite = "LiveCopilot-UpdateSource-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let source = UpdateSource(defaults: defaults), now = Date()
+        XCTAssertFalse(source.usesMirror(now: now))
+        source.preferMirror(now: now)
+        XCTAssertTrue(source.usesMirror(now: now.addingTimeInterval(23 * 3600)))
+        XCTAssertFalse(source.usesMirror(now: now.addingTimeInterval(25 * 3600)))
+        // A clock moved backwards cannot pin the mirror for longer than a day.
+        source.preferMirror(now: now.addingTimeInterval(10 * 86_400))
+        XCTAssertFalse(source.usesMirror(now: now))
+    }
+    func testOnlyNetworkFailuresSwitchToTheMirror() {
+        XCTAssertTrue(UpdateSource.isNetworkFailure(NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)))
+        XCTAssertTrue(UpdateSource.isNetworkFailure(NSError(domain: "SUSparkleErrorDomain", code: 2001)))
+        XCTAssertTrue(UpdateSource.isNetworkFailure(NSError(domain: "SUSparkleErrorDomain", code: 4,
+                                                            userInfo: [NSUnderlyingErrorKey: NSError(domain: NSURLErrorDomain, code: -1009)])))
+        XCTAssertFalse(UpdateSource.isNetworkFailure(NSError(domain: "SUSparkleErrorDomain", code: 3001)))  // signature
+        XCTAssertFalse(UpdateSource.isNetworkFailure(NSError(domain: "SUSparkleErrorDomain", code: 1001)))  // no update
+    }
+    func testReachabilityFailsFastForAClosedPort() async {
+        let started = Date()
+        let reachable = await UpdateSource.reachable(URL(string: "http://127.0.0.1:9/appcast.xml")!, timeout: 2)
+        XCTAssertFalse(reachable)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+    }
+}

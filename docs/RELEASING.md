@@ -166,6 +166,18 @@ python3 StealthApp/scripts/build-site.py
 cmp site/updates/appcast.xml _site/updates/appcast.xml
 ```
 
+### Hong Kong mirror feed (2.12 and later)
+
+From 2.12 the app reads the GitHub Pages feed first. If it does not answer within 5 s, or a check or download from GitHub fails with a network error, the app switches to `https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/updates/appcast.xml` for 24 hours and retries once. Clients up to 2.11 only know the GitHub Pages feed.
+
+After the GitHub feed is generated and verified:
+
+```bash
+python3 StealthApp/scripts/mirror-feed.py site/updates/appcast.xml /absolute/path/to/mirror-appcast.xml --version VERSION
+```
+
+It moves the new version's DMG and delta URLs to `releases/vVERSION/` on OSS, re-signs the whole feed and verifies it. Upload the DMG and every `.delta` to OSS `releases/vVERSION/` and check their SHA-256 and anonymous download first, then upload the mirror feed as `updates/appcast.xml`. Test the fallback with `prepare-updater-qa.py --mirror`, which points the QA app's primary feed at an unused port.
+
 Keep the signed appcast bytes unchanged: formatting, templating, or newline conversion invalidates the signature. `build-site.py` copies the feed as bytes. Never hand-edit a signed feed without re-signing it with `sign_update` (see the URL correction above). On later releases reuse the preceding feed in staging so that compatible older releases can be retained where needed.
 
 Publish the matching GitHub Release and verify its assets first. Mirror the identical finalized DMG to Hong Kong OSS, verify its SHA-256 and anonymous download, then generate the signed feed using that versioned OSS URL and deploy the website/feed. Keep GitHub Releases as the manual download fallback. The feed itself remains on GitHub Pages; no IP routing is involved. Check the live feed bytes and download hash, then exercise Check for Updates in the canonical installed release. A source push or local signed feed alone does not establish working public updates. Versions before 2.1 lack Sparkle and require one manual upgrade.

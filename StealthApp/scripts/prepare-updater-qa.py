@@ -12,6 +12,8 @@ import argparse
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=ROOT / 'build/updater-qa')
+parser.add_argument('--mirror', action='store_true',
+                    help='Point the primary feed at an unused port so the app must fall back to the mirror feed on 18746.')
 args = parser.parse_args()
 QA = args.output.resolve()
 TOOLS = ROOT / 'build/SparkleTools/bin'
@@ -33,8 +35,9 @@ for kind, version in [('installed', '100'), ('candidate', '101')]:
                 CFBundleShortVersionString='2.2.0' if kind == 'installed' else '2.2.1',
                 CFBundleName='LiveCopilot Update QA', CFBundleDisplayName='LiveCopilot Update QA',
                 LiveCopilotOnboardingPreview=True,
-                LiveCopilotUpdaterTestFeed='http://127.0.0.1:18746/appcast.xml',
-                SUFeedURL='http://127.0.0.1:18746/appcast.xml',
+                LiveCopilotUpdaterTestFeed='http://127.0.0.1:%d/appcast.xml' % (18745 if args.mirror else 18746),
+                LiveCopilotUpdaterTestMirrorFeed='http://127.0.0.1:18746/appcast.xml',
+                SUFeedURL='http://127.0.0.1:%d/appcast.xml' % (18745 if args.mirror else 18746),
                 NSAppTransportSecurity={'NSAllowsLocalNetworking': True})
     path.write_bytes(plistlib.dumps(info))
     run('/usr/bin/codesign', '--force', '--deep', '--sign', '-', app)

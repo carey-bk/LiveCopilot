@@ -70,15 +70,35 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     var openManagement: (() -> Void)?
     private struct Cache: Codable { let release: UpdateRelease?; let latestVersion: ReleaseVersion?; let checked: Date }
 
-    #if DEBUG
-    private var qaFeed: String? {
+    private lazy var source = UpdateSource(defaults: defaults)
+    /// One automatic retry on the mirror per process, after a network failure on GitHub.
+    private var retriedOnMirror = false
+
+    private func qaFeed(_ key: String) -> String? {
+        #if DEBUG
         guard hostBundle.bundleIdentifier == "com.livecopilot.updater-qa", hostBundle.object(forInfoDictionaryKey: "LiveCopilotOnboardingPreview") as? Bool == true,
-              let value = hostBundle.object(forInfoDictionaryKey: "LiveCopilotUpdaterTestFeed") as? String,
+              let value = hostBundle.object(forInfoDictionaryKey: key) as? String,
               let url = URL(string: value), url.scheme == "http", url.host == "127.0.0.1" else { return nil }
         return value
+        #else
+        return nil
+        #endif
     }
-    func feedURLString(for updater: SPUUpdater) -> String? { qaFeed }
-    #endif
+    private var primaryFeed: String? { qaFeed("LiveCopilotUpdaterTestFeed") ?? hostBundle.object(forInfoDictionaryKey: "SUFeedURL") as? String }
+    private var mirrorFeed: String { qaFeed("LiveCopilotUpdaterTestMirrorFeed") ?? UpdateSource.mirrorFeed }
+    /// nil keeps the Info.plist feed (GitHub Pages).
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        source.usesMirror() ? mirrorFeed : qaFeed("LiveCopilotUpdaterTestFeed")
+    }
+    /// Switches to the mirror when GitHub does not answer within five seconds. A mirror chosen
+    /// after a failed check or download stays for its 24 hours even if GitHub answers now.
+    private func refreshSource() async {
+        guard !source.usesMirror(), let feed = primaryFeed, let url = URL(string: feed) else { return }
+        if await !UpdateSource.reachable(url) {
+            source.preferMirror()
+            DebugLog.log("updater.source mirror reason=unreachable")
+        }
+    }
 
     init(mock: Bool, version: String = AppInfo.version, defaults: UserDefaults = .standard, hostBundle: Bundle = .main) {
         self.hostBundle = hostBundle
@@ -124,14 +144,15 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
             .sink { [weak self] in self?.automaticChecks = $0 }.store(in: &observations)
         updater.publisher(for: \.lastUpdateCheckDate).receive(on: RunLoop.main)
             .sink { [weak self] in self?.lastCheck = $0 }.store(in: &observations)
-        do { try updater.start() } catch { fail("更新服务暂不可用，请前往官方发布页。") }
+        // Choose the source before Sparkle's first scheduled check.
+        Task { await refreshSource(); do { try updater.start() } catch { fail("更新服务暂不可用，请前往官网下载页。") } }
     }
     func viewUpdate() { managementRequest = UUID(); openManagement?() }
     func checkForUpdates() {
         guard enabled, canCheck, !isWorking else { return }
         guard blockingReason() == nil else { message = "请先结束监听、索引或模型准备，再检查更新。"; return }
         manualCheck = true; message = ""; phase = .checking
-        updater?.checkForUpdates()
+        Task { await refreshSource(); updater?.checkForUpdates() }
     }
     func setAutomaticChecks(_ enabled: Bool) { guard self.enabled else { return }; updater?.automaticallyChecksForUpdates = enabled }
     func remindLater() { bannerDismissed = true }
@@ -207,7 +228,19 @@ final class AppUpdateController: NSObject, ObservableObject, SPUUpdaterDelegate 
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
         let ns = error as NSError
         if ns.domain == SUSparkleErrorDomain && ns.code == 1001 { return }
-        DebugLog.log("updater.abort domain=\(ns.domain) code=\(ns.code)")
+        DebugLog.log("updater.abort domain=\(ns.domain) code=\(ns.code) mirror=\(source.usesMirror())")
+        // GitHub could not be reached for the feed or the download: retry once on the mirror,
+        // keeping a requested install so it continues there.
+        if !retriedOnMirror, !source.usesMirror(), UpdateSource.isNetworkFailure(ns) {
+            retriedOnMirror = true
+            source.preferMirror()
+            let userInitiated = manualCheck || requestedInstall != nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, let updater = self.updater else { return }
+                if userInitiated { self.phase = .checking; updater.checkForUpdates() } else { updater.checkForUpdatesInBackground() }
+            }
+            return
+        }
         requestedInstall = nil
         if manualCheck || [.downloading, .extracting, .installing].contains(phase) { fail("检查或更新失败，请检查网络后重试。") }
         else if phase == .checking { phase = hasUpdate ? .available : .idle }
