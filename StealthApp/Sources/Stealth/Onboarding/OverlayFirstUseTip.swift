@@ -143,7 +143,8 @@ struct OverlaySpotlight: View {
                 let rect = proxy[item.anchor]
                 return SpotlightTarget(rect: item.card ? rect : rect.insetBy(dx: -5, dy: -4), card: item.card)
             })
-            if holes.contains(where: { !$0.card }) {
+            // Only with the tip card on screen: in answers-only view the card is hidden, so nothing explains the lit areas.
+            if holes.contains(where: \.card), holes.contains(where: { !$0.card }) {
                 ZStack(alignment: .topLeading) {
                     Path { path in
                         path.addRect(CGRect(origin: .zero, size: proxy.size))
