@@ -445,11 +445,13 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
 .trio .p-compact { max-width: 480px }
 .p-compact .p-actions { gap: 5px }
 .p-compact .p-actions > * { flex: none }
-/* Like the app's ViewThatFits: when the row is tight, Full view keeps only its icon, then the meters go. */
-@container (max-width: 400px) { .p-fullview .lbl { display: none } }
-@container (max-width: 360px) { .p-compact .p-meters { display: none } }
-/* English titles are longest: on narrow screens the chips fall back to icons, as the app's last layout does. */
-@container (max-width: 330px) { :lang(en) .p-compact .chip .t { display: none } :lang(en) .p-compact .p-actions.compact .chip svg { display: block } }
+/* Like the app's ViewThatFits: when the row is tight, Full view keeps only its icon, then the meters go,
+   then (English titles are longest) the chips fall back to icons. Widths measured from the rendered row. */
+@container (max-width: 320px) { .p-fullview .lbl { display: none } }
+@container (max-width: 275px) { .p-compact .p-meters { display: none } }
+@container (max-width: 410px) { :lang(en) .p-fullview .lbl { display: none } }
+@container (max-width: 366px) { :lang(en) .p-compact .p-meters { display: none } }
+@container (max-width: 332px) { :lang(en) .p-compact .chip .t { display: none } :lang(en) .p-compact .p-actions.compact .chip svg { display: block } }
 .p-compact .p-listen { margin-left: 2px; height: 22px; padding: 0 8px }
 .p-compact .p-meter i:first-of-type { margin-left: 0 }
 .p-fullview { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--p-muted); font-size: 10.5px; white-space: nowrap }
