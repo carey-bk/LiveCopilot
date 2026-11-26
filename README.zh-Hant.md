@@ -8,36 +8,39 @@
 
 面向面試、會議和學術答辯的原生 macOS 助手。LiveCopilot 即時轉錄語音，檢索個人文件中的相關資料，並在懸浮窗中串流呈現回答建議。也可以不開麥，直接輸入問題。
 
-[下載 2.9.2](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.2) · [產品介紹](https://carey-bk.github.io/LiveCopilot/zh-Hant/) · [版本說明](docs/releases/2.9.2.md)
+[下載 2.11](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.11) · [產品介紹](https://carey-bk.github.io/LiveCopilot/zh-Hant/) · [版本說明](docs/releases/2.11.md)
 
 ## 下載與使用要求
 
-**2.9.2 · 安裝檔 39.38 MB · macOS 通用版本 · Developer ID 簽名與 Apple 公證**
+**2.11 · 安裝檔 538 MB · macOS 通用版本 · Developer ID 簽名與 Apple 公證**
 
-[下載安裝檔 — 香港鏡像站](https://livecopilot-downloads-hk.oss-cn-hongkong.aliyuncs.com/releases/v2.9.2/LiveCopilot-2.9.2-macOS-universal.dmg) · [GitHub 下載與驗證值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.9.2)
+[從 GitHub 下載安裝檔](https://github.com/carey-bk/LiveCopilot/releases/download/v2.11/LiveCopilot-2.11-macOS-universal.dmg) · [百度網盤備用下載](https://pan.baidu.com/s/1oMcGKhPmuOY7KXkb4NiTVQ?pwd=0211)（提取碼 `0211`） · [GitHub 發佈頁與驗證值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.11)
 
 | 功能 | 使用要求 |
 |---|---|
 | 應用本體 | macOS 14 或更高版本；Apple Silicon 或 Intel |
-| 本地 Laya 自動觸發 | 需要 Apple Silicon，模型另行下載 |
+| 本地 Laya 自動觸發 | 需要 Apple Silicon，模型已內建 |
 | Apple 本地語音識別 | macOS 26 或更高版本，以及受支援的設備與語言 |
 | AI 回答 | 自備受支援分析服務的 API Key |
 
-小安裝檔**不包含 Laya 權重**。在首次引導或「設定 → 服務」中下載所需模型，無需另外安裝 Python、Ollama 或 Docker。下載大小約為：Zipformer + VAD **200 MB**、BGE-M3 **635 MB**、Laya 與執行環境 **767 MB**。安裝後還需額外磁碟空間，執行會佔用本機記憶體和計算資源。
+安裝檔**已內建 Arctic 檢索模型和 Laya 自動觸發模型**，檢索資料和自動觸發都無需另外下載模型。本地語音識別模型可在首次引導或「設定 → 服務」中按需下載：Zipformer 約 **200 MB**、Paraformer 約 **238 MB**；macOS 26 上的 Apple 本機語音識別無需透過 LiveCopilot 下載。無需另外安裝 Python、Ollama 或 Docker。本地模型會佔用磁碟空間以及本機記憶體和計算資源。
 
-打開 DMG，將 LiveCopilot 拖入「應用程式」後啟動。已有使用者可以從應用程式選單選擇「LiveCopilot → 檢查更新…」。正常升級保留設定、API Key、文件和歷史；Laya 模型更新獨立於應用程式更新。
+打開 DMG，將 LiveCopilot 拖入「應用程式」後啟動。已有使用者可以從應用程式選單選擇「LiveCopilot → 檢查更新…」：2.10.0 只需下載 3.4 MB 的增量更新，更早的版本下載完整安裝檔。正常升級保留設定、API Key、文件和歷史；以舊 BGE-M3 模型建立的資料索引，在原檔案仍在時會自動以 Arctic 重建。
 
-## 2.9.2 更新了什麼？
+## 2.11 更新了什麼？
 
-- 改善對話紀錄儲存。磁碟寫入失敗後可重試，保留後續追問與回答。連續重設同一場對話只會產生一筆紀錄。
-- 改善麥克風切換、系統音訊擷取逾時與雲端連線中斷後的處理。
-- 減少長時間監聽時的逐字稿更新和音訊回呼等待。Intel Mac 的懸浮視窗使用較輕量的背景。
-- 改善文件編碼辨識、大型文件分段、本機向量模型備援與翻譯服務錯誤處理。
+- 設定全面改版：「概覽」直接告訴你能否開始監聽、還缺哪項設定；模式與場景改為選項卡片；「服務」每個分頁帶狀態點。
+- 懸浮視窗：監聽狀態合併為一行；提問框最多六行，可選附帶近期對話；四種背景（液態玻璃需要 macOS 26）；自動伸縮可延伸到螢幕底部。
+- 對方補充提問時可更新目前回答或另起一則；回答可逐句附譯文，最多三種語言。
+- 自動回答：五段觸發靈敏度；對方剛問完你就開口不再取消回答；對方說話時你的話也會即時轉寫；回聲判斷更嚴格。
+- 開始監聽更快；分享螢幕時選單和系統輸入法候選框一併隱藏；Apple 本機語音識別支援 31 種語言；升級後自動清理舊 BGE 與 Laya 檔案。
+
+完整說明：[docs/releases/2.11.md](docs/releases/2.11.md)。
 
 ## 開始第一次對話
 
-1. **安裝並打開引導。** 六步驟引導會帶你選擇輸入方式、準備模型並測試回答服務。日後可從一般設定重新開啟。
-2. **準備語音與本地模型。** 中英雙語優先選擇 Zipformer；文件檢索建議使用本機 BGE-M3，無需 OpenAI 金鑰，Apple Silicon 使用者可下載 Laya 開啟自動觸發。按需下載即可。
+1. **安裝並打開引導。** 六步驟引導會帶你選擇輸入方式、準備語音識別並測試回答服務。日後可在設定的「概覽」中重新開啟。
+2. **準備語音識別。** macOS 26 上預設使用 Apple 本機語音識別；中英雙語也可以下載本地 Zipformer。文件檢索用的 Arctic 和 Apple Silicon 上自動觸發用的 Laya 均已內建。
 3. **連接分析服務。** 選擇 OpenAI、DeepSeek、Qwen、GLM、Kimi 或相容串流 Chat Completions 的服務，保存自己的 API Key。
 4. **按需添加資料。** 知識庫支援 PDF、Markdown、TXT、DOCX。掃描版 PDF 請先 OCR；更換向量模型後重建文件索引。
 5. **開始監聽或直接輸入。** 現場模式使用麥克風；遠端會議模式採集系統音訊並可選用麥克風。按提示授予 macOS 權限，也可保持監聽關閉、手動提問。
@@ -50,11 +53,11 @@
 | 環節 | 可選服務 | 什麼內容會離開本機？ |
 |---|---|---|
 | 語音識別 | 本地 Zipformer、Paraformer、Apple；OpenAI Live | 本地識別在設備上完成；OpenAI Live 會向 OpenAI 發送音訊。 |
-| 文件索引與檢索 | 本地 BGE-M3；OpenAI Embeddings | BGE-M3 本地處理；OpenAI Embeddings 接收索引或查詢文字，檢索資料仍保存在本機。 |
+| 文件索引與檢索 | 本地 Arctic（已內建）；OpenAI Embeddings | Arctic 本地處理；OpenAI Embeddings 接收索引或查詢文字，檢索資料仍保存在本機。 |
 | 自動觸發回答 | 本地語音搭配 Laya；OpenAI Live 的語義委派 | Laya 的判斷在本地完成；雲端語音遵循其服務供應商的資料處理方式。 |
 | 生成回答與自動命名 | 使用者選擇的分析 API | 相關問題、對話文字及選中證據；自動命名會使用會話問答上下文。 |
 
-例如選擇 **Zipformer + BGE-M3 + DeepSeek**，語音識別和索引在本地完成，DeepSeek 負責回答，無需 OpenAI Key。本地處理無 API 呼叫費用；雲服務可能按帳戶用量收費。
+例如選擇 **Zipformer + Arctic + DeepSeek**，語音識別和索引在本地完成，DeepSeek 負責回答，無需 OpenAI Key。本地處理無 API 呼叫費用；雲服務可能按帳戶用量收費。
 
 ## 隱私與使用邊界
 
@@ -76,7 +79,7 @@ xcodebuild -project StealthApp/LiveCopilot.xcodeproj -scheme LiveCopilot \
   -configuration Debug -derivedDataPath StealthApp/build CODE_SIGNING_ALLOWED=NO test
 ```
 
-乾淨儲存庫無需下載 Laya 權重即可建置小體積應用；原生執行階段依賴固定驗證值。Debug 使用獨立應用標識，模擬測試無需 API Key 或付費請求。正式簽名、公證是獨立步驟，打包前請閱讀發佈指南。
+模型權重不放在 Git 中：正式打包時從本機資源目錄放入內建的 Arctic 和 Laya 模型，並在簽名前驗證。原生執行階段依賴固定驗證值。Debug 使用獨立應用標識，模擬測試無需 API Key 或付費請求。正式簽名、公證是獨立步驟，打包前請閱讀發佈指南。
 
 | 文件 | 用途 |
 |---|---|
@@ -86,7 +89,7 @@ xcodebuild -project StealthApp/LiveCopilot.xcodeproj -scheme LiveCopilot \
 | [發佈指南](docs/RELEASING.md) | 簽名、公證、打包與更新 |
 | [回報問題](https://github.com/carey-bk/LiveCopilot/issues) | 請附應用版本、macOS 版本和模型診斷，勿附金鑰或私人對話 |
 
-技術文件保持英文。三份 README 介紹同一版本；應用介面目前支援簡體中文和英文。
+技術文件保持英文。三份 README 介紹同一版本；應用介面支援英文、簡體中文和繁體中文。
 
 ## 致謝與許可
 
