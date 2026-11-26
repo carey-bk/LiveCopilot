@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../LiveCopilot.Core/LiveCopilot.Core.csproj" /></ItemGroup>
+  <ItemGroup><PackageReference Include="PdfPig" Version="0.1.11" /></ItemGroup>
+</Project>

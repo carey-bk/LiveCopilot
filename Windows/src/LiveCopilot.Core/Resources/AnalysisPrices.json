@@ -1,0 +1,123 @@
+[
+  {
+    "model": "gpt-6-luna",
+    "route": "openai",
+    "currency": "USD",
+    "input": 0.1,
+    "output": 0.5,
+    "sourceURL": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "Standard API, ≤272K input tokens. Cache, longer contexts, regional processing and Fast/Flex/Batch have separate rates.",
+    "conditionsZH": "标准 API，输入不超过 272K Token；缓存、更长上下文、区域处理及 Fast/Flex/Batch 另有报价。"
+  },
+  {
+    "model": "gpt-6-sol",
+    "route": "openai",
+    "currency": "USD",
+    "input": 2.0,
+    "output": 10.0,
+    "sourceURL": "https://developers.openai.com/api/docs/models/gpt-6-sol",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "Standard API, ≤272K input tokens. Cache, longer contexts and other processing tiers have separate rates.",
+    "conditionsZH": "标准 API，输入不超过 272K Token；缓存、更长上下文及其他处理档位另有报价。"
+  },
+  {
+    "model": "gpt-6.1-sol",
+    "route": "openai",
+    "currency": "USD",
+    "input": 2.0,
+    "output": 10.0,
+    "sourceURL": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "Standard API, ≤272K input tokens. Cache, longer contexts and other processing tiers have separate rates.",
+    "conditionsZH": "标准 API，输入不超过 272K Token；缓存、更长上下文及其他处理档位另有报价。"
+  },
+  {
+    "model": "deepseek-flash",
+    "route": "deepseek",
+    "currency": "CNY",
+    "input": 2.0,
+    "output": 8.0,
+    "sourceURL": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "Official CNY peak rate, uncached input. Off-peak is 50%; cached input differs. Peak: weekdays 09–12 / 14–18 Beijing, excluding public holidays.",
+    "conditionsZH": "官方人民币高峰价、未缓存输入；低峰半价，缓存输入另计。高峰为工作日北京时间 09–12 / 14–18 点（法定节假日除外）。"
+  },
+  {
+    "model": "deepseek-flash",
+    "route": "deepseek",
+    "currency": "USD",
+    "input": 0.3,
+    "output": 1.2,
+    "sourceURL": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "Official USD peak rate, uncached input. Off-peak is 50%; cached input differs. Peak: weekdays 01–04 / 06–10 UTC, excluding Chinese public holidays.",
+    "conditionsZH": "官方美元高峰价、未缓存输入；低峰半价，缓存输入另计。高峰为工作日 UTC 01–04 / 06–10 点（中国法定节假日除外）。"
+  },
+  {
+    "model": "qwen3.8-flash",
+    "route": "qwen-cn",
+    "currency": "CNY",
+    "input": 0.8,
+    "output": 2.7,
+    "sourceURL": "https://help.aliyun.com/zh/model-studio/model-pricing",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "Beijing, ≤1M input tokens; both thinking modes. Cached input has a separate discount. Other regions may differ.",
+    "conditionsZH": "北京，输入不超过 1M Token；思考与非思考同价。缓存输入另有折扣，其他地域价格可能不同。"
+  },
+  {
+    "model": "qwen3.8-flash",
+    "route": "qwen-intl",
+    "currency": "CNY",
+    "input": 1.094,
+    "output": 3.427,
+    "sourceURL": "https://help.aliyun.com/zh/model-studio/model-pricing",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "Singapore / international deployment; official CNY quote, ≤1M input tokens. Cached input discounted separately.",
+    "conditionsZH": "新加坡／国际部署，官方人民币报价；输入不超过 1M Token，缓存输入另有折扣。"
+  },
+  {
+    "model": "glm-5.3-flash",
+    "route": "glm-cn",
+    "currency": "CNY",
+    "input": 0.8,
+    "output": 2.8,
+    "sourceURL": "https://docs.bigmodel.cn/cn/guide/start/pricing",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "China standard general API, 1M context. Cached input and storage billed separately; not Coding Plan pricing.",
+    "conditionsZH": "国内通用 API 标准价、1M 上下文；缓存命中和存储另计，不是 Coding Plan 套餐价格。"
+  },
+  {
+    "model": "glm-5.3-flashx",
+    "route": "glm-cn",
+    "currency": "CNY",
+    "input": 2.0,
+    "output": 7.0,
+    "sourceURL": "https://docs.bigmodel.cn/cn/guide/start/pricing",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "China standard general API, 1M context. Cached input and storage billed separately; not Coding Plan pricing.",
+    "conditionsZH": "国内通用 API 标准价、1M 上下文；缓存命中和存储另计，不是 Coding Plan 套餐价格。"
+  },
+  {
+    "model": "kimi-k2.6",
+    "route": "kimi-cn",
+    "currency": "CNY",
+    "input": 6.5,
+    "output": 27.0,
+    "sourceURL": "https://platform.kimi.com/",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "China general API, standard uncached input. Cached input has a separate price; thinking tokens are billed as output.",
+    "conditionsZH": "国内通用 API、标准未缓存输入；缓存命中另有报价，思考 Token 计入输出。"
+  },
+  {
+    "model": "kimi-k3",
+    "route": "kimi-cn",
+    "currency": "CNY",
+    "input": 20.0,
+    "output": 100.0,
+    "sourceURL": "https://platform.kimi.com/",
+    "checkedAt": "2026-10-11",
+    "conditionsEN": "China general API. Cached input and cache writes by TTL have separate rates. Thinking tokens count as output.",
+    "conditionsZH": "国内通用 API；缓存命中及不同 TTL 的缓存写入另有报价，思考 Token 计入输出。"
+  }
+]
