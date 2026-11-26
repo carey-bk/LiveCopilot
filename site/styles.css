@@ -631,8 +631,7 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
 .download .mirror:hover { border-color: #00000038; background: #fafbfc }
 .download .mirror img { box-shadow: 0 0 0 1px #0000000f }
 .download .mirror .code { border-left-color: #0000001a; color: var(--paper-muted) }
-/* GitHub button asks for a star; no live count, so the page makes no third-party requests. */
-.btn.star svg:last-child { width: 15px; height: 15px; opacity: .8 }
+/* GitHub button with its logo; the star request is the note beside it (no live count, no third-party requests). */
 .btn.star svg:first-child { width: 17px; height: 17px }
 .btn.secondary.light { border-color: #0000002e; background: #fff; color: var(--paper-ink) }
 .btn.secondary.light:hover { background: #f6f7f9 }

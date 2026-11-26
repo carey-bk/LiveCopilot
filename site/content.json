@@ -467,7 +467,6 @@
     "hs_questions": "问题",
     "hs_answers": "回答",
     "hs_sources": "引用来源",
-    "star_label": "在 GitHub 上 Star",
     "star_note": "觉得有用？在 GitHub 点个 Star，让更多人发现 LiveCopilot。",
     "star_footer": "GitHub · 点个 Star"
   },
@@ -939,7 +938,6 @@
     "hs_questions": "Questions",
     "hs_answers": "Answers",
     "hs_sources": "Sources cited",
-    "star_label": "Star on GitHub",
     "star_note": "Find it useful? A star on GitHub helps more people discover LiveCopilot.",
     "star_footer": "GitHub · Star"
   },
@@ -1411,7 +1409,6 @@
     "hs_questions": "問題",
     "hs_answers": "回答",
     "hs_sources": "引用來源",
-    "star_label": "在 GitHub 上 Star",
     "star_note": "覺得有用？在 GitHub 點個 Star，讓更多人發現 LiveCopilot。",
     "star_footer": "GitHub · 點個 Star"
   }

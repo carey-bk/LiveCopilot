@@ -32,8 +32,8 @@ disclosures: model comparisons, prices, endpoints, installation, shortcuts and t
 live in the linked README and `docs/` guides. API keys, charges and cloud data boundaries are
 stated in short sentences where they apply.
 
-1. **Hero** — slogan, the GitHub download, a "Star on GitHub" button (no live count, so no
-   third-party request), small Baidu / Quark netdisk buttons with grey official logos
+1. **Hero** — slogan, the GitHub download, a "GitHub ↗" button with the GitHub logo and a one-line request for a star (no live
+   count, so no third-party request), small Baidu / Quark netdisk buttons with grey official logos
    (`assets/netdisk-*.png`); a static LS Graphics MacBook
    (`assets/ls-front-hardware.webp`) on the right (stacked, copy first, below 1024 px). The 2.11 overlay rises from the
    screen's right edge as an enlarged close-up (CSS `zoom` on wide screens); a true-scale copy on the
