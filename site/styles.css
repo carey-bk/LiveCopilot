@@ -438,6 +438,26 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
 .desk[data-hidden=true] .desk-overlay { transform: translateX(calc(100% + 14px)); opacity: 0 }
 .desk-cursor { position: absolute; z-index: 2; top: 48%; left: 60%; width: 13px; height: 17px; opacity: 0; filter: drop-shadow(0 1px 2px #0006); transition: left 1.1s cubic-bezier(.45, 0, .2, 1) .5s, opacity .3s ease }
 .desk[data-hidden=true] .desk-cursor { left: calc(100% - 14px); opacity: 1; transition: left 1.1s cubic-bezier(.45, 0, .2, 1) .5s, opacity .3s ease .2s }
+/* Overlay section: docking, answers-only and history side by side; history spans the row below 1180 px. */
+.trio { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr); gap: 32px }
+.p-compact { height: 230px; padding: 12px; gap: 8px; overflow: hidden; border-radius: 14px; box-shadow: 0 1px 2px #0000000f, 0 12px 30px -12px #0000002e }
+.p-compact { container-type: inline-size }
+.trio .p-compact { max-width: 480px }
+.p-compact .p-actions { gap: 5px }
+.p-compact .p-actions > * { flex: none }
+/* Like the app's ViewThatFits: when the row is tight, Full view keeps only its icon, then the meters go. */
+@container (max-width: 400px) { .p-fullview .lbl { display: none } }
+@container (max-width: 360px) { .p-compact .p-meters { display: none } }
+/* English titles are longest: on narrow screens the chips fall back to icons, as the app's last layout does. */
+@container (max-width: 330px) { :lang(en) .p-compact .chip .t { display: none } :lang(en) .p-compact .p-actions.compact .chip svg { display: block } }
+.p-compact .p-listen { margin-left: 2px; height: 22px; padding: 0 8px }
+.p-compact .p-meter i:first-of-type { margin-left: 0 }
+.p-fullview { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--p-muted); font-size: 10.5px; white-space: nowrap }
+.p-fullview svg { width: 12px; height: 12px }
+.p-hide { width: 14px; height: 14px; flex: none; color: var(--p-muted) }
+.p-compact .p-card { margin: 0 }
+.p-compact .p-text { font-size: 12px; line-height: 1.55 }
+@media (max-width: 1179px) { .trio { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) } .trio #history { grid-column: 1 / -1; max-width: 640px } }
 .duo .edge-controls { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px }
 .edge-controls > span { display: grid; gap: 3px }
 /* History window (2.10+): session list beside the selected session's counts. */
@@ -452,7 +472,7 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
 .history-detail { display: grid; gap: 4px; align-content: start; padding: 12px 12px 12px 14px; min-width: 0 }
 .history-title { font-size: 13.5px; line-height: 1.3 }
 .history-detail > small { color: var(--p-muted); font-size: 10px }
-.history-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; margin: 8px 0 6px; padding-bottom: 10px; border-bottom: 1px solid var(--p-rule) }
+.history-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 10px; margin: 8px 0 6px; padding-bottom: 10px; border-bottom: 1px solid var(--p-rule) }
 .history-stats dt { color: var(--p-muted); font-size: 10px }
 .history-stats dd { margin: 0; font-size: 15px; font-weight: 700 }
 .history-line { display: flex; align-items: center; gap: 5px; color: var(--p-muted); font-size: 10px }
@@ -652,3 +672,4 @@ figcaption, .visual-note { margin: 14px 0 0; color: var(--faint); font-size: 12p
 .p-lang.on svg text { fill: #fff }
 .step-visual .p-statusrow { margin: 0 }
 .step-src { margin-top: 2px }
+@media (max-width: 719px) { .history-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) } }

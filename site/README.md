@@ -51,7 +51,9 @@ stated in short sentences where they apply.
    so switching never moves the content below; use cases reserve their tallest example the same way.
 5. **Use cases** (`#scenarios`) — four tabs sharing one panel, data from `examples.json`.
 6. **Overlay and history** (`#overlay`) — the edge-docking demo plays by itself while on screen
-   (every 2 s the window slides away, then a pointer at the edge brings it back) and the history window.
+   (every 2 s the window slides away, then a pointer at the edge brings it back), the answers-only layout
+   (its action row drops labels, then meters, as the app's ViewThatFits does) and the history window
+   with the app's five stats.
 7. **Services** (`#services`) — one ruled list of the three steps and a link to `docs/SERVICE_GUIDE.md`.
 8. **Privacy** (`#privacy`, dark) — statement, four facts, data route and boundary note.
 9. **What's new** (`#whats-new`) — the current release's highlights from `docs/releases/<version>.md`.
