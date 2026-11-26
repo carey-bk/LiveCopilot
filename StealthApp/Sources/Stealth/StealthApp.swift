@@ -142,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         CaptureDiagnostics.record(.appLaunch)
-        if !coordinator.isMock { mainThreadWatchdog.start() }
+        if !coordinator.isMock { MainThreadSampler.shared.registerMainThread(); mainThreadWatchdog.start() }
         // Warm the audio services shortly after launch so the first Start is as quick as later ones.
         if !coordinator.isMock {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.coordinator.prewarmCapture() }

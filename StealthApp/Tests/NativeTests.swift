@@ -2498,3 +2498,58 @@ final class OverlaySpotlightLayoutTests: XCTestCase {
         XCTAssertEqual(holes.count, 2)
     }
 }
+
+final class MainThreadSamplerTests: XCTestCase {
+    private final class Box: @unchecked Sendable { var samples: [[UInt]] = [] }
+    @inline(never) private static func spin() -> Double {
+        var total = 0.0
+        for index in 0..<20_000 { total += sin(Double(index)) }
+        return total
+    }
+    func testSamplerCapturesTheBusyMainThread() {
+        let sampler = MainThreadSampler()
+        sampler.registerMainThread()
+        let box = Box(), done = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            Thread.sleep(forTimeInterval: 0.2)
+            box.samples = sampler.sample(count: 4, interval: 0.05)
+            done.signal()
+        }
+        var sink = 0.0
+        let deadline = Date().addingTimeInterval(5)
+        while done.wait(timeout: .now()) == .timedOut && Date() < deadline { sink += Self.spin() }
+        XCTAssertNotEqual(sink, -1)
+        XCTAssertEqual(box.samples.count, 4)
+        let images = Set(box.samples.flatMap { $0.map { StackReport.frame($0).image } })
+        XCTAssertTrue(images.contains("LiveCopilotTests"), "the spinning test frames are in the stack: \(images)")
+        let report = StackReport.text(samples: box.samples, stallMS: 3200, appVersion: "test")
+        XCTAssertTrue(report.contains("Main thread unresponsive for at least 3200 ms"))
+        XCTAssertTrue(report.contains("Image UUIDs"))
+    }
+    func testWatchdogSamplesTheStackOnceDuringALongStall() {
+        let sampler = MainThreadSampler()
+        sampler.registerMainThread()
+        let box = Box(), sampled = expectation(description: "stack sampled")
+        let watchdog = MainThreadWatchdog(intervalSeconds: 0.1, thresholdSeconds: 0.2, cooldownSeconds: 60,
+                                          onStall: { _, _ in }, sampleAfterSeconds: 0.3, sampler: sampler,
+                                          onStack: { samples, stallMS in
+                                              XCTAssertGreaterThanOrEqual(stallMS, 300)
+                                              box.samples = samples; sampled.fulfill()
+                                          })
+        watchdog.start(); defer { watchdog.stop() }
+        var sink = 0.0
+        let busyUntil = Date().addingTimeInterval(3)
+        while Date() < busyUntil { sink += Self.spin() }
+        XCTAssertNotEqual(sink, -1)
+        wait(for: [sampled], timeout: 3)
+        XCTAssertEqual(box.samples.count, 10)
+    }
+    func testOnlyTheFiveNewestReportsAreKept() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        for second in 0..<7 { StackReport.save("report \(second)", in: folder, now: Date(timeIntervalSince1970: 1_800_000_000 + Double(second))) }
+        let names = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+        XCTAssertEqual(names.count, 5)
+        XCTAssertEqual(try String(contentsOf: folder.appendingPathComponent(names.last!), encoding: .utf8), "report 6")
+    }
+}

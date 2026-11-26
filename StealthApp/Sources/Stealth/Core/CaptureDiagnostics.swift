@@ -9,7 +9,7 @@ enum CaptureDiagnostics {
         /// Per-source audio flow, a few seconds after capture starts and when the source stops.
         case audioCheck, audioSummary
         /// Privacy-safe reliability telemetry: main-thread stalls and stop/shutdown phase boundaries.
-        case mainThreadStall, stopStage, shutdownStage
+        case mainThreadStall, mainThreadStack, stopStage, shutdownStage
     }
     enum WorkerTerminationInitiator: String, Codable {
         case selfCheck, shutdown, userCancel, answerTimeout, workerTimeout, discardOnError, modelRemoved, deinitCleanup, external
@@ -36,6 +36,8 @@ enum CaptureDiagnostics {
         var lifecyclePhase: LifecyclePhase?; var timedOut: Bool?
         var stallMS: Int?; var isRunning: Bool?; var isTransitioning: Bool?
         var answerIsRunning: Bool?; var transcriptLineCount: Int?
+        /// Innermost app frames of a sampled main-thread stack (image+offset only).
+        var stackSummary: String?
         var audioVerdict: AudioFlowMonitor.Verdict?; var audioSeconds: Double?; var firstAudioMS: Int?
         var peakDBFS: Int?; var audibleFraction: Double?; var partials: Int?; var transcripts: Int?
         var textLatencyMeanMS: Int?; var textLatencyMaxMS: Int?; var backlogMaxMS: Int?
@@ -188,6 +190,13 @@ final class MainThreadWatchdog: @unchecked Sendable {
     private let thresholdSeconds: TimeInterval
     private let cooldownSeconds: TimeInterval
     private let onStall: @Sendable (Int, StateSnapshot) -> Void
+    /// Once a stall lasts this long, the main thread's stack is sampled (at most twice per process).
+    private let sampleAfterSeconds: TimeInterval
+    private var sampledThisStall = false
+    private var stacksTaken = 0
+    private let sampler: MainThreadSampler
+    private let samplingQueue = DispatchQueue(label: "com.livecopilot.main-thread-sampler", qos: .utility)
+    private let onStack: @Sendable ([[UInt]], Int) -> Void
 
     init(intervalSeconds: TimeInterval = 2.0,
          thresholdSeconds: TimeInterval = 1.5,
@@ -196,11 +205,21 @@ final class MainThreadWatchdog: @unchecked Sendable {
              CaptureDiagnostics.record(.mainThreadStall, details: .init(
                  stallMS: stallMS, isRunning: state.isRunning, isTransitioning: state.isTransitioning,
                  answerIsRunning: state.answerIsRunning, transcriptLineCount: state.transcriptLineCount))
+         },
+         sampleAfterSeconds: TimeInterval = 3.0,
+         sampler: MainThreadSampler = .shared,
+         onStack: @escaping @Sendable ([[UInt]], Int) -> Void = { samples, stallMS in
+             let file = StackReport.save(StackReport.text(samples: samples, stallMS: stallMS, appVersion: [Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString"), Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")].compactMap { $0 as? String }.joined(separator: " · ")))
+             CaptureDiagnostics.record(.mainThreadStack, details: .init(
+                 stallMS: stallMS, stackSummary: (file == nil ? "unsaved " : "") + StackReport.summary(samples: samples)))
          }) {
         self.intervalSeconds = intervalSeconds
         self.thresholdSeconds = thresholdSeconds
         self.cooldownSeconds = cooldownSeconds
         self.onStall = onStall
+        self.sampleAfterSeconds = sampleAfterSeconds
+        self.sampler = sampler
+        self.onStack = onStack
     }
 
     deinit { stop() }
@@ -232,9 +251,14 @@ final class MainThreadWatchdog: @unchecked Sendable {
         let now = ProcessInfo.processInfo.systemUptime
         var stallToReport: (Int, StateSnapshot)?
         var shouldPing = false
+        var sampleStallMS: Int?
         lock.withLock {
             if let since = pendingSince {
                 let elapsed = now - since
+                if elapsed >= sampleAfterSeconds && !sampledThisStall && stacksTaken < 2 {
+                    sampledThisStall = true; stacksTaken += 1
+                    sampleStallMS = Int((elapsed * 1000).rounded())
+                }
                 if elapsed >= thresholdSeconds && now - lastReportedAt >= cooldownSeconds {
                     lastReportedAt = now
                     stallToReport = (Int((elapsed * 1000).rounded()), latestState)
@@ -245,6 +269,13 @@ final class MainThreadWatchdog: @unchecked Sendable {
             }
         }
         if let (ms, state) = stallToReport { onStall(ms, state) }
+        if let stallMS = sampleStallMS, sampler.isRegistered {
+            let sampler = sampler, onStack = onStack
+            samplingQueue.async {
+                let samples = sampler.sample()
+                if !samples.isEmpty { onStack(samples, stallMS) }
+            }
+        }
         if shouldPing {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -259,6 +290,7 @@ final class MainThreadWatchdog: @unchecked Sendable {
                         }
                     }
                     self.pendingSince = nil
+                    self.sampledThisStall = false
                 }
                 if let (ms, state) = lateStall {
                     let callback = self.onStall
