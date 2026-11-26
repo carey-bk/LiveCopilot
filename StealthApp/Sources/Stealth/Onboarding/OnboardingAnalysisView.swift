@@ -11,8 +11,13 @@ struct OnboardingAnalysisView: View {
             credentials
         }.padding(4).frame(maxHeight: .infinity, alignment: .center)
     }
+    private var readyStatus: AnyView? {
+        guard coordinator.isAnalysisConnectionVerified, !coordinator.isMock else { return nil }
+        return AnyView(Label(b("Answer service ready. You can continue.", "回答服务已就绪，可以继续。"), systemImage: "checkmark.circle.fill")
+            .font(.caption.weight(.medium)).foregroundStyle(LC.success).accessibilityIdentifier("onboarding-answer-ready"))
+    }
     private var credentials: some View {
-        OnboardingServiceSection(number: 2, title: b("API Key & connection test", "API Key 与连接测试")) {
+        OnboardingServiceSection(number: 2, title: b("API Key & connection test", "API Key 与连接测试"), status: readyStatus) {
             if (try? coordinator.settings.analysisCredentialReference()) != nil {
                 CredentialEditor(coordinator: coordinator, analysis: !shared, onboarding: true, analysisLayout: true)
                     .id(coordinator.settings.reasoningService.rawValue + "|" + ((try? coordinator.settings.analysisCredentialReference().account) ?? "invalid"))
@@ -58,6 +63,8 @@ struct OnboardingServiceSection<Content: View>: View {
     let number: Int
     let title: String
     var showsBorder = true
+    /// Shown at the right end of the title row, e.g. a ready status.
+    var status: AnyView? = nil
     @ViewBuilder let content: () -> Content
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -66,6 +73,7 @@ struct OnboardingServiceSection<Content: View>: View {
                     .frame(width: 21, height: 21).background(LC.accent.opacity(0.09), in: Circle())
                     .accessibilityHidden(true)
                 Text(title).font(.system(size: 14, weight: .semibold))
+                if let status { Spacer(minLength: 8); status }
             }
             content()
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)

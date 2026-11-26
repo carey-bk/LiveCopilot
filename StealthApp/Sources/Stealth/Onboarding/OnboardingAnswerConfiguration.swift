@@ -53,8 +53,7 @@ struct OnboardingAnswerConfiguration: View {
                     .disabled(AnalysisModelCatalog.recommended(for: settings.reasoningService) == nil)
                     .accessibilityIdentifier("apply-analysis-recommendation")
                 }
-                Spacer(minLength: 0)
-            }
+                // Beside the provider, not on a row of its own.
                 if settings.isOpenAIAnalysis {
                     Toggle(b("Use speech OpenAI key", "与语音识别共用 OpenAI 密钥"), isOn: Binding(
                         get: { coordinator.hasAPIKey && settings.reasoningService == .sharedOpenAI },
@@ -63,6 +62,8 @@ struct OnboardingAnswerConfiguration: View {
                         .toggleStyle(.checkbox).font(.system(size: 11))
                         .fixedSize().accessibilityIdentifier("analysis-share-openai-key")
                 }
+                Spacer(minLength: 0)
+            }
             if settings.reasoningService == .compatible {
                 OnboardingCompatibleConnection(coordinator: coordinator)
             } else {

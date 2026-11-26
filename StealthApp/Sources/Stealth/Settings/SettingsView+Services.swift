@@ -412,7 +412,7 @@ extension SettingsView {
         } catch { connectionMessage = error.localizedDescription }
     }
     var localCost: some View {
-        Text(b("Local/free means no API usage fee. The first model download needs a network connection and disk space.", "本地／免费指无 API 调用费。首次模型下载需要联网与磁盘空间。")).font(.caption).foregroundStyle(.secondary)
+        Text(b("Local/free means no API usage fee. \(LocalModelKind.embeddingName) is built into the app, so there is nothing to download.", "本地／免费指无 API 调用费。\(LocalModelKind.embeddingName) 已随应用内置，无需下载。")).font(.caption).foregroundStyle(.secondary)
     }
     func priceNote(_ message: String, url: String?) -> some View {
         VStack(alignment: .leading, spacing: 8) {

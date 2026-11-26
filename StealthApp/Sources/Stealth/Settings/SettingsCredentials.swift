@@ -14,6 +14,11 @@ struct LocalModelCard: View {
     private var title: String {
         kind == .embedding ? ServiceGuide.text("\(LocalModelKind.embeddingName) local index model", "\(LocalModelKind.embeddingName) 本地索引模型", language) : kind.title
     }
+    /// Bundled models ship inside the app; only downloadable ones show a download size.
+    private var sizeLabel: String {
+        kind.isBundled ? ServiceGuide.text("Built into the app", "已随应用内置", language) + " · " + kind.downloadSize
+                       : t("Download size") + " · " + kind.downloadSize
+    }
     private var statusLabel: some View {
         Label(statusTitle, systemImage: manager.health[kind]?.ready == true ? "checkmark.circle.fill"
               : manager.queued.contains(kind) ? "clock" : "arrow.down.circle")
@@ -25,7 +30,7 @@ struct LocalModelCard: View {
             if compact {
                 details
             } else {
-                LCSettingsCard(title, subtitle: t("Download size") + " · " + kind.downloadSize, systemImage: "cpu", tone: .success) {
+                LCSettingsCard(title, subtitle: sizeLabel, systemImage: "cpu", tone: .success) {
                     details
                 } accessory: { statusLabel }
             }
@@ -38,14 +43,16 @@ struct LocalModelCard: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 5) {
                         Text(title).font(.headline)
-                        Text(t("Download size") + " · " + kind.downloadSize).font(.caption).foregroundStyle(.secondary)
+                        Text(sizeLabel).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     statusLabel
                 }
             }
-            Text(ServiceGuide.text("Automatically tries available download sources. Progress is for the current file.", "自动尝试可用下载线路；进度显示当前文件的下载比例。", language))
-                .font(.caption).foregroundStyle(.secondary)
+            if !kind.isBundled {
+                Text(ServiceGuide.text("Automatically tries available download sources. Progress is for the current file.", "自动尝试可用下载线路；进度显示当前文件的下载比例。", language))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             if manager.downloading == kind {
                 if let value = manager.downloadProgress {
                     ProgressView(value: value)
@@ -102,6 +109,8 @@ struct CredentialStatus: View {
     @ObservedObject var coordinator: AppCoordinator
     let analysis: Bool
     var embedding = false
+    /// Title and masked key only, for a row that also holds the key's buttons.
+    var compact = false
     private var available: Bool { analysis ? coordinator.hasAnalysisKey : coordinator.hasAPIKey }
     private var checking: Bool { analysis ? coordinator.isCheckingAnalysisKey : coordinator.isCheckingKey }
     private var needsAuthorization: Bool { analysis ? coordinator.analysisKeyNeedsAuthorization : coordinator.keyNeedsAuthorization }
@@ -114,7 +123,11 @@ struct CredentialStatus: View {
                 Text(t(embedding ? (coordinator.embeddingVerification.isReady ? "Verified · ready" : available ? "API key saved · verification required" : "API key not configured") : coordinator.isMock ? "Mock credential" : checking ? "Checking Keychain…" : available ? "API key configured" : needsAuthorization ? "API key saved · authorization needed" : "API key not configured")).font(.headline)
                 if available && !coordinator.isMock {
                     Text("••••••••").font(.system(.body, design: .monospaced)).accessibilityLabel(t("Key hidden"))
-                    Text(t(embedding && !coordinator.embeddingVerification.isReady ? "Key saved. Service verification is still required." : "Credential ready. Its contents are never displayed here.")).font(.caption).foregroundStyle(.secondary)
+                    if !compact {
+                        Text(t(embedding && !coordinator.embeddingVerification.isReady ? "Key saved. Service verification is still required." : "Credential ready. Its contents are never displayed here.")).font(.caption).foregroundStyle(.secondary)
+                    }
+                } else if compact && available {
+                    EmptyView()
                 } else {
                     Text(t(analysis ? coordinator.analysisKeyStatus : coordinator.keyStatus)).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
@@ -214,12 +227,62 @@ struct CredentialEditor: View {
     }
     private var fields: some View {
             VStack(alignment: .leading, spacing: onboarding ? 10 : 14) {
-                CredentialStatus(coordinator: coordinator, analysis: analysis, embedding: embeddingLayout)
-                if editing || (!available && !needsAuthorization) {
-                    SecureField(t(available ? "Enter a replacement key" : "Enter a key to save in Keychain"), text: $value)
-                        .textFieldStyle(.roundedBorder).focused($credentialFocused).accessibilityIdentifier("credential-input")
+                if !onboarding {
+                    CredentialStatus(coordinator: coordinator, analysis: analysis, embedding: embeddingLayout)
+                    if editing || (!available && !needsAuthorization) {
+                        SecureField(t(available ? "Enter a replacement key" : "Enter a key to save in Keychain"), text: $value)
+                            .textFieldStyle(.roundedBorder).focused($credentialFocused).accessibilityIdentifier("credential-input")
+                    }
                 }
-                HStack(spacing: 10) {
+                if onboarding {
+                    // Onboarding keeps the key and its actions on one row so the page fits without scrolling.
+                    HStack(alignment: .center, spacing: 10) {
+                        if editing || (!available && !needsAuthorization) {
+                            SecureField(t(available ? "Enter a replacement key" : "Enter a key to save in Keychain"), text: $value)
+                                .textFieldStyle(.roundedBorder).focused($credentialFocused).frame(minWidth: 200)
+                                .accessibilityIdentifier("credential-input")
+                        } else {
+                            // Buttons keep their full labels; the status text wraps if space is short.
+                            CredentialStatus(coordinator: coordinator, analysis: analysis, embedding: embeddingLayout, compact: true)
+                        }
+                        HStack(spacing: 10) { actionButtons }.lineLimit(1).fixedSize()
+                    }
+                    .buttonStyle(.bordered).fixedSize(horizontal: false, vertical: true)
+                } else {
+                HStack(spacing: 10) { actionButtons }
+                .buttonStyle(.bordered)
+                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
+                }
+                if hasConnectionTest, let failure = effectiveFailure, !connectionBusy {
+                    Text(failure.detail(coordinator.settings.language)).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .accessibilityIdentifier("credential-connection-failure-detail")
+                }
+                if let checkFeedback, !connectionVerified {
+                    Label(checkFeedback.message(coordinator.settings.language), systemImage: checkFeedback.symbol)
+                        .font(.caption).foregroundStyle(checkFeedback == .found ? LC.success : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("credential-check-result")
+                }
+                if !message.isEmpty { Text(t(message)).font(.caption).textSelection(.enabled) }
+                if onboarding {
+                    Text(ServiceGuide.text("Check key confirms the saved key is accessible in this Mac’s Keychain.", "检查密钥会确认本机钥匙串中的密钥能否读取；", coordinator.settings.language)
+                         + (analysisLayout ? (coordinator.settings.language.usesChinese ? "" : " ") + ServiceGuide.text("Testing sends one short example question, without your conversation or documents, and may incur API charges.", "测试仅发送一条简短示例问题，不附带对话或资料，可能产生 API 费用。", coordinator.settings.language) : ""))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(liveLayout
+                         ? ServiceGuide.text("Saved in macOS Keychain on this Mac. Each provider's key is managed separately.", "密钥保存在本机 macOS 钥匙串，各服务商密钥独立管理。", coordinator.settings.language)
+                         : t("Saved securely on this Mac and reused on launch."))
+                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    if analysisLayout {
+                        Text(ServiceGuide.text("Testing sends one short example question, without your conversation or documents, and may incur API charges.", "测试仅发送一条简短示例问题，不附带对话或资料，可能产生 API 费用。", coordinator.settings.language))
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+    }
+    @ViewBuilder private var actionButtons: some View {
                     if editing || (!available && !needsAuthorization) {
                         Button(liveLayout || embeddingLayout ? ServiceGuide.text("Save and verify", "保存并验证", coordinator.settings.language) : ServiceGuide.text("Save to Keychain", "保存到钥匙串", coordinator.settings.language)) { save() }
                             .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || saving || checking || connectionBusy || coordinator.isMock)
@@ -256,36 +319,7 @@ struct CredentialEditor: View {
                     }
                     Spacer(minLength: 0)
                     if available || needsAuthorization { Button(t("Remove"), role: .destructive) { confirmingRemoval = true }.disabled(saving || checking || connectionBusy || coordinator.isMock) }
-                }
-                .buttonStyle(.bordered)
-                .lineLimit(1)
-                .fixedSize(horizontal: false, vertical: true)
-                if hasConnectionTest, let failure = effectiveFailure, !connectionBusy {
-                    Text(failure.detail(coordinator.settings.language)).font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                        .accessibilityIdentifier("credential-connection-failure-detail")
-                }
-                if let checkFeedback, !connectionVerified {
-                    Label(checkFeedback.message(coordinator.settings.language), systemImage: checkFeedback.symbol)
-                        .font(.caption).foregroundStyle(checkFeedback == .found ? LC.success : .secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("credential-check-result")
-                }
-                if !message.isEmpty { Text(t(message)).font(.caption).textSelection(.enabled) }
-                Text(onboarding ? ServiceGuide.text("Check key confirms the saved key is accessible in this Mac’s Keychain.", "检查密钥会确认本机钥匙串中的密钥能否读取。", coordinator.settings.language) : liveLayout
-                     ? ServiceGuide.text("Saved in macOS Keychain on this Mac. Each provider's key is managed separately.", "密钥保存在本机 macOS 钥匙串，各服务商密钥独立管理。", coordinator.settings.language)
-                     : t("Saved securely on this Mac and reused on launch."))
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                if onboarding && analysisLayout && connectionVerified && !coordinator.isMock {
-                    Label(ServiceGuide.text("Answer service ready. You can continue.", "回答服务已就绪，可以继续。", coordinator.settings.language), systemImage: "checkmark.circle.fill")
-                        .font(.caption).foregroundStyle(LC.success)
-                }
-                if analysisLayout {
-                    Text(ServiceGuide.text("Testing sends one short example question, without your conversation or documents, and may incur API charges.", "测试仅发送一条简短示例问题，不附带对话或资料，可能产生 API 费用。", coordinator.settings.language))
-                        .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }
-            }
-    }
+                    }
     private func resetConnectionTest() {
         connectionTestID = UUID(); connectionTestTask?.cancel(); connectionTestTask = nil
         testingConnection = false; connectionTestMessage = ""; connectionTestSucceeded = false; connectionFailure = nil

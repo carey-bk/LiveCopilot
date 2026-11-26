@@ -67,7 +67,7 @@ enum LocalModelKind: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .streamingSpeech: return "238 MB"
         case .terminologySpeech: return "200 MB"
-        case .embedding: return "328 MB · bundled"
+        case .embedding: return "328 MB"
         }
     }
     /// Known object sizes from the pinned distribution manifest. Estimates only;
