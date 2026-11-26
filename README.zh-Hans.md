@@ -14,7 +14,7 @@
 
 **2.12 · 安装包 538 MB · macOS 通用版本 · Developer ID 签名与 Apple 公证**
 
-[从 GitHub 下载安装包](https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot-2.12-macOS-universal.dmg) · [GitHub 发布页与校验值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.12) · 网盘备用下载见[产品介绍页](https://carey-bk.github.io/LiveCopilot/#download)。
+[从 GitHub 下载安装包](https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot-2.12-macOS-universal.dmg) · [百度网盘备用下载](https://pan.baidu.com/s/1oMcGKhPmuOY7KXkb4NiTVQ?pwd=0211) · [夸克网盘备用下载](https://pan.quark.cn/s/5548f7b59bfc) · [GitHub 发布页与校验值](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.12)
 
 | 功能 | 使用要求 |
 |---|---|

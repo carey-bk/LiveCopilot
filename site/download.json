@@ -3,5 +3,14 @@
   "github_url": "https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot-2.12-macOS-universal.dmg",
   "sha256": "3c8c4bb82e22390f3930f4fa46fbfa5db7da4e1dd7dbf64a143055cda0ffbc11",
   "size": 538440900,
-  "backups": []
+  "backups": [
+    {
+      "name": "baidu",
+      "url": "https://pan.baidu.com/s/1oMcGKhPmuOY7KXkb4NiTVQ?pwd=0211"
+    },
+    {
+      "name": "quark",
+      "url": "https://pan.quark.cn/s/5548f7b59bfc"
+    }
+  ]
 }

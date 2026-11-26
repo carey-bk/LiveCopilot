@@ -14,7 +14,7 @@ A native macOS assistant for interviews, meetings and academic discussions. Live
 
 **2.12 · 538 MB · Universal macOS app · Developer ID signed and Apple notarized**
 
-[Download DMG from GitHub](https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot-2.12-macOS-universal.dmg) · [Release page and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.12) · Netdisk mirrors are listed on the [product website](https://carey-bk.github.io/LiveCopilot/en/#download).
+[Download DMG from GitHub](https://github.com/carey-bk/LiveCopilot/releases/download/v2.12/LiveCopilot-2.12-macOS-universal.dmg) · [Baidu Netdisk mirror](https://pan.baidu.com/s/1oMcGKhPmuOY7KXkb4NiTVQ?pwd=0211) · [Quark Netdisk mirror](https://pan.quark.cn/s/5548f7b59bfc) · [Release page and checksums](https://github.com/carey-bk/LiveCopilot/releases/tag/v2.12)
 
 | Component | Requirement |
 |---|---|
